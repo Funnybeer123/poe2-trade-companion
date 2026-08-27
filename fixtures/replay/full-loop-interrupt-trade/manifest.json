@@ -1,0 +1,75 @@
+{
+  "id": "full-loop-interrupt-trade",
+  "scenarioId": "full-loop",
+  "seed": 14,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": { "identity": "qa-target", "screenPoint": { "x": 640, "y": 360 } },
+          "confidence": 0.92,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "exalted-1", "labelText": "Exalted Orb", "screenPoint": { "x": 700, "y": 350 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": { "occupied": 1, "capacity": 12, "full": false, "cells": [] },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "gameplay" }, "confidence": 0.8, "observedAtMs": 10000, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10200,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "exalted-1", "labelText": "Exalted Orb", "screenPoint": { "x": 700, "y": 350 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10200,
+            "requestedItemFingerprint": "astramentis-1",
+            "expected": { "itemFingerprint": "astramentis-1", "currency": "divine", "amount": 10 }
+          },
+          "tradeExpected": { "itemFingerprint": "astramentis-1", "currency": "divine", "amount": 10 }
+        },
+        "ui": { "value": { "kind": "gameplay" }, "confidence": 0.8, "observedAtMs": 10200, "freshness": "fresh" }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "LootPickup", "decisionReasonIncludes": "pick:exalted-1", "executed": false, "sinkKind": "noop" },
+    { "tickId": 2, "selectedState": "TradeSession", "decisionReasonIncludes": "trade-request-received", "executed": false, "sinkKind": "noop" }
+  ]
+}

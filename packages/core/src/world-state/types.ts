@@ -270,6 +270,7 @@ export interface WorldStateFlags {
   tradeSession?: TradeSession | null;
   tradeExpected?: ExpectedTrade;
   tradeEvent?: TradeEvent | null;
+  consumedTradeEventAtMs?: number;
   tradePartyState?: TradePartyState;
   tradeInContext?: boolean;
   tradeCancelled?: boolean;
@@ -289,6 +290,7 @@ export interface WorldStateFlags {
   stashItemCatalog?: Record<string, StashItemMeta>;
   pendingStashTransfer?: PendingStashTransfer | null;
   stashSafetyHold?: boolean;
+  actionBudgetHold?: boolean;
 }
 
 export interface WorldState {

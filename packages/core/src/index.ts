@@ -630,7 +630,29 @@ export {
   summarizeWorld,
 } from "./loop/traceHelpers.js";
 export { applyPostDecisionEffects, AutomationLoop, createAutomationLoop } from "./loop/automationLoop.js";
-export type { AutomationLoopOptions, AutomationTickResult } from "./loop/automationLoop.js";
+export type { AutomationLoopOptions, AutomationTickResult } from "./loop/types.js";
+export {
+  ACTION_BUDGET_HOLD_REASON,
+  ActionBudget,
+  countableActions,
+} from "./loop/actionBudget.js";
+export {
+  applyOrchestratorDecisionEffects,
+  applyOwnedSessionFlags,
+  beginListingSession,
+  beginStashSession,
+  beginTradeSession,
+  clearInFlightStep,
+  endListingSession,
+  endStashSession,
+  endTradeSession,
+  moduleForState,
+} from "./loop/sessionFlags.js";
+export {
+  createScenarioOrchestrator,
+  DefaultScenarioOrchestrator,
+} from "./loop/scenarioOrchestrator.js";
+export type { ScenarioOrchestrator } from "./loop/scenarioOrchestrator.js";
 
 export type {
   ReplayManifest,

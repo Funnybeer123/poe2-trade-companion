@@ -1,0 +1,63 @@
+{
+  "id": "full-loop-interrupt-loot",
+  "scenarioId": "full-loop",
+  "seed": 15,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": { "identity": "qa-target", "screenPoint": { "x": 640, "y": 360 } },
+          "confidence": 0.92,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": { "occupied": 1, "capacity": 12, "full": false, "cells": [] },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "gameplay" }, "confidence": 0.8, "observedAtMs": 10000, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10200,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": { "identity": "qa-target", "screenPoint": { "x": 640, "y": 360 } },
+          "confidence": 0.92,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "mirror-1", "labelText": "Mirror of Kalandra", "screenPoint": { "x": 800, "y": 400 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "gameplay" }, "confidence": 0.8, "observedAtMs": 10200, "freshness": "fresh" }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "Follow", "decisionReasonIncludes": "follow", "executed": false, "sinkKind": "noop" },
+    { "tickId": 2, "selectedState": "HighValueLoot", "decisionReasonIncludes": "pick:mirror-1", "executed": false, "sinkKind": "noop" }
+  ]
+}

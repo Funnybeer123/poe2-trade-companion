@@ -4,7 +4,10 @@ import { describe, expect, it } from "vitest";
 
 describe("AutomationLoop perception wiring", () => {
   it("routes frames through FixturePerceptionAdapter and StateEstimator", () => {
-    const source = readFileSync(join(process.cwd(), "packages/core/src/loop/automationLoop.ts"), "utf8");
+    const source = readFileSync(
+      join(process.cwd(), "packages/core/src/loop/scenarioOrchestrator.ts"),
+      "utf8",
+    );
     expect(source).toContain("createFixturePerceptionAdapter");
     expect(source).toContain("createStateEstimator");
     expect(source).toContain("analyzeFailureFrame");

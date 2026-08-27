@@ -1,0 +1,346 @@
+{
+  "id": "full-loop",
+  "scenarioId": "full-loop",
+  "seed": 13,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": { "identity": "qa-target", "screenPoint": { "x": 640, "y": 360 }, "estimatedDistance": "near" },
+          "confidence": 0.92,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 2,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "astramentis-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "divine-1" },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "gameplay" }, "confidence": 0.8, "observedAtMs": 10000, "freshness": "fresh" },
+        "flags": {
+          "stashItemCatalog": {
+            "divine-1": { "class": "Currency", "category": "HighValueSell", "score": 95 },
+            "chaos-1": { "class": "Currency", "category": "BulkCommodity", "score": 50 }
+          },
+          "listingCatalog": [
+            {
+              "fingerprint": "astramentis-1",
+              "screenPoint": { "x": 1400, "y": 220 },
+              "quote": {
+                "providerId": "fixture",
+                "quotedAtMs": 10000,
+                "currency": "divine",
+                "low": 12,
+                "fair": 15,
+                "high": 18,
+                "candidateCount": 8,
+                "comparableCount": 7,
+                "confidence": "high"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10200,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": { "identity": "qa-target", "screenPoint": { "x": 640, "y": 360 }, "estimatedDistance": "near" },
+          "confidence": 0.92,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "exalted-1", "labelText": "Exalted Orb", "screenPoint": { "x": 700, "y": 350 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 2,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "astramentis-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "divine-1" },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "gameplay" }, "confidence": 0.8, "observedAtMs": 10200, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 3,
+      "atMs": 10400,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "exalted-1", "labelText": "Exalted Orb", "screenPoint": { "x": 700, "y": 350 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 4,
+            "capacity": 4,
+            "full": true,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "astramentis-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "divine-1" },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "chaos-1" },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "rusted-1" }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "stash": {
+          "value": {
+            "tabId": "currency",
+            "tabName": "Currency",
+            "tabFull": false,
+            "cells": [
+              { "tabId": "currency", "x": 0, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "tabId": "currency", "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "tabId": "currency", "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "tabId": "currency", "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.9,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "stash" }, "confidence": 0.9, "observedAtMs": 10400, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 4,
+      "atMs": 10600,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 3,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "astramentis-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "chaos-1" },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "rusted-1" }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "stash": {
+          "value": {
+            "tabId": "currency",
+            "tabName": "Currency",
+            "tabFull": false,
+            "cells": [
+              { "tabId": "currency", "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "divine-1" },
+              { "tabId": "currency", "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "tabId": "currency", "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "tabId": "currency", "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.9,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "stash" }, "confidence": 0.9, "observedAtMs": 10600, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 5,
+      "atMs": 10800,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10800,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 2,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "astramentis-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "rusted-1" }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10800,
+          "freshness": "fresh"
+        },
+        "stash": {
+          "value": {
+            "tabId": "currency",
+            "tabName": "Currency",
+            "tabFull": false,
+            "cells": [
+              { "tabId": "currency", "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "divine-1" },
+              { "tabId": "currency", "x": 1, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "chaos-1" },
+              { "tabId": "currency", "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "tabId": "currency", "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.9,
+          "observedAtMs": 10800,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "stash" }, "confidence": 0.9, "observedAtMs": 10800, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 6,
+      "atMs": 11000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 11000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 2,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "astramentis-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "rusted-1" }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11000,
+          "freshness": "fresh"
+        },
+        "listing": {
+          "value": { "open": false },
+          "confidence": 0.9,
+          "observedAtMs": 11000,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "inventory" }, "confidence": 0.9, "observedAtMs": 11000, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 7,
+      "atMs": 11200,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 11200,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 2,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "astramentis-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "rusted-1" }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11200,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 11200,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          }
+        },
+        "ui": { "value": { "kind": "gameplay" }, "confidence": 0.9, "observedAtMs": 11200, "freshness": "fresh" }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "Follow", "decisionReasonIncludes": "follow", "executed": false, "sinkKind": "noop" },
+    { "tickId": 2, "selectedState": "LootPickup", "decisionReasonIncludes": "pick:exalted-1", "executed": false, "sinkKind": "noop" },
+    { "tickId": 3, "selectedState": "InventoryFull", "decisionReasonIncludes": "stash-move:divine-1", "executed": false, "sinkKind": "noop" },
+    { "tickId": 4, "selectedState": "StashSort", "decisionReasonIncludes": "stash-move:chaos-1", "executed": false, "sinkKind": "noop" },
+    { "tickId": 5, "selectedState": "StashSort", "decisionReasonIncludes": "stash-plan-empty", "executed": false, "sinkKind": "noop" },
+    { "tickId": 6, "selectedState": "Listing", "decisionReasonIncludes": "listing-select-item", "executed": false, "sinkKind": "noop" },
+    { "tickId": 7, "selectedState": "TradeSession", "decisionReasonIncludes": "trade-request-received", "executed": false, "sinkKind": "noop" }
+  ]
+}

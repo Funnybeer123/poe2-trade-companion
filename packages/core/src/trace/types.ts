@@ -33,6 +33,7 @@ export interface QaActionTrace {
   followUpSummary?: string;
   recoveryOf?: string;
   retryIndex?: number;
+  interrupted?: boolean;
 }
 
 export interface TraceSink {
