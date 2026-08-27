@@ -22,7 +22,7 @@
 | Phase 10 | `0fee99f` on `cursor/phase-10-stash-sort-b8bf` (PR #11) | Stash sort complete |
 | Phase 11 | `da19a84` / `1e85af7` on `cursor/phase-11-listing-reprice-e0c0` (PR #12) | Listing machine complete |
 | Phase 12 first cut | `792f814` on `cursor/phase-12-trade-session-b5b9` (PR #13) | Trade machine + replay corpus |
-| Current commit | (this revision) | Gate + self-review on `cursor/phase-12-trade-session-b5b9` (PR #13) |
+| Current commit | `a30b1f9` | Gate + self-review on `cursor/phase-12-trade-session-b5b9` (PR #13) |
 
 ## Active phase
 
