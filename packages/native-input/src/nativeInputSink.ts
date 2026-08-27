@@ -12,12 +12,19 @@ export class NativeUnavailableError extends Error {
   }
 }
 
+interface KoffiCType {
+  readonly __brand?: string;
+}
+
 interface KoffiLib {
   func(declaration: string): (...args: never[]) => unknown;
 }
 
 interface KoffiModule {
   load(name: string): KoffiLib;
+  struct(name: string, def: Record<string, string | KoffiCType>): KoffiCType;
+  union(name: string, def: Record<string, string | KoffiCType>): KoffiCType;
+  sizeof(type: KoffiCType | string): number;
 }
 
 export interface NativeLibraryLoader {
@@ -25,9 +32,7 @@ export interface NativeLibraryLoader {
   loadKoffi(): KoffiModule;
 }
 
-export function loadKoffiModule(
-  load: () => KoffiModule = defaultLoadKoffi,
-): KoffiModule {
+export function loadKoffiModule(load: () => KoffiModule = defaultLoadKoffi): KoffiModule {
   try {
     return load();
   } catch (err) {
@@ -86,10 +91,17 @@ function virtualKey(key: string): number | undefined {
   return VK_BY_KEY[key.toLowerCase()];
 }
 
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
 export class NativeInputSink implements InputSink {
   readonly kind = "native" as const;
   readonly #sendInput: SendInputFn;
   readonly #setCursorPos: SetCursorPosFn;
+  readonly #inputSize: number;
   #cancelled = false;
 
   constructor(loader: NativeLibraryLoader = defaultNativeLoader()) {
@@ -98,11 +110,41 @@ export class NativeInputSink implements InputSink {
       throw new NativeUnavailableError(`SendInput requires win32 (got ${loader.platform})`);
     }
     try {
+      const mouseInput = koffi.struct("MOUSEINPUT", {
+        dx: "int32",
+        dy: "int32",
+        mouseData: "uint32",
+        dwFlags: "uint32",
+        time: "uint32",
+        dwExtraInfo: "uintptr",
+      });
+      const keybdInput = koffi.struct("KEYBDINPUT", {
+        wVk: "uint16",
+        wScan: "uint16",
+        dwFlags: "uint32",
+        time: "uint32",
+        dwExtraInfo: "uintptr",
+      });
+      const hardwareInput = koffi.struct("HARDWAREINPUT", {
+        uMsg: "uint32",
+        wParamL: "uint16",
+        wParamH: "uint16",
+      });
+      const inputUnion = koffi.union("INPUT_U", {
+        mi: mouseInput,
+        ki: keybdInput,
+        hi: hardwareInput,
+      });
+      koffi.struct("INPUT", {
+        type: "uint32",
+        u: inputUnion,
+      });
+      this.#inputSize = koffi.sizeof("INPUT");
       const user32 = koffi.load("user32.dll");
       this.#sendInput = user32.func(
-        "unsigned int __stdcall SendInput(unsigned int cInputs, void *pInputs, int cbSize)",
+        "uint32 __stdcall SendInput(uint32 cInputs, INPUT *pInputs, int cbSize)",
       ) as SendInputFn;
-      this.#setCursorPos = user32.func("int __stdcall SetCursorPos(int X, int Y)") as SetCursorPosFn;
+      this.#setCursorPos = user32.func("int32 __stdcall SetCursorPos(int32 X, int32 Y)") as SetCursorPosFn;
     } catch (err) {
       const detail = err instanceof Error ? err.message : String(err);
       throw new NativeUnavailableError(`user32 SendInput bind failed (${detail})`);
@@ -127,7 +169,7 @@ export class NativeInputSink implements InputSink {
     }
 
     try {
-      this.#dispatch(action);
+      await this.#dispatch(action);
       return {
         accepted: true,
         executed: true,
@@ -148,11 +190,14 @@ export class NativeInputSink implements InputSink {
     }
   }
 
-  #dispatch(action: InputAction): void {
+  async #dispatch(action: InputAction): Promise<void> {
     switch (action.type) {
       case "noop":
         return;
       case "wait":
+        if (action.durationMs > 0) {
+          await delay(action.durationMs);
+        }
         return;
       case "mouse-move":
         this.#move(action.x, action.y);
@@ -160,6 +205,9 @@ export class NativeInputSink implements InputSink {
       case "mouse-click":
         this.#move(action.x, action.y);
         this.#mouseButton(action.button, true);
+        if (action.holdMs !== undefined && action.holdMs > 0) {
+          await delay(action.holdMs);
+        }
         this.#mouseButton(action.button, false);
         return;
       case "mouse-drag":
@@ -186,7 +234,10 @@ export class NativeInputSink implements InputSink {
   }
 
   #move(x: number, y: number): void {
-    this.#setCursorPos(Math.round(x), Math.round(y));
+    const ok = this.#setCursorPos(Math.round(x), Math.round(y));
+    if (!ok) {
+      throw new Error("SetCursorPos failed");
+    }
   }
 
   #mouseButton(button: "left" | "right", down: boolean): void {
@@ -202,16 +253,26 @@ export class NativeInputSink implements InputSink {
   }
 
   #sendMouse(dwFlags: number): void {
-    const input = {
-      type: INPUT_MOUSE,
-      dx: 0,
-      dy: 0,
-      mouseData: 0,
-      dwFlags,
-      time: 0,
-      dwExtraInfo: 0,
-    };
-    this.#sendInput(1, input, 40);
+    const sent = this.#sendInput(
+      1,
+      {
+        type: INPUT_MOUSE,
+        u: {
+          mi: {
+            dx: 0,
+            dy: 0,
+            mouseData: 0,
+            dwFlags,
+            time: 0,
+            dwExtraInfo: 0,
+          },
+        },
+      },
+      this.#inputSize,
+    );
+    if (sent !== 1) {
+      throw new Error("SendInput mouse failed");
+    }
   }
 
   #key(key: string, up: boolean): void {
@@ -219,14 +280,24 @@ export class NativeInputSink implements InputSink {
     if (vk === undefined) {
       throw new Error(`unknown-key:${key}`);
     }
-    const input = {
-      type: INPUT_KEYBOARD,
-      wVk: vk,
-      wScan: 0,
-      dwFlags: up ? KEYEVENTF_KEYUP : 0,
-      time: 0,
-      dwExtraInfo: 0,
-    };
-    this.#sendInput(1, input, 40);
+    const sent = this.#sendInput(
+      1,
+      {
+        type: INPUT_KEYBOARD,
+        u: {
+          ki: {
+            wVk: vk,
+            wScan: 0,
+            dwFlags: up ? KEYEVENTF_KEYUP : 0,
+            time: 0,
+            dwExtraInfo: 0,
+          },
+        },
+      },
+      this.#inputSize,
+    );
+    if (sent !== 1) {
+      throw new Error("SendInput key failed");
+    }
   }
 }

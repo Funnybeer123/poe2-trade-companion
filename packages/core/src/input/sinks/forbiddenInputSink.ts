@@ -5,7 +5,8 @@ export const PUBLIC_COMPANION_FORBIDDEN_REASON = "public-companion-forbids-nativ
 export class ForbiddenInputSink implements InputSink {
   readonly kind = "forbidden" as const;
 
-  async execute(_action: InputAction): Promise<InputResult> {
+  async execute(action: InputAction): Promise<InputResult> {
+    void action;
     const startedAtMs = Date.now();
     return {
       accepted: false,

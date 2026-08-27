@@ -35,6 +35,24 @@ class SpySink implements InputSink {
 }
 
 describe("GameInputController", () => {
+  it("replaces a native sink with ForbiddenInputSink in public-companion", () => {
+    const nativeLike: InputSink = {
+      kind: "native",
+      async execute(): Promise<InputResult> {
+        throw new Error("native sink must not run in public-companion");
+      },
+      cancel(): void {
+        return;
+      },
+    };
+    const controller = createGameInputController({
+      capabilities: createCapabilities("public-companion"),
+      sink: nativeLike,
+      clock: new FrozenClock(1),
+    });
+    expect(controller.sink.kind).toBe("forbidden");
+  });
+
   it("public-companion records and never executes", async () => {
     const spy = new SpySink();
     const controller = createGameInputController({

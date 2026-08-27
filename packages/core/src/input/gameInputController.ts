@@ -6,6 +6,7 @@ import { TokenBucketRateLimiter } from "../interlock/rateLimiter.js";
 import type { InterlockContext, InterlockGate, InterlockVerdict } from "../interlock/types.js";
 import { createInputSink } from "./createInputSink.js";
 import { EmergencyStop } from "./emergencyStop.js";
+import { ForbiddenInputSink } from "./sinks/forbiddenInputSink.js";
 import { hashSeed, mulberry32, timingJitterMs } from "./mulberry32.js";
 import type { BotDecision, GameInputController, InputAction, InputResult, InputSink, Sleeper } from "./types.js";
 
@@ -17,7 +18,7 @@ export interface DecisionRecord {
 
 export function createNoopSleeper(): Sleeper {
   return {
-    async sleep(_ms: number): Promise<void> {
+    async sleep(): Promise<void> {
       return;
     },
   };
@@ -76,7 +77,11 @@ export class DefaultGameInputController implements GameInputController {
     this.rateLimiter =
       options.rateLimiter ?? new TokenBucketRateLimiter(this.#clock, 30);
     this.#gate = options.gate ?? createInterlockGate({ rateLimiter: this.rateLimiter, clock: this.#clock });
-    this.sink = options.sink ?? createInputSink(options.capabilities);
+    const requestedSink = options.sink ?? createInputSink(options.capabilities);
+    this.sink =
+      !options.capabilities.canEmitNativeInput && requestedSink.kind === "native"
+        ? new ForbiddenInputSink()
+        : requestedSink;
     this.#sleeper = options.sleeper ?? createNoopSleeper();
   }
 
@@ -195,19 +200,18 @@ export class DefaultGameInputController implements GameInputController {
 
     const actions = decision.intendedActions;
     if (!verdict.allowExecute && verdict.code !== "dry-run") {
-      const results = (actions.length > 0 ? actions : [{ type: "noop", reason: verdict.code }]).map(
-        (action) => {
-          if (verdict.allowRecord) {
-            this.recordedActions.push(action);
-          }
-          return result(this.#clock, {
-            accepted: false,
-            executed: false,
-            dryRun: false,
-            blockedReason: verdict.code,
-          });
-        },
-      );
+      const fallback: InputAction = { type: "noop", reason: verdict.code };
+      const results = (actions.length > 0 ? actions : [fallback]).map((action) => {
+        if (verdict.allowRecord) {
+          this.recordedActions.push(action);
+        }
+        return result(this.#clock, {
+          accepted: false,
+          executed: false,
+          dryRun: false,
+          blockedReason: verdict.code,
+        });
+      });
       this.records.push({ decision, verdict, results });
       return results;
     }

@@ -1,6 +1,6 @@
 # Review State
 
-**Phase under review:** 02 — Canonical world state + deterministic scheduler  
+**Phase under review:** 03 — Capability / interlock / input boundary  
 **Date:** 2026-08-27  
 **Reviewer:** Grok 4.6 xhigh Fast (self-review per `GROK_BOT_QA_PROMPT.md` + `docs/AI_REVIEW_CHECKLIST.md`)
 
@@ -8,53 +8,57 @@
 
 `PASS`
 
-Phase 02 acceptance criteria are implemented. Scheduler tests and the 8 snapshot fixtures pass. No controller or input code was added. Required behavior is not a stub.
+Phase 03 acceptance criteria are implemented. Gate commands are green. Native live `SendInput` remains an external host blocker (`BLOCKED: windows-native`), which the plan allows.
 
 ## Scope reviewed
 
-Actual Phase 02 diff vs `cursor/phase-01-baseline-f3a0`:
+Actual Phase 03 diff vs `cursor/phase-02-world-state-scheduler-ca64`:
 
-- `packages/core/src/clock.ts`
-- `packages/core/src/world-state/*`
-- `packages/core/src/scheduler/*`
-- `packages/core/src/index.ts` exports
-- `tests/unit/scheduler/*`, `tests/unit/world-state/*`
-- `tests/integration/scheduler-priority.test.ts`
-- `tests/replay/scheduler-priority.test.ts`
-- `fixtures/replay/scheduler-priority/*.json` (8)
-- Grok tracking updates
+- `packages/core/src/capabilities/*`
+- `packages/core/src/interlock/*`
+- `packages/core/src/input/*`
+- `packages/native-input/**`
+- `scripts/check-native-input-imports.mjs`
+- `apps/desktop/electron-main.ts` emergency-stop hotkey
+- unit/integration tests listed in `TEST_GAPS.md`
+- CI step for the native-import guard
 
 ## Repository health
 
 - [x] Diff inspected.
-- [x] `lint`, `typecheck`, `test` run on this host — green (57 tests).
-- [x] Searched for TODOs / stubs / `Math.random` / native-input / controllers in new code: none.
-- [x] Failures (unused `scenario` arg) recorded and fixed, not muted.
+- [x] `lint`, `typecheck`, `test`, `check-native-input-imports` run on this host — green (107 tests).
+- [x] Searched for TODOs / stubs / `Math.random` / native imports outside `packages/native-input`: none.
+- [x] Failures (unused args, script globals, `InputAction` widening, unstructured SendInput) recorded and fixed, not muted.
 
-## State engine
+## Runtime boundaries
 
-- [x] Canonical `WorldState` including `flags`.
-- [x] Freshness buckets match the plan (`fresh < 250ms`, `aging < 1000ms`, `stale >= 1000ms`, `missing`).
-- [x] `STATE_PRIORITY` order matches §5.3.
-- [x] Selection is deterministic; FrozenClock identity test passes.
-- [x] Higher-priority states interrupt lower-priority states.
-- [x] Disabled modules cannot be selected.
-- [x] Emergency stop beats trade; inventory full beats loot/follow; high-value loot beats follow, not trade.
+- [x] `public-companion.canEmitNativeInput` is always `false` and frozen.
+- [x] `createInputSink` returns `ForbiddenInputSink` in public mode.
+- [x] `GameInputController` replaces a `kind: "native"` sink with `ForbiddenInputSink` when native input is ineligible.
+- [x] QA arming requires acknowledgement, process/window allowlists, and hotkey registration.
+- [x] Dry-run records intended actions and does not call the sink.
+- [x] Wrong process/window, disabled module/scenario, and rate limits block execute.
 
-## Runtime / input invariants
+## Input ownership
 
-Not introduced in this phase. No `GameInputController`, sinks, or native imports. Public-mode automation still cannot run.
+- [x] Production sink `execute` is only called from `GameInputController` (and `RecordingInputSink` wrapping an inner sink).
+- [x] `packages/core` does not import `koffi` or `@poe2tc/native-input`.
+- [x] Electron public start path does not import native-input.
+- [x] Kill switch trips the latch, cancels the sink, and clears the queue.
+- [x] Rearm requires `{ explicit: true }`.
 
 ## Findings
 
 | Severity | File | Observation | Disposition |
 | --- | --- | --- | --- |
-| LOW | `scheduler/types.ts` | `FailureInjection` is a minimal type because §5.6 names the field without defining it. | Keep. Not a fake scheduler. |
-| IMPROVEMENT | `predicates.ts` | High-value threshold lives on `world.flags.highValueInterruptScore` (Phase 02 Add list) rather than `scenario.highValueInterruptScore` (predicate table wording). | Documented deviation. `AutomationScenario` in §5.6 has no such field. |
-| IMPROVEMENT | RecoverTarget vs Idle | Follow enabled + missing target selects `RecoverTarget`, so `Idle` needs follow disabled. | Matches the predicate table. Covered by Idle fixture + priority table. |
+| MEDIUM | `packages/native-input/src/nativeInputSink.ts` | First cut passed a plain object to `SendInput` as `void*` with a guessed size. | Fixed: named koffi `INPUT` struct/union and `sizeof("INPUT")`. Still untestable live on Linux. |
+| MEDIUM | `gameInputController.ts` | A caller could pass `kind: "native"` under public capabilities. Interlock already denied execute. | Fixed: public mode swaps a native-kind sink for `ForbiddenInputSink`. |
+| LOW | lint | Unused `_ms` / `_action`; script `process`/`console` globals. | Fixed. |
+| IMPROVEMENT | `InterlockContext` | Optional `retryIndex` / `identity` are not in §5.5. | Keep. Needed for retry-exhausted and realm/account/character allowlists without inventing WorldState fields. |
+| IMPROVEMENT | sleeper | Default sleeper is no-op; jitter profiles are 0 ms. | Keep. Seeded RNG is wired; Phase 04 can pass a real sleeper. |
 
-No BLOCKER, HIGH, or MEDIUM defects after the lint unused-arg fix.
+No remaining BLOCKER or HIGH defects for this phase.
 
 ## Invariants deferred
 
-Phases 03–15 (native input boundary, arming, replay runner, controllers) remain future work. See `TEST_GAPS.md`.
+Phases 04–15 (replay runner, perception, controllers, packaging). See `TEST_GAPS.md`.

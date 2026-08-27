@@ -35,7 +35,7 @@ No Phase 01 code change required. Official filter sync and account APIs remain o
 ## 2026-08-27 — Phase 03 native input
 
 - Host is Linux. `NativeInputSink` binds `koffi` → `user32.SendInput` / `SetCursorPos` and is Windows-only.
-- `koffi` is a dependency of `packages/native-input` only (2.x). Public Electron start path does not import it.
+- `koffi` is a dependency of `packages/native-input` only. Installed `koffi@2.16.3` (requested `^2.14.1`). Public Electron start path does not import it.
 - Constructing `NativeInputSink` on this host throws `native-unavailable` (non-win32). The same error is thrown if `koffi` itself cannot load (unit-tested via an injected loader).
 - Live Windows `SendInput` is **BLOCKED: windows-native** on this agent. Phase 03 unit/replay/non-native tests do not require it.
 

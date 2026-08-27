@@ -18,6 +18,8 @@ describe("native input import guard", () => {
       "utf8",
     );
     expect(sink).toMatch(/koffi/);
+    expect(sink).toMatch(/koffi\.struct\("INPUT"/);
+    expect(sink).toMatch(/SendInput/);
     const coreIndex = readFileSync(path.join(process.cwd(), "packages/core/src/index.ts"), "utf8");
     expect(coreIndex).not.toMatch(/from ["']koffi["']/);
     expect(coreIndex).not.toMatch(/@poe2tc\/native-input/);
