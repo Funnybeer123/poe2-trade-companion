@@ -1,0 +1,53 @@
+{
+  "next_change_id": 1756245600,
+  "markets": [
+    {
+      "league": "Standard",
+      "market_id": "Metadata/Items/Currency/CurrencyAddModToRare|Metadata/Items/Currency/CurrencyDivine",
+      "market_pair": [
+        "Metadata/Items/Currency/CurrencyDivine",
+        "Metadata/Items/Currency/CurrencyAddModToRare"
+      ],
+      "volume_traded": {
+        "Metadata/Items/Currency/CurrencyDivine": 10,
+        "Metadata/Items/Currency/CurrencyAddModToRare": 150
+      },
+      "lowest_stock": {
+        "Metadata/Items/Currency/CurrencyDivine": 1,
+        "Metadata/Items/Currency/CurrencyAddModToRare": 5
+      },
+      "highest_stock": {
+        "Metadata/Items/Currency/CurrencyDivine": 4,
+        "Metadata/Items/Currency/CurrencyAddModToRare": 40
+      },
+      "lowest_ratio": {
+        "Metadata/Items/Currency/CurrencyDivine": 1,
+        "Metadata/Items/Currency/CurrencyAddModToRare": 12
+      },
+      "highest_ratio": {
+        "Metadata/Items/Currency/CurrencyDivine": 1,
+        "Metadata/Items/Currency/CurrencyAddModToRare": 18
+      }
+    },
+    {
+      "league": "Standard",
+      "market_id": "Metadata/Items/Currency/CurrencyAddModToRare|Metadata/Items/Currency/CurrencyRerollRare",
+      "market_pair": [
+        "Metadata/Items/Currency/CurrencyRerollRare",
+        "Metadata/Items/Currency/CurrencyAddModToRare"
+      ],
+      "volume_traded": {
+        "Metadata/Items/Currency/CurrencyRerollRare": 200,
+        "Metadata/Items/Currency/CurrencyAddModToRare": 40
+      },
+      "lowest_ratio": {
+        "Metadata/Items/Currency/CurrencyRerollRare": 6,
+        "Metadata/Items/Currency/CurrencyAddModToRare": 1
+      },
+      "highest_ratio": {
+        "Metadata/Items/Currency/CurrencyRerollRare": 4,
+        "Metadata/Items/Currency/CurrencyAddModToRare": 1
+      }
+    }
+  ]
+}

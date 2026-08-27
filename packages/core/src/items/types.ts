@@ -57,6 +57,17 @@ export interface MarketProvider {
   health(): Promise<{ ok: boolean; detail?: string }>;
 }
 
+export const OUTLIER_METHOD = "tukey-1.5-iqr" as const;
+export type OutlierMethod = typeof OUTLIER_METHOD;
+
+/** Every user-visible valuation includes these fields. Never a guaranteed sale price. */
+export interface ValuationResult {
+  item: NormalizedItem;
+  quote: MarketQuote;
+  outlierMethod: OutlierMethod;
+  isGuaranteedSalePrice: false;
+}
+
 export type DesirabilityCategory =
   | "KeepUse"
   | "HighValueSell"

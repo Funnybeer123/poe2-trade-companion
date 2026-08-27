@@ -1,0 +1,10 @@
+Item Class: Waystones
+Rarity: Normal
+Waystone (Tier 1)
+--------
+Waystone Tier: 1
+Area Level: 65
+--------
+Item Level: 65
+--------
+Can be placed in a Map Device to open a portal to a map.

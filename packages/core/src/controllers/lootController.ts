@@ -1,5 +1,5 @@
 import type { DesirabilityPort } from "../items/desirabilityPort.js";
-import { createFixtureDesirabilityScorer } from "../items/fixtureDesirabilityScorer.js";
+import { createCompositeDesirability } from "../items/compositeDesirability.js";
 import type { BotDecision, InputAction } from "../input/types.js";
 import { annotateLoot } from "../loot/annotateLoot.js";
 import { eligibleLoot, rankLoot } from "../loot/rankLoot.js";
@@ -51,7 +51,7 @@ export class LootController implements Controller {
   readonly module = "loot" as const;
   readonly #port: DesirabilityPort;
 
-  constructor(port: DesirabilityPort = createFixtureDesirabilityScorer()) {
+  constructor(port: DesirabilityPort = createCompositeDesirability()) {
     this.#port = port;
   }
 

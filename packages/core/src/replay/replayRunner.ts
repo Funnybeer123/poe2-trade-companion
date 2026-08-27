@@ -7,6 +7,7 @@ import {
   DefaultGameInputController,
 } from "../input/gameInputController.js";
 import { NoopInputSink } from "../input/sinks/noopInputSink.js";
+import type { DesirabilityPort } from "../items/desirabilityPort.js";
 import { createAutomationLoop, type AutomationLoop } from "../loop/automationLoop.js";
 import { createScenarioScheduler } from "../scheduler/scenarioScheduler.js";
 import type { AutomationScenario, ScenarioScheduler } from "../scheduler/types.js";
@@ -33,6 +34,7 @@ export interface ReplayRunnerOptions {
   arming?: QaArmingState;
   clock?: FrozenClock;
   redactIdentifiers?: boolean;
+  desirability?: DesirabilityPort;
 }
 
 export class ReplayRunner {
@@ -78,6 +80,7 @@ export class ReplayRunner {
       traceWriter: new QaTraceWriter(this.traces, {
         redactIdentifiers: options.redactIdentifiers ?? false,
       }),
+      desirability: options.desirability,
     });
   }
 

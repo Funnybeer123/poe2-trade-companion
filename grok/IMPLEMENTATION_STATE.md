@@ -16,12 +16,13 @@
 | Phase 04 | `b2e17a5` on `cursor/phase-04-replay-trace-9afe` (PR #5) | Replay runner, traces, fixture frame source |
 | Phase 05 | `1f1a0d3` on `cursor/phase-05-perception-estimator-1b5a` (PR #6) | Perception estimator complete |
 | Phase 06 | `684f24d` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery complete |
-| Phase 07 first cut | `ca1357e` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
-| Current commit | `d7e6286` | Gate + self-review on `cursor/phase-07-loot-detection-944f` (PR #8) |
+| Phase 07 | `d7e6286` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
+| Phase 08 first cut | `bdfa3c1` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
+| Current commit | `fd8a68e` | Gate + self-review on `cursor/phase-08-item-valuation-45b0` (PR #9) |
 
 ## Active phase
 
-None. Phase 07 is complete. Next is Phase 08.
+None. Phase 08 is complete. Next is Phase 09.
 
 ## Completed phases
 
@@ -32,15 +33,16 @@ None. Phase 07 is complete. Next is Phase 08.
 - Phase 05 — `StateEstimator`, `FixturePerceptionAdapter`, merge/freshness/allowlist, `templateMatch`, `packages/perception-live` (Win32 process, `desktopCapturer` frame source, read-only clipboard), perception fixtures + `perception-estimate` replay.
 - Phase 06 — `FollowController`, `RecoveryController`, `direction.ts` click-to-move, `stuckDetector`, `lostTargetTicks`, `DEFAULT_RECOVERY`, replay packs `follow-lost-reacquire` / `follow-stuck-recovery` / `follow-emergency-stop`.
 - Phase 07 — `lootLabelDetector`, `LootController`, `InventoryController` stub, `FixtureDesirabilityScorer` / `DesirabilityPort`, rank/skip/suppression, replay packs `loot-desirable-vs-junk` / `loot-inventory-full` / `loot-unreachable-backoff`.
+- Phase 08 — English `parseItem` adapter, SHA-256 fingerprint, fixture + official Currency Exchange providers, Tukey 1.5 IQR valuation, `DesirabilityEngine` / composite router, `loot-market-aware` replay.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 07 gate (2026-08-27, this host) — **green**:
+Phase 08 gate (2026-08-27, this host) — **green**:
 
-- `npm test` — 197 tests
-- `npm run test:replay` — 10 tests
+- `npm test` — 216 tests
+- `npm run test:replay` — 11 tests
 - `npm run lint`
 - `npm run typecheck`
 
@@ -48,33 +50,30 @@ Self-review: `PASS` (`grok/REVIEW_STATE.md`).
 
 ## Blockers
 
-- **BLOCKED: windows-native** — unchanged. Live dry-run loot highlights / one armed pickup skipped on this Linux host.
+- **BLOCKED: windows-native** — unchanged. Live clipboard parse against a real item skipped on this Linux host.
 - External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search API.
 
 ## Plan deviations
 
-Phase 01–06 deviations unchanged.
+Phase 01–07 deviations unchanged.
 
-Phase 07:
+Phase 08:
 
-- `AutomationScenario.lootMinScore` is optional (default 40). Adversarial means `lowConfidencePolicy === "adversarial-execute"`.
-- `FixtureDesirabilityScorer` is the real `DesirabilityPort` for this gate. Keyword/rarity/fixture-score mapping only; no parser or market (Phase 08).
-- `lootLabelDetector` prefers `derived.loot`, otherwise color-blob rarity detection on `frame.pixels` plus optional `OcrPort`. No `tesseract.js` in `packages/core`.
-- Pickup attempt / 15s suppression lives on `WorldState.flags` (`pendingLootPickup`, `lootAttemptCounts`, `lootLastAttemptMs`, `lootSuppressedUntilMs`). Estimator observes success (label gone or occupancy up) and applies `DEFAULT_RECOVERY["loot.unreachable"]`. Controllers stay stateless.
-- Inventory controller is a Phase 07 stub: `InventoryFull` → noop `inventory-full`; `applyPostDecisionEffects` sets `flags.stashSessionActive`. Real inventory/stash observation is Phase 09.
-- `hasHighValueLoot` ignores items with `skipReason` so suppressed or junk labels do not keep HighValueLoot selected.
-- Scoring/skip annotation runs in `AutomationLoop` after the estimator and before the scheduler so `LootTarget.score` / `skipReason` are visible to `HighValueLoot` / `LootPickup`.
+- EE2 `LICENSE` re-verified MIT at `acc7653f05629228f12e273ab1b8da3e46d6bcd1` (2026-06-20) on 2026-08-27 **before** any copy. See `packages/core/src/vendor/exiled-exchange-2/SOURCE.txt`.
+- Vendored `renderer/src/parser/*` plus the `renderer/src/assets/data` files those import (`index.ts`, `interfaces.ts`). Did **not** vendor overlay/input/hotkey/trade-site code.
+- `parseClipboard` is **not executed**. `Parser.ts` imports `@/web/Config` and `@/assets/data`, and the data module imports `@/web/background/TradeData` plus Vite-hosted ndjson that is not in the EE2 git tree. Calling it would pull a trade-site client, which Phase 08 forbids. `parseItem` is the English clipboard adapter using EE2 `itemTextToSections` / nameplate grammar and vendored `ItemCategory` from `parser/meta.ts` (the only compiled vendor module).
+- Outlier method locked: Tukey 1.5 IQR (`OUTLIER_METHOD`). Samples with n < 4 are not filtered; low/fair/high then use min/median/max.
+- Default market path: fixtures + optional official Currency Exchange (`realm=poe2` only). No `trade2` client, no POESESSID/cookie capture.
+- `FixtureDesirabilityScorer` kept for label-only and adversarial loot. `DesirabilityEngine` runs when a `NormalizedItem` is available. Default port is `CompositeDesirabilityPort`.
+- `LootTarget.clipboardText` added so derived loot can carry clipboard dumps. Existing label-only fixtures unchanged.
+- SQLite cache writes go through `MarketCachePort` (`MemoryMarketCache` in core, `SqliteMarketCache` in persistence-sqlite). No new migration; uses `market_comparables_cache` / `valuations` from `001_init.sql`.
 
 ## Replay fixtures added
 
-- `fixtures/replay/loot-desirable-vs-junk/` — Divine picked, Wisdom skipped, observed pickup → Idle.
-- `fixtures/replay/loot-inventory-full/` — full inventory → `InventoryFull`, no pickup clicks.
-- `fixtures/replay/loot-unreachable-backoff/` — two failed pickups → 15s suppress.
+- `fixtures/replay/loot-market-aware/` — clipboard-bearing unique picked via engine + fixture quotes; Wisdom skipped.
 
-Phase 02/04/05/06 fixtures remain.
+Phase 02/04/05/06/07 fixtures remain.
 
 ## Next exact work item
 
-Phase 08 — Item parsing / market valuation / desirability.
-
-Suggested commit from the plan: `feat: add PoE2 item parse, valuation, and desirability engine`.
+Phase 09 — Inventory / stash observation and reconciliation.

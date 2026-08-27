@@ -10,6 +10,8 @@ Phase 06 added `follow-lost-reacquire`, `follow-stuck-recovery`, and `follow-eme
 
 Phase 07 added `loot-desirable-vs-junk`, `loot-inventory-full`, and `loot-unreachable-backoff` through the live `LootController` / `InventoryController` and `FixtureDesirabilityScorer`.
 
+Phase 08 added `loot-market-aware` (derived loot includes clipboard text; `DesirabilityEngine` + fixture quotes).
+
 Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 
 | Phase | Fixture / suite |
@@ -19,7 +21,7 @@ Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 | 05 | `fixtures/replay/perception-estimate/` |
 | 06 | `follow-lost-reacquire`, `follow-stuck-recovery`, `follow-emergency-stop` — added |
 | 07 | `loot-desirable-vs-junk`, `loot-inventory-full`, `loot-unreachable-backoff` — added |
-| 08 | `loot-market-aware` |
+| 08 | `loot-market-aware` — added |
 | 09 | `inventory-stale` |
 | 10 | `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab` |
 | 11 | `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip` |

@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 07 complete)
+**Updated:** 2026-08-27 (Phase 08 complete)
 
 ## Covered in Phase 01
 
@@ -73,11 +73,22 @@
 - Replay: `loot-desirable-vs-junk`, `loot-inventory-full`, `loot-unreachable-backoff`
 - Traces include pick/skip reasons (`decisionReason`, `observedSummary`, `followUpSummary`)
 
+## Covered in Phase 08
+
+- English clipboard corpus: unique / rare / currency / waystone / gem (`fixtures/items/*.txt`)
+- Fingerprint SHA-256 stability; changes when a modifier value changes
+- Tukey 1.5 IQR outlier drop; valuation never labeled a guaranteed sale price
+- DesirabilityEngine determinism; FixtureDesirabilityScorer remains for labels
+- Fixture market + official Currency Exchange digest parser (saved hourly JSON, no network)
+- 429 (Retry-After, no retry), 5xx, offline; cache reuse when `maxAgeMs` allows
+- Integration: label-only skip vs market-aware pickup
+- Replay: `loot-market-aware`
+
 ## Intentionally absent (later phases)
 
 | Gap | First phase |
 | --- | --- |
-| Parser / valuation | 08 |
+| Parser / valuation | 08 (done) |
 | Inventory / stash reconcile | 09 |
 | Stash transfers | 10 |
 | Listing machine | 11 |

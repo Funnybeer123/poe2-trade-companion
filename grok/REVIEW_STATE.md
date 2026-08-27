@@ -1,6 +1,6 @@
 # Review State
 
-**Phase under review:** 07 — Loot detection / ranking / pickup  
+**Phase under review:** 08 — Item parsing / market valuation / desirability  
 **Date:** 2026-08-27  
 **Reviewer:** Grok 4.6 xhigh Fast (self-review per `GROK_BOT_QA_PROMPT.md` + `docs/AI_REVIEW_CHECKLIST.md`)
 
@@ -8,49 +8,49 @@
 
 `PASS`
 
-Phase 07 acceptance criteria are implemented. Gate commands are green. Replay loot scenarios use the same `LootController` / `InventoryController` / `FixtureDesirabilityScorer` as live. Unreachable loot is bounded and suppressed.
+Phase 08 acceptance criteria are implemented. Gate commands are green. Corpus parses. Valuations expose confidence + sample size and are never a guaranteed sale price. No undocumented trade client. MIT notices present.
 
 ## Scope reviewed
 
-Actual Phase 07 diff vs `cursor/phase-06-follow-navigation-8044`:
+Actual Phase 08 diff vs `cursor/phase-07-loot-detection-944f`:
 
-- `packages/core/src/perception/lootLabelDetector.ts`, `ocrPort.ts`, `fixturePerceptionAdapter.ts`
-- `packages/core/src/items/{types,desirabilityPort,fixtureDesirabilityScorer}.ts`
-- `packages/core/src/loot/{rankLoot,annotateLoot,estimateLootPickup,skipReasons}.ts`
-- `packages/core/src/controllers/{lootController,inventoryController,controllerMap}.ts`
-- `packages/core/src/loop/automationLoop.ts` (score before schedule; post-decision pending pickup / stash flag)
-- `packages/core/src/perception/stateEstimator.ts` (observed pickup success/failure)
-- `packages/core/src/scheduler/predicates.ts` (`hasHighValueLoot` ignores `skipReason`)
-- replay fixtures `loot-desirable-vs-junk` / `loot-inventory-full` / `loot-unreachable-backoff`
+- `packages/core/src/vendor/exiled-exchange-2/` (LICENSE, SOURCE.txt, parser/*, assets/data)
+- `NOTICE`, eslint ignore, core tsconfig excludes for non-compilable vendor files
+- `packages/core/src/items/{parseItem,fingerprint,desirabilityEngine,compositeDesirability}.ts`
+- `packages/core/src/market/{rateLimitFetch,valuation,fixtureMarketProvider,officialCurrencyExchangeProvider,marketCache}.ts`
+- `LootTarget.clipboardText`, composite default on loop / LootController / annotateLoot
+- `SqliteMarketCache`
+- fixtures `items/*`, `market/*`, `replay/loot-market-aware/`
 - unit/integration/replay tests listed in `TEST_GAPS.md`
 
 ## Repository health
 
 - [x] Diff inspected.
-- [x] `test` (197), `test:replay` (10), `lint`, `typecheck` run on this host — green after review fixes.
-- [x] Searched for TODOs / placeholders / `Math.random` / SendInput / unbounded loops in new loot code: none. `placeholderDecision` remains only for later-phase states (stash/listing/trade).
-- [x] `FixtureDesirabilityScorer` is a real tested port, not an empty stub.
-- [x] Failures recorded and fixed, not muted.
+- [x] `npm test` (216), `test:replay` (11), `lint`, `typecheck` green on this host after review fixes.
+- [x] Searched new non-vendor code for TODOs / trade2 / POESESSID storage / retry storms: none. Upstream vendor TODOs left untouched.
+- [x] Failures recorded and fixed (gem `Level:` overwritten by Requirements; `isGuaranteedSalePrice` asserted on `MarketQuote`).
 
-## Loot checklist
+## Valuation / desirability checklist
 
-- [x] Detection (`lootLabelDetector`), scoring (`DesirabilityPort`), pickup (`LootController`), confirmation (`estimateLootPickup`) are separated.
-- [x] Pick/skip reasons appear on traces (`decisionReason`, `observedSummary`, `followUpSummary`).
-- [x] Failed pickup: max 2 attempts, backoff `[300, 800]`, suppress 15s (`loot.unreachable`).
-- [x] Inventory full → `InventoryFull`, no pickup clicks; stub sets `stashSessionActive`.
-- [x] Deterministic ranking tests exist.
-- [x] Pickup success is observed (label gone or occupancy increased), not assumed.
+- [x] Market 429 honors Retry-After and does not retry.
+- [x] 5xx / offline fail closed or reuse cache within `maxAgeMs`.
+- [x] Price confidence + sample size on every quote.
+- [x] Offline/replay fixtures exist (`fixtures/market/*.json`).
+- [x] Outlier method locked: Tukey 1.5 IQR.
+- [x] `FixtureDesirabilityScorer` kept for label-only / adversarial loot.
+- [x] `DesirabilityEngine` used when a `NormalizedItem` is available.
 
 ## Findings
 
 | Severity | File | Observation | Disposition |
 | --- | --- | --- | --- |
-| LOW | `inventoryController.ts`, `fixtureDesirabilityScorer.ts` | Unused params failed lint (`_scenario`, `_ctx`). | Fixed: `void` the required contract args. |
-| LOW | `lootLabelDetector.test.ts` | Raw `derived.loot` array failed `Partial<WorldState>` typecheck. | Fixed: wrap as an `Observation`. |
-| IMPROVEMENT | `estimateLootPickup.ts` | Always writes empty attempt/suppression maps onto flags. | Left as-is; follow/replay still green and maps are cheap. |
+| MEDIUM | `automationLoop` / `LootController` / `annotateLoot` | Default port was still fixture-only, so clipboard text would be ignored unless a composite was injected. | Fixed: default is `CompositeDesirabilityPort`. |
+| LOW | `parseItem.ts` | Gem `Level: 5` overwritten by Requirements `Level: 14`. | Fixed: first gem level wins. |
+| LOW | `currencyExchange.test.ts` | Asserted `isGuaranteedSalePrice` on `MarketQuote`. | Fixed: field lives on `ValuationResult`. |
+| IMPROVEMENT | EE2 `parseClipboard` | Not executed; requires TradeData + Vite ndjson. | Documented deviation; adapter implements English grammar. |
 
 No remaining BLOCKER or HIGH defects for this phase.
 
 ## Invariants deferred
 
-Phases 08–15 (parser/market, stash transfers, listing/trade, packaging). Live Windows loot highlight / one armed pickup remains `BLOCKED: windows-native`. See `TEST_GAPS.md`.
+Phases 09–15 (stash/listing/trade, packaging). Live Windows clipboard parse remains `BLOCKED: windows-native`. See `TEST_GAPS.md`.

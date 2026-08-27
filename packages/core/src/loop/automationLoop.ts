@@ -7,7 +7,7 @@ import type { DefaultGameInputController } from "../input/gameInputController.js
 import type { BotDecision, InputAction } from "../input/types.js";
 import type { InterlockContext, InterlockVerdict } from "../interlock/types.js";
 import type { DesirabilityPort } from "../items/desirabilityPort.js";
-import { createFixtureDesirabilityScorer } from "../items/fixtureDesirabilityScorer.js";
+import { createCompositeDesirability } from "../items/compositeDesirability.js";
 import { annotateLoot } from "../loot/annotateLoot.js";
 import { LOOT_RECOVERY_KEY } from "../loot/skipReasons.js";
 import { createFixturePerceptionAdapter } from "../perception/fixturePerceptionAdapter.js";
@@ -146,7 +146,8 @@ export class AutomationLoop {
     this.#arming = options.arming;
     this.#scenario = options.scenario;
     this.#traceWriter = options.traceWriter;
-    this.#controllers = options.controllers ?? createControllerMap();
+    this.#desirability = options.desirability ?? createCompositeDesirability();
+    this.#controllers = options.controllers ?? createControllerMap({ desirability: this.#desirability });
     this.#perception = options.perception ?? createFixturePerceptionAdapter();
     this.#estimator =
       options.estimator ??
@@ -154,7 +155,6 @@ export class AutomationLoop {
         clock: options.clock,
         arming: options.arming,
       });
-    this.#desirability = options.desirability ?? createFixtureDesirabilityScorer();
     this.#world = createEmptyWorldState({
       clock: options.clock,
       runtimeMode: options.capabilities.mode,

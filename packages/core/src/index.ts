@@ -186,14 +186,83 @@ export type {
   MarketProvider,
   MarketQuote,
   NormalizedItem,
+  OutlierMethod,
   QuoteContext,
+  ValuationResult,
 } from "./items/types.js";
+export { OUTLIER_METHOD } from "./items/types.js";
 export type { DesirabilityContext, DesirabilityPort } from "./items/desirabilityPort.js";
 export { clampDesirabilityScore, isLootTarget } from "./items/desirabilityPort.js";
 export {
   FixtureDesirabilityScorer,
   createFixtureDesirabilityScorer,
 } from "./items/fixtureDesirabilityScorer.js";
+export { canonicalizeItem, fingerprintItem, withFingerprint } from "./items/fingerprint.js";
+export {
+  itemTextToSections,
+  parseItem,
+  parseItemOrUndefined,
+} from "./items/parseItem.js";
+export type { ParseItemFailure, ParseItemResult, ParseItemSuccess } from "./items/parseItem.js";
+export { DesirabilityEngine, createDesirabilityEngine } from "./items/desirabilityEngine.js";
+export {
+  CompositeDesirabilityPort,
+  createCompositeDesirability,
+} from "./items/compositeDesirability.js";
+export type { CompositeDesirabilityOptions, QuoteLookup } from "./items/compositeDesirability.js";
+
+export {
+  DEFAULT_OFFICIAL_USER_AGENT,
+  isThrottleStatus,
+  isTransientStatus,
+  parseRetryAfterMs,
+  rateLimitFetch,
+} from "./market/rateLimitFetch.js";
+export type { RateLimitFetchOptions, RateLimitFetchResult } from "./market/rateLimitFetch.js";
+export {
+  MemoryMarketCache,
+  createMemoryMarketCache,
+  marketCacheKey,
+} from "./market/marketCache.js";
+export type { MarketCacheEntry, MarketCachePort } from "./market/marketCache.js";
+export {
+  LOCKED_OUTLIER_METHOD,
+  confidenceFromCounts,
+  failedQuote,
+  failedValuation,
+  lowConfidenceReasonFor,
+  median,
+  quantile,
+  summarizeInliers,
+  tukeyInliers,
+  valueFromPrices,
+} from "./market/valuation.js";
+export type { PricePoint } from "./market/valuation.js";
+export {
+  FixtureMarketProvider,
+  createFixtureMarketProvider,
+  loadFixtureMarketRecords,
+  parseFixtureMarketFile,
+} from "./market/fixtureMarketProvider.js";
+export type { FixtureMarketProviderOptions, FixtureMarketRecord } from "./market/fixtureMarketProvider.js";
+export {
+  CURRENCY_EXCHANGE_BASE_URL,
+  CURRENCY_METADATA_IDS,
+  OFFICIAL_CURRENCY_EXCHANGE_ID,
+  QUOTE_CURRENCY_ID,
+  QUOTE_CURRENCY_NAME,
+  OfficialCurrencyExchangeProvider,
+  createOfficialCurrencyExchangeProvider,
+  currencyMetadataId,
+  isCurrencyItem,
+  parseCurrencyExchangeDigest,
+  quoteFromDigest,
+} from "./market/officialCurrencyExchangeProvider.js";
+export type {
+  CurrencyExchangeDigest,
+  CurrencyExchangeMarket,
+  OfficialCurrencyExchangeProviderOptions,
+} from "./market/officialCurrencyExchangeProvider.js";
 
 export {
   DEFAULT_LOOT_MIN_SCORE,

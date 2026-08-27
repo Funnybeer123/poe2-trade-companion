@@ -1,0 +1,14 @@
+Item Class: Skill Gems
+Rarity: Gem
+Spark
+--------
+Level: 5
+Quality: +0%
+--------
+Requirements:
+Level: 14
+Int: 34
+--------
+Casts unpredictable bolts of lightning that seek out nearby enemies
+--------
+Place into a Skill Gem socket to gain this skill.
