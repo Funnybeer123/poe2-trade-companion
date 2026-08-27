@@ -1,0 +1,7 @@
+node_modules
+dist
+release
+coverage
+artifacts
+playwright-report
+package-lock.json

@@ -1,0 +1,20 @@
+# Replay Backlog
+
+Phase 01 adds `tests/replay/.gitkeep` and `fixtures/replay/.gitkeep` only. No fixtures yet.
+
+Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
+
+| Phase | Fixture / suite |
+| --- | --- |
+| 02 | `fixtures/replay/scheduler-priority/` — JSON world snapshots, no pixels |
+| 04 | `fixtures/replay/follow-acquired/` |
+| 06 | `follow-lost-reacquire`, `follow-stuck-recovery`, `follow-emergency-stop` |
+| 07 | `loot-desirable-vs-junk`, `loot-inventory-full`, `loot-unreachable-backoff` |
+| 08 | `loot-market-aware` |
+| 09 | `inventory-stale` |
+| 10 | `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab` |
+| 11 | `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip` |
+| 12 | trade success + listed failure classes |
+| 13 | `full-loop`, interrupt-trade, interrupt-loot, emergency-stop |
+
+Rule: replay must use the same controllers/scheduler as live and emit zero native input.

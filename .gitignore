@@ -2,12 +2,16 @@ node_modules/
 dist/
 release/
 coverage/
+/artifacts
+playwright-report
 *.log
 .env
 .env.*
 !.env.example
+*.db
 *.sqlite
 *.sqlite3
 .DS_Store
 Thumbs.db
 .cursor/plans/
+
