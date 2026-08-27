@@ -39,6 +39,7 @@ export function stashTabEvidence(
   fromKey: string,
   toKey: string,
   attempt: number,
+  stepReason = "",
 ): string {
-  return ["stash-tab", tabId, fingerprint, fromKey, toKey, String(attempt)].join("|");
+  return ["stash-tab", tabId, fingerprint, fromKey, toKey, String(attempt), stepReason].join("|");
 }

@@ -93,10 +93,7 @@ export function planTransfers(input: TransferPlannerInput): TransferPlan {
       usedFallback = dest !== undefined;
     }
     if (dest === undefined) {
-      blocked.push({
-        fingerprint: item.fingerprint,
-        reason: rule.fallbackTabId === undefined ? STASH_FALLBACK_TAB_FULL_REASON : STASH_FALLBACK_TAB_FULL_REASON,
-      });
+      blocked.push({ fingerprint: item.fingerprint, reason: STASH_FALLBACK_TAB_FULL_REASON });
       continue;
     }
 

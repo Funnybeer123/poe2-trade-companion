@@ -18,13 +18,13 @@
 | Phase 06 | `684f24d` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery complete |
 | Phase 07 | `d7e6286` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
 | Phase 08 | `91da7e2` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
-| Phase 09 first cut | `b4af56f` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
-| Phase 09 complete | `b0a7e63` / `53072a6` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Gate + self-review |
-| Current commit | (this branch) | Phase 10 first cut on `cursor/phase-10-stash-sort-b8bf` |
+| Phase 09 | `53072a6` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
+| Phase 10 first cut | `0474568` on `cursor/phase-10-stash-sort-b8bf` (PR #11) | Planner + StashController |
+| Current commit | (this revision) | Gate + self-review on `cursor/phase-10-stash-sort-b8bf` (PR #11) |
 
 ## Active phase
 
-Phase 10 — Automated stash sorting (planner + confirmed transfers). Gate commands not yet recorded on this revision.
+None. Phase 10 is complete. Next is Phase 11.
 
 ## Completed phases
 
@@ -37,16 +37,16 @@ Phase 10 — Automated stash sorting (planner + confirmed transfers). Gate comma
 - Phase 07 — `lootLabelDetector`, `LootController`, `InventoryController` stub, `FixtureDesirabilityScorer` / `DesirabilityPort`, rank/skip/suppression, replay packs `loot-desirable-vs-junk` / `loot-inventory-full` / `loot-unreachable-backoff`.
 - Phase 08 — English `parseItem` adapter, SHA-256 fingerprint, fixture + official Currency Exchange providers, Tukey 1.5 IQR valuation, `DesirabilityEngine` / composite router, `loot-market-aware` replay.
 - Phase 09 — `gridDetector`, `ShadowState` / `reconcile` (`ShadowItem`, `ReconcileResult`), estimator fills grid cells, real `InventoryController` (sets `stashSessionActive` when full; no transfers), SQLite inventory/stash snapshot persist + stale reload, replay `inventory-stale`.
-- Phase 10 (in progress) — `sortRules`, `transferPlanner` (pure, high value first), `StashController` for `InventoryFull` / `StashSort`. Transfers confirm after reconcile only. Max 3 attempts via `stash.failed-move` / `stash.wrong-tab`.
+- Phase 10 — `sortRules`, `transferPlanner` (pure, high value first), `StashController` for `InventoryFull` / `StashSort`. Transfers confirm after reconcile only. Max 3 attempts via `stash.failed-move` / `stash.wrong-tab`. Replay packs `stash-sort-success` / `stash-full-fallback` / `stash-failed-move-retry` / `stash-wrong-tab` / `stash-emergency-stop`.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 09 gate (2026-08-27, this host) — **green**:
+Phase 10 gate (2026-08-27, this host) — **green**:
 
-- `npm test` — 240 tests
-- `npm run test:replay` — 12 tests
+- `npm test` — 263 tests
+- `npm run test:replay` — 17 tests
 - `npm run lint`
 - `npm run typecheck`
 
@@ -80,10 +80,14 @@ Phase 10:
 
 ## Replay fixtures added
 
-- `fixtures/replay/inventory-stale/` — 12/12 occupied cells → `InventoryFull`; dropped cell → no longer full.
+- `fixtures/replay/stash-sort-success/` — high-value first, then empty plan.
+- `fixtures/replay/stash-full-fallback/` — primary tab full → dump tab click → drag.
+- `fixtures/replay/stash-failed-move-retry/` — three observed failed drags → `FailedOrTimedOut`.
+- `fixtures/replay/stash-wrong-tab/` — wrong tab retry, then dest visible → drag.
+- `fixtures/replay/stash-emergency-stop/` — emergency stop mid-sort.
 
-Phase 02/04/05/06/07/08 fixtures remain.
+Phase 02/04/05/06/07/08/09 fixtures remain.
 
 ## Next exact work item
 
-Run Phase 10 gate (`npm test && npm run test:replay && npm run lint && npm run typecheck`), self-review, then mark Phase 10 complete. Next implementation phase is Phase 11 (listing machine) — do not start it until the Phase 10 gate is green.
+Phase 11 — Listing / repricing QA state machine. Do not start the trade machine.

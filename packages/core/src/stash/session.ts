@@ -107,7 +107,7 @@ function pendingFromDecision(decision: BotDecision, nowMs: number): PendingStash
 
   const tabId = decision.evidenceIds.find((id) => id.startsWith("stash-tab|"));
   if (tabId !== undefined) {
-    const [, destTabId, fingerprint, fromKey, toKey, attemptText] = tabId.split("|");
+    const [, destTabId, fingerprint, fromKey, toKey, attemptText, stepReason] = tabId.split("|");
     const attempts = Number(attemptText ?? decision.retryIndex ?? 1);
     return {
       fingerprint: fingerprint ?? "",
@@ -117,7 +117,7 @@ function pendingFromDecision(decision: BotDecision, nowMs: number): PendingStash
       attempts: Number.isFinite(attempts) ? attempts : 1,
       lastAttemptMs: nowMs,
       destTabId: destTabId ?? "",
-      reason: decision.reason,
+      reason: stepReason && stepReason.length > 0 ? stepReason : decision.reason,
     };
   }
 

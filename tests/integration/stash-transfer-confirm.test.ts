@@ -38,7 +38,11 @@ describe("stash transfer confirmation", () => {
           derived: {
             process: PROCESS,
             flags: {
+              emergencyStopLatched: false,
+              tradeRequested: false,
               stashSessionActive: true,
+              listingSessionActive: false,
+              highValueInterruptScore: 85,
               stashItemCatalog: {
                 "divine-1": { class: "Currency", category: "HighValueSell", score: 95 },
               },

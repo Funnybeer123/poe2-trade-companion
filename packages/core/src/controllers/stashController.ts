@@ -81,7 +81,6 @@ export class StashController implements Controller {
   }
 
   decide(world: WorldState, scenario: AutomationScenario): BotDecision {
-    void scenario;
     const evidenceIds = [
       ...(world.inventory.evidenceId ? [world.inventory.evidenceId] : []),
       ...(world.stash.evidenceId ? [world.stash.evidenceId] : []),
@@ -104,7 +103,7 @@ export class StashController implements Controller {
 
     const pending = world.flags.pendingStashTransfer;
     if (pending !== undefined && pending !== null) {
-      const pendingDecision = this.continuePending(world, pending, evidenceIds);
+      const pendingDecision = this.continuePending(world, pending, evidenceIds, scenario);
       if (pendingDecision !== undefined) {
         return pendingDecision;
       }
@@ -146,6 +145,7 @@ export class StashController implements Controller {
     world: WorldState,
     pending: PendingStashTransfer,
     evidenceIds: string[],
+    scenario: AutomationScenario,
   ): BotDecision | undefined {
     if (pending.kind === "tab-click") {
       if (currentTabId(world) === pending.destTabId) {
@@ -170,7 +170,7 @@ export class StashController implements Controller {
           evidenceIds,
         );
       }
-      return this.retryOrHold(world, pending, STASH_WRONG_TAB_KEY, evidenceIds, () =>
+      return this.retryOrHold(world, pending, STASH_WRONG_TAB_KEY, evidenceIds, scenario, () =>
         this.emitTabClick(
           world,
           {
@@ -199,7 +199,7 @@ export class StashController implements Controller {
       ) || pending.from.kind === "stash";
 
     if (!stillAtFrom && currentTabId(world) !== pending.destTabId) {
-      return this.retryOrHold(world, pending, STASH_WRONG_TAB_KEY, evidenceIds, () =>
+      return this.retryOrHold(world, pending, STASH_WRONG_TAB_KEY, evidenceIds, scenario, () =>
         this.emitTabClick(
           world,
           {
@@ -214,7 +214,7 @@ export class StashController implements Controller {
       );
     }
 
-    return this.retryOrHold(world, pending, STASH_FAILED_MOVE_KEY, evidenceIds, () =>
+    return this.retryOrHold(world, pending, STASH_FAILED_MOVE_KEY, evidenceIds, scenario, () =>
       this.emitMove(
         world,
         {
@@ -234,10 +234,11 @@ export class StashController implements Controller {
     pending: PendingStashTransfer,
     key: typeof STASH_FAILED_MOVE_KEY | typeof STASH_WRONG_TAB_KEY,
     evidenceIds: string[],
+    scenario: AutomationScenario,
     retry: () => BotDecision,
   ): BotDecision {
     const policy = DEFAULT_RECOVERY[key];
-    const maxAttempts = policy?.maxAttempts ?? 3;
+    const maxAttempts = scenario.retryLimits.stash ?? policy?.maxAttempts ?? 3;
     if (pending.attempts >= maxAttempts) {
       return this.terminal(world, evidenceIds, key, pending.attempts);
     }
@@ -293,6 +294,7 @@ export class StashController implements Controller {
           locationEvidenceKey(step.from),
           locationEvidenceKey(step.to),
           attempts,
+          step.reason,
         ),
       ],
       recoveryOf: attempts > 1 ? STASH_WRONG_TAB_KEY : undefined,

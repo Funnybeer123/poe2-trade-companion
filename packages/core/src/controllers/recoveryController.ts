@@ -38,11 +38,9 @@ export class RecoveryController implements Controller {
 
     if (world.selectedState === "SafetyHold" || world.stuck.value.reason === STUCK_EXHAUSTED_REASON) {
       const reason =
-        world.flags.stashSafetyHold === true
-          ? eligibilityReason("SafetyHold", world)
-          : world.stuck.value.reason === STUCK_EXHAUSTED_REASON
-            ? STUCK_EXHAUSTED_REASON
-            : eligibilityReason("SafetyHold", world);
+        world.stuck.value.reason === STUCK_EXHAUSTED_REASON && world.flags.stashSafetyHold !== true
+          ? STUCK_EXHAUSTED_REASON
+          : eligibilityReason("SafetyHold", world);
       return {
         module: this.module,
         state: "SafetyHold",
