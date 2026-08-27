@@ -11,6 +11,7 @@ export default tseslint.config(
       "**/release/**",
       "**/artifacts/**",
       "**/playwright-report/**",
+      "**/packages/core/src/vendor/**",
       "**/*.vue",
     ],
   },

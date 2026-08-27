@@ -12,3 +12,15 @@ export function scenarioFixturePath(id: string): string {
 export function replayManifestPath(id: string): string {
   return join(REPO_ROOT, "fixtures/replay", id, "manifest.json");
 }
+
+export function itemFixturePath(name: string): string {
+  return join(REPO_ROOT, "fixtures/items", name);
+}
+
+export function marketFixtureDir(): string {
+  return join(REPO_ROOT, "fixtures/market");
+}
+
+export function marketFixturePath(name: string): string {
+  return join(REPO_ROOT, "fixtures/market", name);
+}

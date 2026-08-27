@@ -1,0 +1,14 @@
+Item Class: Rings
+Rarity: Rare
+Storm Grip
+Iron Ring
+--------
+Requirements:
+Level: 1
+--------
+Item Level: 45
+--------
+Adds 1 to 4 Physical Damage to Attacks
++20 to Maximum Life
++15% to Fire Resistance
++12 to Strength

@@ -1,30 +1,3 @@
-Third-party notices
-===================
-
-Exiled Exchange 2
------------------
-This repository vendors a subset of Exiled Exchange 2 for Path of Exile 2
-clipboard item parsing.
-
-- Project: https://github.com/Kvan7/Exiled-Exchange-2
-- License: MIT
-- Copyright (c) 2020 Alexander Drozdov
-- Copied revision: acc7653f05629228f12e273ab1b8da3e46d6bcd1 (2026-06-20)
-- Local copy: packages/core/src/vendor/exiled-exchange-2/
-- License text: packages/core/src/vendor/exiled-exchange-2/LICENSE
-- Snapshot record: packages/core/src/vendor/exiled-exchange-2/SOURCE.txt
-
-Vendored paths only:
-- renderer/src/parser/*
-- renderer/src/assets/data/index.ts
-- renderer/src/assets/data/interfaces.ts
-
-Overlay, input, hotkey, and trade-site query code from Exiled Exchange 2 is
-not vendored.
-
-The MIT license text from the upstream LICENSE file is included next to the
-vendored files and is also reproduced below.
-
 MIT License
 
 Copyright (c) 2020 Alexander Drozdov

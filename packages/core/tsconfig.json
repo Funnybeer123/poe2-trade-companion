@@ -6,5 +6,17 @@
     "declaration": true,
     "declarationMap": true
   },
-  "include": ["src/**/*.ts"]
+  "include": ["src/**/*.ts"],
+  "exclude": [
+    "src/vendor/exiled-exchange-2/parser/Parser.ts",
+    "src/vendor/exiled-exchange-2/parser/ParsedItem.ts",
+    "src/vendor/exiled-exchange-2/parser/advanced-mod-desc.ts",
+    "src/vendor/exiled-exchange-2/parser/calc-base.ts",
+    "src/vendor/exiled-exchange-2/parser/calc-q20.ts",
+    "src/vendor/exiled-exchange-2/parser/magic-name.ts",
+    "src/vendor/exiled-exchange-2/parser/modifiers.ts",
+    "src/vendor/exiled-exchange-2/parser/stat-translations.ts",
+    "src/vendor/exiled-exchange-2/parser/index.ts",
+    "src/vendor/exiled-exchange-2/assets/**"
+  ]
 }

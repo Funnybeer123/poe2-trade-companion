@@ -64,6 +64,7 @@ export interface TargetCue {
 export interface LootTarget {
   id: string;
   labelText?: string;
+  clipboardText?: string;
   screenPoint: PixelPoint;
   boundingBox?: PixelBox;
   rarityCue?: string;

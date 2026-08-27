@@ -1,0 +1,50 @@
+Exiled Exchange 2 — vendored parser snapshot
+============================================
+
+Upstream: https://github.com/Kvan7/Exiled-Exchange-2
+Default branch: master
+Commit SHA: acc7653f05629228f12e273ab1b8da3e46d6bcd1
+Commit date: 2026-06-20T13:57:42Z
+License re-verified: 2026-08-27
+
+License check (BEFORE any file copy)
+------------------------------------
+- GitHub API `license.spdx_id`: MIT
+- File `LICENSE` at the SHA above: "MIT License" / "Copyright (c) 2020 Alexander Drozdov"
+- Raw LICENSE URL used: https://raw.githubusercontent.com/Kvan7/Exiled-Exchange-2/acc7653f05629228f12e273ab1b8da3e46d6bcd1/LICENSE
+
+Parser file list at this SHA (matches plan §3.4)
+------------------------------------------------
+renderer/src/parser/Parser.ts
+renderer/src/parser/ParsedItem.ts
+renderer/src/parser/advanced-mod-desc.ts
+renderer/src/parser/calc-base.ts
+renderer/src/parser/calc-q20.ts
+renderer/src/parser/magic-name.ts
+renderer/src/parser/meta.ts
+renderer/src/parser/modifiers.ts
+renderer/src/parser/stat-translations.ts
+renderer/src/parser/index.ts
+
+Required `renderer/src/assets/data` imports from those files
+------------------------------------------------------------
+renderer/src/assets/data/index.ts
+renderer/src/assets/data/interfaces.ts
+
+Not vendored (plan §3.4 / Phase 08)
+-----------------------------------
+- overlay / input / hotkey code
+- `@/web/Config` (AppConfig)
+- `@/web/background/TradeData` (trade-site query client)
+- Vite-hosted `items.ndjson` / `stats.ndjson` (not present in the EE2 git tree;
+  loaded at runtime via `import.meta.env.BASE_URL`)
+
+Why parseClipboard is not executed
+----------------------------------
+`Parser.ts` imports `@/web/Config` and `@/assets/data`. The data module then
+imports `@/web/background/TradeData` and fetches Vite-bundled ndjson. Vendoring
+or calling that path would pull undocumented trade-site clients, which Phase 08
+forbids. `packages/core/src/items/parseItem.ts` is the Node adapter: English
+clipboard section grammar from EE2 `itemTextToSections` / `parseNamePlate`,
+mapped to `NormalizedItem`. Vendored `parser/meta.ts` (no upstream imports) is
+the only compiled vendor module.

@@ -1,0 +1,81 @@
+{
+  "id": "loot-market-aware",
+  "scenarioId": "loot-only",
+  "seed": 11,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": { "occupied": 4, "capacity": 60, "cells": [], "full": false },
+          "confidence": 0.9,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "wisdom-1", "labelText": "Scroll of Wisdom", "screenPoint": { "x": 900, "y": 500 } },
+            {
+              "id": "unique-1",
+              "labelText": "Astramentis",
+              "clipboardText": "Item Class: Amulets\nRarity: Unique\nAstramentis\nStellar Amulet\n--------\nRequirements:\nLevel: 24\n--------\nItem Level: 75\n--------\n+14 to all Attributes\n+80 to all Attributes\n--------\nMindless rage will shake the world\n",
+              "screenPoint": { "x": 720, "y": 380 }
+            }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10200,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": { "occupied": 5, "capacity": 60, "cells": [], "full": false },
+          "confidence": 0.9,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "wisdom-1", "labelText": "Scroll of Wisdom", "screenPoint": { "x": 900, "y": 500 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "HighValueLoot", "decisionReasonIncludes": "pick:unique-1", "executed": false, "sinkKind": "noop" },
+    { "tickId": 2, "selectedState": "Idle", "decisionReasonIncludes": "idle", "executed": false, "sinkKind": "noop" }
+  ]
+}

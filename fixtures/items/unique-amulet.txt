@@ -1,0 +1,14 @@
+Item Class: Amulets
+Rarity: Unique
+Astramentis
+Stellar Amulet
+--------
+Requirements:
+Level: 24
+--------
+Item Level: 75
+--------
++14 to all Attributes
++80 to all Attributes
+--------
+Mindless rage will shake the world

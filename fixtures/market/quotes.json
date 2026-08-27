@@ -1,0 +1,64 @@
+{
+  "records": [
+    {
+      "match": { "name": "Astramentis" },
+      "quote": {
+        "currency": "divine",
+        "quotedAtMs": 1756245600000,
+        "low": 12,
+        "fair": 15,
+        "high": 18,
+        "recommendedListing": 15,
+        "candidateCount": 8,
+        "comparableCount": 7,
+        "confidence": "high",
+        "comparables": []
+      }
+    },
+    {
+      "match": { "name": "Divine Orb" },
+      "quote": {
+        "currency": "exalted",
+        "quotedAtMs": 1756245600000,
+        "low": 12,
+        "fair": 15,
+        "high": 18,
+        "recommendedListing": 15,
+        "candidateCount": 12,
+        "comparableCount": 10,
+        "confidence": "high",
+        "comparables": []
+      }
+    },
+    {
+      "match": { "name": "Storm Grip", "base": "Iron Ring" },
+      "quote": {
+        "currency": "exalted",
+        "quotedAtMs": 1756245600000,
+        "low": 0.02,
+        "fair": 0.05,
+        "high": 0.08,
+        "recommendedListing": 0.05,
+        "candidateCount": 20,
+        "comparableCount": 18,
+        "confidence": "high",
+        "comparables": []
+      }
+    },
+    {
+      "match": { "name": "Spark" },
+      "quote": {
+        "currency": "exalted",
+        "quotedAtMs": 1756245600000,
+        "low": 0.1,
+        "fair": 0.2,
+        "high": 0.3,
+        "recommendedListing": 0.2,
+        "candidateCount": 4,
+        "comparableCount": 4,
+        "confidence": "medium",
+        "comparables": []
+      }
+    }
+  ]
+}

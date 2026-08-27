@@ -146,7 +146,8 @@ export class AutomationLoop {
     this.#arming = options.arming;
     this.#scenario = options.scenario;
     this.#traceWriter = options.traceWriter;
-    this.#controllers = options.controllers ?? createControllerMap();
+    this.#desirability = options.desirability ?? createFixtureDesirabilityScorer();
+    this.#controllers = options.controllers ?? createControllerMap({ desirability: this.#desirability });
     this.#perception = options.perception ?? createFixturePerceptionAdapter();
     this.#estimator =
       options.estimator ??
@@ -154,7 +155,6 @@ export class AutomationLoop {
         clock: options.clock,
         arming: options.arming,
       });
-    this.#desirability = options.desirability ?? createFixtureDesirabilityScorer();
     this.#world = createEmptyWorldState({
       clock: options.clock,
       runtimeMode: options.capabilities.mode,
