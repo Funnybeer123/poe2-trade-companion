@@ -33,7 +33,16 @@ Phase 15 — Packaging / performance / hardening / documentation. Last planned p
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 15 gate commands are recorded after the verification run in this phase.
+Phase 15 gate on this host:
+
+- `npm run lint` green (after env.d.ts / logger typing fixes)
+- `npm run typecheck` green
+- `npm test` 380 passed
+- `npm run test:replay` 38 passed
+- `npm run test:smoke` 7 passed
+- `npm run pack:public` and `npm run pack:qa` produced Linux directory packs (`electron-builder --dir`). No NSIS/Windows installer.
+- `node scripts/verify-public-build-excludes-native.mjs --files-from fixtures/packaging/public-file-list.txt` OK
+- Public asar contains `poe2tcMode: public-companion` and no `packages/native-input`. QA asar contains `packages/native-input` and `poe2tcMode: authorized-qa`.
 
 ## Blockers
 

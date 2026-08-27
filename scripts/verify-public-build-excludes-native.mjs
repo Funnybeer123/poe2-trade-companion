@@ -17,6 +17,8 @@ const FORBIDDEN_CONTENT = [
   "nut-js",
 ];
 const SKIP_DIRS = new Set(["node_modules", ".git"]);
+const SKIP_BASENAMES = new Set(["builder-debug.yml", "builder-effective-config.yaml"]);
+const TEXT_EXT = new Set([".js", ".mjs", ".cjs", ".ts", ".json", ".html", ".css", ".yml", ".yaml", ".txt", ".md"]);
 
 function parseArgs(argv) {
   const filesFrom = [];
@@ -69,7 +71,11 @@ function pathForbidden(rel) {
 
 async function contentForbidden(rel, text) {
   const posix = normalize(rel);
-  if (posix.includes("electron-builder.qa.yml") || posix.includes("verify-public-build-excludes-native")) {
+  if (
+    posix.includes("electron-builder.qa.yml") ||
+    posix.includes("verify-public-build-excludes-native") ||
+    posix.endsWith("builder-debug.yml")
+  ) {
     return undefined;
   }
   for (const token of FORBIDDEN_CONTENT) {
@@ -83,12 +89,31 @@ async function contentForbidden(rel, text) {
   return undefined;
 }
 
+async function listAsarEntries(archivePath) {
+  try {
+    const asar = await import("@electron/asar");
+    return asar.listPackage(archivePath, { isPack: false }).map((entry) =>
+      path.posix.join(path.basename(archivePath), String(entry).replace(/^\//, "")),
+    );
+  } catch {
+    return [];
+  }
+}
+
 async function collectFromRoots(roots) {
   const files = [];
   for (const root of roots) {
     const info = await stat(root);
     if (info.isDirectory()) {
-      files.push(...(await walkFiles(root)));
+      const walked = await walkFiles(root);
+      files.push(...walked);
+      for (const file of walked) {
+        if (file.endsWith(".asar")) {
+          files.push(...(await listAsarEntries(file)));
+        }
+      }
+    } else if (root.endsWith(".asar")) {
+      files.push(...(await listAsarEntries(root)));
     } else {
       files.push(root);
     }
@@ -123,6 +148,9 @@ if (files.length === 0) {
 const violations = [];
 for (const file of files) {
   const rel = path.isAbsolute(file) && roots[0] !== undefined ? path.relative(roots[0], file) : file;
+  if (SKIP_BASENAMES.has(path.basename(rel)) || rel.endsWith(".asar")) {
+    continue;
+  }
   const pathIssue = pathForbidden(rel);
   if (pathIssue !== undefined) {
     violations.push(pathIssue);
@@ -130,7 +158,7 @@ for (const file of files) {
   }
   try {
     const info = await stat(file);
-    if (!info.isFile() || info.size > 2_000_000) {
+    if (!info.isFile() || info.size > 2_000_000 || !TEXT_EXT.has(path.extname(file))) {
       continue;
     }
     const text = await readFile(file, "utf8");

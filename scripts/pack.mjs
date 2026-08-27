@@ -71,10 +71,8 @@ if (!packed) {
 }
 
 if (profile === "public") {
-  run("node", [
-    path.join(root, "scripts/verify-public-build-excludes-native.mjs"),
-    path.join(root, "release/public"),
-  ]);
+  const publicDir = path.join(root, "release/public");
+  run("node", [path.join(root, "scripts/verify-public-build-excludes-native.mjs"), publicDir]);
 }
 
 console.log(`OK: ${profile} directory pack written under release/${profile}`);

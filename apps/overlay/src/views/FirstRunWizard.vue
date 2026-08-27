@@ -56,6 +56,7 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import { GGG_DISCLAIMER, QA_FIRST_RUN_PHRASE, type RuntimeMode } from "@poe2tc/core/operator";
+import { overlayCompileTimeMode } from "../compileTimeMode.js";
 import { operatorState } from "../operatorState.js";
 
 const disclaimer = GGG_DISCLAIMER;
@@ -66,8 +67,7 @@ const error = ref("");
 
 const qaBuildEnabled = computed(
   () =>
-    operatorState.buildFlags.qaBuildEnabled ||
-    import.meta.env.POE2TC_MODE === "authorized-qa",
+    operatorState.buildFlags.qaBuildEnabled || overlayCompileTimeMode() === "authorized-qa",
 );
 
 async function submit(): Promise<void> {

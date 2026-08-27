@@ -3,7 +3,9 @@ import { redactIdentifiersInText, redactSecrets } from "../trace/redact.js";
 
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
-export interface RedactingLoggerOptions extends RedactionSettings {
+export interface RedactingLoggerOptions {
+  redactIdentifiers?: boolean;
+  identifiers?: string[];
   write?: (level: LogLevel, line: string) => void;
 }
 
@@ -32,7 +34,7 @@ export class RedactingLogger {
 
   constructor(options: RedactingLoggerOptions = {}) {
     this.#settings = {
-      redactIdentifiers: options.redactIdentifiers ?? true,
+      redactIdentifiers: options.redactIdentifiers !== false,
       identifiers: options.identifiers,
     };
     this.#write = options.write ?? defaultWrite;

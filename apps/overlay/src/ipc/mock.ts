@@ -18,6 +18,7 @@ import {
   type RuntimeMode,
   type WorldState,
 } from "@poe2tc/core/operator";
+import { overlayCompileTimeMode } from "../compileTimeMode.js";
 
 const SETTINGS_STORAGE_KEY = "poe2tc.overlay.settings";
 
@@ -28,7 +29,7 @@ function readQueryRuntime(): RuntimeMode {
 
 function readCompileTimeMode(): RuntimeMode {
   const params = new URLSearchParams(window.location.search);
-  if (params.get("compileTime") === "authorized-qa" || import.meta.env.POE2TC_MODE === "authorized-qa") {
+  if (params.get("compileTime") === "authorized-qa" || overlayCompileTimeMode() === "authorized-qa") {
     return "authorized-qa";
   }
   return "public-companion";
