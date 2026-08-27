@@ -20,7 +20,7 @@
 | Phase 08 | `91da7e2` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
 | Phase 09 | `53072a6` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
 | Phase 10 first cut | `0474568` on `cursor/phase-10-stash-sort-b8bf` (PR #11) | Planner + StashController |
-| Current commit | (this revision) | Gate + self-review on `cursor/phase-10-stash-sort-b8bf` (PR #11) |
+| Current commit | `0fee99f` | Gate + self-review on `cursor/phase-10-stash-sort-b8bf` (PR #11) |
 
 ## Active phase
 
