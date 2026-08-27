@@ -159,13 +159,7 @@ export {
   detectGrids,
   gridHintsFromDerived,
 } from "./perception/gridDetector.js";
-export type {
-  DetectedGrids,
-  GridDetectionHints,
-  GridDetectorOptions,
-  GridGeometry,
-  GridHover,
-} from "./perception/gridDetector.js";
+export type { DetectedGrids, GridDetectorOptions } from "./perception/gridDetector.js";
 export { FixtureOcrPort, NoopOcrPort } from "./perception/ocrPort.js";
 export type { OcrInput, OcrPort, OcrResult } from "./perception/ocrPort.js";
 export { createStateEstimator, DefaultStateEstimator } from "./perception/stateEstimator.js";
@@ -199,6 +193,7 @@ export {
   INVENTORY_NOT_FULL_REASON,
   INVENTORY_OBSERVED_REASON,
   SHADOW_MISMATCH_REASON,
+  withShadowMismatchReason,
 } from "./inventory/reasons.js";
 export type { GridDetectionHints, GridGeometry, GridHover } from "./inventory/gridGeometry.js";
 export {

@@ -12,6 +12,8 @@ Phase 07 added `loot-desirable-vs-junk`, `loot-inventory-full`, and `loot-unreac
 
 Phase 08 added `loot-market-aware` (derived loot includes clipboard text; `DesirabilityEngine` + fixture quotes).
 
+Phase 09 added `inventory-stale` (12/12 occupancy → `InventoryFull`; fixture drop cell → no longer full) through the live estimator + `InventoryController`.
+
 Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 
 | Phase | Fixture / suite |
@@ -22,7 +24,7 @@ Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 | 06 | `follow-lost-reacquire`, `follow-stuck-recovery`, `follow-emergency-stop` — added |
 | 07 | `loot-desirable-vs-junk`, `loot-inventory-full`, `loot-unreachable-backoff` — added |
 | 08 | `loot-market-aware` — added |
-| 09 | `inventory-stale` |
+| 09 | `inventory-stale` — added |
 | 10 | `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab` |
 | 11 | `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip` |
 | 12 | trade success + listed failure classes |

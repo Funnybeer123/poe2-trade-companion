@@ -111,6 +111,15 @@ describe("reconcile", () => {
     expect(result.unexpected).toEqual([]);
   });
 
+  it("uses fallback capacity when the observed cell list is sparse", () => {
+    const occupancy = occupancyFromCells([{ x: 0, y: 0, w: 1, h: 1, occupied: true }], {
+      capacity: 12,
+    });
+    expect(occupancy.occupied).toBe(1);
+    expect(occupancy.capacity).toBe(12);
+    expect(occupancy.full).toBe(false);
+  });
+
   it("full: twelve occupied cells are capacity-full", () => {
     const cells = fullInventoryCells();
     const occupancy = occupancyFromCells(cells);

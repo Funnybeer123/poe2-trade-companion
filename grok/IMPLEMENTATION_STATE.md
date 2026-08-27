@@ -17,27 +17,12 @@
 | Phase 05 | `1f1a0d3` on `cursor/phase-05-perception-estimator-1b5a` (PR #6) | Perception estimator complete |
 | Phase 06 | `684f24d` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery complete |
 | Phase 07 | `d7e6286` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
-| Phase 08 first cut | `bdfa3c1` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
-| Current commit | `91da7e2` | Phase 08 docs note on `cursor/phase-08-item-valuation-45b0` (PR #9) |
-| Phase 09 branch | `cursor/phase-09-inventory-observe-a61e` | Inventory / stash observation (this work) |
+| Phase 08 | `91da7e2` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
+| Phase 09 | `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
 
 ## Active phase
 
-Phase 09 — Inventory / stash observation and reconciliation.
-
-## Completed phases (01–08)
-
-Unchanged. Phase 09 implementation is on this branch and not yet gate-complete.
-
-## Phase 09 work in this revision
-
-- `gridDetector` (fixture cells + pixel occupancy + clipboard hover fingerprint)
-- `ShadowState` + `reconcile` (`ShadowItem` / `ReconcileResult`)
-- Estimator fills inventory/stash cells and recomputes occupancy/`full`
-- Real `InventoryController` (sets `stashSessionActive` when full via existing post-decision effect; no transfers)
-- SQLite `inventory_snapshots` / `stash_snapshots` via `SqliteInventoryStore`
-- Restart path: last snapshots load with `freshness: "stale"`
-- Replay `inventory-stale`: 12/12 → `InventoryFull`; drop cell → no longer full
+None. Phase 09 is complete. Next is Phase 10.
 
 ## Completed phases
 
@@ -49,15 +34,16 @@ Unchanged. Phase 09 implementation is on this branch and not yet gate-complete.
 - Phase 06 — `FollowController`, `RecoveryController`, `direction.ts` click-to-move, `stuckDetector`, `lostTargetTicks`, `DEFAULT_RECOVERY`, replay packs `follow-lost-reacquire` / `follow-stuck-recovery` / `follow-emergency-stop`.
 - Phase 07 — `lootLabelDetector`, `LootController`, `InventoryController` stub, `FixtureDesirabilityScorer` / `DesirabilityPort`, rank/skip/suppression, replay packs `loot-desirable-vs-junk` / `loot-inventory-full` / `loot-unreachable-backoff`.
 - Phase 08 — English `parseItem` adapter, SHA-256 fingerprint, fixture + official Currency Exchange providers, Tukey 1.5 IQR valuation, `DesirabilityEngine` / composite router, `loot-market-aware` replay.
+- Phase 09 — `gridDetector`, `ShadowState` / `reconcile` (`ShadowItem`, `ReconcileResult`), estimator fills grid cells, real `InventoryController` (sets `stashSessionActive` when full; no transfers), SQLite inventory/stash snapshot persist + stale reload, replay `inventory-stale`.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 08 gate (2026-08-27, this host) — **green**:
+Phase 09 gate (2026-08-27, this host) — **green**:
 
-- `npm test` — 216 tests
-- `npm run test:replay` — 11 tests
+- `npm test`
+- `npm run test:replay`
 - `npm run lint`
 - `npm run typecheck`
 
@@ -65,30 +51,28 @@ Self-review: `PASS` (`grok/REVIEW_STATE.md`).
 
 ## Blockers
 
-- **BLOCKED: windows-native** — unchanged. Live clipboard parse against a real item skipped on this Linux host.
+- **BLOCKED: windows-native** — unchanged. Live inventory/stash overlay against a real client skipped on this Linux host.
 - External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search API.
 
 ## Plan deviations
 
-Phase 01–07 deviations unchanged.
+Phase 01–08 deviations unchanged.
 
-Phase 08:
+Phase 09:
 
-- EE2 `LICENSE` re-verified MIT at `acc7653f05629228f12e273ab1b8da3e46d6bcd1` (2026-06-20) on 2026-08-27 **before** any copy. See `packages/core/src/vendor/exiled-exchange-2/SOURCE.txt`.
-- Vendored `renderer/src/parser/*` plus the `renderer/src/assets/data` files those import (`index.ts`, `interfaces.ts`). Did **not** vendor overlay/input/hotkey/trade-site code.
-- `parseClipboard` is **not executed**. `Parser.ts` imports `@/web/Config` and `@/assets/data`, and the data module imports `@/web/background/TradeData` plus Vite-hosted ndjson that is not in the EE2 git tree. Calling it would pull a trade-site client, which Phase 08 forbids. `parseItem` is the English clipboard adapter using EE2 `itemTextToSections` / nameplate grammar and vendored `ItemCategory` from `parser/meta.ts` (the only compiled vendor module).
-- Outlier method locked: Tukey 1.5 IQR (`OUTLIER_METHOD`). Samples with n < 4 are not filtered; low/fair/high then use min/median/max.
-- Default market path: fixtures + optional official Currency Exchange (`realm=poe2` only). No `trade2` client, no POESESSID/cookie capture.
-- `FixtureDesirabilityScorer` kept for label-only and adversarial loot. `DesirabilityEngine` runs when a `NormalizedItem` is available. Default port is `CompositeDesirabilityPort`.
-- `LootTarget.clipboardText` added so derived loot can carry clipboard dumps. Existing label-only fixtures unchanged.
-- SQLite cache writes go through `MarketCachePort` (`MemoryMarketCache` in core, `SqliteMarketCache` in persistence-sqlite). No new migration; uses `market_comparables_cache` / `valuations` from `001_init.sql`.
+- Official stash/inventory APIs re-checked 2026-08-27: still PoE 1 only. No `StashApiObservationPort`. Perception + clipboard hover + shadow state only.
+- `stashSessionActive` is still applied by `applyPostDecisionEffects` when inventory is full. Controllers return decisions only (§5.10); this matches the Phase 07 loop path and is not a transfer planner.
+- Occupied cells without fingerprints never become `ShadowItem`s. `unexpected` requires an observed fingerprint.
+- First fingerprint-bearing observation seeds the empty shadow as confirmed rather than unexpected.
+- Sparse observed cell lists honor derived `capacity` when it is larger than `cells.length`, so one occupied cell is not treated as a 1/1 full grid.
+- `withShadowMismatchReason` annotates the loop trace whenever `flags.shadowMismatch` is true, including when `InventoryFull` is not the selected state.
 
 ## Replay fixtures added
 
-- `fixtures/replay/loot-market-aware/` — clipboard-bearing unique picked via engine + fixture quotes; Wisdom skipped.
+- `fixtures/replay/inventory-stale/` — 12/12 occupied cells → `InventoryFull`; dropped cell → no longer full.
 
-Phase 02/04/05/06/07 fixtures remain.
+Phase 02/04/05/06/07/08 fixtures remain.
 
 ## Next exact work item
 
-Phase 09 — Inventory / stash observation and reconciliation.
+Phase 10 — Automated stash sorting (planner + confirmed transfers). Do not start listing/trade machines.

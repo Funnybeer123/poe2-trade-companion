@@ -93,4 +93,91 @@ describe("AutomationLoop", () => {
     expect(outcome.trace.executed).toBe(false);
     expect(clock.nowMs()).toBe(12_000);
   });
+
+  it("traces shadow-mismatch when a shadow item disappears and inventory is not full", async () => {
+    const clock = new FrozenClock(0);
+    const capabilities = createCapabilities("authorized-qa");
+    const sink = new InMemoryTraceSink();
+    const loop = createAutomationLoop({
+      frameSource: new FixtureFrameSource([
+        {
+          tickId: 1,
+          capturedAtMs: 10_000,
+          width: 64,
+          height: 48,
+          derived: {
+            process: {
+              value: { name: "PathOfExile.exe", title: "Path of Exile 2", allowlisted: true },
+              confidence: 1,
+              observedAtMs: 10_000,
+              freshness: "fresh",
+            },
+            inventory: {
+              value: {
+                occupied: 1,
+                capacity: 12,
+                full: false,
+                cells: [{ x: 0, y: 0, w: 1, h: 1, occupied: true, itemFingerprint: "orb-a" }],
+              },
+              confidence: 1,
+              observedAtMs: 10_000,
+              freshness: "fresh",
+            },
+          },
+        },
+        {
+          tickId: 2,
+          capturedAtMs: 10_200,
+          width: 64,
+          height: 48,
+          derived: {
+            process: {
+              value: { name: "PathOfExile.exe", title: "Path of Exile 2", allowlisted: true },
+              confidence: 1,
+              observedAtMs: 10_200,
+              freshness: "fresh",
+            },
+            inventory: {
+              value: {
+                occupied: 0,
+                capacity: 12,
+                full: false,
+                cells: [{ x: 0, y: 0, w: 1, h: 1, occupied: false }],
+              },
+              confidence: 1,
+              observedAtMs: 10_200,
+              freshness: "fresh",
+            },
+          },
+        },
+      ]),
+      scheduler: createScenarioScheduler(),
+      input: createGameInputController({
+        capabilities,
+        clock,
+        sink: new NoopInputSink(),
+      }),
+      clock,
+      capabilities,
+      arming: createReplayArming(),
+      scenario: createTestScenario({
+        id: "stash-sort",
+        enabledModules: ["inventory", "stash"],
+      }),
+      traceWriter: new QaTraceWriter(sink),
+    });
+
+    const first = await loop.tick();
+    expect(first.result).toBe("ticked");
+    const second = await loop.tick();
+    expect(second.result).toBe("ticked");
+    if (second.result !== "ticked") {
+      return;
+    }
+    expect(second.world.inventory.value.full).toBe(false);
+    expect(second.world.flags.shadowMismatch).toBe(true);
+    expect(second.decision.reason).toContain("shadow-mismatch");
+    expect(second.trace.decisionReason).toContain("shadow-mismatch");
+    expect(second.trace.observedSummary).toContain("mismatch=shadow-mismatch");
+  });
 });

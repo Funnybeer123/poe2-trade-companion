@@ -6,6 +6,7 @@ import type { Controller } from "../controllers/types.js";
 import type { DefaultGameInputController } from "../input/gameInputController.js";
 import type { BotDecision, InputAction } from "../input/types.js";
 import type { InterlockContext, InterlockVerdict } from "../interlock/types.js";
+import { withShadowMismatchReason } from "../inventory/reasons.js";
 import {
   applyStaleSnapshots,
   inventorySnapshotFromWorld,
@@ -229,7 +230,8 @@ export class AutomationLoop {
     this.#world = world;
 
     const controller = this.#controllers.get(selection.state);
-    const decision = controller?.decide(world, this.#scenario) ?? placeholderDecision(selection.state);
+    const decided = controller?.decide(world, this.#scenario) ?? placeholderDecision(selection.state);
+    const decision = withShadowMismatchReason(decided, world.flags.shadowMismatch === true);
     this.#world = applyPostDecisionEffects(world, decision, this.#clock.nowMs());
 
     const ctx: InterlockContext = {

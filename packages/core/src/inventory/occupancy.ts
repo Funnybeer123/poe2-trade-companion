@@ -24,11 +24,11 @@ export function occupancyFromCells(
     return { occupied, capacity, full, cells };
   }
   const occupied = cells.filter((cell) => cell.occupied).length;
-  const capacity = cells.length;
+  const capacity = Math.max(cells.length, fallback.capacity ?? 0);
   return {
     occupied,
     capacity,
-    full: occupied >= capacity,
+    full: capacity > 0 && occupied >= capacity,
     cells,
   };
 }
@@ -50,10 +50,10 @@ export function makeGridCells(options: {
 }): GridCell[] {
   const occupiedAt = new Map<string, string | undefined>();
   for (const entry of options.occupied ?? []) {
-    if (Array.isArray(entry)) {
-      occupiedAt.set(`${String(entry[0])}:${String(entry[1])}`, undefined);
-    } else {
+    if ("x" in entry) {
       occupiedAt.set(`${String(entry.x)}:${String(entry.y)}`, entry.fingerprint);
+    } else {
+      occupiedAt.set(`${String(entry[0])}:${String(entry[1])}`, undefined);
     }
   }
   const cells: GridCell[] = [];
