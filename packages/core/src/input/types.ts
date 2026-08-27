@@ -19,6 +19,8 @@ export interface BotDecision {
   intendedActions: InputAction[];
   evidenceIds: string[];
   suppressTargetIds?: string[];
+  recoveryOf?: string;
+  retryIndex?: number;
 }
 
 export interface InputResult {

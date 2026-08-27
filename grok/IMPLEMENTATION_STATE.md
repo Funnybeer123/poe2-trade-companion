@@ -14,12 +14,13 @@
 | Phase 02 | `ece3287` on `cursor/phase-02-world-state-scheduler-ca64` (PR #3) | WorldState + scheduler complete |
 | Phase 03 | `67ea3ae` on `cursor/phase-03-capabilities-interlock-input-9d76` (PR #4) | Capabilities, interlocks, GameInputController |
 | Phase 04 | `b2e17a5` on `cursor/phase-04-replay-trace-9afe` (PR #5) | Replay runner, traces, fixture frame source |
-| Phase 05 first cut | `70627d7` on `cursor/phase-05-perception-estimator-1b5a` (PR #6) | Estimator, adapters, live capture package |
-| Current commit | `a2fd95d` | Gate + self-review on `cursor/phase-05-perception-estimator-1b5a` (PR #6) |
+| Phase 05 | `1f1a0d3` on `cursor/phase-05-perception-estimator-1b5a` (PR #6) | Perception estimator complete |
+| Phase 06 first cut | `0016d72` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery controllers + fixtures |
+| Current commit | `88616bd` | Gate + self-review on `cursor/phase-06-follow-navigation-8044` (PR #7) |
 
 ## Active phase
 
-None. Phase 05 is complete. Next is Phase 06.
+None. Phase 06 is complete. Next is Phase 07.
 
 ## Completed phases
 
@@ -28,15 +29,16 @@ None. Phase 05 is complete. Next is Phase 06.
 - Phase 03 — `RuntimeCapabilities`, `InterlockGate`, `GameInputController`, emergency-stop latch, Noop/Forbidden/Recording sinks, `packages/native-input` SendInput adapter, native-import CI guard, Electron `Ctrl+Shift+F12` hotkey.
 - Phase 04 — `FixtureFrameSource`, `ReplayRunner`, `QaTraceWriter`, `InMemoryTraceSink`, `AutomationLoop`, SQLite migration runner + `SqliteTraceStore`, `follow-acquired` replay fixture, scenario catalog JSON.
 - Phase 05 — `StateEstimator`, `FixturePerceptionAdapter`, merge/freshness/allowlist, `templateMatch`, `packages/perception-live` (Win32 process, `desktopCapturer` frame source, read-only clipboard), perception fixtures + `perception-estimate` replay.
+- Phase 06 — `FollowController`, `RecoveryController`, `direction.ts` click-to-move, `stuckDetector`, `lostTargetTicks`, `DEFAULT_RECOVERY`, replay packs `follow-lost-reacquire` / `follow-stuck-recovery` / `follow-emergency-stop`.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 05 gate (2026-08-27, this host) — **green**:
+Phase 06 gate (2026-08-27, this host) — **green**:
 
-- `npm test` — 150 tests
-- `npm run test:replay` — 4 tests
+- `npm test` — 173 tests
+- `npm run test:replay` — 7 tests
 - `npm run lint`
 - `npm run typecheck`
 
@@ -44,31 +46,33 @@ Self-review: `PASS` (`grok/REVIEW_STATE.md`).
 
 ## Blockers
 
-- **BLOCKED: windows-native** — unchanged. Live PoE 2 process/window names were not observed on this Linux host. Defaults stay `PathOfExile.exe` / `PathOfExile_x64.exe` / `PathOfExileSteam.exe` and title include `Path of Exile 2`. See `RESEARCH_NOTES.md`.
-- Live `desktopCapturer` / Win32 query cannot open a PoE client here. Adapters exist and are unit-tested with injected ports / non-win32 unavailable errors.
+- **BLOCKED: windows-native** — unchanged. Live follow dry-run overlay / one armed click-move is skipped on this Linux host. Defaults stay `PathOfExile.exe` / `PathOfExile_x64.exe` / `PathOfExileSteam.exe` and title include `Path of Exile 2`. See `RESEARCH_NOTES.md`.
 - External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search API.
 
 ## Plan deviations
 
-Phase 01–04 deviations unchanged.
+Phase 01–05 deviations unchanged except: Phase 04 Follow placeholder noops are removed from the live controller map.
 
-Phase 05:
+Phase 06:
 
-- `PerceptionFrame` accepts optional `stuck` and `flags` so fixture `derived` still reaches the estimator. Estimator still does not select automation state.
-- `koffi` is allowed in `packages/perception-live` for window/process query only (not SendInput). The native-import guard was updated; input libraries remain native-input-only.
-- `identityEstimate` was removed. `FixturePerceptionAdapter` + `StateEstimator` are the loop path.
-- Live UI/OCR/template detectors are not wired into `LivePerceptionAdapter` (Phase 07+). The adapter attaches process metadata and maps analyze errors to unknown UI.
-- Follow/loot controllers remain Phase 04 placeholders. Phase 06+ not started.
+- `FollowConfig` matches the plan. Screen size used for v1 click-to-move is the existing replay default `1920x1080` (`DEFAULT_SCREEN_WIDTH/HEIGHT`), not a new WorldState field.
+- Estimator writes `world.stuck` (`ticks`, `lostTargetTicks`, `isStuck`, `reason`) so controllers stay stateless and do not keep a parallel world model. Fixture `derived.stuck` still overrides when provided.
+- `SafetyHold` is eligible when `stuck.reason === "stuck-exhausted"`. `RecoverTarget` is ineligible when `stuck.reason === "lost-target-exhausted"` so lost-target recovery terminates at Idle.
+- Recovery scan clicks are bounded by `DEFAULT_RECOVERY["follow.lost-target"].maxAttempts` (5). `lostTargetTicks` (default 8) is the consecutive-missing counter and the RecoverTarget eligibility window.
+- Lost-target replay frames omit `target` and advance past `AGING_MAX_AGE_MS` so the estimator marks `missing` (same merge path as Phase 05). A confidence-1 `target: null` observation would block a later lower-confidence reacquire.
+- `createPhase04ControllerMap` is replaced by `createControllerMap` (Follow + Recovery + Idle + EmergencyStop/SafetyHold).
+- Loot/stash/listing/trade are not implemented (Phase 07+).
 
 ## Replay fixtures added
 
-- `fixtures/replay/perception-estimate/manifest.json` — target present then omitted; freshness `fresh` → `missing` after the stale window.
-- `fixtures/perception/{inventory,stash,loot-label,target-cue,ui-mode}/` — labeled synthetic PNG + JSON.
+- `fixtures/replay/follow-lost-reacquire/` — follow → lost → recover → reacquire.
+- `fixtures/replay/follow-stuck-recovery/` — no-progress ticks → stuck-recovery → SafetyHold `stuck-exhausted`.
+- `fixtures/replay/follow-emergency-stop/` — follow tick then emergency latch.
 
-Phase 02/04 fixtures remain.
+Phase 02/04/05 fixtures remain.
 
 ## Next exact work item
 
-Phase 06 — Navigation / follow / recovery.
+Phase 07 — Loot detection / ranking / pickup.
 
-Suggested commit from the plan: `feat: add follow navigation controller and bounded recovery`.
+Suggested commit from the plan: `feat: add loot detection, ranking, and pickup controller`.

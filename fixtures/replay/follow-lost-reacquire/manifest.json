@@ -1,0 +1,121 @@
+{
+  "id": "follow-lost-reacquire",
+  "scenarioId": "follow-only",
+  "seed": 6,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": { "x": 1600, "y": 200 },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 11100,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 3,
+      "atMs": 11200,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11200,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 11200,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 4,
+      "atMs": 11300,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11300,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": { "x": 1600, "y": 200 },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 11300,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 11300,
+          "freshness": "fresh"
+        }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "Follow", "decisionReasonIncludes": "follow-target", "executed": false, "sinkKind": "noop" },
+    { "tickId": 2, "selectedState": "RecoverTarget", "decisionReasonIncludes": "lost-target", "executed": false, "sinkKind": "noop" },
+    { "tickId": 3, "selectedState": "RecoverTarget", "decisionReasonIncludes": "lost-target", "executed": false, "sinkKind": "noop" },
+    { "tickId": 4, "selectedState": "Follow", "decisionReasonIncludes": "follow-target", "executed": false, "sinkKind": "noop" }
+  ]
+}

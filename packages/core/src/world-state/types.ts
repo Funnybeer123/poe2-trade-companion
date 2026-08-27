@@ -148,6 +148,13 @@ export interface WorldState {
   trade: Observation<TradeWindowView | null>;
   listing: Observation<ListingUiView | null>;
   ui: Observation<UiModeState>;
-  stuck: Observation<{ isStuck: boolean; reason?: string }>;
+  stuck: Observation<StuckObservationValue>;
   flags: WorldStateFlags;
+}
+
+export interface StuckObservationValue {
+  isStuck: boolean;
+  reason?: string;
+  ticks?: number;
+  lostTargetTicks?: number;
 }

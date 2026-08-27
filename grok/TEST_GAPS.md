@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 05 implemented)
+**Updated:** 2026-08-27 (Phase 06 complete)
 
 ## Covered in Phase 01
 
@@ -51,11 +51,21 @@
 - Replay `perception-estimate`: two frames, target present then absent, FrozenClock past stale window
 - Live adapters exist: `ElectronFrameSource`, `Win32ProcessQuery`, `ClipboardSource` (injected / unavailable off Windows)
 
+## Covered in Phase 06
+
+- Screen-center → target vector and click-to-move when distance > 140px
+- Inside-band noop
+- Stuck detector: no progress for 12 ticks
+- Lost-target consecutive tick count (default 8)
+- FollowController uses the same class as live/replay; RecoveryController scan is bounded
+- Replay: `follow-lost-reacquire`, `follow-stuck-recovery`, `follow-emergency-stop`
+- Traces include `follow-target`, `lost-target`, `stuck-recovery`, `emergency-stop`
+- Recovery loops terminate (maxAttempts / lost-target-exhausted / stuck-exhausted)
+
 ## Intentionally absent (later phases)
 
 | Gap | First phase |
 | --- | --- |
-| Follow / recovery | 06 |
 | Loot rank / pickup | 07 |
 | Parser / valuation | 08 |
 | Inventory / stash reconcile | 09 |
@@ -68,4 +78,4 @@
 
 ## Replay
 
-`npm run test:replay` now includes `tests/replay/scheduler-priority.test.ts`, `tests/replay/follow-acquired.test.ts`, and `tests/replay/perception-estimate.test.ts`. See `REPLAY_BACKLOG.md`.
+`npm run test:replay` now also includes `follow-lost-reacquire`, `follow-stuck-recovery`, and `follow-emergency-stop`. See `REPLAY_BACKLOG.md`.

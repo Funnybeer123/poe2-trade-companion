@@ -1,7 +1,7 @@
 import type { Clock } from "../clock.js";
 import { FrozenClock } from "../clock.js";
 import type { RuntimeCapabilities, QaArmingState } from "../capabilities/createCapabilities.js";
-import { createPhase04ControllerMap } from "../controllers/controllerMap.js";
+import { createControllerMap } from "../controllers/controllerMap.js";
 import type { Controller } from "../controllers/types.js";
 import type { DefaultGameInputController } from "../input/gameInputController.js";
 import type { BotDecision } from "../input/types.js";
@@ -83,7 +83,7 @@ export class AutomationLoop {
     this.#arming = options.arming;
     this.#scenario = options.scenario;
     this.#traceWriter = options.traceWriter;
-    this.#controllers = options.controllers ?? createPhase04ControllerMap();
+    this.#controllers = options.controllers ?? createControllerMap();
     this.#perception = options.perception ?? createFixturePerceptionAdapter();
     this.#estimator =
       options.estimator ??
@@ -147,6 +147,7 @@ export class AutomationLoop {
       scenario: this.#scenario,
       world,
       decision,
+      retryIndex: decision.retryIndex,
     };
     const results = await this.#input.enqueue(decision, ctx);
     const record = this.#input.records.at(-1);
@@ -184,6 +185,8 @@ export class AutomationLoop {
       executed,
       dryRun,
       result: executed ? "executed" : (results[0]?.blockedReason ?? verdict.code),
+      recoveryOf: decision.recoveryOf,
+      retryIndex: decision.retryIndex,
     });
 
     return { result: "ticked", trace, world, decision, verdict };

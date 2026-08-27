@@ -5,6 +5,7 @@ import type {
   TargetCue,
   TradeWindowView,
   UiModeState,
+  StuckObservationValue,
   WorldState,
   WorldStateFlags,
 } from "../world-state/types.js";
@@ -35,7 +36,7 @@ export interface PerceptionFrame {
   listing?: Observation<ListingUiView | null>;
   ui?: Observation<UiModeState>;
   process?: WorldState["process"];
-  stuck?: Observation<{ isStuck: boolean; reason?: string }>;
+  stuck?: Observation<StuckObservationValue>;
   flags?: Partial<WorldStateFlags>;
 }
 
