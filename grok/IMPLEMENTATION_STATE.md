@@ -22,8 +22,8 @@
 | Phase 10 | `0fee99f` on `cursor/phase-10-stash-sort-b8bf` (PR #11) | Stash sort complete |
 | Phase 11 | `da19a84` / `1e85af7` on `cursor/phase-11-listing-reprice-e0c0` (PR #12) | Listing machine complete |
 | Phase 12 | `a30b1f9` / `69517e6` on `cursor/phase-12-trade-session-b5b9` (PR #13) | Trade machine complete |
-| Phase 13 | `828ac51` + follow-up on `cursor/phase-13-orchestration-e32b` (PR #14) | Full-loop orchestrator complete |
-| Current commit | (this branch) | Phase 13 complete on `cursor/phase-13-orchestration-e32b` |
+| Phase 13 | `828ac51` / `62804d9` on `cursor/phase-13-orchestration-e32b` (PR #14) | Full-loop orchestrator complete |
+| Current commit | `62804d9` | Phase 13 complete on `cursor/phase-13-orchestration-e32b` |
 
 ## Active phase
 
@@ -44,7 +44,7 @@ Phase 13 complete. Next work is Phase 14 — Operator / debug / replay UI.
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 13 gate: `npm test` (350), `npm run test:replay` (38), `npm run lint`, `npm run typecheck` green on this host after review fixes.
+Phase 13 gate: `npm test` (351), `npm run test:replay` (38), `npm run lint`, `npm run typecheck` green on this host after review fixes.
 
 ## Blockers
 

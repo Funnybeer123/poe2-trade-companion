@@ -25,7 +25,7 @@ Actual Phase 13 tree vs `cursor/phase-12-trade-session-b5b9`:
 ## Repository health
 
 - [x] Diff inspected.
-- [x] `npm test` (350), `test:replay` (38), `lint`, `typecheck` green on this host after review fixes.
+- [x] `npm test` (351), `test:replay` (38), `lint`, `typecheck` green on this host after review fixes.
 - [x] Searched new code for TODOs / trade2 / POESESSID / packet sniff / native input: none in production orchestrator modules.
 - [x] Failures recorded and fixed (source-inspection path, interrupt counter assertion, leftover tradeEvent restart).
 
