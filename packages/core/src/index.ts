@@ -638,6 +638,7 @@ export {
 } from "./loop/actionBudget.js";
 export {
   applyOrchestratorDecisionEffects,
+  applyOwnedSessionFlags,
   beginListingSession,
   beginStashSession,
   beginTradeSession,

@@ -34,9 +34,8 @@ import type { AutomationStateId, ModuleId, WorldState } from "../world-state/typ
 import { ACTION_BUDGET_HOLD_REASON, ActionBudget, countableActions } from "./actionBudget.js";
 import {
   applyOrchestratorDecisionEffects,
+  applyOwnedSessionFlags,
   beginListingSession,
-  beginStashSession,
-  beginTradeSession,
   clearInFlightStep,
   moduleForState,
 } from "./sessionFlags.js";
@@ -74,17 +73,6 @@ function syncFrozenClock(clock: Clock, targetMs: number): void {
   if (clock instanceof FrozenClock) {
     clock.advance(targetMs - clock.nowMs());
   }
-}
-
-function applyOwnedSessionFlags(world: WorldState): WorldState {
-  let flags = { ...world.flags };
-  if (world.inventory.value.full) {
-    flags = beginStashSession(flags);
-  }
-  if (flags.tradeEvent !== undefined && flags.tradeEvent !== null && flags.tradeRequested !== true) {
-    flags = beginTradeSession(flags, flags.tradeEvent);
-  }
-  return { ...world, flags };
 }
 
 export class DefaultScenarioOrchestrator implements ScenarioOrchestrator {

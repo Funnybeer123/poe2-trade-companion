@@ -38,10 +38,12 @@ export function endListingSession(flags: WorldStateFlags): WorldStateFlags {
 }
 
 export function beginTradeSession(flags: WorldStateFlags, event?: TradeEvent | null): WorldStateFlags {
+  const nextEvent = event ?? flags.tradeEvent ?? null;
   return {
     ...flags,
     tradeRequested: true,
-    tradeEvent: event ?? flags.tradeEvent,
+    tradeEvent: nextEvent,
+    consumedTradeEventAtMs: nextEvent?.atMs ?? flags.consumedTradeEventAtMs,
   };
 }
 
@@ -84,6 +86,23 @@ function lootIdFromDecision(decision: BotDecision, world: WorldState, click: Inp
   return world.loot.value.find(
     (item) => item.screenPoint.x === click.x && item.screenPoint.y === click.y,
   )?.id;
+}
+
+export function applyOwnedSessionFlags(world: WorldState): WorldState {
+  let flags = { ...world.flags };
+  if (world.inventory.value.full) {
+    flags = beginStashSession(flags);
+  }
+  const event = flags.tradeEvent;
+  if (
+    event !== undefined &&
+    event !== null &&
+    flags.tradeRequested !== true &&
+    flags.consumedTradeEventAtMs !== event.atMs
+  ) {
+    flags = beginTradeSession(flags, event);
+  }
+  return { ...world, flags };
 }
 
 export function applyOrchestratorDecisionEffects(

@@ -2,12 +2,14 @@ import {
   InventoryController,
   ListingController,
   LootController,
+  applyOwnedSessionFlags,
   applyPostDecisionEffects,
   beginListingSession,
   beginStashSession,
   beginTradeSession,
   clearInFlightStep,
   endStashSession,
+  endTradeSession,
 } from "@poe2tc/core";
 import { describe, expect, it } from "vitest";
 import { createTestScenario } from "../../helpers/createTestScenario.js";
@@ -93,6 +95,38 @@ describe("orchestrator flag ownership", () => {
     expect(afterStash.pendingStashTransfer).toBeNull();
     expect(afterStash.pendingLootPickup?.id).toBe("exalted-1");
     expect(endStashSession(world.flags).stashSessionActive).toBe(false);
+  });
+
+  it("does not restart a consumed trade event after the session ends", () => {
+    const world = createTestWorld();
+    const event = {
+      kind: "whisper-trade-request" as const,
+      source: "fixture" as const,
+      atMs: 10_000,
+      requestedItemFingerprint: "astramentis-1",
+    };
+    const started = applyOwnedSessionFlags({
+      ...world,
+      flags: { ...world.flags, tradeEvent: event },
+    });
+    expect(started.flags.tradeRequested).toBe(true);
+    expect(started.flags.consumedTradeEventAtMs).toBe(10_000);
+
+    const ended = { ...started, flags: endTradeSession(started.flags) };
+    expect(ended.flags.tradeRequested).toBe(false);
+
+    const leftover = applyOwnedSessionFlags({
+      ...ended,
+      flags: { ...ended.flags, tradeEvent: event },
+    });
+    expect(leftover.flags.tradeRequested).toBe(false);
+
+    const fresh = applyOwnedSessionFlags({
+      ...leftover,
+      flags: { ...leftover.flags, tradeEvent: { ...event, atMs: 11_000 } },
+    });
+    expect(fresh.flags.tradeRequested).toBe(true);
+    expect(fresh.flags.consumedTradeEventAtMs).toBe(11_000);
   });
 
   it("does not let LootController mutate session flags", () => {

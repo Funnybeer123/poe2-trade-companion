@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 13 in progress)
+**Updated:** 2026-08-27 (Phase 13 complete)
 
 ## Covered in Phase 01
 
@@ -125,7 +125,7 @@
 | Stash transfers | 10 (done) |
 | Listing machine | 11 (done) |
 | Trade machine | 12 (done) |
-| Full-loop orchestrator | 13 (in progress) |
+| Full-loop orchestrator | 13 (done) |
 | Playwright overlay smoke | 14 |
 | Public vs QA packaging | 15 |
 

@@ -35,9 +35,14 @@ describe("follow-lost-reacquire replay", () => {
     expect(result.traces.some((trace) => trace.recoveryOf === "follow.lost-target")).toBe(true);
 
     const loopSource = readFileSync(join(REPO_ROOT, "packages/core/src/loop/automationLoop.ts"), "utf8");
-    expect(loopSource).toContain("createControllerMap");
-    expect(loopSource).not.toContain("createPhase04ControllerMap");
-    expect(loopSource).not.toContain("follow-placeholder");
+    const orchestratorSource = readFileSync(
+      join(REPO_ROOT, "packages/core/src/loop/scenarioOrchestrator.ts"),
+      "utf8",
+    );
+    expect(loopSource).toContain("DefaultScenarioOrchestrator");
+    expect(orchestratorSource).toContain("createControllerMap");
+    expect(orchestratorSource).not.toContain("createPhase04ControllerMap");
+    expect(orchestratorSource).not.toContain("follow-placeholder");
     expect(new FollowController().module).toBe("follow");
   });
 });

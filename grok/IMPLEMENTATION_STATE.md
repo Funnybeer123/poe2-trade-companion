@@ -22,22 +22,29 @@
 | Phase 10 | `0fee99f` on `cursor/phase-10-stash-sort-b8bf` (PR #11) | Stash sort complete |
 | Phase 11 | `da19a84` / `1e85af7` on `cursor/phase-11-listing-reprice-e0c0` (PR #12) | Listing machine complete |
 | Phase 12 | `a30b1f9` / `69517e6` on `cursor/phase-12-trade-session-b5b9` (PR #13) | Trade machine complete |
-| Current commit | (this branch) | Phase 13 in progress on `cursor/phase-13-orchestration-e32b` |
+| Phase 13 | `828ac51` + follow-up on `cursor/phase-13-orchestration-e32b` (PR #14) | Full-loop orchestrator complete |
+| Current commit | (this branch) | Phase 13 complete on `cursor/phase-13-orchestration-e32b` |
 
 ## Active phase
 
-Phase 13 — Full orchestration / interruption / recovery.
+Phase 13 complete. Next work is Phase 14 — Operator / debug / replay UI.
 
 ## Completed phases
 
 - Phase 01–12 as previously recorded.
-- Phase 13 implementation is in progress: `ScenarioOrchestrator` is the only tick entry; `ActionBudget` forces `SafetyHold` until the window refills; session flags are orchestrator-owned (`beginStashSession`, `beginListingSession`, `beginTradeSession`); interrupt traces record `interrupted: true` and clear only the interrupted module’s in-flight step.
+- Phase 13 — Full orchestration / interruption / recovery:
+  - `ScenarioOrchestrator` is the only tick entry; `AutomationLoop.tick()` delegates to `DefaultScenarioOrchestrator.runTick()`.
+  - `ActionBudget` forces `SafetyHold` (`action-budget-exhausted`) until the window refills.
+  - Session flags are orchestrator-owned (`beginStashSession`, `beginListingSession`, `beginTradeSession`, `applyOwnedSessionFlags`).
+  - Interrupt traces record `interrupted: true` and clear only the interrupted module’s in-flight step.
+  - Recovery counters are not reset on interrupt.
+  - Replay packs: `full-loop`, `full-loop-interrupt-trade`, `full-loop-interrupt-loot`, `full-loop-emergency-stop`.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 13 gate not yet run on this revision.
+Phase 13 gate: `npm test` (350), `npm run test:replay` (38), `npm run lint`, `npm run typecheck` green on this host after review fixes.
 
 ## Blockers
 
@@ -53,7 +60,7 @@ Phase 13:
 - `AutomationLoop.tick()` delegates to `DefaultScenarioOrchestrator.runTick()`. `ScenarioOrchestrator.tick()` returns the `QaActionTrace` as specified; `runTick()` keeps the existing `AutomationTickResult` for replay/tests.
 - `applyPostDecisionEffects` remains the exported compatibility wrapper and now calls `applyOrchestratorDecisionEffects`.
 - Action-budget exhaustion sets `flags.actionBudgetHold` and selects `SafetyHold` with reason `action-budget-exhausted`. Emergency stop still wins.
-- Listing session starts after a stash session ends when a listing catalog is already on world flags. Trade session starts when a `tradeEvent` is present and `tradeRequested` is not already set.
+- Listing session starts after a stash session ends when a listing catalog is already on world flags. Trade session starts when a `tradeEvent` is present, `tradeRequested` is not already set, and that event `atMs` has not already been consumed.
 - Recovery counters are not reset on interrupt; only the interrupted module’s in-flight step is cleared (`pendingLootPickup`, `pendingStashTransfer`, pending listing/trade writes).
 - Phase 14 operator UI was not started.
 
@@ -68,4 +75,4 @@ Phase 02–12 fixtures remain.
 
 ## Next exact work item
 
-Run `npm test && npm run test:replay && npm run lint && npm run typecheck`, self-review, then mark Phase 13 complete. Next work after that is Phase 14.
+Phase 14 — Operator / debug / replay UI. Do not start it from this Phase 13 branch.

@@ -270,6 +270,7 @@ export interface WorldStateFlags {
   tradeSession?: TradeSession | null;
   tradeExpected?: ExpectedTrade;
   tradeEvent?: TradeEvent | null;
+  consumedTradeEventAtMs?: number;
   tradePartyState?: TradePartyState;
   tradeInContext?: boolean;
   tradeCancelled?: boolean;
