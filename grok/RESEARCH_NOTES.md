@@ -39,6 +39,11 @@ No Phase 01 code change required. Official filter sync and account APIs remain o
 - Constructing `NativeInputSink` on this host throws `native-unavailable` (non-win32). The same error is thrown if `koffi` itself cannot load (unit-tested via an injected loader).
 - Live Windows `SendInput` is **BLOCKED: windows-native** on this agent. Phase 03 unit/replay/non-native tests do not require it.
 
+## 2026-08-27 — Phase 04 persistence
+
+- Added `better-sqlite3` for `packages/persistence-sqlite`. Unit/integration tests open `:memory:` databases in Node 22. Electron ABI rebuild remains Phase 15.
+- Replay never constructs a native sink. `ReplayRunner` hard-wires `NoopInputSink`.
+
 ## Deferred
 
 - Actual PoE 2 process image names / window title (Phase 05).

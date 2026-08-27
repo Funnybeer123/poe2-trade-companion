@@ -114,3 +114,52 @@ export type {
   InputSink,
   Sleeper,
 } from "./input/types.js";
+
+export type {
+  FrameSource,
+  PerceptionAdapter,
+  PerceptionFrame,
+  PerceptionFrameInput,
+  StateEstimator,
+} from "./perception/types.js";
+
+export type { Controller } from "./controllers/types.js";
+export { IdleController } from "./controllers/idleController.js";
+export { FollowController } from "./controllers/followController.js";
+export { createPhase04ControllerMap } from "./controllers/controllerMap.js";
+
+export type { QaActionTrace, RedactionSettings, TraceSink } from "./trace/types.js";
+export { InMemoryTraceSink } from "./trace/inMemoryTraceSink.js";
+export { QaTraceWriter } from "./trace/qaTraceWriter.js";
+export type { QaTraceWriterOptions } from "./trace/qaTraceWriter.js";
+export {
+  redactIdentifiersInText,
+  redactQaActionTrace,
+  redactSecrets,
+} from "./trace/redact.js";
+
+export {
+  identityEstimate,
+  isoTimestampFromMs,
+  summarizeWorld,
+} from "./loop/identityEstimator.js";
+export { AutomationLoop, createAutomationLoop } from "./loop/automationLoop.js";
+export type { AutomationLoopOptions, AutomationTickResult } from "./loop/automationLoop.js";
+
+export type {
+  ReplayManifest,
+  ReplayManifestExpect,
+  ReplayManifestFrame,
+} from "./replay/types.js";
+export { parseReplayManifest } from "./replay/parseReplayManifest.js";
+export { loadReplayManifestFile } from "./replay/loadReplayManifest.js";
+export { loadAutomationScenarioFile, parseAutomationScenario } from "./replay/loadAutomationScenario.js";
+export {
+  DEFAULT_REPLAY_FRAME_HEIGHT,
+  DEFAULT_REPLAY_FRAME_WIDTH,
+  FixtureFrameSource,
+  manifestFrameToInput,
+} from "./replay/fixtureFrameSource.js";
+export { createReplayArming } from "./replay/replayArming.js";
+export { createReplayRunner, ReplayRunner, runReplay } from "./replay/replayRunner.js";
+export type { ReplayRunResult, ReplayRunnerOptions } from "./replay/replayRunner.js";

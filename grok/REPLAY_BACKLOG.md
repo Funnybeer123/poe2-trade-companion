@@ -1,6 +1,8 @@
 # Replay Backlog
 
-Phase 02 added `fixtures/replay/scheduler-priority/` (8 JSON world snapshots, no pixels) plus `tests/replay/scheduler-priority.test.ts`. Snapshot-in / selected-state-out through the live `ScenarioScheduler`. No `FrameSource` yet.
+Phase 02 added `fixtures/replay/scheduler-priority/` (8 JSON world snapshots, no pixels) plus `tests/replay/scheduler-priority.test.ts`. Snapshot-in / selected-state-out through the live `ScenarioScheduler`.
+
+Phase 04 added the replay runner + `FrameSource`. `fixtures/replay/follow-acquired/` runs the live `ScenarioScheduler` and `GameInputController` against derived frames with `NoopInputSink` only.
 
 Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 
