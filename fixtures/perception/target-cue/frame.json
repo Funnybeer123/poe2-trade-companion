@@ -1,0 +1,38 @@
+{
+  "kind": "target-cue",
+  "box": {
+    "x": 20,
+    "y": 16,
+    "w": 24,
+    "h": 24
+  },
+  "expectedTargetCount": 1,
+  "derived": {
+    "target": {
+      "value": {
+        "identity": "qa-target",
+        "screenPoint": {
+          "x": 32,
+          "y": 28
+        },
+        "boundingBox": {
+          "x": 20,
+          "y": 16,
+          "w": 24,
+          "h": 24
+        }
+      },
+      "confidence": 0.94,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    },
+    "ui": {
+      "value": {
+        "kind": "gameplay"
+      },
+      "confidence": 0.8,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    }
+  }
+}

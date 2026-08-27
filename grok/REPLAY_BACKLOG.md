@@ -4,12 +4,15 @@ Phase 02 added `fixtures/replay/scheduler-priority/` (8 JSON world snapshots, no
 
 Phase 04 added the replay runner + `FrameSource`. `fixtures/replay/follow-acquired/` runs the live `ScenarioScheduler` and `GameInputController` against derived frames with `NoopInputSink` only.
 
+Phase 05 added `fixtures/replay/perception-estimate/` (target present then omitted; freshness `fresh` → `missing` after `AGING_MAX_AGE_MS`) through `FixturePerceptionAdapter` + `StateEstimator` + the live scheduler.
+
 Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 
 | Phase | Fixture / suite |
 | --- | --- |
 | 02 | `fixtures/replay/scheduler-priority/` — JSON world snapshots, no pixels |
 | 04 | `fixtures/replay/follow-acquired/` |
+| 05 | `fixtures/replay/perception-estimate/` |
 | 06 | `follow-lost-reacquire`, `follow-stuck-recovery`, `follow-emergency-stop` |
 | 07 | `loot-desirable-vs-junk`, `loot-inventory-full`, `loot-unreachable-backoff` |
 | 08 | `loot-market-aware` |

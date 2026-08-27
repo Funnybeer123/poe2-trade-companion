@@ -1,6 +1,6 @@
 # Review State
 
-**Phase under review:** 04 — Deterministic replay + trace model  
+**Phase under review:** 05 — Perception / state estimation foundation  
 **Date:** 2026-08-27  
 **Reviewer:** Grok 4.6 xhigh Fast (self-review per `GROK_BOT_QA_PROMPT.md` + `docs/AI_REVIEW_CHECKLIST.md`)
 
@@ -8,53 +8,46 @@
 
 `PASS`
 
-Phase 04 acceptance criteria are implemented. Gate commands are green. Replay uses the live `ScenarioScheduler` and `GameInputController` with `NoopInputSink` only.
+Phase 05 acceptance criteria are implemented. Gate commands are green. `StateEstimator` is the only writer of `WorldState` field observations. Derived fixtures go through `FixturePerceptionAdapter` then the estimator. Live capture adapters exist.
 
 ## Scope reviewed
 
-Actual Phase 04 diff vs `cursor/phase-03-capabilities-interlock-input-9d76`:
+Actual Phase 05 diff vs `cursor/phase-04-replay-trace-9afe`:
 
-- `packages/core/src/replay/*`
-- `packages/core/src/loop/*`
-- `packages/core/src/trace/*`
-- `packages/core/src/controllers/*`
-- `packages/core/src/perception/types.ts` (contracts only)
-- `packages/persistence-sqlite/**`
-- `fixtures/replay/follow-acquired/`, `fixtures/scenarios/*`
+- `packages/core/src/perception/*`
+- `packages/core/src/loop/automationLoop.ts` (identity estimator removed)
+- `packages/perception-live/**`
+- `scripts/check-native-input-imports.mjs`
+- `fixtures/perception/**`, `fixtures/replay/perception-estimate/`
 - unit/integration/replay tests listed in `TEST_GAPS.md`
 
 ## Repository health
 
 - [x] Diff inspected.
-- [x] `test:replay`, `test`, `lint`, `typecheck` run on this host — green (121 tests).
-- [x] Searched for TODOs / `Math.random` / native imports in the new packages: none except a documented Phase 04 identity-estimator comment.
+- [x] `test`, `test:replay`, `lint`, `typecheck` run on this host — green (150 tests).
+- [x] Searched for TODOs / `Math.random` / `identityEstimate` / `derived as WorldState` / SendInput in new perception code: none.
 - [x] Failures recorded and fixed, not muted.
 
-## Replay and input ownership
+## Perception / state engine
 
-- [x] `ReplayRunner` constructs `NoopInputSink` only and refuses a non-noop sink after `GameInputController` construction.
-- [x] `run()` throws if any trace has `executed === true`.
-- [x] Live `createScenarioScheduler()` and `createGameInputController()` are used. No forked replay scheduler.
-- [x] FrozenClock is advanced from frame `atMs` through the loop into trace `clockMs` / `timestamp`.
-- [x] Missing frame → `end-of-stream`. Corrupt manifest throws `corrupt-manifest`.
-
-## Telemetry
-
-- [x] Traces include selected state, decision reason, intended actions, interlock code, executed/dry-run.
-- [x] Tokens always redacted. Character names redacted only when `redactIdentifiers === true`.
-- [x] SQLite store maps 1:1 onto `qa_action_traces`.
+- [x] Estimator merge: newer `confidence >= prev` replaces; lower confidence only if prev is `stale` or `missing`.
+- [x] Freshness recomputed from `clock.nowMs() - observedAtMs`.
+- [x] Omitted target after the stale window becomes `freshness: "missing"`.
+- [x] Process allowlist computed from arming; derived `allowlisted: true` is overwritten.
+- [x] Analyze errors → `ui.kind=unknown`, confidence 0, `SafetyHold`; loop does not throw.
+- [x] Estimator does not select automation state; scheduler still does.
+- [x] Replay still uses live `ScenarioScheduler` + `GameInputController` + `NoopInputSink`.
 
 ## Findings
 
 | Severity | File | Observation | Disposition |
 | --- | --- | --- | --- |
-| MEDIUM | `packages/persistence-sqlite/src/migrate.ts` | Apply + `schema_migrations` insert were not transactional. | Fixed: one better-sqlite3 transaction per file. Idempotent re-apply tested. |
-| LOW | `packages/core/src/trace/redact.ts` | Missing process title became `"[redacted]"` when identifier redaction was on. | Fixed: leave `undefined` undefined. |
-| IMPROVEMENT | `replayRunner.ts` | Replay invariant was convention-only. | Fixed: refuse non-noop sink; throw if any trace executed. |
-| IMPROVEMENT | FollowController | Placeholder emits a click when a screen point exists (required by `follow-acquired`) and noop otherwise. Real navigation is Phase 06. | Keep. Documented in `IMPLEMENTATION_STATE.md`. |
+| MEDIUM | `tests/unit/perception/templateMatch.test.ts` | Additive noise saturated white pixels so NCC stayed 1. | Fixed: darken the patch so the noisy score is strictly lower. |
+| LOW | `scripts/write-perception-fixtures.mjs` | ESLint `no-undef` on `Buffer`. | Fixed: import `Buffer` from `node:buffer`. |
+| IMPROVEMENT | `stateEstimator.ts` | `TARGET_ABSENT_FIELDS` always contained `"target"`. | Simplified to `absentToMissing: true` on the target merge. |
 
 No remaining BLOCKER or HIGH defects for this phase.
 
 ## Invariants deferred
 
-Phases 05–15 (real estimator, follow math, loot/stash/listing/trade, packaging). See `TEST_GAPS.md`.
+Phases 06–15 (real follow math, loot/stash/listing/trade, packaging). Live Windows process-name verification remains `BLOCKED: windows-native`. See `TEST_GAPS.md`.

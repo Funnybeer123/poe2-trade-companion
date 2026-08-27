@@ -6,6 +6,7 @@ import type {
   TradeWindowView,
   UiModeState,
   WorldState,
+  WorldStateFlags,
 } from "../world-state/types.js";
 
 export interface PerceptionFrameInput {
@@ -34,6 +35,8 @@ export interface PerceptionFrame {
   listing?: Observation<ListingUiView | null>;
   ui?: Observation<UiModeState>;
   process?: WorldState["process"];
+  stuck?: Observation<{ isStuck: boolean; reason?: string }>;
+  flags?: Partial<WorldStateFlags>;
 }
 
 export interface PerceptionAdapter {

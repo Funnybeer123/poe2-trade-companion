@@ -1,0 +1,71 @@
+import type {
+  ListingUiView,
+  LootTarget,
+  Observation,
+  TargetCue,
+  TradeWindowView,
+  UiModeState,
+  WorldState,
+  WorldStateFlags,
+} from "../world-state/types.js";
+import { analyzeFailureFrame } from "./uiMode.js";
+import type { PerceptionAdapter, PerceptionFrame, PerceptionFrameInput } from "./types.js";
+
+function isObservation(value: unknown): value is Observation<unknown> {
+  if (typeof value !== "object" || value === null) {
+    return false;
+  }
+  return "value" in value && "confidence" in value && "observedAtMs" in value;
+}
+
+function asObservation<T>(
+  raw: unknown,
+  capturedAtMs: number,
+): Observation<T> | undefined {
+  if (raw === undefined) {
+    return undefined;
+  }
+  if (isObservation(raw)) {
+    return raw as Observation<T>;
+  }
+  return {
+    value: raw as T,
+    confidence: 1,
+    observedAtMs: capturedAtMs,
+    freshness: "fresh",
+  };
+}
+
+export function derivedToPerceptionFrame(frame: PerceptionFrameInput): PerceptionFrame {
+  const derived = frame.derived ?? {};
+  const at = frame.capturedAtMs;
+  return {
+    tickId: frame.tickId,
+    capturedAtMs: frame.capturedAtMs,
+    evidenceId: `fixture:${String(frame.tickId)}`,
+    target: asObservation<TargetCue | null>(derived.target, at),
+    loot: asObservation<LootTarget[]>(derived.loot, at),
+    inventory: asObservation<WorldState["inventory"]["value"]>(derived.inventory, at),
+    stash: asObservation<WorldState["stash"]["value"]>(derived.stash, at),
+    trade: asObservation<TradeWindowView | null>(derived.trade, at),
+    listing: asObservation<ListingUiView | null>(derived.listing, at),
+    ui: asObservation<UiModeState>(derived.ui, at),
+    process: asObservation<WorldState["process"]["value"]>(derived.process, at),
+    stuck: asObservation<WorldState["stuck"]["value"]>(derived.stuck, at),
+    flags: derived.flags as Partial<WorldStateFlags> | undefined,
+  };
+}
+
+export class FixturePerceptionAdapter implements PerceptionAdapter {
+  async analyze(frame: PerceptionFrameInput): Promise<PerceptionFrame> {
+    try {
+      return derivedToPerceptionFrame(frame);
+    } catch (error) {
+      return analyzeFailureFrame(frame, error);
+    }
+  }
+}
+
+export function createFixturePerceptionAdapter(): PerceptionAdapter {
+  return new FixturePerceptionAdapter();
+}

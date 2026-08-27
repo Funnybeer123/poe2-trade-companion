@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 04 implemented)
+**Updated:** 2026-08-27 (Phase 05 implemented)
 
 ## Covered in Phase 01
 
@@ -40,11 +40,21 @@
 - `QaTraceWriter` is append-only
 - SQLite migration runner + `SqliteTraceStore` round-trip of one `QaActionTrace`
 
+## Covered in Phase 05
+
+- Freshness buckets on the estimator (`fresh` / `aging` / `stale` / target `missing` after the stale window)
+- Observation merge rules (higher/equal confidence replaces; lower confidence only if prev is stale|missing)
+- Process/window allowlist true/false, including estimator overwrite of derived `allowlisted`
+- `templateMatch` monotonicity on synthetic PNG fixtures
+- Analyze errors → `ui.kind=unknown`, confidence 0, `SafetyHold`; loop does not throw
+- PNG fixture → `FixturePerceptionAdapter` → `StateEstimator` occupancy/target/loot counts
+- Replay `perception-estimate`: two frames, target present then absent, FrozenClock past stale window
+- Live adapters exist: `ElectronFrameSource`, `Win32ProcessQuery`, `ClipboardSource` (injected / unavailable off Windows)
+
 ## Intentionally absent (later phases)
 
 | Gap | First phase |
 | --- | --- |
-| Perception / estimator | 05 |
 | Follow / recovery | 06 |
 | Loot rank / pickup | 07 |
 | Parser / valuation | 08 |
@@ -58,4 +68,4 @@
 
 ## Replay
 
-`npm run test:replay` now includes `tests/replay/scheduler-priority.test.ts` and `tests/replay/follow-acquired.test.ts`. See `REPLAY_BACKLOG.md`.
+`npm run test:replay` now includes `tests/replay/scheduler-priority.test.ts`, `tests/replay/follow-acquired.test.ts`, and `tests/replay/perception-estimate.test.ts`. See `REPLAY_BACKLOG.md`.

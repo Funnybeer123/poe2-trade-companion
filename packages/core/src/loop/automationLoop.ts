@@ -6,14 +6,17 @@ import type { Controller } from "../controllers/types.js";
 import type { DefaultGameInputController } from "../input/gameInputController.js";
 import type { BotDecision } from "../input/types.js";
 import type { InterlockContext, InterlockVerdict } from "../interlock/types.js";
-import type { FrameSource } from "../perception/types.js";
+import { createFixturePerceptionAdapter } from "../perception/fixturePerceptionAdapter.js";
+import { createStateEstimator } from "../perception/stateEstimator.js";
+import type { FrameSource, PerceptionAdapter, PerceptionFrame, StateEstimator } from "../perception/types.js";
+import { analyzeFailureFrame } from "../perception/uiMode.js";
 import { STATE_MODULE } from "../scheduler/predicates.js";
 import type { AutomationScenario, ScenarioScheduler } from "../scheduler/types.js";
 import type { QaActionTrace } from "../trace/types.js";
 import type { QaTraceWriter } from "../trace/qaTraceWriter.js";
 import { createEmptyWorldState } from "../world-state/createEmptyWorldState.js";
 import type { AutomationStateId, WorldState } from "../world-state/types.js";
-import { identityEstimate, isoTimestampFromMs, summarizeWorld } from "./identityEstimator.js";
+import { isoTimestampFromMs, summarizeWorld } from "./traceHelpers.js";
 
 export type AutomationTickResult =
   | { result: "end-of-stream" }
@@ -35,6 +38,8 @@ export interface AutomationLoopOptions {
   scenario: AutomationScenario;
   traceWriter: QaTraceWriter;
   controllers?: Map<AutomationStateId, Controller>;
+  perception?: PerceptionAdapter;
+  estimator?: StateEstimator;
 }
 
 function placeholderDecision(state: AutomationStateId): BotDecision {
@@ -65,6 +70,8 @@ export class AutomationLoop {
   readonly #scenario: AutomationScenario;
   readonly #traceWriter: QaTraceWriter;
   readonly #controllers: Map<AutomationStateId, Controller>;
+  readonly #perception: PerceptionAdapter;
+  readonly #estimator: StateEstimator;
   #world: WorldState;
 
   constructor(options: AutomationLoopOptions) {
@@ -77,6 +84,13 @@ export class AutomationLoop {
     this.#scenario = options.scenario;
     this.#traceWriter = options.traceWriter;
     this.#controllers = options.controllers ?? createPhase04ControllerMap();
+    this.#perception = options.perception ?? createFixturePerceptionAdapter();
+    this.#estimator =
+      options.estimator ??
+      createStateEstimator({
+        clock: options.clock,
+        arming: options.arming,
+      });
     this.#world = createEmptyWorldState({
       clock: options.clock,
       runtimeMode: options.capabilities.mode,
@@ -96,7 +110,19 @@ export class AutomationLoop {
 
     syncFrozenClock(this.#clock, frame.capturedAtMs);
 
-    const estimated = identityEstimate(this.#world, frame, this.#clock);
+    let perceptionFrame: PerceptionFrame;
+    try {
+      perceptionFrame = await this.#perception.analyze(frame);
+    } catch (error) {
+      perceptionFrame = analyzeFailureFrame(frame, error);
+    }
+
+    let estimated: WorldState;
+    try {
+      estimated = this.#estimator.estimate(this.#world, perceptionFrame);
+    } catch (error) {
+      estimated = this.#estimator.estimate(this.#world, analyzeFailureFrame(frame, error));
+    }
     const previousState = estimated.selectedState;
     const selection = this.#scheduler.select(estimated, this.#scenario);
     const world: WorldState = {
@@ -149,7 +175,7 @@ export class AutomationLoop {
         processValue.name !== undefined || processValue.title !== undefined
           ? { name: processValue.name, title: processValue.title }
           : undefined,
-      evidenceId: world.target.evidenceId,
+      evidenceId: world.target.evidenceId ?? perceptionFrame.evidenceId,
       observedSummary: summarizeWorld(world),
       confidence: decision.confidence,
       decisionReason: decision.reason,

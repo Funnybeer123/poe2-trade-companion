@@ -1,4 +1,8 @@
-import type { QaArmingState } from "@poe2tc/core";
+import {
+  DEFAULT_ALLOWLISTED_PROCESS_NAMES,
+  DEFAULT_ALLOWLISTED_WINDOW_TITLE_INCLUDES,
+  type QaArmingState,
+} from "@poe2tc/core";
 
 export function createTestArming(overrides: Partial<QaArmingState> = {}): QaArmingState {
   return {
@@ -6,8 +10,8 @@ export function createTestArming(overrides: Partial<QaArmingState> = {}): QaArmi
     armed: true,
     emergencyStopLatched: false,
     dryRunDefault: false,
-    allowlistedProcessNames: ["PathOfExile.exe", "PathOfExile_x64.exe", "PathOfExileSteam.exe"],
-    allowlistedWindowTitleIncludes: ["Path of Exile 2"],
+    allowlistedProcessNames: [...DEFAULT_ALLOWLISTED_PROCESS_NAMES],
+    allowlistedWindowTitleIncludes: [...DEFAULT_ALLOWLISTED_WINDOW_TITLE_INCLUDES],
     ...overrides,
   };
 }
