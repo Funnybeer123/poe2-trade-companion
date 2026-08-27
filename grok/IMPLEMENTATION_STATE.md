@@ -12,56 +12,58 @@
 | Plan branch | `176b090` (`cursor/implementation-plan-05a4`, PR #1) | Adds this implementation plan |
 | Phase 01 | `8c3ba93` on `cursor/phase-01-baseline-f3a0` (PR #2) | Workspace/CI baseline complete |
 | Phase 02 | `ece3287` on `cursor/phase-02-world-state-scheduler-ca64` (PR #3) | WorldState + scheduler complete |
-| Phase 03 first cut | `7f136ba` | Capabilities, interlocks, GameInputController |
-| Current commit | `f6e72b0` | Gate + self-review on `cursor/phase-03-capabilities-interlock-input-9d76` (PR #4) |
+| Phase 03 | `67ea3ae` on `cursor/phase-03-capabilities-interlock-input-9d76` (PR #4) | Capabilities, interlocks, GameInputController |
+| Current commit | `cursor/phase-04-replay-trace-9afe` | Phase 04 replay + traces (SHA recorded after commit) |
 
 ## Active phase
 
-None. Phase 03 is complete. Next is Phase 04.
+None. Phase 04 is complete. Next is Phase 05.
 
 ## Completed phases
 
 - Phase 01 — workspace, CI, MIT license, hello-world Electron/Vue apps, `workspaceOk()`, migration file, Grok tracking.
 - Phase 02 — canonical `WorldState`, freshness, `Clock`/`FrozenClock`, deterministic `ScenarioScheduler`, 8 scheduler-priority replay snapshots.
 - Phase 03 — `RuntimeCapabilities`, `InterlockGate`, `GameInputController`, emergency-stop latch, Noop/Forbidden/Recording sinks, `packages/native-input` SendInput adapter, native-import CI guard, Electron `Ctrl+Shift+F12` hotkey.
+- Phase 04 — `FixtureFrameSource`, `ReplayRunner`, `QaTraceWriter`, `InMemoryTraceSink`, `AutomationLoop`, SQLite migration runner + `SqliteTraceStore`, `follow-acquired` replay fixture, scenario catalog JSON.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 03 gate (2026-08-27, this host) — **green**:
+Phase 04 gate commands (this host):
 
+- `npm run test:replay`
+- `npm test`
 - `npm run lint`
 - `npm run typecheck`
-- `npm test` — 107 tests (unit + integration + replay)
-- `node scripts/check-native-input-imports.mjs`
 
-Self-review: `PASS` (`grok/REVIEW_STATE.md`).
+Recorded after the verification pass.
 
 ## Blockers
 
-- **BLOCKED: windows-native** — host is Linux. `NativeInputSink` binds `koffi` → `user32.SendInput` / `SetCursorPos` with a typed `INPUT` struct. Construction throws `native-unavailable` when `koffi` cannot load or `platform !== "win32"` (both paths tested). Live SendInput and a real `globalShortcut` display session are not available here. The plan allows closing Phase 03 without Windows live input.
+- **BLOCKED: windows-native** — unchanged from Phase 03. Replay constructs `NoopInputSink` only and never loads `packages/native-input`.
 - External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search API. See `RESEARCH_NOTES.md`.
 
 ## Plan deviations
 
-Phase 01–02 deviations unchanged.
+Phase 01–03 deviations unchanged.
 
-Phase 03:
+Phase 04:
 
-- `InterlockContext` adds optional `retryIndex` and `identity` so retry-exhausted and realm/account/character allowlists can be evaluated without inventing WorldState fields.
-- `createInputSink()` returns `ForbiddenInputSink` when `canEmitNativeInput` is false, otherwise `NoopInputSink`. Core never constructs `NativeInputSink`.
-- `GameInputController` rejects a `kind: "native"` sink when `canEmitNativeInput` is false and substitutes `ForbiddenInputSink`.
-- Default sleeper is no-op. Timing jitter uses seeded `mulberry32` (`scenario.id` + `tickId`); `default` / `instant` profiles are 0 ms.
-- `evaluateQaArming` / `armQa` implement the “cannot arm without acknowledgement + allowlist + hotkey” invariant.
-- Electron accelerator is `CommandOrControl+Shift+F12` (Ctrl+Shift+F12 on Windows/Linux).
+- Identity estimator is a derived-field copy (`identityEstimate`) inside the loop, not the Phase 05 `StateEstimator`. Replay still goes frame → estimate stub → live `ScenarioScheduler` → controller → live `GameInputController` → trace.
+- `FollowController` is the Phase 04 placeholder. When Follow is selected and `target.screenPoint` exists, it records a `mouse-click` so `follow-acquired` can assert intended input. It returns `noop` when selected without a point. Real follow math is Phase 06.
+- `ReplayRunner` always constructs `NoopInputSink` even though `authorized-qa` capabilities have `canEmitNativeInput: true` (eligible, not armed). Zero native input; `executed === false`.
+- CI now runs `npm run test:replay` in addition to unit/integration.
 
 ## Replay fixtures added
 
-None in Phase 03. Intended actions are captured in memory by `GameInputController.recordedActions` and `RecordingInputSink`. Scheduler fixtures from Phase 02 remain.
+- `fixtures/replay/follow-acquired/manifest.json` — derived target present → `Follow`; intended mouse-click recorded; `executed: false`; sink kind `noop`.
+- `fixtures/scenarios/{follow-only,loot-only,stash-sort,list-and-reprice,trade-session,full-loop,adversarial-low-confidence,rate-limit-injection}.json` — Phase 04 scenario catalog.
+
+Phase 02 scheduler-priority snapshots remain.
 
 ## Next exact work item
 
-Phase 04 — Deterministic replay + trace model.
+Phase 05 — Perception / state estimation foundation.
 
-Suggested commit from the plan: `feat: add replay runner, QA traces, and fixture frame source`.
+Suggested commit from the plan: `feat: add perception adapters and WorldState estimator`.

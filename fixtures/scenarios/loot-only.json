@@ -1,0 +1,27 @@
+{
+  "id": "loot-only",
+  "title": "Loot only",
+  "enabled": true,
+  "executionMode": "dry-run",
+  "enabledModules": ["loot", "recovery"],
+  "actionsPerMinute": 30,
+  "confidenceThreshold": 0.6,
+  "lowConfidencePolicy": "skip",
+  "timingProfileId": "default",
+  "retryLimits": {},
+  "interruptRules": [
+    { "higher": "EmergencyStop", "lower": "Follow", "when": "always" },
+    { "higher": "EmergencyStop", "lower": "LootPickup", "when": "always" },
+    { "higher": "EmergencyStop", "lower": "StashSort", "when": "always" },
+    { "higher": "EmergencyStop", "lower": "Listing", "when": "always" },
+    { "higher": "EmergencyStop", "lower": "TradeSession", "when": "always" },
+    { "higher": "TradeSession", "lower": "Follow", "when": "trade-active" },
+    { "higher": "TradeSession", "lower": "LootPickup", "when": "trade-active" },
+    { "higher": "InventoryFull", "lower": "LootPickup", "when": "inventory-full" },
+    { "higher": "InventoryFull", "lower": "Follow", "when": "inventory-full" },
+    { "higher": "HighValueLoot", "lower": "Follow", "when": "loot-above-interrupt-threshold" },
+    { "higher": "StashSort", "lower": "Follow", "when": "stash-session-active" },
+    { "higher": "Listing", "lower": "Follow", "when": "listing-session-active" }
+  ],
+  "marketProviderId": "fixture"
+}

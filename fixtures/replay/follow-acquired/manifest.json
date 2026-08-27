@@ -1,0 +1,59 @@
+{
+  "id": "follow-acquired",
+  "scenarioId": "follow-only",
+  "seed": 1,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "selectedState": "Idle",
+        "previousState": "Idle",
+        "runtimeMode": "authorized-qa",
+        "activeScenarioId": "follow-only",
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": { "x": 640, "y": 360 },
+            "estimatedDistance": "near"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": false,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        }
+      }
+    }
+  ],
+  "expect": [
+    {
+      "tickId": 1,
+      "selectedState": "Follow",
+      "decisionReasonIncludes": "follow",
+      "executed": false,
+      "sinkKind": "noop"
+    }
+  ]
+}

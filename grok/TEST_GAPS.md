@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 03 implemented)
+**Updated:** 2026-08-27 (Phase 04 implemented)
 
 ## Covered in Phase 01
 
@@ -29,15 +29,21 @@
 - `NativeInputSink` throws `native-unavailable` when koffi cannot load or host is not Windows
 - Electron main source registers `Ctrl+Shift+F12` and does not import native-input
 
+## Covered in Phase 04
+
+- Replay runner uses live `ScenarioScheduler` + `GameInputController` and constructs `NoopInputSink` only
+- `follow-acquired`: derived target → `Follow`; intended `mouse-click` recorded; `executed === false`; sink kind `noop`
+- Missing frame / exhausted source ends with `result: "end-of-stream"`
+- Corrupt manifest throws `corrupt-manifest` and does not hang
+- FrozenClock timestamps flow through the loop into traces
+- Trace redaction always strips tokens; character names only when `redactIdentifiers === true`
+- `QaTraceWriter` is append-only
+- SQLite migration runner + `SqliteTraceStore` round-trip of one `QaActionTrace`
+
 ## Intentionally absent (later phases)
 
 | Gap | First phase |
 | --- | --- |
-| Scheduler priority / interrupt / determinism | 02 (covered) |
-| Public mode cannot emit native input | 03 (covered) |
-| QA arming, kill switch, allowlist, dry-run, rate limit | 03 (covered) |
-| Native-import guard script | 03 (covered) |
-| Replay runner + traces | 04 |
 | Perception / estimator | 05 |
 | Follow / recovery | 06 |
 | Loot rank / pickup | 07 |
@@ -52,4 +58,4 @@
 
 ## Replay
 
-Phase 02 replay snapshots exist. `npm run test:replay` now has `tests/replay/scheduler-priority.test.ts`. Full replay runner / `FrameSource` still Phase 04. See `REPLAY_BACKLOG.md`.
+`npm run test:replay` now includes `tests/replay/scheduler-priority.test.ts` and `tests/replay/follow-acquired.test.ts`. See `REPLAY_BACKLOG.md`.
