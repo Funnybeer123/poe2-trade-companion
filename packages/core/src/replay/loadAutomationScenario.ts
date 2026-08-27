@@ -75,6 +75,10 @@ export function parseAutomationScenario(raw: unknown): AutomationScenario {
       ? (raw.interruptRules as AutomationScenario["interruptRules"])
       : DEFAULT_INTERRUPT_RULES,
     marketProviderId: requireString(raw.marketProviderId, "marketProviderId"),
+    lootMinScore:
+      typeof raw.lootMinScore === "number" && Number.isFinite(raw.lootMinScore)
+        ? raw.lootMinScore
+        : undefined,
     failureInjection: isRecord(raw.failureInjection)
       ? {
           id: requireString(raw.failureInjection.id, "failureInjection.id"),

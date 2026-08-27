@@ -8,6 +8,8 @@ Phase 05 added `fixtures/replay/perception-estimate/` (target present then omitt
 
 Phase 06 added `follow-lost-reacquire`, `follow-stuck-recovery`, and `follow-emergency-stop` through the live `FollowController` / `RecoveryController`.
 
+Phase 07 added `loot-desirable-vs-junk`, `loot-inventory-full`, and `loot-unreachable-backoff` through the live `LootController` / `InventoryController` and `FixtureDesirabilityScorer`.
+
 Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 
 | Phase | Fixture / suite |
@@ -16,7 +18,7 @@ Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 | 04 | `fixtures/replay/follow-acquired/` |
 | 05 | `fixtures/replay/perception-estimate/` |
 | 06 | `follow-lost-reacquire`, `follow-stuck-recovery`, `follow-emergency-stop` — added |
-| 07 | `loot-desirable-vs-junk`, `loot-inventory-full`, `loot-unreachable-backoff` |
+| 07 | `loot-desirable-vs-junk`, `loot-inventory-full`, `loot-unreachable-backoff` — added |
 | 08 | `loot-market-aware` |
 | 09 | `inventory-stale` |
 | 10 | `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab` |

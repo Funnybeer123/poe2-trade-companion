@@ -1,5 +1,6 @@
 import type { Clock } from "../clock.js";
 import type { QaArmingState } from "../capabilities/createCapabilities.js";
+import { estimateLootPickup } from "../loot/estimateLootPickup.js";
 import { estimateStuckObservation } from "../navigation/estimateNavigation.js";
 import {
   DEFAULT_FOLLOW_CONFIG,
@@ -103,6 +104,17 @@ export class DefaultStateEstimator implements StateEstimator {
       mergeObservation(prev.process, frame.process, nowMs),
       this.#arming,
     );
+    const loot = mergeObservation(prev.loot, frame.loot, nowMs);
+    const inventory = mergeObservation(prev.inventory, frame.inventory, nowMs);
+    const estimatedLoot = estimateLootPickup({
+      flags: {
+        ...prev.flags,
+        ...(frame.flags ?? {}),
+      },
+      loot,
+      inventory,
+      nowMs,
+    });
 
     return {
       ...prev,
@@ -111,8 +123,8 @@ export class DefaultStateEstimator implements StateEstimator {
       clockMs: nowMs,
       process,
       target,
-      loot: mergeObservation(prev.loot, frame.loot, nowMs),
-      inventory: mergeObservation(prev.inventory, frame.inventory, nowMs),
+      loot: estimatedLoot.loot,
+      inventory,
       stash: mergeObservation(prev.stash, frame.stash, nowMs),
       trade: mergeObservation(prev.trade, frame.trade, nowMs),
       listing: mergeObservation(prev.listing, frame.listing, nowMs),
@@ -126,10 +138,7 @@ export class DefaultStateEstimator implements StateEstimator {
               observedAtMs: nowMs,
               freshness: "fresh" as const,
             },
-      flags: {
-        ...prev.flags,
-        ...(frame.flags ?? {}),
-      },
+      flags: estimatedLoot.flags,
     };
   }
 }

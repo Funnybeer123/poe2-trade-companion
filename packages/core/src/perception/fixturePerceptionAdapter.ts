@@ -8,6 +8,8 @@ import type {
   WorldState,
   WorldStateFlags,
 } from "../world-state/types.js";
+import { detectLootLabels } from "./lootLabelDetector.js";
+import type { OcrPort } from "./ocrPort.js";
 import { analyzeFailureFrame } from "./uiMode.js";
 import type { PerceptionAdapter, PerceptionFrame, PerceptionFrameInput } from "./types.js";
 
@@ -57,15 +59,35 @@ export function derivedToPerceptionFrame(frame: PerceptionFrameInput): Perceptio
 }
 
 export class FixturePerceptionAdapter implements PerceptionAdapter {
+  readonly #ocr?: OcrPort;
+
+  constructor(ocr?: OcrPort) {
+    this.#ocr = ocr;
+  }
+
   async analyze(frame: PerceptionFrameInput): Promise<PerceptionFrame> {
     try {
-      return derivedToPerceptionFrame(frame);
+      const base = derivedToPerceptionFrame(frame);
+      const detected = await detectLootLabels(frame, { ocr: this.#ocr });
+      if (detected.source === "fixture" || detected.loot.length === 0) {
+        return base;
+      }
+      return {
+        ...base,
+        loot: {
+          value: detected.loot,
+          confidence: detected.confidence,
+          observedAtMs: frame.capturedAtMs,
+          freshness: "fresh",
+          evidenceId: detected.evidenceId,
+        },
+      };
     } catch (error) {
       return analyzeFailureFrame(frame, error);
     }
   }
 }
 
-export function createFixturePerceptionAdapter(): PerceptionAdapter {
-  return new FixturePerceptionAdapter();
+export function createFixturePerceptionAdapter(ocr?: OcrPort): PerceptionAdapter {
+  return new FixturePerceptionAdapter(ocr);
 }

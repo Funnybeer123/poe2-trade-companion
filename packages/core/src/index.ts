@@ -37,6 +37,7 @@ export type {
   ScenarioId,
   TargetCue,
   TradeWindowView,
+  PendingLootPickup,
   StuckObservationValue,
   UiModeState,
   WorldState,
@@ -135,6 +136,22 @@ export {
   derivedToPerceptionFrame,
   FixturePerceptionAdapter,
 } from "./perception/fixturePerceptionAdapter.js";
+export {
+  createLootLabelDetector,
+  DEFAULT_LOOT_COLOR_DISTANCE,
+  DEFAULT_LOOT_MIN_BLOB_PIXELS,
+  detectLootLabels,
+  lootFromDerived,
+  LOOT_RARITY_COLORS,
+  LootLabelDetector,
+} from "./perception/lootLabelDetector.js";
+export type {
+  DetectedLootLabels,
+  LootLabelDetectorOptions,
+  RarityColor,
+} from "./perception/lootLabelDetector.js";
+export { FixtureOcrPort, NoopOcrPort } from "./perception/ocrPort.js";
+export type { OcrInput, OcrPort, OcrResult } from "./perception/ocrPort.js";
 export { createStateEstimator, DefaultStateEstimator } from "./perception/stateEstimator.js";
 export type { StateEstimatorOptions } from "./perception/stateEstimator.js";
 export {
@@ -156,7 +173,49 @@ export type { Controller } from "./controllers/types.js";
 export { IdleController } from "./controllers/idleController.js";
 export { FollowController } from "./controllers/followController.js";
 export { RecoveryController } from "./controllers/recoveryController.js";
+export { LootController } from "./controllers/lootController.js";
+export { InventoryController } from "./controllers/inventoryController.js";
 export { createControllerMap } from "./controllers/controllerMap.js";
+
+export type {
+  DesirabilityCategory,
+  DesirabilityFactor,
+  DesirabilityResult,
+  ItemSnapshot,
+  MarketComparable,
+  MarketProvider,
+  MarketQuote,
+  NormalizedItem,
+  QuoteContext,
+} from "./items/types.js";
+export type { DesirabilityContext, DesirabilityPort } from "./items/desirabilityPort.js";
+export { clampDesirabilityScore, isLootTarget } from "./items/desirabilityPort.js";
+export {
+  FixtureDesirabilityScorer,
+  createFixtureDesirabilityScorer,
+} from "./items/fixtureDesirabilityScorer.js";
+
+export {
+  DEFAULT_LOOT_MIN_SCORE,
+  LOOT_BACKOFF_REASON,
+  LOOT_NONE_ELIGIBLE_REASON,
+  LOOT_PICK_PREFIX,
+  LOOT_RECOVERY_KEY,
+  LOOT_SKIP_PREFIX,
+  LOOT_UNREACHABLE_REASON,
+  SKIP_BELOW_MIN_SCORE,
+  SKIP_INVENTORY_FULL,
+  SKIP_UNREACHABLE,
+} from "./loot/skipReasons.js";
+export { eligibleLoot, lootDistanceToCenter, rankLoot } from "./loot/rankLoot.js";
+export {
+  annotateLoot,
+  annotateLootTargets,
+  isAdversarialScenario,
+  resolveLootMinScore,
+} from "./loot/annotateLoot.js";
+export { estimateLootPickup } from "./loot/estimateLootPickup.js";
+export type { EstimateLootPickupInput, EstimateLootPickupResult } from "./loot/estimateLootPickup.js";
 
 export { DEFAULT_RECOVERY, recoveryPolicy } from "./recovery/defaultRecovery.js";
 export type { RecoveryPolicy } from "./recovery/defaultRecovery.js";
@@ -201,8 +260,8 @@ export {
   redactSecrets,
 } from "./trace/redact.js";
 
-export { isoTimestampFromMs, summarizeWorld } from "./loop/traceHelpers.js";
-export { AutomationLoop, createAutomationLoop } from "./loop/automationLoop.js";
+export { isoTimestampFromMs, summarizeLoot, summarizeWorld } from "./loop/traceHelpers.js";
+export { applyPostDecisionEffects, AutomationLoop, createAutomationLoop } from "./loop/automationLoop.js";
 export type { AutomationLoopOptions, AutomationTickResult } from "./loop/automationLoop.js";
 
 export type {

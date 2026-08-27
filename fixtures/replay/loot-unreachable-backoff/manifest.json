@@ -1,0 +1,141 @@
+{
+  "id": "loot-unreachable-backoff",
+  "scenarioId": "loot-only",
+  "seed": 9,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": { "occupied": 4, "capacity": 60, "cells": [], "full": false },
+          "confidence": 0.9,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "exalted-1", "labelText": "Exalted Orb", "screenPoint": { "x": 700, "y": 350 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10300,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10300,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": { "occupied": 4, "capacity": 60, "cells": [], "full": false },
+          "confidence": 0.9,
+          "observedAtMs": 10300,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "exalted-1", "labelText": "Exalted Orb", "screenPoint": { "x": 700, "y": 350 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 10300,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 10300,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 3,
+      "atMs": 11100,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": { "occupied": 4, "capacity": 60, "cells": [], "full": false },
+          "confidence": 0.9,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "exalted-1", "labelText": "Exalted Orb", "screenPoint": { "x": 700, "y": 350 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 4,
+      "atMs": 20000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 20000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": { "occupied": 4, "capacity": 60, "cells": [], "full": false },
+          "confidence": 0.9,
+          "observedAtMs": 20000,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "exalted-1", "labelText": "Exalted Orb", "screenPoint": { "x": 700, "y": 350 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 20000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 20000,
+          "freshness": "fresh"
+        }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "LootPickup", "decisionReasonIncludes": "pick:exalted-1", "executed": false, "sinkKind": "noop" },
+    { "tickId": 2, "selectedState": "LootPickup", "decisionReasonIncludes": "pick:exalted-1", "executed": false, "sinkKind": "noop" },
+    { "tickId": 3, "selectedState": "Idle", "decisionReasonIncludes": "idle", "executed": false, "sinkKind": "noop" },
+    { "tickId": 4, "selectedState": "Idle", "decisionReasonIncludes": "idle", "executed": false, "sinkKind": "noop" }
+  ]
+}

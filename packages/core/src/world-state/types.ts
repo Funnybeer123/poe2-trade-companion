@@ -109,12 +109,22 @@ export interface ListingUiView {
   currency?: string;
 }
 
+export interface PendingLootPickup {
+  id: string;
+  occupancy: number;
+  clickedAtMs: number;
+}
+
 export interface WorldStateFlags {
   emergencyStopLatched: boolean;
   tradeRequested: boolean;
   stashSessionActive: boolean;
   listingSessionActive: boolean;
   highValueInterruptScore: number;
+  pendingLootPickup?: PendingLootPickup | null;
+  lootSuppressedUntilMs?: Record<string, number>;
+  lootAttemptCounts?: Record<string, number>;
+  lootLastAttemptMs?: Record<string, number>;
 }
 
 export interface WorldState {

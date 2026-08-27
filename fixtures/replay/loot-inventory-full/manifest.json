@@ -1,0 +1,75 @@
+{
+  "id": "loot-inventory-full",
+  "scenarioId": "full-loop",
+  "seed": 8,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": { "occupied": 60, "capacity": 60, "cells": [], "full": true },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "exalted-1", "labelText": "Exalted Orb", "screenPoint": { "x": 700, "y": 350 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10200,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": { "occupied": 60, "capacity": 60, "cells": [], "full": true },
+          "confidence": 0.95,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "loot": {
+          "value": [
+            { "id": "exalted-1", "labelText": "Exalted Orb", "screenPoint": { "x": 700, "y": 350 } }
+          ],
+          "confidence": 0.9,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": { "kind": "gameplay" },
+          "confidence": 0.8,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "InventoryFull", "decisionReasonIncludes": "inventory-full", "executed": false, "sinkKind": "noop" },
+    { "tickId": 2, "selectedState": "InventoryFull", "decisionReasonIncludes": "inventory-full", "executed": false, "sinkKind": "noop" }
+  ]
+}

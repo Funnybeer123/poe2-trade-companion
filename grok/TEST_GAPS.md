@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 06 complete)
+**Updated:** 2026-08-27 (Phase 07 in progress)
 
 ## Covered in Phase 01
 
@@ -62,11 +62,21 @@
 - Traces include `follow-target`, `lost-target`, `stuck-recovery`, `emergency-stop`
 - Recovery loops terminate (maxAttempts / lost-target-exhausted / stuck-exhausted)
 
+## Covered in Phase 07
+
+- Deterministic loot rank: score desc, nearest to screen center, id asc
+- Skip reasons: `below-min-score` (default 40), adversarial-execute does not skip, `inventory-full`
+- `loot.unreachable`: two observed failed pickups → suppress id 15s; success is label disappearance or occupancy increase
+- `LootController` issues no pickup clicks when inventory is full
+- `FixtureDesirabilityScorer` keyword/rarity/fixture-score mapping (real port, not an empty stub)
+- `lootLabelDetector` fixture path + color-blob/OCR port (loot-label PNG gold `220,180,40`)
+- Replay: `loot-desirable-vs-junk`, `loot-inventory-full`, `loot-unreachable-backoff`
+- Traces include pick/skip reasons (`decisionReason`, `observedSummary`, `followUpSummary`)
+
 ## Intentionally absent (later phases)
 
 | Gap | First phase |
 | --- | --- |
-| Loot rank / pickup | 07 |
 | Parser / valuation | 08 |
 | Inventory / stash reconcile | 09 |
 | Stash transfers | 10 |
@@ -78,4 +88,4 @@
 
 ## Replay
 
-`npm run test:replay` now also includes `follow-lost-reacquire`, `follow-stuck-recovery`, and `follow-emergency-stop`. See `REPLAY_BACKLOG.md`.
+`npm run test:replay` now also includes `loot-desirable-vs-junk`, `loot-inventory-full`, and `loot-unreachable-backoff`. See `REPLAY_BACKLOG.md`.
