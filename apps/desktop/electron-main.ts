@@ -98,7 +98,11 @@ function createQaBannerWindow(): BrowserWindow {
 
 export function registerEmergencyStopHotkey(): boolean {
   return globalShortcut.register(EMERGENCY_STOP_ACCELERATOR, () => {
-    runtime?.tripStop() ?? emergencyStop.trip();
+    if (runtime !== undefined) {
+      runtime.tripStop();
+      return;
+    }
+    emergencyStop.trip();
   });
 }
 
@@ -166,6 +170,7 @@ void app.whenReady().then(() => {
   registerPriceCheckHotkey();
   runtime = createDesktopRuntime({
     emergencyStop,
+    dbPath: process.env.POE2TC_DB_PATH ?? path.join(app.getPath("userData"), "poe2tc.sqlite"),
     clipboard: { readText: () => clipboard.readText() },
     hotkeyRegistered,
   });

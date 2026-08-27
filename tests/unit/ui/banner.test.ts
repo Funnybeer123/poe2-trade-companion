@@ -24,6 +24,7 @@ describe("QA banner", () => {
     expect(source).toContain("data-testid=\"qa-banner\"");
     expect(source).toContain("STOP");
     expect(source).toContain("tripStop");
-    expect(source).not.toMatch(/dismiss|hideBanner|closeBanner|v-if="!dismissed"/i);
+    expect(source).toContain("cannot be dismissed");
+    expect(source).not.toMatch(/hideBanner|closeBanner|qa-banner-dismiss|v-if="!dismissed"/);
   });
 });

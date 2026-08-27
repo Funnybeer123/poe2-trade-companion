@@ -25,7 +25,7 @@ export function createDesktopRuntime(options: {
   env?: NodeJS.ProcessEnv;
 }): OperatorRuntime {
   const env = options.env ?? process.env;
-  const db = openSqliteDatabase(options.dbPath ?? ":memory:");
+  const db = openSqliteDatabase(options.dbPath ?? env.POE2TC_DB_PATH ?? ":memory:");
   applyMigrations(db, path.join(REPO_ROOT, "migrations"));
   const settingsStore = new SqliteSettingsStore(db);
   const market = createFixtureMarketProvider(path.join(REPO_ROOT, "fixtures/market"));

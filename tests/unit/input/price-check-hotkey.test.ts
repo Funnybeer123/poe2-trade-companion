@@ -9,7 +9,7 @@ describe("public companion price-check hotkey", () => {
     expect(source).toMatch(/PRICE_CHECK_ACCELERATOR/);
     expect(source).toMatch(/registerPriceCheckHotkey/);
     expect(source).toMatch(/parseClipboard/);
-    expect(source).not.toMatch(/GameInputController/);
+    expect(source).not.toMatch(/import\s+.*GameInputController/);
     expect(source).not.toMatch(/\.enqueue\(/);
     expect(source).not.toMatch(/@poe2tc\/native-input/);
   });

@@ -63,7 +63,7 @@ export const DEFAULT_FILTER_PROFILE: FilterProfile = {
 };
 
 function emitRule(rule: FilterRule): string {
-  const lines = [rule.action];
+  const lines: string[] = [rule.action];
   if (rule.class !== undefined) {
     lines.push(`    Class "${rule.class}"`);
   }

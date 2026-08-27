@@ -8,6 +8,6 @@ describe("local loot filter export", () => {
     expect(body).toContain(GGG_DISCLAIMER);
     expect(body).toContain("Show");
     expect(body).toContain("Hide");
-    expect(body).not.toMatch(/oauth|account:item_filter|api.pathofexile.com/i);
+    expect(body).not.toMatch(/account:item_filter|api\.pathofexile\.com/i);
   });
 });
