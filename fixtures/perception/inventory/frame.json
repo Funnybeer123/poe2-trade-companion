@@ -1,0 +1,26 @@
+{
+  "kind": "inventory",
+  "expectedOccupied": 3,
+  "expectedCapacity": 12,
+  "derived": {
+    "inventory": {
+      "value": {
+        "occupied": 3,
+        "capacity": 12,
+        "cells": [],
+        "full": false
+      },
+      "confidence": 0.9,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    },
+    "ui": {
+      "value": {
+        "kind": "inventory"
+      },
+      "confidence": 0.85,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    }
+  }
+}

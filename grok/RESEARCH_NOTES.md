@@ -44,9 +44,22 @@ No Phase 01 code change required. Official filter sync and account APIs remain o
 - Added `better-sqlite3` for `packages/persistence-sqlite`. Unit/integration tests open `:memory:` databases in Node 22. Electron ABI rebuild remains Phase 15.
 - Replay never constructs a native sink. `ReplayRunner` hard-wires `NoopInputSink`.
 
+## 2026-08-27 — Phase 05 perception / process names
+
+- Host is Linux. `Win32ProcessQuery` throws `perception-unavailable` off win32 (unit-tested). No live Path of Exile 2 client was available.
+- Default allowlist remains the plan §4.3 placeholders:
+  - process names: `PathOfExile.exe`, `PathOfExile_x64.exe`, `PathOfExileSteam.exe`
+  - window title include: `Path of Exile 2`
+- Record actual image names and titles here after a Windows live detection pass. Do not treat the defaults as verified client names.
+- Screen capture v1 adapter is `ElectronFrameSource` (`desktopCapturer` injected). CI uses a fake capturer; it does not open PoE.
+- Clipboard source is read-only and injected. No copy keystroke is synthesized.
+- `koffi` is now used in two packages: `packages/native-input` (SendInput) and `packages/perception-live` (GetForegroundWindow / process image). Import guard allows koffi in both; SendInput stays native-input-only.
+- `sharp@^0.34.3` added as a root devDependency for PNG fixture load in tests. `templateMatch` itself is a pure RGBA function in `packages/core`.
+
 ## Deferred
 
-- Actual PoE 2 process image names / window title (Phase 05).
+- Actual PoE 2 process image names / window title on a Windows client (still unverified).
 - `koffi` / `better-sqlite3` Electron ABI (Phases 03/04/15).
 - EE2 MIT + parser revision immediately before Phase 08 copy.
 - Windows live SendInput + emergency hotkey on a real display (`BLOCKED: windows-native`).
+- Live `desktopCapturer` against a real PoE 2 window.

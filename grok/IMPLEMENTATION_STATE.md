@@ -13,12 +13,12 @@
 | Phase 01 | `8c3ba93` on `cursor/phase-01-baseline-f3a0` (PR #2) | Workspace/CI baseline complete |
 | Phase 02 | `ece3287` on `cursor/phase-02-world-state-scheduler-ca64` (PR #3) | WorldState + scheduler complete |
 | Phase 03 | `67ea3ae` on `cursor/phase-03-capabilities-interlock-input-9d76` (PR #4) | Capabilities, interlocks, GameInputController |
-| Phase 04 first cut | `8e47c0d` on `cursor/phase-04-replay-trace-9afe` (PR #5) | Replay runner, traces, fixture frame source |
-| Current commit | `47daf0c` | Gate + self-review on `cursor/phase-04-replay-trace-9afe` (PR #5) |
+| Phase 04 | `b2e17a5` on `cursor/phase-04-replay-trace-9afe` (PR #5) | Replay runner, traces, fixture frame source |
+| Current branch | `cursor/phase-05-perception-estimator-1b5a` | Phase 05 perception / estimator |
 
 ## Active phase
 
-None. Phase 04 is complete. Next is Phase 05.
+Phase 05 — Perception / state estimation foundation (implemented; gate in progress).
 
 ## Completed phases
 
@@ -31,40 +31,35 @@ None. Phase 04 is complete. Next is Phase 05.
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 04 gate (2026-08-27, this host) — **green**:
+Phase 04 gate remains green on the parent branch.
 
-- `npm run test:replay` — 3 tests
-- `npm test` — 121 tests (unit + integration + replay)
-- `npm run lint`
-- `npm run typecheck`
-
-Self-review: `PASS` (`grok/REVIEW_STATE.md`).
+Phase 05 commands (`npm test`, `npm run test:replay`, `npm run lint`, `npm run typecheck`) have not been recorded as green on this host yet.
 
 ## Blockers
 
-- **BLOCKED: windows-native** — unchanged from Phase 03. Replay constructs `NoopInputSink` only and never loads `packages/native-input`.
-- External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search API. See `RESEARCH_NOTES.md`.
+- **BLOCKED: windows-native** — unchanged. Live PoE 2 process/window names were not observed on this Linux host. Defaults stay `PathOfExile.exe` / `PathOfExile_x64.exe` / `PathOfExileSteam.exe` and title include `Path of Exile 2`. See `RESEARCH_NOTES.md`.
+- Live `desktopCapturer` / Win32 query cannot open a PoE client here. `packages/perception-live` adapters exist and are unit-tested with injected ports / non-win32 unavailable errors.
+- External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search API.
 
 ## Plan deviations
 
-Phase 01–03 deviations unchanged.
+Phase 01–04 deviations unchanged.
 
-Phase 04:
+Phase 05:
 
-- Identity estimator is a derived-field copy (`identityEstimate`) inside the loop, not the Phase 05 `StateEstimator`. Replay still goes frame → estimate stub → live `ScenarioScheduler` → controller → live `GameInputController` → trace.
-- `FollowController` is the Phase 04 placeholder. When Follow is selected and `target.screenPoint` exists, it records a `mouse-click` so `follow-acquired` can assert intended input. It returns `noop` when selected without a point. Real follow math is Phase 06.
-- `ReplayRunner` always constructs `NoopInputSink` even though `authorized-qa` capabilities have `canEmitNativeInput: true` (eligible, not armed). Zero native input; `executed === false`.
-- CI now runs `npm run test:replay` in addition to unit/integration.
+- `PerceptionFrame` accepts optional `stuck` and `flags` so fixture `derived` still reaches the estimator. Estimator still does not select automation state.
+- `koffi` is allowed in `packages/perception-live` for window/process query only (not SendInput). The native-import guard was updated; input libraries remain native-input-only.
+- `identityEstimate` was removed. `FixturePerceptionAdapter` + `StateEstimator` are the loop path.
+- Live UI/OCR/template detectors are not wired into `LivePerceptionAdapter` yet (Phase 07+). The adapter attaches process metadata and maps analyze errors to unknown UI.
+- Follow/loot controllers are unchanged Phase 04 placeholders. Phase 06+ not started.
 
 ## Replay fixtures added
 
-- `fixtures/replay/follow-acquired/manifest.json` — derived target present → `Follow`; intended mouse-click recorded; `executed: false`; sink kind `noop`.
-- `fixtures/scenarios/{follow-only,loot-only,stash-sort,list-and-reprice,trade-session,full-loop,adversarial-low-confidence,rate-limit-injection}.json` — Phase 04 scenario catalog.
+- `fixtures/replay/perception-estimate/manifest.json` — target present then omitted; freshness `fresh` → `missing` after the stale window.
+- `fixtures/perception/{inventory,stash,loot-label,target-cue,ui-mode}/` — labeled synthetic PNG + JSON.
 
-Phase 02 scheduler-priority snapshots remain.
+Phase 02/04 fixtures remain.
 
 ## Next exact work item
 
-Phase 05 — Perception / state estimation foundation.
-
-Suggested commit from the plan: `feat: add perception adapters and WorldState estimator`.
+Finish the Phase 05 gate (`npm test && npm run test:replay && npm run lint && npm run typecheck`), self-review, then Phase 06 — Navigation / follow / recovery.

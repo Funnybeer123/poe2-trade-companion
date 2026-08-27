@@ -1,0 +1,25 @@
+{
+  "kind": "stash",
+  "expectedOccupied": 2,
+  "derived": {
+    "stash": {
+      "value": {
+        "tabId": "1",
+        "tabName": "Currency",
+        "cells": [],
+        "tabFull": false
+      },
+      "confidence": 0.87,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    },
+    "ui": {
+      "value": {
+        "kind": "stash"
+      },
+      "confidence": 0.85,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    }
+  }
+}

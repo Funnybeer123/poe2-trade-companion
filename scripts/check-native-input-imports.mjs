@@ -2,7 +2,8 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 
-const FORBIDDEN_PACKAGES = ["koffi", "uiohook-napi", "@nut-tree", "robotjs", "nut-js"];
+const FORBIDDEN_INPUT_PACKAGES = ["uiohook-napi", "@nut-tree", "robotjs", "nut-js"];
+const KOFFI_PACKAGE = "koffi";
 const SKIP_DIRS = new Set([
   "node_modules",
   "dist",
@@ -13,9 +14,13 @@ const SKIP_DIRS = new Set([
   "playwright-report",
 ]);
 const SOURCE_EXT = new Set([".ts", ".tsx", ".js", ".jsx", ".mjs", ".cjs", ".mts", ".cts"]);
-const ALLOWED_PREFIX = path.normalize("packages/native-input");
+const NATIVE_INPUT_PREFIX = path.normalize("packages/native-input");
+const KOFFI_ALLOWED_PREFIXES = [
+  NATIVE_INPUT_PREFIX,
+  path.normalize("packages/perception-live"),
+];
 
-const importPatterns = FORBIDDEN_PACKAGES.map((pkg) => {
+const inputImportPatterns = FORBIDDEN_INPUT_PACKAGES.map((pkg) => {
   const escaped = pkg.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
   return {
     pkg,
@@ -27,6 +32,18 @@ const importPatterns = FORBIDDEN_PACKAGES.map((pkg) => {
     ],
   };
 });
+
+const koffiEscaped = KOFFI_PACKAGE.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+const koffiRegexes = [
+  new RegExp(`from\\s+['"]${koffiEscaped}(?:/[^'"]*)?['"]`),
+  new RegExp(`import\\s+['"]${koffiEscaped}(?:/[^'"]*)?['"]`),
+  new RegExp(`import\\(\\s*['"]${koffiEscaped}(?:/[^'"]*)?['"]\\s*\\)`),
+  new RegExp(`require\\(\\s*['"]${koffiEscaped}(?:/[^'"]*)?['"]\\s*\\)`),
+];
+
+function isUnderPrefix(normalized, prefix) {
+  return normalized === prefix || normalized.startsWith(`${prefix}${path.sep}`);
+}
 
 async function walk(dir, files = []) {
   const entries = await readdir(dir, { withFileTypes: true });
@@ -53,23 +70,31 @@ const violations = [];
 for (const file of files) {
   const rel = path.relative(root, file);
   const normalized = path.normalize(rel);
-  if (normalized === ALLOWED_PREFIX || normalized.startsWith(`${ALLOWED_PREFIX}${path.sep}`)) {
-    continue;
-  }
   const text = await readFile(file, "utf8");
-  for (const { pkg, regexes } of importPatterns) {
-    if (regexes.some((regex) => regex.test(text))) {
-      violations.push(`${rel} imports ${pkg}`);
+
+  if (!isUnderPrefix(normalized, NATIVE_INPUT_PREFIX)) {
+    for (const { pkg, regexes } of inputImportPatterns) {
+      if (regexes.some((regex) => regex.test(text))) {
+        violations.push(`${rel} imports ${pkg}`);
+      }
+    }
+  }
+
+  if (!KOFFI_ALLOWED_PREFIXES.some((prefix) => isUnderPrefix(normalized, prefix))) {
+    if (koffiRegexes.some((regex) => regex.test(text))) {
+      violations.push(`${rel} imports ${KOFFI_PACKAGE}`);
     }
   }
 }
 
 if (violations.length > 0) {
-  console.error("Native input imports outside packages/native-input/**:");
+  console.error("Native input imports outside the approved adapters:");
   for (const violation of violations) {
     console.error(` - ${violation}`);
   }
   process.exit(1);
 }
 
-console.log("OK: no native input imports outside packages/native-input/**");
+console.log(
+  "OK: no native input imports outside packages/native-input/**; koffi only in native-input and perception-live",
+);

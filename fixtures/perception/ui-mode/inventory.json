@@ -1,0 +1,20 @@
+{
+  "kind": "ui-mode",
+  "expectedKind": "inventory",
+  "header": {
+    "x": 0,
+    "y": 0,
+    "w": 64,
+    "h": 8
+  },
+  "derived": {
+    "ui": {
+      "value": {
+        "kind": "inventory"
+      },
+      "confidence": 0.91,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    }
+  }
+}

@@ -122,6 +122,34 @@ export type {
   PerceptionFrameInput,
   StateEstimator,
 } from "./perception/types.js";
+export {
+  DEFAULT_ALLOWLISTED_PROCESS_NAMES,
+  DEFAULT_ALLOWLISTED_WINDOW_TITLE_INCLUDES,
+  isProcessAllowlistedByArming,
+} from "./perception/allowlist.js";
+export type { ProcessIdentity } from "./perception/allowlist.js";
+export { clampConfidence, confidenceBucket } from "./perception/confidence.js";
+export {
+  createFixturePerceptionAdapter,
+  derivedToPerceptionFrame,
+  FixturePerceptionAdapter,
+} from "./perception/fixturePerceptionAdapter.js";
+export { createStateEstimator, DefaultStateEstimator } from "./perception/stateEstimator.js";
+export type { StateEstimatorOptions } from "./perception/stateEstimator.js";
+export {
+  normalizedCorrelation,
+  scoreToUnitInterval,
+  templateMatch,
+  templateMatchScoreAt,
+  toGrayscale,
+} from "./perception/templateMatch.js";
+export type { RgbaImage, TemplateMatchHit } from "./perception/templateMatch.js";
+export {
+  analyzeFailureFrame,
+  errorDetail,
+  unknownUiMode,
+  unknownUiObservation,
+} from "./perception/uiMode.js";
 
 export type { Controller } from "./controllers/types.js";
 export { IdleController } from "./controllers/idleController.js";
@@ -138,11 +166,7 @@ export {
   redactSecrets,
 } from "./trace/redact.js";
 
-export {
-  identityEstimate,
-  isoTimestampFromMs,
-  summarizeWorld,
-} from "./loop/identityEstimator.js";
+export { isoTimestampFromMs, summarizeWorld } from "./loop/traceHelpers.js";
 export { AutomationLoop, createAutomationLoop } from "./loop/automationLoop.js";
 export type { AutomationLoopOptions, AutomationTickResult } from "./loop/automationLoop.js";
 

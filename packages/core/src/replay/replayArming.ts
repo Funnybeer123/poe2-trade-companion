@@ -1,4 +1,8 @@
 import type { QaArmingState } from "../capabilities/createCapabilities.js";
+import {
+  DEFAULT_ALLOWLISTED_PROCESS_NAMES,
+  DEFAULT_ALLOWLISTED_WINDOW_TITLE_INCLUDES,
+} from "../perception/allowlist.js";
 
 export function createReplayArming(overrides: Partial<QaArmingState> = {}): QaArmingState {
   return {
@@ -6,8 +10,8 @@ export function createReplayArming(overrides: Partial<QaArmingState> = {}): QaAr
     armed: true,
     emergencyStopLatched: false,
     dryRunDefault: false,
-    allowlistedProcessNames: ["PathOfExile.exe", "PathOfExile_x64.exe", "PathOfExileSteam.exe"],
-    allowlistedWindowTitleIncludes: ["Path of Exile 2"],
+    allowlistedProcessNames: [...DEFAULT_ALLOWLISTED_PROCESS_NAMES],
+    allowlistedWindowTitleIncludes: [...DEFAULT_ALLOWLISTED_WINDOW_TITLE_INCLUDES],
     ...overrides,
   };
 }

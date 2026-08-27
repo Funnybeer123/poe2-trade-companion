@@ -1,0 +1,14 @@
+{
+  "kind": "ui-mode",
+  "expectedKind": "gameplay",
+  "derived": {
+    "ui": {
+      "value": {
+        "kind": "gameplay"
+      },
+      "confidence": 0.8,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    }
+  }
+}
