@@ -17,7 +17,7 @@
 | Phase 05 | `1f1a0d3` on `cursor/phase-05-perception-estimator-1b5a` (PR #6) | Perception estimator complete |
 | Phase 06 | `684f24d` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery complete |
 | Phase 07 first cut | `ca1357e` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
-| Current branch | `cursor/phase-07-loot-detection-944f` | Phase 07 complete after gate + self-review |
+| Current commit | `d7e6286` | Gate + self-review on `cursor/phase-07-loot-detection-944f` (PR #8) |
 
 ## Active phase
 
