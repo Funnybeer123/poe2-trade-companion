@@ -1,6 +1,6 @@
 # Review State
 
-**Phase under review:** 03 — Capability / interlock / input boundary  
+**Phase under review:** 04 — Deterministic replay + trace model  
 **Date:** 2026-08-27  
 **Reviewer:** Grok 4.6 xhigh Fast (self-review per `GROK_BOT_QA_PROMPT.md` + `docs/AI_REVIEW_CHECKLIST.md`)
 
@@ -8,57 +8,53 @@
 
 `PASS`
 
-Phase 03 acceptance criteria are implemented. Gate commands are green. Native live `SendInput` remains an external host blocker (`BLOCKED: windows-native`), which the plan allows.
+Phase 04 acceptance criteria are implemented. Gate commands are green. Replay uses the live `ScenarioScheduler` and `GameInputController` with `NoopInputSink` only.
 
 ## Scope reviewed
 
-Actual Phase 03 diff vs `cursor/phase-02-world-state-scheduler-ca64`:
+Actual Phase 04 diff vs `cursor/phase-03-capabilities-interlock-input-9d76`:
 
-- `packages/core/src/capabilities/*`
-- `packages/core/src/interlock/*`
-- `packages/core/src/input/*`
-- `packages/native-input/**`
-- `scripts/check-native-input-imports.mjs`
-- `apps/desktop/electron-main.ts` emergency-stop hotkey
-- unit/integration tests listed in `TEST_GAPS.md`
-- CI step for the native-import guard
+- `packages/core/src/replay/*`
+- `packages/core/src/loop/*`
+- `packages/core/src/trace/*`
+- `packages/core/src/controllers/*`
+- `packages/core/src/perception/types.ts` (contracts only)
+- `packages/persistence-sqlite/**`
+- `fixtures/replay/follow-acquired/`, `fixtures/scenarios/*`
+- unit/integration/replay tests listed in `TEST_GAPS.md`
 
 ## Repository health
 
 - [x] Diff inspected.
-- [x] `lint`, `typecheck`, `test`, `check-native-input-imports` run on this host — green (107 tests).
-- [x] Searched for TODOs / stubs / `Math.random` / native imports outside `packages/native-input`: none.
-- [x] Failures (unused args, script globals, `InputAction` widening, unstructured SendInput) recorded and fixed, not muted.
+- [x] `test:replay`, `test`, `lint`, `typecheck` run on this host — green (121 tests).
+- [x] Searched for TODOs / `Math.random` / native imports in the new packages: none except a documented Phase 04 identity-estimator comment.
+- [x] Failures recorded and fixed, not muted.
 
-## Runtime boundaries
+## Replay and input ownership
 
-- [x] `public-companion.canEmitNativeInput` is always `false` and frozen.
-- [x] `createInputSink` returns `ForbiddenInputSink` in public mode.
-- [x] `GameInputController` replaces a `kind: "native"` sink with `ForbiddenInputSink` when native input is ineligible.
-- [x] QA arming requires acknowledgement, process/window allowlists, and hotkey registration.
-- [x] Dry-run records intended actions and does not call the sink.
-- [x] Wrong process/window, disabled module/scenario, and rate limits block execute.
+- [x] `ReplayRunner` constructs `NoopInputSink` only and refuses a non-noop sink after `GameInputController` construction.
+- [x] `run()` throws if any trace has `executed === true`.
+- [x] Live `createScenarioScheduler()` and `createGameInputController()` are used. No forked replay scheduler.
+- [x] FrozenClock is advanced from frame `atMs` through the loop into trace `clockMs` / `timestamp`.
+- [x] Missing frame → `end-of-stream`. Corrupt manifest throws `corrupt-manifest`.
 
-## Input ownership
+## Telemetry
 
-- [x] Production sink `execute` is only called from `GameInputController` (and `RecordingInputSink` wrapping an inner sink).
-- [x] `packages/core` does not import `koffi` or `@poe2tc/native-input`.
-- [x] Electron public start path does not import native-input.
-- [x] Kill switch trips the latch, cancels the sink, and clears the queue.
-- [x] Rearm requires `{ explicit: true }`.
+- [x] Traces include selected state, decision reason, intended actions, interlock code, executed/dry-run.
+- [x] Tokens always redacted. Character names redacted only when `redactIdentifiers === true`.
+- [x] SQLite store maps 1:1 onto `qa_action_traces`.
 
 ## Findings
 
 | Severity | File | Observation | Disposition |
 | --- | --- | --- | --- |
-| MEDIUM | `packages/native-input/src/nativeInputSink.ts` | First cut passed a plain object to `SendInput` as `void*` with a guessed size. | Fixed: named koffi `INPUT` struct/union and `sizeof("INPUT")`. Still untestable live on Linux. |
-| MEDIUM | `gameInputController.ts` | A caller could pass `kind: "native"` under public capabilities. Interlock already denied execute. | Fixed: public mode swaps a native-kind sink for `ForbiddenInputSink`. |
-| LOW | lint | Unused `_ms` / `_action`; script `process`/`console` globals. | Fixed. |
-| IMPROVEMENT | `InterlockContext` | Optional `retryIndex` / `identity` are not in §5.5. | Keep. Needed for retry-exhausted and realm/account/character allowlists without inventing WorldState fields. |
-| IMPROVEMENT | sleeper | Default sleeper is no-op; jitter profiles are 0 ms. | Keep. Seeded RNG is wired; Phase 04 can pass a real sleeper. |
+| MEDIUM | `packages/persistence-sqlite/src/migrate.ts` | Apply + `schema_migrations` insert were not transactional. | Fixed: one better-sqlite3 transaction per file. Idempotent re-apply tested. |
+| LOW | `packages/core/src/trace/redact.ts` | Missing process title became `"[redacted]"` when identifier redaction was on. | Fixed: leave `undefined` undefined. |
+| IMPROVEMENT | `replayRunner.ts` | Replay invariant was convention-only. | Fixed: refuse non-noop sink; throw if any trace executed. |
+| IMPROVEMENT | FollowController | Placeholder emits a click when a screen point exists (required by `follow-acquired`) and noop otherwise. Real navigation is Phase 06. | Keep. Documented in `IMPLEMENTATION_STATE.md`. |
 
 No remaining BLOCKER or HIGH defects for this phase.
 
 ## Invariants deferred
 
-Phases 04–15 (replay runner, perception, controllers, packaging). See `TEST_GAPS.md`.
+Phases 05–15 (real estimator, follow math, loot/stash/listing/trade, packaging). See `TEST_GAPS.md`.

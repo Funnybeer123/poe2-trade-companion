@@ -63,6 +63,9 @@ export class ReplayRunner {
       sink: this.sink,
       emergencyStop: new EmergencyStop(),
     });
+    if (this.inputController.sink.kind !== "noop") {
+      throw new Error("replay-refuses-non-noop-sink");
+    }
     this.traces = new InMemoryTraceSink();
     this.loop = createAutomationLoop({
       frameSource: FixtureFrameSource.fromManifest(options.manifest),
@@ -83,6 +86,9 @@ export class ReplayRunner {
     for (let i = 0; i < maxTicks; i += 1) {
       const outcome = await this.loop.tick();
       if (outcome.result === "end-of-stream") {
+        if (this.traces.traces.some((trace) => trace.executed)) {
+          throw new Error("replay-emitted-executed-input");
+        }
         return {
           result: "end-of-stream",
           traces: this.traces.traces,

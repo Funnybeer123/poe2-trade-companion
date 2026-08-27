@@ -64,9 +64,10 @@ export function redactQaActionTrace(
     process: trace.process
       ? {
           name: trace.process.name,
-          title: settings.redactIdentifiers
-            ? redactOptionalText(trace.process.title, applyAll) ?? "[redacted]"
-            : redactOptionalText(trace.process.title, applySecrets),
+          title: redactOptionalText(
+            trace.process.title,
+            settings.redactIdentifiers ? applyAll : applySecrets,
+          ),
         }
       : undefined,
     intendedActions: trace.intendedActions.map((action) => {

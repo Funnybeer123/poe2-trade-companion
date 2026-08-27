@@ -31,6 +31,7 @@ describe("follow-acquired replay", () => {
     expect(trace?.decisionReason).toContain("follow");
     expect(trace?.executed).toBe(false);
     expect(trace?.dryRun).toBe(true);
+    expect(trace?.interlockCode).toBe("dry-run");
     expect(
       trace?.intendedActions.some(
         (action) => action.type === "mouse-click" || action.type === "key-tap",

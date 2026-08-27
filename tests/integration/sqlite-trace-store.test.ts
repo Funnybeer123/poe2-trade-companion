@@ -9,6 +9,7 @@ describe("SqliteTraceStore", () => {
     const db = openSqliteDatabase(":memory:");
     const applied = applyMigrations(db, MIGRATIONS_DIR, clock);
     expect(applied).toContain(1);
+    expect(applyMigrations(db, MIGRATIONS_DIR, clock)).toEqual([]);
 
     const store = new SqliteTraceStore(db);
     const trace: QaActionTrace = {

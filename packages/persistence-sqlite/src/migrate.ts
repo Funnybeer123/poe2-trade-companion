@@ -40,6 +40,12 @@ export function applyMigrations(
   const inserted: number[] = [];
   const nowMs = (): number => clock?.nowMs() ?? Date.now();
 
+  const applyOne = db.transaction((file: string, id: number) => {
+    const sql = readFileSync(join(migrationsDir, file), "utf8");
+    db.exec(sql);
+    db.prepare("INSERT INTO schema_migrations (id, applied_at_ms) VALUES (?, ?)").run(id, nowMs());
+  });
+
   for (const file of listMigrationFiles(migrationsDir)) {
     const id = Number(/^(\d+)/.exec(file)?.[1]);
     if (!Number.isFinite(id)) {
@@ -48,9 +54,7 @@ export function applyMigrations(
     if (applied.has(id)) {
       continue;
     }
-    const sql = readFileSync(join(migrationsDir, file), "utf8");
-    db.exec(sql);
-    db.prepare("INSERT INTO schema_migrations (id, applied_at_ms) VALUES (?, ?)").run(id, nowMs());
+    applyOne(file, id);
     applied.add(id);
     inserted.push(id);
   }
