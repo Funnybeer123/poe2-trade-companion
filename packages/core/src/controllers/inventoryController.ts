@@ -7,7 +7,8 @@ import type { Controller } from "./types.js";
 export class InventoryController implements Controller {
   readonly module = "inventory" as const;
 
-  decide(world: WorldState, _scenario: AutomationScenario): BotDecision {
+  decide(world: WorldState, scenario: AutomationScenario): BotDecision {
+    void scenario;
     if (world.flags.emergencyStopLatched) {
       return {
         module: this.module,

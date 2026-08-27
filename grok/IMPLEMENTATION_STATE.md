@@ -16,11 +16,12 @@
 | Phase 04 | `b2e17a5` on `cursor/phase-04-replay-trace-9afe` (PR #5) | Replay runner, traces, fixture frame source |
 | Phase 05 | `1f1a0d3` on `cursor/phase-05-perception-estimator-1b5a` (PR #6) | Perception estimator complete |
 | Phase 06 | `684f24d` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery complete |
-| Current branch | `cursor/phase-07-loot-detection-944f` | Phase 07 loot detection / ranking / pickup |
+| Phase 07 first cut | `ca1357e` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
+| Current branch | `cursor/phase-07-loot-detection-944f` | Phase 07 complete after gate + self-review |
 
 ## Active phase
 
-Phase 07 — Loot detection / ranking / pickup (implementation in review; gate commands next).
+None. Phase 07 is complete. Next is Phase 08.
 
 ## Completed phases
 
@@ -30,12 +31,20 @@ Phase 07 — Loot detection / ranking / pickup (implementation in review; gate c
 - Phase 04 — `FixtureFrameSource`, `ReplayRunner`, `QaTraceWriter`, `InMemoryTraceSink`, `AutomationLoop`, SQLite migration runner + `SqliteTraceStore`, `follow-acquired` replay fixture, scenario catalog JSON.
 - Phase 05 — `StateEstimator`, `FixturePerceptionAdapter`, merge/freshness/allowlist, `templateMatch`, `packages/perception-live` (Win32 process, `desktopCapturer` frame source, read-only clipboard), perception fixtures + `perception-estimate` replay.
 - Phase 06 — `FollowController`, `RecoveryController`, `direction.ts` click-to-move, `stuckDetector`, `lostTargetTicks`, `DEFAULT_RECOVERY`, replay packs `follow-lost-reacquire` / `follow-stuck-recovery` / `follow-emergency-stop`.
+- Phase 07 — `lootLabelDetector`, `LootController`, `InventoryController` stub, `FixtureDesirabilityScorer` / `DesirabilityPort`, rank/skip/suppression, replay packs `loot-desirable-vs-junk` / `loot-inventory-full` / `loot-unreachable-backoff`.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 07 gate not yet recorded on this revision.
+Phase 07 gate (2026-08-27, this host) — **green**:
+
+- `npm test` — 197 tests
+- `npm run test:replay` — 10 tests
+- `npm run lint`
+- `npm run typecheck`
+
+Self-review: `PASS` (`grok/REVIEW_STATE.md`).
 
 ## Blockers
 
@@ -53,7 +62,7 @@ Phase 07:
 - `lootLabelDetector` prefers `derived.loot`, otherwise color-blob rarity detection on `frame.pixels` plus optional `OcrPort`. No `tesseract.js` in `packages/core`.
 - Pickup attempt / 15s suppression lives on `WorldState.flags` (`pendingLootPickup`, `lootAttemptCounts`, `lootLastAttemptMs`, `lootSuppressedUntilMs`). Estimator observes success (label gone or occupancy up) and applies `DEFAULT_RECOVERY["loot.unreachable"]`. Controllers stay stateless.
 - Inventory controller is a Phase 07 stub: `InventoryFull` → noop `inventory-full`; `applyPostDecisionEffects` sets `flags.stashSessionActive`. Real inventory/stash observation is Phase 09.
-- `hasHighValueLoot` / `hasPickupLoot` ignore items with `skipReason` so suppressed or junk labels do not keep HighValueLoot/LootPickup selected.
+- `hasHighValueLoot` ignores items with `skipReason` so suppressed or junk labels do not keep HighValueLoot selected.
 - Scoring/skip annotation runs in `AutomationLoop` after the estimator and before the scheduler so `LootTarget.score` / `skipReason` are visible to `HighValueLoot` / `LootPickup`.
 
 ## Replay fixtures added
@@ -66,4 +75,6 @@ Phase 02/04/05/06 fixtures remain.
 
 ## Next exact work item
 
-Run `npm test && npm run test:replay && npm run lint && npm run typecheck`, self-review, then mark Phase 07 complete. Next implementation phase is Phase 08.
+Phase 08 — Item parsing / market valuation / desirability.
+
+Suggested commit from the plan: `feat: add PoE2 item parse, valuation, and desirability engine`.

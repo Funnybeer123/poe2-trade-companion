@@ -16,13 +16,18 @@ describe("lootLabelDetector", () => {
       width: 64,
       height: 64,
       derived: {
-        loot: [
-          {
-            id: "loot-1",
-            labelText: "Exalted Orb",
-            screenPoint: { x: 28, y: 50 },
-          },
-        ],
+        loot: {
+          value: [
+            {
+              id: "loot-1",
+              labelText: "Exalted Orb",
+              screenPoint: { x: 28, y: 50 },
+            },
+          ],
+          confidence: 1,
+          observedAtMs: 10_000,
+          freshness: "fresh",
+        },
       },
     });
     expect(detected.source).toBe("fixture");

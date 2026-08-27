@@ -113,7 +113,8 @@ function matchRarity(rarity: string | undefined): (typeof RARITY_RULES)[number] 
 }
 
 export class FixtureDesirabilityScorer implements DesirabilityPort {
-  score(item: NormalizedItem | LootTarget, _ctx: DesirabilityContext): DesirabilityResult {
+  score(item: NormalizedItem | LootTarget, ctx: DesirabilityContext): DesirabilityResult {
+    void ctx;
     const text = searchText(item);
     const keyword = matchKeyword(text);
     const rarity = matchRarity(rarityOf(item));
