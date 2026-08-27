@@ -63,18 +63,46 @@ Automation modules must not arm in this mode.
 
 Prefer reusing suitable MIT-licensed Exiled Exchange 2 parsing/trade-query code rather than rewriting mature parsing logic.
 
-## Start in Cursor Plan Mode
+## AI development workflow
 
-1. Clone/open this repository in Cursor.
-2. Open Agent and switch to **Plan Mode**.
-3. Paste `CURSOR_PLAN_PROMPT.md`.
-4. Have Cursor save the plan to `plans/IMPLEMENTATION_PLAN.md`.
-5. Review the highest-risk assumptions.
-6. Click **Build**.
-7. Implement and commit one phase at a time.
+This repo uses two distinct AI roles.
+
+### 1. Sol Max creates the plan
+
+Open the repo in Cursor with Sol Max and use:
+
+`SOL_MAX_PLAN_ONLY_PROMPT.md`
+
+Sol Max should inspect the repository, create/update `plans/IMPLEMENTATION_PLAN.md`, identify risks, define phase acceptance criteria, then stop.
+
+### 2. Grok 4.6 xhigh Fast implements it
+
+Hand the repo/plan to Grok using:
+
+`GROK_BOT_START_HERE.md`
+
+and:
+
+`GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
+
+Preferred Grok configuration:
+
+- Grok 4.6;
+- reasoning `xhigh`;
+- Fast variant when available in the current platform.
+
+Grok owns production implementation, tests, replay fixtures, fixes, phase commits, and implementation-state tracking.
+
+Do not click Build in Sol Max under the current workflow. Sol Max is planning-only.
 
 ## Key documents
-- `CURSOR_PLAN_PROMPT.md` — authoritative Cursor Plan Mode instructions.
+
+- `SOL_MAX_PLAN_ONLY_PROMPT.md` — authoritative Sol Max planning instructions.
+- `GROK_BOT_START_HERE.md` — authoritative Grok bootstrap/handoff instructions.
+- `GROK_46_XHIGH_FAST_BUILD_PROMPT.md` — authoritative Grok implementation instructions.
+- `GROK_BOT_QA_PROMPT.md` — Grok per-phase self-review gate.
+- `docs/AI_DEVELOPMENT_WORKFLOW.md` — shared AI ownership/workflow.
+- `docs/AI_REVIEW_CHECKLIST.md` — implementation review checklist.
 - `AGENTS.md` — persistent project instructions.
 - `docs/PRODUCT_SPEC.md` — required features/acceptance criteria.
 - `docs/ARCHITECTURE.md` — architecture.
@@ -83,5 +111,8 @@ Prefer reusing suitable MIT-licensed Exiled Exchange 2 parsing/trade-query code 
 - `docs/IMPLEMENTATION_PHASES.md` — implementation order.
 - `docs/TEST_PLAN.md` — test strategy.
 
+`CURSOR_PLAN_PROMPT.md` remains available as legacy planning context, but the current handoff starts with `SOL_MAX_PLAN_ONLY_PROMPT.md`.
+
 ## Current official API limitation
-GGG's current developer reference marks Account Stashes, Guild Stashes, and Public Stashes as PoE 1 only. Cursor must not invent a PoE 2 stash API. For QA automation, use observable client UI state, clipboard/screen perception, or a dedicated internal test interface only if one is explicitly supplied later.
+
+GGG's current developer reference marks Account Stashes, Guild Stashes, and Public Stashes as PoE 1 only. Do not invent a PoE 2 stash API. For QA automation, use observable client UI state, clipboard/screen perception, or a dedicated internal test interface only if one is explicitly supplied later.
