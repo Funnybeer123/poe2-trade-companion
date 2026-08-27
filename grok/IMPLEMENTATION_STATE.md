@@ -11,12 +11,12 @@
 | Audited base (`main`) | `3bf2f91398a16a5250d351be818a41ca39e32762` | Docs-only repo; no toolchain |
 | Plan branch | `176b090` (`cursor/implementation-plan-05a4`, PR #1) | Adds this implementation plan |
 | Phase 01 | `8c3ba93` on `cursor/phase-01-baseline-f3a0` (PR #2) | Workspace/CI baseline complete |
-| Phase 02 first cut | `64565d6` | WorldState + scheduler + fixtures |
-| Current commit | `cadbaef` | Gate + self-review on `cursor/phase-02-world-state-scheduler-ca64` (PR #3) |
+| Phase 02 | `ece3287` on `cursor/phase-02-world-state-scheduler-ca64` (PR #3) | WorldState + scheduler complete |
+| Current branch | `cursor/phase-03-capabilities-interlock-input-9d76` | Phase 03 capability / interlock / input |
 
 ## Active phase
 
-None. Phase 02 is complete. Next is Phase 03.
+Phase 03 — Capability / interlock / input boundary (implementation in progress; gate pending).
 
 ## Completed phases
 
@@ -27,48 +27,29 @@ None. Phase 02 is complete. Next is Phase 03.
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 02 gate (2026-08-27, this host) — **green**:
-
-- `npm run lint`
-- `npm run typecheck`
-- `npm test` — 57 tests (unit + integration + replay)
-
-No controller, input, or native-sink code in this phase.
+Phase 03 implementation added. Gate commands not yet recorded on this revision.
 
 ## Blockers
 
-- None for Phase 02.
-- External / later-phase: Windows live client, native `SendInput`, OAuth registration freeze, no official PoE 2 stash/trade-search API. See `RESEARCH_NOTES.md`.
+- **BLOCKED: windows-native** — host is Linux. `NativeInputSink` exists and throws `native-unavailable` when `koffi` cannot load or the platform is not `win32`. Live `SendInput` and a real `globalShortcut` display session are not available here. Unit/non-native tests cover the throw path and the public-mode/input invariants.
+- External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search API. See `RESEARCH_NOTES.md`.
 
 ## Plan deviations
 
-Phase 01 deviations unchanged.
+Phase 01–02 deviations unchanged.
 
-Phase 02:
+Phase 03:
 
-- `AutomationScenario` in §5.6 has no `highValueInterruptScore`. The Phase 02 Add list puts that threshold on `world.flags.highValueInterruptScore` (default `85`). Predicates use the flag.
-- Added named helpers `WorldStateFlags`, `SchedulerSelection`, and a minimal `FailureInjection` type because §5.6 references `failureInjection` without defining it.
-- `RecoverTarget` is eligible whenever follow is enabled and the target is missing or below `confidenceThreshold`. `Idle` therefore requires follow (and other action modules) to be disabled or their predicates false. This matches the predicate table literally.
+- `InterlockContext` adds optional `retryIndex` and `identity` so retry-exhausted and realm/account/character allowlists can be evaluated without inventing WorldState fields (those identifiers are not on `WorldState` yet).
+- `createInputSink()` returns `ForbiddenInputSink` when `canEmitNativeInput` is false, otherwise `NoopInputSink`. It never constructs `NativeInputSink` (core must not import `packages/native-input`).
+- `GameInputController` defaults to a no-op sleeper. Timing jitter uses seeded `mulberry32` (`scenario.id` + `tickId`); the `default` / `instant` profiles are 0 ms in this phase.
+- QA arming helper `evaluateQaArming` / `armQa` is not named in §5.2 but is required for the “cannot arm without acknowledgement + allowlist + hotkey” invariant.
+- Electron accelerator is `CommandOrControl+Shift+F12` (Ctrl+Shift+F12 on Windows/Linux). `globalShortcut.register` is compiled in; it may fail at runtime without a display.
 
 ## Replay fixtures added
 
-`fixtures/replay/scheduler-priority/` — 8 JSON world snapshots (no pixels):
-
-| File | Expected state |
-| --- | --- |
-| `01-emergency-stop-beats-trade.json` | `EmergencyStop` |
-| `02-safety-hold-process.json` | `SafetyHold` |
-| `03-trade-session.json` | `TradeSession` |
-| `04-inventory-full-beats-loot-follow.json` | `InventoryFull` |
-| `05-high-value-loot-beats-follow.json` | `HighValueLoot` |
-| `06-high-value-loot-does-not-beat-trade.json` | `TradeSession` |
-| `07-follow-target.json` | `Follow` |
-| `08-idle.json` | `Idle` |
-
-Loaded by integration and replay tests through the live `ScenarioScheduler` (no `FrameSource` yet).
+None in Phase 03. Recording sink / controller `recordedActions` cover intended-action capture in memory. Scheduler fixtures from Phase 02 remain.
 
 ## Next exact work item
 
-Phase 03 — Capability / interlock / input boundary.
-
-Suggested commit from the plan: `feat: add capabilities, interlocks, and auditable GameInputController`.
+Finish Phase 03 gate (`lint`, `typecheck`, `test`, `check-native-input-imports`), self-review, then Phase 04 — deterministic replay + trace model.

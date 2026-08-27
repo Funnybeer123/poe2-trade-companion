@@ -1,8 +1,12 @@
-import { app, BrowserWindow } from "electron";
+import { EmergencyStop } from "@poe2tc/core";
+import { app, BrowserWindow, globalShortcut } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
 const appDir = path.dirname(fileURLToPath(import.meta.url));
+
+export const emergencyStop = new EmergencyStop();
+export const EMERGENCY_STOP_ACCELERATOR = "CommandOrControl+Shift+F12";
 
 function createMainWindow(): BrowserWindow {
   const window = new BrowserWindow({
@@ -27,7 +31,14 @@ function createMainWindow(): BrowserWindow {
   return window;
 }
 
+export function registerEmergencyStopHotkey(): boolean {
+  return globalShortcut.register(EMERGENCY_STOP_ACCELERATOR, () => {
+    emergencyStop.trip();
+  });
+}
+
 void app.whenReady().then(() => {
+  registerEmergencyStopHotkey();
   createMainWindow();
 
   app.on("activate", () => {
@@ -35,6 +46,10 @@ void app.whenReady().then(() => {
       createMainWindow();
     }
   });
+});
+
+app.on("will-quit", () => {
+  globalShortcut.unregisterAll();
 });
 
 app.on("window-all-closed", () => {

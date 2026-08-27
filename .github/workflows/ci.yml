@@ -22,4 +22,5 @@ jobs:
       - run: npm run typecheck
       - run: npm run test:unit
       - run: npm run test:integration
+      - run: node scripts/check-native-input-imports.mjs
       - run: npm run build

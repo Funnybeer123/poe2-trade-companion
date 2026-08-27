@@ -76,3 +76,41 @@ export type {
   ScenarioScheduler,
   SchedulerSelection,
 } from "./scheduler/types.js";
+
+export { createCapabilities } from "./capabilities/createCapabilities.js";
+export type { QaArmingState, RuntimeCapabilities } from "./capabilities/createCapabilities.js";
+export { armQa, evaluateQaArming } from "./capabilities/armQa.js";
+export type { QaArmingEvaluation, QaArmingExtras } from "./capabilities/armQa.js";
+
+export { createInterlockGate, DefaultInterlockGate } from "./interlock/interlockGate.js";
+export { TokenBucketRateLimiter } from "./interlock/rateLimiter.js";
+export type {
+  InterlockCode,
+  InterlockContext,
+  InterlockGate,
+  InterlockIdentity,
+  InterlockVerdict,
+} from "./interlock/types.js";
+
+export { EmergencyStop } from "./input/emergencyStop.js";
+export { createInputSink } from "./input/createInputSink.js";
+export {
+  createGameInputController,
+  createNoopSleeper,
+  createSystemSleeper,
+  DefaultGameInputController,
+} from "./input/gameInputController.js";
+export type { CreateGameInputControllerOptions, DecisionRecord } from "./input/gameInputController.js";
+export { ForbiddenInputSink, PUBLIC_COMPANION_FORBIDDEN_REASON } from "./input/sinks/forbiddenInputSink.js";
+export { NoopInputSink } from "./input/sinks/noopInputSink.js";
+export { RecordingInputSink } from "./input/sinks/recordingInputSink.js";
+export { hashSeed, mulberry32, timingJitterMs } from "./input/mulberry32.js";
+export type { TimingProfile } from "./input/mulberry32.js";
+export type {
+  BotDecision,
+  GameInputController,
+  InputAction,
+  InputResult,
+  InputSink,
+  Sleeper,
+} from "./input/types.js";
