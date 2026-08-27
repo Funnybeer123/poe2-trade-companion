@@ -1,0 +1,7 @@
+Item Class: Currency
+Rarity: Currency
+Exalted Orb
+--------
+Stack Size: 12/20
+--------
+Removes a random modifier and adds a new random modifier

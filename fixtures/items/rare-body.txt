@@ -1,0 +1,22 @@
+Item Class: Body Armours
+Rarity: Rare
+Storm Veil
+Advanced Maraketh Coat
+--------
+Quality: +20%
+Armour: 412
+Evasion Rating: 380
+--------
+Requirements:
+Level: 62
+Str: 64
+Dex: 64
+--------
+Sockets: S S
+--------
+Item Level: 82
+--------
++45 to Spirit
++28% to Fire Resistance
++22% to Lightning Resistance
+12% increased Movement Speed

@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "invokeChannels": [
+    "runtime:mode",
+    "item:from-clipboard",
+    "item:evaluate-text",
+    "catalog:list",
+    "catalog:remove",
+    "rules:list",
+    "rules:save",
+    "rules:remove",
+    "rules:validate",
+    "rules:generate-search",
+    "builds:list",
+    "builds:save",
+    "builds:remove",
+    "builds:activate",
+    "builds:import-targets",
+    "imports:legacy",
+    "exports:data",
+    "scans:list",
+    "scans:get"
+  ],
+  "eventChannels": [
+    "item:evaluated",
+    "catalog:changed",
+    "builds:changed",
+    "rules:changed"
+  ],
+  "contracts": {
+    "item": {
+      "required": ["schemaVersion", "parsed", "raw"],
+      "parsedRequired": ["item", "valuation", "desirability"]
+    },
+    "rule": {
+      "schemaVersion": 1,
+      "groupSemantics": "OR-of-AND"
+    },
+    "build": {
+      "schemaVersion": 1,
+      "targetIdentity": "searchKey"
+    },
+    "scan": {
+      "schemaVersion": 1,
+      "journalVersion": 1,
+      "coordinateSystem": "zero-based-client-relative"
+    }
+  }
+}

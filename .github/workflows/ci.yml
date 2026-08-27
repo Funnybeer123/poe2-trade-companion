@@ -1,0 +1,69 @@
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  quality:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      CI: "true"
+      CSC_IDENTITY_AUTO_DISCOVERY: "false"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+      POE2_BUILD_MODE: "public-companion"
+      POE2_QA_OPT_IN: "0"
+      POE2_QA_ACK: "0"
+      POE2_ENABLE_LIVE_INPUT: "0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install locked dependencies
+        run: npm ci
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Run all Vitest suites
+        run: npm run test:all
+
+      - name: Build public companion
+        run: npm run build:public
+
+      - name: Package public unpacked smoke
+        run: node scripts/run-electron-builder.mjs --retry-once --unique-output --manifest-mode=public-companion --dir --win --config electron-builder.public.yml --config.directories.output=release/ci-public --config.win.signAndEditExecutable=false
+
+      - name: Build authorized QA
+        run: npm run build:qa
+
+      - name: Package QA unpacked smoke
+        run: node scripts/run-electron-builder.mjs --retry-once --unique-output --manifest-mode=authorized-qa --dir --win --config electron-builder.qa.yml --config.directories.output=release/ci-qa --config.win.signAndEditExecutable=false
+
+      - name: Run Playwright Electron smoke
+        run: npm run test:e2e
+
+      - name: Upload failure diagnostics
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-quality-failure
+          if-no-files-found: ignore
+          retention-days: 7
+          path: |
+            artifacts/playwright/**
+            release/**/builder-debug.yml
+            release/**/builder-effective-config.yaml

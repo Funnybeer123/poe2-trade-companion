@@ -1,0 +1,17 @@
+{
+  "TradePresets": [
+    {
+      "PresetId": "rings-1",
+      "Name": "Resistance rings",
+      "League": "Standard",
+      "TradeUrl": "https://www.pathofexile.com/trade2/search/poe2/Standard/opaque123",
+      "Tags": ["ring", "resistance"]
+    },
+    {
+      "id": "boots-1",
+      "name": "Fast boots",
+      "league": "Standard",
+      "query": "{\"query\":{\"type\":\"Boots\",\"stats\":[]},\"sort\":{\"price\":\"asc\"}}"
+    }
+  ]
+}

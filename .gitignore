@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-electron/
 release/
 coverage/
 *.log
@@ -8,6 +9,17 @@ coverage/
 !.env.example
 *.sqlite
 *.sqlite3
+assistive-session.jsonl
+assistive-summary.json
+fixtures/benchmarks/assistive-used-cells.json
+fixtures/benchmarks/assistive-memory.json
+fixtures/perception/live/*
+!fixtures/perception/live/deposit-1787705758242.bmp
+fixtures/perception/templates/calibration.json
 .DS_Store
 Thumbs.db
 .cursor/plans/
+artifacts/diagnostics/
+artifacts/assistive-cli/
+artifacts/playwright/
+artifacts/demo/

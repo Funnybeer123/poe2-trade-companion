@@ -1,0 +1,15 @@
+Item Class: Amulets
+Rarity: Rare
+Soul Thread
+Stellar Amulet
+--------
+{ Implicit Modifier — Life }
++32 to maximum Life
+--------
+Requirements:
+Level: 24
+--------
+Item Level: 67
+--------
++18 to Spirit
++22% to Fire Resistance

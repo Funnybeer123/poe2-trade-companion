@@ -1,0 +1,14 @@
+appId: com.poe2.tradecompanion.qa
+productName: PoE2 QA Trade Bot
+asarUnpack:
+  - scripts/win-input-host.ps1
+files:
+  - dist/**
+  - dist-electron/**
+  - fixtures/market/quotes.json
+  - scripts/win-input-host.ps1
+extraMetadata:
+  poe2BuildMode: authorized-qa
+win:
+  target: nsis
+  artifactName: poe2-qa-trade-bot-${version}.${ext}

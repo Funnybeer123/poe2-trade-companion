@@ -1,0 +1,11 @@
+appId: com.poe2.tradecompanion.public
+productName: PoE2 Trade Companion
+files:
+  - dist/**
+  - dist-electron/**
+  - fixtures/market/quotes.json
+extraMetadata:
+  poe2BuildMode: public-companion
+win:
+  target: nsis
+  artifactName: poe2-trade-companion-public-${version}.${ext}

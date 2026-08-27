@@ -51,6 +51,40 @@ The same codebase should also retain:
 
 Automation modules must not arm in this mode.
 
+### Manual deal finder
+
+The **Deal finder** is available in public-companion mode and does not generate game input. Evaluate an
+item from the Price check tab, open Deal finder, then enter the seller's asking price and an optional
+fee/slippage percentage. It shows potential profit and return using the recommended listing estimate,
+along with confidence, comparable sample size, estimated costs, and stale-data warnings. These are
+estimates for manual decision support, not guaranteed sale prices.
+
+## Item intelligence
+
+The companion now keeps item-finding work in five connected workspaces:
+
+- **Items** parses clipboard or pasted item text into identity, properties,
+  ordered modifier sections, numeric rolls, valuation, desirability, and a
+  durable local catalog.
+- **Finder** builds validated stash-search expressions without truncating an
+  over-limit regex. Large selections are split into labeled searches.
+- **Builds** imports user-supplied official trade links or exported query JSON
+  into local gear-slot targets. Opaque search IDs are retained as unsupported
+  provenance and are never fetched automatically.
+- **Rules** uses one OR-of-AND rule parser/evaluator for editing, validation,
+  matching, and near-miss explanations.
+- **Scans** reviews imported or QA-generated scan sessions and slot outcomes.
+
+Item, build, rule, and scan state is stored in a local SQLite database under
+the Electron user-data directory. Legacy scan history, regex history, trade
+presets, and scan JSONL can be imported idempotently and exported through the
+versioned item-intelligence contract.
+
+The bundled fixture market provider is deterministic test/demo data, not live
+market data and not a guaranteed sale price. The undocumented Trade2 provider
+is disabled; a live provider must use a documented API or explicit service
+authorization.
+
 ## Preferred stack
 - Electron
 - TypeScript
@@ -108,6 +142,8 @@ Do not click Build in Sol Max under the current workflow. Sol Max is planning-on
 - `docs/ARCHITECTURE.md` — architecture.
 - `docs/QA_AUTOMATION_BOUNDARY.md` — automation gates and testing boundary.
 - `docs/GGG_COMPLIANCE.md` — public guidance vs authorized QA separation.
+- `docs/USER_GUIDE.md` — how to install and use the companion.
+- `docs/ITEM_INTELLIGENCE_PROVENANCE.md` — authorized source revision and reuse boundaries.
 - `docs/IMPLEMENTATION_PHASES.md` — implementation order.
 - `docs/TEST_PLAN.md` — test strategy.
 
@@ -116,3 +152,31 @@ Do not click Build in Sol Max under the current workflow. Sol Max is planning-on
 ## Current official API limitation
 
 GGG's current developer reference marks Account Stashes, Guild Stashes, and Public Stashes as PoE 1 only. Do not invent a PoE 2 stash API. For QA automation, use observable client UI state, clipboard/screen perception, or a dedicated internal test interface only if one is explicitly supplied later.
+
+## How to use the app
+
+See **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** for install, copying items from PoE 2, each workspace (Items, Finder, Builds, Rules, Scans, Tools), and authorized-QA gates.
+
+Quick start (public companion, no game input):
+
+```
+npm install
+npm run dev
+```
+
+Hover an item in Path of Exile 2, copy it (`Ctrl+C`), then press **Ctrl+D** in the companion or use **Items → Read clipboard**.
+
+## Develop
+```
+npm install
+npm test
+npm run typecheck
+npm run lint
+npm run dev
+```
+
+- Public build: `npm run build:public`
+- QA build (separate artifact, still requires local acknowledgement to arm): `npm run build:qa`
+- Full local quality gate: `npm run test:full`
+
+See `plans/IMPLEMENTATION_PLAN.md`.

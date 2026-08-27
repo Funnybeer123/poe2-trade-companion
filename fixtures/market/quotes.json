@@ -1,0 +1,16 @@
+{
+  "Advanced Maraketh Coat": [
+    { "listingId": "a", "priceAmount": 8, "priceCurrency": "exalted" },
+    { "listingId": "b", "priceAmount": 9, "priceCurrency": "exalted" },
+    { "listingId": "c", "priceAmount": 10, "priceCurrency": "exalted" },
+    { "listingId": "d", "priceAmount": 11, "priceCurrency": "exalted" },
+    { "listingId": "e", "priceAmount": 12, "priceCurrency": "exalted" },
+    { "listingId": "f", "priceAmount": 40, "priceCurrency": "exalted" }
+  ],
+  "Crude Bow": [
+    { "listingId": "u1", "priceAmount": 20, "priceCurrency": "exalted" },
+    { "listingId": "u2", "priceAmount": 22, "priceCurrency": "exalted" },
+    { "listingId": "u3", "priceAmount": 24, "priceCurrency": "exalted" },
+    { "listingId": "u4", "priceAmount": 25, "priceCurrency": "exalted" }
+  ]
+}

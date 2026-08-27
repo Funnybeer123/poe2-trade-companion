@@ -1,0 +1,12 @@
+Item Class: Bows
+Rarity: Unique
+Widowhail
+Crude Bow
+--------
+Physical Damage: 5-9
+Critical Hit Chance: 5.00%
+Attacks per Second: 1.20
+--------
+Item Level: 81
+--------
++(150-250)% increased bonuses gained from Equipped Quiver

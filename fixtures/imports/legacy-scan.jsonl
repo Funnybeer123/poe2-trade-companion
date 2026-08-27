@@ -1,0 +1,3 @@
+{"SessionId":"legacy-run-1","Slot":"0,0","ScannedAt":"2026-08-20T10:00:00Z","Status":"matched","Item":{"Fingerprint":"fp-one","Name":"Storm Loop","BaseType":"Ruby Ring","ItemClass":"Rings","Location":"stash:1"}}
+{"sessionId":"legacy-run-1","slotKey":"1,0","scannedAt":"2026-08-20T10:00:01Z","status":"empty"}
+{"SessionId":"legacy-run-2","Slot":"0,0","Timestamp":"2026-08-20T11:00:00Z","Result":{"fingerprint":"fp-two","name":"Fleet Pace","baseType":"Silk Slippers","itemClass":"Boots"}}

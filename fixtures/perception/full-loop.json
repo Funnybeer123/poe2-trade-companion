@@ -1,0 +1,50 @@
+[
+  {
+    "timestamp": "1970-01-01T00:00:00.000Z",
+    "windowTitle": "Path of Exile 2",
+    "processName": "PathOfExile.exe",
+    "navigationTarget": { "id": "leader", "screenX": 0.6, "screenY": 0.4, "confidence": 0.9 },
+    "loot": [{ "id": "loot-1", "label": "Rare Ring", "screenX": 0.4, "screenY": 0.5, "desirability": 70 }],
+    "inventory": {
+      "cells": [{ "row": 0, "col": 0, "occupied": false }],
+      "freeCells": 1,
+      "capturedAt": "1970-01-01T00:00:00.000Z",
+      "stale": false
+    },
+    "evidenceHash": "frame-1",
+    "confidence": 0.9
+  },
+  {
+    "timestamp": "1970-01-01T00:00:01.000Z",
+    "windowTitle": "Path of Exile 2",
+    "processName": "PathOfExile.exe",
+    "loot": [],
+    "inventory": {
+      "cells": [{ "row": 0, "col": 0, "occupied": true, "fingerprint": "abc" }],
+      "freeCells": 0,
+      "capturedAt": "1970-01-01T00:00:01.000Z",
+      "stale": false
+    },
+    "stash": {
+      "activeTab": "sale",
+      "tabs": ["sale", "dump"],
+      "cells": [],
+      "capturedAt": "1970-01-01T00:00:01.000Z",
+      "stale": false
+    },
+    "evidenceHash": "frame-2",
+    "confidence": 0.88
+  },
+  {
+    "timestamp": "1970-01-01T00:00:02.000Z",
+    "windowTitle": "Path of Exile 2",
+    "processName": "PathOfExile.exe",
+    "tradeWindowOpen": true,
+    "offeredCurrencyAmount": 10,
+    "offeredCurrencyType": "exalted",
+    "placedItemFingerprint": "abc",
+    "loot": [],
+    "evidenceHash": "frame-3",
+    "confidence": 0.92
+  }
+]

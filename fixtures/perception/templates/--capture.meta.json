@@ -1,0 +1,34 @@
+{
+  "label": "--capture",
+  "client": {
+    "left": 0,
+    "top": 0,
+    "width": 3840,
+    "height": 2160
+  },
+  "facts": {
+    "optionsOpen": false,
+    "loading": false,
+    "stashPanelOpen": false,
+    "inventoryPanelOpen": false,
+    "vendorPanelOpen": false,
+    "stashChestVisible": false,
+    "occupiedBag": [],
+    "occupiedStash": [],
+    "stashItems": [],
+    "bagEmpty": false,
+    "confidence": 0.2,
+    "reason": "needs-calibration",
+    "scores": {
+      "sceneOpen": -1,
+      "sceneClosed": -1,
+      "stashPanel": -1,
+      "inventoryPanel": -1,
+      "chest": -1,
+      "options": -1,
+      "stashGrid": true,
+      "inventoryGrid": true
+    }
+  },
+  "capturedAt": "2026-08-26T04:41:12.173Z"
+}

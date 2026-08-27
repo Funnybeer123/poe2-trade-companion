@@ -1,0 +1,18 @@
+{
+  "ScanHistory": [
+    {
+      "Id": "legacy-life",
+      "Name": "Life and resistance",
+      "Regex": "\"maximum Life\"|\"Fire Resistance\"",
+      "CreatedAt": "2026-08-20T12:00:00Z"
+    },
+    {
+      "id": "legacy-speed",
+      "name": "Movement speed",
+      "regex": "\"Movement Speed\""
+    },
+    {
+      "Name": "Missing expression"
+    }
+  ]
+}

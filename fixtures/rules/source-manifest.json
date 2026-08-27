@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 1,
+  "source": {
+    "repository": "https://github.com/Funnybeer123/Poe2StashRegexWeb",
+    "revision": "f64652366c3377a1d26f2b09da4c56b1734ec1a2",
+    "revisionDate": "2026-06-04",
+    "authorizationRecordedAt": "2026-08-26",
+    "licenseAtRevision": null
+  },
+  "localRegressions": [
+    "separator block zero is identity-only",
+    "OR groups do not cross-combine AND terms",
+    "over-limit queries split or report a conflict and are never truncated",
+    "two-value Adds rules distinguish legacy average and explicit independent semantics"
+  ],
+  "notes": [
+    "The pinned source is a behavioral reference; this fixture set intentionally corrects known source defects.",
+    "The separately wiki-derived modifier corpus was not copied."
+  ]
+}
