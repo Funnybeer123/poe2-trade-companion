@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 11 implemented)
+**Updated:** 2026-08-27 (Phase 11 complete)
 
 ## Covered in Phase 01
 
@@ -131,4 +131,4 @@
 
 ## Replay
 
-`npm run test:replay` now also includes `inventory-stale`. See `REPLAY_BACKLOG.md`.
+`npm run test:replay` now also includes the Phase 11 listing packs. See `REPLAY_BACKLOG.md`.

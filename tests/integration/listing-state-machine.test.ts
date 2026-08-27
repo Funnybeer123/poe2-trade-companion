@@ -128,6 +128,8 @@ describe("listing state machine integration", () => {
     expect(history.latest("astramentis-1")?.result).toBe("applied");
     expect(history.latest("astramentis-1")?.price).toBe(14.55);
     expect(history.latest("astramentis-1")?.currency).toBe("divine");
+    expect(loop.world.flags.pendingListingHistory).toBeNull();
+    expect(history.listByFingerprint("astramentis-1")).toHaveLength(1);
     expect(new ListingController().module).toBe("listing");
   });
 

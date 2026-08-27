@@ -318,10 +318,15 @@ export class AutomationLoop {
 
   #persistListingHistory(world: WorldState): void {
     const record = world.flags.pendingListingHistory;
-    if (record === undefined || record === null || this.#listingHistory === undefined) {
-      return;
+    if (record !== undefined && record !== null && this.#listingHistory !== undefined) {
+      this.#listingHistory.append(record);
     }
-    this.#listingHistory.append(record);
+    if (record !== undefined && record !== null) {
+      this.#world = {
+        ...world,
+        flags: { ...world.flags, pendingListingHistory: null },
+      };
+    }
   }
 }
 

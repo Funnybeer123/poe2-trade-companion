@@ -20,11 +20,12 @@
 | Phase 08 | `91da7e2` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
 | Phase 09 | `53072a6` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
 | Phase 10 | `0fee99f` on `cursor/phase-10-stash-sort-b8bf` (PR #11) | Stash sort complete |
-| Current branch | `cursor/phase-11-listing-reprice-e0c0` | Phase 11 listing / repricing |
+| Phase 11 first cut | `a4faa0f` on `cursor/phase-11-listing-reprice-e0c0` (PR #12) | Listing machine + replay packs |
+| Current commit | (this revision) | Gate + self-review on `cursor/phase-11-listing-reprice-e0c0` (PR #12) |
 
 ## Active phase
 
-Phase 11 — Listing / repricing QA state machine (implementation in, gate pending).
+None. Phase 11 is complete. Next is Phase 12.
 
 ## Completed phases
 
@@ -38,12 +39,20 @@ Phase 11 — Listing / repricing QA state machine (implementation in, gate pendi
 - Phase 08 — English `parseItem` adapter, SHA-256 fingerprint, fixture + official Currency Exchange providers, Tukey 1.5 IQR valuation, `DesirabilityEngine` / composite router, `loot-market-aware` replay.
 - Phase 09 — `gridDetector`, `ShadowState` / `reconcile` (`ShadowItem`, `ReconcileResult`), estimator fills grid cells, real `InventoryController` (sets `stashSessionActive` when full; no transfers), SQLite inventory/stash snapshot persist + stale reload, replay `inventory-stale`.
 - Phase 10 — `sortRules`, `transferPlanner` (pure, high value first), `StashController` for `InventoryFull` / `StashSort`. Transfers confirm after reconcile only. Max 3 attempts via `stash.failed-move` / `stash.wrong-tab`. Replay packs `stash-sort-success` / `stash-full-fallback` / `stash-failed-move-retry` / `stash-wrong-tab` / `stash-emergency-stop`.
+- Phase 11 — `pricePolicy`, table-driven `listingStateMachine`, `ListingController`. Recommended listing = `fair * (1 - undercutPct)` unless below `low`. Persist `listing_history`. Replay packs `listing-apply-price` / `listing-reprice-stale` / `listing-low-confidence-skip` / `listing-emergency-stop`.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 11 gate not yet recorded on this revision.
+Phase 11 gate (2026-08-27, this host) — **green**:
+
+- `npm test` — 291 tests
+- `npm run test:replay` — 21 tests
+- `npm run lint`
+- `npm run typecheck`
+
+Self-review: `PASS` (`grok/REVIEW_STATE.md`).
 
 ## Blockers
 
@@ -74,4 +83,4 @@ Phase 02–10 fixtures remain.
 
 ## Next exact work item
 
-Run Phase 11 gate (`npm test && npm run test:replay && npm run lint && npm run typecheck`), self-review, then Phase 12 — trade-session QA state machine. Do not start the trade machine until Phase 11 is marked complete.
+Phase 12 — Trade-session QA state machine. Do not start the full-loop orchestrator.

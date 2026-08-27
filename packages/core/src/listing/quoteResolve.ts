@@ -48,7 +48,7 @@ export function resolveListingQuote(input: {
           context,
         );
 
-  let quote = catalogQuote ?? lookedUp;
+  const quote = catalogQuote ?? lookedUp;
   const cacheKey =
     input.item === undefined
       ? undefined
