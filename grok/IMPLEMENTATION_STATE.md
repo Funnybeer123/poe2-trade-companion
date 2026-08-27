@@ -14,7 +14,7 @@
 | Phase 02 | `ece3287` on `cursor/phase-02-world-state-scheduler-ca64` (PR #3) | WorldState + scheduler complete |
 | Phase 03 | `67ea3ae` on `cursor/phase-03-capabilities-interlock-input-9d76` (PR #4) | Capabilities, interlocks, GameInputController |
 | Phase 04 first cut | `8e47c0d` on `cursor/phase-04-replay-trace-9afe` (PR #5) | Replay runner, traces, fixture frame source |
-| Current commit | `cursor/phase-04-replay-trace-9afe` | Gate + self-review (SHA recorded after this commit) |
+| Current commit | `47daf0c` | Gate + self-review on `cursor/phase-04-replay-trace-9afe` (PR #5) |
 
 ## Active phase
 
