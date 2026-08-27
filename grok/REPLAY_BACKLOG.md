@@ -1,6 +1,6 @@
 # Replay Backlog
 
-Phase 01 adds `tests/replay/.gitkeep` and `fixtures/replay/.gitkeep` only. No fixtures yet.
+Phase 02 added `fixtures/replay/scheduler-priority/` (8 JSON world snapshots, no pixels) plus `tests/replay/scheduler-priority.test.ts`. Snapshot-in / selected-state-out through the live `ScenarioScheduler`. No `FrameSource` yet.
 
 Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 

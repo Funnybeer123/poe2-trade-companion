@@ -11,11 +11,12 @@
 | Audited base (`main`) | `3bf2f91398a16a5250d351be818a41ca39e32762` | Docs-only repo; no toolchain |
 | Plan branch | `176b090` (`cursor/implementation-plan-05a4`, PR #1) | Adds this implementation plan |
 | Phase 01 bootstrap | `020d6b7` | First workspace/CI commit |
-| Current commit | `4a261bd` | Gate + self-review on `cursor/phase-01-baseline-f3a0` (PR #2) |
+| Phase 01 gate | `4a261bd` / `8c3ba93` | Gate + self-review on `cursor/phase-01-baseline-f3a0` (PR #2) |
+| Current commit | (this Phase 02 branch; SHA recorded after commit) | `cursor/phase-02-world-state-scheduler-ca64` |
 
 ## Active phase
 
-None. Phase 01 is complete. Next is Phase 02.
+Phase 02 — Canonical `WorldState` + deterministic `ScenarioScheduler`. Implementation is on the branch; gate commands will be recorded after the official run.
 
 ## Completed phases
 
@@ -23,50 +24,42 @@ None. Phase 01 is complete. Next is Phase 02.
 
 ## Build / test status
 
-Host Node: `v22.14.0` (nvm also has `v22.22.2`). `.nvmrc` pins `22`. No Node-version deviation.
+Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Pre-phase baseline (reproduced 2026-08-27 from `/workspace` before `package.json` existed):
-
-| Command | Result |
-| --- | --- |
-| `npm test` | `ENOENT` no `package.json` (exit 254) |
-| `npm run lint` | `ENOENT` no `package.json` (exit 254) |
-| `npm run typecheck` | `ENOENT` no `package.json` (exit 254) |
-| `npx tsc --noEmit` | resolved deprecated `tsc@2.0.4`; failed |
-| `npm run replay` | `ENOENT` no `package.json` (exit 254) |
-
-Post-phase gate (2026-08-27, this host) — **green**:
-
-- `npm install`
-- `npm run lint`
-- `npm run typecheck`
-- `npm test` — `workspace-ok` + `migrations-exist` (2 tests)
-- `npm run test:replay` — zero files, passes with `--passWithNoTests`
-- `npm run build` — desktop `tsc` + overlay Vite build
-
-Electron headless window start was not run (Linux cloud agent, no display). Compile is the Phase 01 gate.
+Phase 02 gate (`npm run lint && npm run typecheck && npm test`) not yet recorded on this revision.
 
 ## Blockers
 
-- None for Phase 01.
+- None for Phase 02.
 - External / later-phase: Windows live client, native `SendInput`, OAuth registration freeze, no official PoE 2 stash/trade-search API. See `RESEARCH_NOTES.md`.
 
 ## Plan deviations
 
-- `vitest.config.ts` with `test.projects` is used instead of `vitest.workspace.ts`. Vitest 3.2.7 deprecates the workspace file (`The workspace file is deprecated and will be removed in the next major`). Same unit/integration/replay split.
-- `--passWithNoTests` is a Vitest CLI flag, not a typed `ProjectConfig` field. Needed so `test:replay` can be green before Phase 04 fixtures exist.
-- Did **not** create empty `packages/native-input`, `packages/perception-live`, or `packages/persistence-sqlite`. Phase 01 Add list only requires `packages/core` and `packages/testkit`.
-- Did **not** add `electron-builder.*.yml` or Phase 03 import-guard scripts.
-- Electron **40.10.6** installed per locked default (EOL 2026-06-30; current stable is 44.0.0). No swap required.
-- `better-sqlite3` is not a Phase 01 dependency. Only `migrations/001_init.sql` was added.
-- Prettier ignores `*.md` so Phase 01 does not mass-reformat pre-existing docs.
+Phase 01 deviations unchanged.
+
+Phase 02:
+
+- `AutomationScenario` in §5.6 has no `highValueInterruptScore`. The Phase 02 Add list puts that threshold on `world.flags.highValueInterruptScore` (default `85`). Predicates use the flag, not a scenario field.
+- Added named helpers `WorldStateFlags`, `SchedulerSelection`, and a minimal `FailureInjection` type because §5.6 references `failureInjection` without defining it.
+- `RecoverTarget` is eligible whenever follow is enabled and the target is missing or below `confidenceThreshold`. `Idle` therefore requires follow (and other action modules) to be disabled or their predicates false. This matches the predicate table literally.
 
 ## Replay fixtures added
 
-None. `tests/replay/.gitkeep` and `fixtures/replay/.gitkeep` exist. See `REPLAY_BACKLOG.md`.
+`fixtures/replay/scheduler-priority/` — 8 JSON world snapshots (no pixels):
+
+| File | Expected state |
+| --- | --- |
+| `01-emergency-stop-beats-trade.json` | `EmergencyStop` |
+| `02-safety-hold-process.json` | `SafetyHold` |
+| `03-trade-session.json` | `TradeSession` |
+| `04-inventory-full-beats-loot-follow.json` | `InventoryFull` |
+| `05-high-value-loot-beats-follow.json` | `HighValueLoot` |
+| `06-high-value-loot-does-not-beat-trade.json` | `TradeSession` |
+| `07-follow-target.json` | `Follow` |
+| `08-idle.json` | `Idle` |
+
+Loaded by `tests/integration/scheduler-priority.test.ts` and `tests/replay/scheduler-priority.test.ts` through the live `ScenarioScheduler`.
 
 ## Next exact work item
 
-Phase 02 — Canonical `WorldState` + deterministic `ScenarioScheduler`.
-
-Suggested commit from the plan: `feat: add WorldState model and deterministic scenario scheduler`.
+Run Phase 02 gate, self-review, then Phase 03 — Capability / interlock / input boundary.

@@ -1,0 +1,94 @@
+{
+  "id": "04-inventory-full-beats-loot-follow",
+  "description": "Full inventory interrupts loot pickup and follow",
+  "world": {
+    "tickId": 5,
+    "capturedAtMs": 10000,
+    "clockMs": 10000,
+    "runtimeMode": "authorized-qa",
+    "selectedState": "LootPickup",
+    "previousState": "Follow",
+    "activeScenarioId": "scheduler-priority",
+    "process": {
+      "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+      "confidence": 1,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    },
+    "target": {
+      "value": { "identity": "qa-target", "screenPoint": { "x": 400, "y": 300 }, "estimatedDistance": "near" },
+      "confidence": 0.9,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    },
+    "loot": {
+      "value": [
+        { "id": "orb-1", "labelText": "Chaos Orb", "screenPoint": { "x": 120, "y": 200 }, "score": 50 }
+      ],
+      "confidence": 0.88,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    },
+    "inventory": {
+      "value": { "occupied": 60, "capacity": 60, "cells": [], "full": true },
+      "confidence": 0.95,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    },
+    "stash": { "value": { "cells": [], "tabFull": false }, "confidence": 0, "observedAtMs": 10000, "freshness": "missing" },
+    "trade": { "value": null, "confidence": 0, "observedAtMs": 10000, "freshness": "missing" },
+    "listing": { "value": null, "confidence": 0, "observedAtMs": 10000, "freshness": "missing" },
+    "ui": { "value": { "kind": "gameplay" }, "confidence": 0.8, "observedAtMs": 10000, "freshness": "fresh" },
+    "stuck": { "value": { "isStuck": false }, "confidence": 1, "observedAtMs": 10000, "freshness": "fresh" },
+    "flags": {
+      "emergencyStopLatched": false,
+      "tradeRequested": false,
+      "stashSessionActive": false,
+      "listingSessionActive": false,
+      "highValueInterruptScore": 85
+    }
+  },
+  "scenario": {
+    "id": "scheduler-priority",
+    "title": "Scheduler priority replay",
+    "enabled": true,
+    "executionMode": "dry-run",
+    "enabledModules": [
+      "follow",
+      "loot",
+      "inventory",
+      "stash",
+      "listing",
+      "trade",
+      "recovery",
+      "orchestrator",
+      "perception",
+      "input"
+    ],
+    "actionsPerMinute": 30,
+    "confidenceThreshold": 0.6,
+    "lowConfidencePolicy": "skip",
+    "timingProfileId": "default",
+    "retryLimits": {},
+    "interruptRules": [
+      { "higher": "EmergencyStop", "lower": "Follow", "when": "always" },
+      { "higher": "EmergencyStop", "lower": "LootPickup", "when": "always" },
+      { "higher": "EmergencyStop", "lower": "StashSort", "when": "always" },
+      { "higher": "EmergencyStop", "lower": "Listing", "when": "always" },
+      { "higher": "EmergencyStop", "lower": "TradeSession", "when": "always" },
+      { "higher": "TradeSession", "lower": "Follow", "when": "trade-active" },
+      { "higher": "TradeSession", "lower": "LootPickup", "when": "trade-active" },
+      { "higher": "InventoryFull", "lower": "LootPickup", "when": "inventory-full" },
+      { "higher": "InventoryFull", "lower": "Follow", "when": "inventory-full" },
+      { "higher": "HighValueLoot", "lower": "Follow", "when": "loot-above-interrupt-threshold" },
+      { "higher": "StashSort", "lower": "Follow", "when": "stash-session-active" },
+      { "higher": "Listing", "lower": "Follow", "when": "listing-session-active" }
+    ],
+    "marketProviderId": "fixture"
+  },
+  "expect": {
+    "state": "InventoryFull",
+    "interrupt": true,
+    "reason": "inventory-full"
+  }
+}

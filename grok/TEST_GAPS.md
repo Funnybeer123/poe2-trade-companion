@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (end of Phase 01)
+**Updated:** 2026-08-27 (Phase 02 implemented)
 
 ## Covered in Phase 01
 
@@ -8,11 +8,19 @@
 - `migrations/001_init.sql` contains `qa_action_traces` (`tests/integration/migrations-exist.test.ts`)
 - Lint, typecheck, and workspace compile via CI
 
+## Covered in Phase 02
+
+- Scheduler priority order table (`tests/unit/scheduler/priority-order.test.ts`)
+- Interrupts, tie-break, frozen-clock identity, disabled modules
+- EmergencyStop vs trade; InventoryFull vs loot/follow; HighValueLoot vs follow-not-trade
+- Freshness buckets and `FrozenClock` / `createEmptyWorldState`
+- 8 replay/integration snapshots in `fixtures/replay/scheduler-priority/`
+
 ## Intentionally absent (later phases)
 
 | Gap | First phase |
 | --- | --- |
-| Scheduler priority / interrupt / determinism | 02 |
+| Scheduler priority / interrupt / determinism | 02 (covered) |
 | Public mode cannot emit native input | 03 |
 | QA arming, kill switch, allowlist, dry-run, rate limit | 03 |
 | Native-import guard script | 03 |
@@ -31,4 +39,4 @@
 
 ## Replay
 
-No replay tests yet. `npm run test:replay` is wired and allowed to pass with zero files (`passWithNoTests`). See `REPLAY_BACKLOG.md`.
+Phase 02 replay snapshots exist. `npm run test:replay` now has `tests/replay/scheduler-priority.test.ts`. Full replay runner / `FrameSource` still Phase 04. See `REPLAY_BACKLOG.md`.
