@@ -18,11 +18,21 @@ export function summarizeInventory(world: WorldState): string {
   return `inventory=${String(inventory.occupied)}/${String(inventory.capacity)} full=${String(inventory.full)}${mismatch}`;
 }
 
+export function summarizeStash(world: WorldState): string {
+  const stash = world.stash.value;
+  const pending = world.flags.pendingStashTransfer;
+  const pendingText =
+    pending === undefined || pending === null
+      ? ""
+      : ` pending=${pending.kind}:${pending.fingerprint}->${pending.destTabId}:${String(pending.attempts)}`;
+  return `stash=${stash.tabId ?? "none"} full=${String(stash.tabFull)}${pendingText}`;
+}
+
 export function summarizeWorld(world: WorldState): string {
   const identity = world.target.value?.identity;
   const targetText = identity === undefined ? "target=none" : `target=${identity}`;
   const processName = world.process.value.name ?? "unknown";
-  return `${targetText} process=${processName} ui=${world.ui.value.kind} ${summarizeInventory(world)} ${summarizeLoot(world)}`;
+  return `${targetText} process=${processName} ui=${world.ui.value.kind} ${summarizeInventory(world)} ${summarizeStash(world)} ${summarizeLoot(world)}`;
 }
 
 export function isoTimestampFromMs(ms: number): string {

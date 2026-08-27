@@ -19,11 +19,12 @@
 | Phase 07 | `d7e6286` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
 | Phase 08 | `91da7e2` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
 | Phase 09 first cut | `b4af56f` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
-| Current commit | `b0a7e63` | Gate + self-review on `cursor/phase-09-inventory-observe-a61e` (PR #10) |
+| Phase 09 complete | `b0a7e63` / `53072a6` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Gate + self-review |
+| Current commit | (this branch) | Phase 10 first cut on `cursor/phase-10-stash-sort-b8bf` |
 
 ## Active phase
 
-None. Phase 09 is complete. Next is Phase 10.
+Phase 10 — Automated stash sorting (planner + confirmed transfers). Gate commands not yet recorded on this revision.
 
 ## Completed phases
 
@@ -36,6 +37,7 @@ None. Phase 09 is complete. Next is Phase 10.
 - Phase 07 — `lootLabelDetector`, `LootController`, `InventoryController` stub, `FixtureDesirabilityScorer` / `DesirabilityPort`, rank/skip/suppression, replay packs `loot-desirable-vs-junk` / `loot-inventory-full` / `loot-unreachable-backoff`.
 - Phase 08 — English `parseItem` adapter, SHA-256 fingerprint, fixture + official Currency Exchange providers, Tukey 1.5 IQR valuation, `DesirabilityEngine` / composite router, `loot-market-aware` replay.
 - Phase 09 — `gridDetector`, `ShadowState` / `reconcile` (`ShadowItem`, `ReconcileResult`), estimator fills grid cells, real `InventoryController` (sets `stashSessionActive` when full; no transfers), SQLite inventory/stash snapshot persist + stale reload, replay `inventory-stale`.
+- Phase 10 (in progress) — `sortRules`, `transferPlanner` (pure, high value first), `StashController` for `InventoryFull` / `StashSort`. Transfers confirm after reconcile only. Max 3 attempts via `stash.failed-move` / `stash.wrong-tab`.
 
 ## Build / test status
 
@@ -68,6 +70,14 @@ Phase 09:
 - Sparse observed cell lists honor derived `capacity` when it is larger than `cells.length`, so one occupied cell is not treated as a 1/1 full grid.
 - `withShadowMismatchReason` annotates the loop trace whenever `flags.shadowMismatch` is true, including when `InventoryFull` is not the selected state.
 
+Phase 10:
+
+- No invented PoE 2 stash API. Catalog + observed grids only (`flags.stashItemCatalog`).
+- `FailedOrTimedOut` is the recovery `terminalState` string on the decision reason. The world/scheduler state used is `SafetyHold` (`flags.stashSafetyHold`) because `FailedOrTimedOut` is not an `AutomationStateId`.
+- Empty plan clears `stashSessionActive` only when inventory is not full, so a full unidentified grid still starts a stash session (Phase 09 `inventory-stale` / `loot-inventory-full`).
+- Expected pending moves are reclassified by `applyExpectedTransfer` so a confirmed transfer is not a `shadowMismatch`.
+- `InventoryFull` / `StashSort` both use `StashController`. `InventoryController` remains observation-only for unit tests.
+
 ## Replay fixtures added
 
 - `fixtures/replay/inventory-stale/` — 12/12 occupied cells → `InventoryFull`; dropped cell → no longer full.
@@ -76,4 +86,4 @@ Phase 02/04/05/06/07/08 fixtures remain.
 
 ## Next exact work item
 
-Phase 10 — Automated stash sorting (planner + confirmed transfers). Do not start listing/trade machines.
+Run Phase 10 gate (`npm test && npm run test:replay && npm run lint && npm run typecheck`), self-review, then mark Phase 10 complete. Next implementation phase is Phase 11 (listing machine) — do not start it until the Phase 10 gate is green.

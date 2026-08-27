@@ -116,6 +116,24 @@ export interface PendingLootPickup {
   clickedAtMs: number;
 }
 
+export interface StashItemMeta {
+  class?: string;
+  rarity?: string;
+  category?: string;
+  score?: number;
+}
+
+export interface PendingStashTransfer {
+  fingerprint: string;
+  from: { kind: "inventory" | "stash"; tabId?: string; x: number; y: number };
+  to: { kind: "inventory" | "stash"; tabId?: string; x: number; y: number };
+  kind: "tab-click" | "move";
+  attempts: number;
+  lastAttemptMs: number;
+  destTabId: string;
+  reason: string;
+}
+
 export interface WorldStateFlags {
   emergencyStopLatched: boolean;
   tradeRequested: boolean;
@@ -127,6 +145,9 @@ export interface WorldStateFlags {
   lootAttemptCounts?: Record<string, number>;
   lootLastAttemptMs?: Record<string, number>;
   shadowMismatch?: boolean;
+  stashItemCatalog?: Record<string, StashItemMeta>;
+  pendingStashTransfer?: PendingStashTransfer | null;
+  stashSafetyHold?: boolean;
 }
 
 export interface WorldState {

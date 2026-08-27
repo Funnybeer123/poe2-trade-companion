@@ -1,3 +1,4 @@
+import { applyExpectedTransfer, transferObserved } from "../stash/confirmTransfer.js";
 import type { Observation, WorldState, WorldStateFlags } from "../world-state/types.js";
 import { occupancyFromCells, stashTabFull } from "./occupancy.js";
 import { DEFAULT_SHADOW_STALE_AFTER_MS } from "./reconcile.js";
@@ -33,7 +34,7 @@ export function estimateInventory(input: EstimateInventoryInput): EstimateInvent
     tabFull: stashTabFull(stashOccupancy.cells, input.stash.value.tabFull),
   };
 
-  const result = input.shadow.reconcile({
+  const raw = input.shadow.reconcile({
     inventoryCells: inventoryValue.cells,
     stashCells: stashValue.cells,
     nowMs: input.nowMs,
@@ -41,13 +42,19 @@ export function estimateInventory(input: EstimateInventoryInput): EstimateInvent
     inventoryFreshness: input.inventory.freshness,
     stashFreshness: input.stash.freshness,
   });
+  const pending = input.flags.pendingStashTransfer;
+  const result = applyExpectedTransfer(raw, pending);
+  if (result !== raw) {
+    input.shadow.apply(result);
+  }
+  const expectedMove = pending?.kind === "move" && transferObserved(result, pending);
 
   return {
     inventory: { ...input.inventory, value: inventoryValue },
     stash: { ...input.stash, value: stashValue },
     flags: {
       ...input.flags,
-      shadowMismatch: hasShadowMismatch(result),
+      shadowMismatch: expectedMove ? false : hasShadowMismatch(result),
     },
     reconcile: result,
   };

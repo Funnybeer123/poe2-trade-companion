@@ -14,6 +14,8 @@ Phase 08 added `loot-market-aware` (derived loot includes clipboard text; `Desir
 
 Phase 09 added `inventory-stale` (12/12 occupancy → `InventoryFull`; fixture drop cell → no longer full) through the live estimator + `InventoryController`.
 
+Phase 10 added `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab`, and `stash-emergency-stop` through the live `StashController`. Success is observed on the next fixture frame, never assumed from the drag.
+
 Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 
 | Phase | Fixture / suite |
@@ -25,7 +27,7 @@ Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 | 07 | `loot-desirable-vs-junk`, `loot-inventory-full`, `loot-unreachable-backoff` — added |
 | 08 | `loot-market-aware` — added |
 | 09 | `inventory-stale` — added |
-| 10 | `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab` |
+| 10 | `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab`, `stash-emergency-stop` — added |
 | 11 | `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip` |
 | 12 | trade success + listed failure classes |
 | 13 | `full-loop`, interrupt-trade, interrupt-loot, emergency-stop |

@@ -1,0 +1,147 @@
+{
+  "id": "stash-full-fallback",
+  "scenarioId": "stash-sort",
+  "seed": 11,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "stashSessionActive": true,
+          "stashItemCatalog": {
+            "exalted-1": { "class": "Currency", "category": "HighValueSell", "score": 80 }
+          }
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "exalted-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "stash": {
+          "value": {
+            "tabId": "currency",
+            "tabName": "Currency",
+            "tabFull": true,
+            "cells": [
+              { "tabId": "currency", "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true },
+              { "tabId": "currency", "x": 1, "y": 0, "w": 50, "h": 50, "occupied": true }
+            ]
+          },
+          "confidence": 0.9,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "stash" }, "confidence": 0.9, "observedAtMs": 10000, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10200,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "exalted-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "stash": {
+          "value": {
+            "tabId": "dump",
+            "tabName": "Dump",
+            "tabFull": false,
+            "cells": [
+              { "tabId": "dump", "x": 0, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "tabId": "dump", "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.9,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "stash" }, "confidence": 0.9, "observedAtMs": 10200, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 3,
+      "atMs": 10400,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 0,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "stash": {
+          "value": {
+            "tabId": "dump",
+            "tabName": "Dump",
+            "tabFull": false,
+            "cells": [
+              { "tabId": "dump", "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "exalted-1" },
+              { "tabId": "dump", "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.9,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "stash" }, "confidence": 0.9, "observedAtMs": 10400, "freshness": "fresh" }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "StashSort", "decisionReasonIncludes": "stash-tab:dump", "executed": false, "sinkKind": "noop" },
+    { "tickId": 2, "selectedState": "StashSort", "decisionReasonIncludes": "stash-move:exalted-1", "executed": false, "sinkKind": "noop" },
+    { "tickId": 3, "selectedState": "StashSort", "decisionReasonIncludes": "stash-plan-empty", "executed": false, "sinkKind": "noop" }
+  ]
+}
