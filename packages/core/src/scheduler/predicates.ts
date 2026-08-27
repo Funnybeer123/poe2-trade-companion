@@ -1,3 +1,7 @@
+import {
+  isLostTargetExhausted,
+  isStuckExhausted,
+} from "../navigation/estimateNavigation.js";
 import { DEFAULT_HIGH_VALUE_INTERRUPT_SCORE } from "../world-state/createEmptyWorldState.js";
 import type {
   AutomationStateId,
@@ -139,6 +143,9 @@ export function isPredicateTrue(
     case "EmergencyStop":
       return world.flags?.emergencyStopLatched === true;
     case "SafetyHold":
+      if (isStuckExhausted(world.stuck?.value ?? { isStuck: false })) {
+        return true;
+      }
       if (!isProcessAllowlisted(world)) {
         return true;
       }
@@ -162,7 +169,10 @@ export function isPredicateTrue(
     case "Follow":
       return isTargetAcquired(world, scenario);
     case "RecoverTarget":
-      return isTargetMissingOrLowConfidence(world, scenario);
+      return (
+        isTargetMissingOrLowConfidence(world, scenario) &&
+        !isLostTargetExhausted(world.stuck?.value ?? { isStuck: false })
+      );
     case "Idle":
       return true;
     default:
@@ -195,6 +205,9 @@ export function eligibilityReason(state: AutomationStateId, world: WorldState): 
     case "EmergencyStop":
       return "emergency-stop-latched";
     case "SafetyHold":
+      if (isStuckExhausted(world.stuck?.value ?? { isStuck: false })) {
+        return "stuck-exhausted";
+      }
       return isProcessAllowlisted(world)
         ? "safety-hold-low-confidence-skip"
         : "safety-hold-process-not-allowlisted";

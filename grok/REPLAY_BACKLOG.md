@@ -6,6 +6,8 @@ Phase 04 added the replay runner + `FrameSource`. `fixtures/replay/follow-acquir
 
 Phase 05 added `fixtures/replay/perception-estimate/` (target present then omitted; freshness `fresh` → `missing` after `AGING_MAX_AGE_MS`) through `FixturePerceptionAdapter` + `StateEstimator` + the live scheduler.
 
+Phase 06 added `follow-lost-reacquire`, `follow-stuck-recovery`, and `follow-emergency-stop` through the live `FollowController` / `RecoveryController`.
+
 Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 
 | Phase | Fixture / suite |
@@ -13,7 +15,7 @@ Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 | 02 | `fixtures/replay/scheduler-priority/` — JSON world snapshots, no pixels |
 | 04 | `fixtures/replay/follow-acquired/` |
 | 05 | `fixtures/replay/perception-estimate/` |
-| 06 | `follow-lost-reacquire`, `follow-stuck-recovery`, `follow-emergency-stop` |
+| 06 | `follow-lost-reacquire`, `follow-stuck-recovery`, `follow-emergency-stop` — added |
 | 07 | `loot-desirable-vs-junk`, `loot-inventory-full`, `loot-unreachable-backoff` |
 | 08 | `loot-market-aware` |
 | 09 | `inventory-stale` |

@@ -37,6 +37,7 @@ export type {
   ScenarioId,
   TargetCue,
   TradeWindowView,
+  StuckObservationValue,
   UiModeState,
   WorldState,
   WorldStateFlags,
@@ -154,7 +155,41 @@ export {
 export type { Controller } from "./controllers/types.js";
 export { IdleController } from "./controllers/idleController.js";
 export { FollowController } from "./controllers/followController.js";
-export { createPhase04ControllerMap } from "./controllers/controllerMap.js";
+export { RecoveryController } from "./controllers/recoveryController.js";
+export { createControllerMap } from "./controllers/controllerMap.js";
+
+export { DEFAULT_RECOVERY, recoveryPolicy } from "./recovery/defaultRecovery.js";
+export type { RecoveryPolicy } from "./recovery/defaultRecovery.js";
+
+export { DEFAULT_FOLLOW_CONFIG, resolveFollowConfig } from "./navigation/followConfig.js";
+export type { FollowConfig } from "./navigation/followConfig.js";
+export {
+  DEFAULT_SCREEN_HEIGHT,
+  DEFAULT_SCREEN_WIDTH,
+  followDirection,
+  screenCenter,
+  vectorToTarget,
+} from "./navigation/direction.js";
+export type { FollowDirectionInput, FollowDirectionResult } from "./navigation/direction.js";
+export {
+  DEFAULT_MIN_PROGRESS_PX,
+  detectStuck,
+  pointDistance,
+  stuckRecoveryAttempt,
+} from "./navigation/stuckDetector.js";
+export type { StuckDetectorInput, StuckDetectorResult } from "./navigation/stuckDetector.js";
+export { nextLostTargetTicks } from "./navigation/lostTargetTicks.js";
+export { RECOVERY_SCAN_ANGLES_DEG, RECOVERY_SCAN_RADIUS_PX, recoveryScanPoint } from "./navigation/scan.js";
+export {
+  estimateStuckObservation,
+  isLostTargetExhausted,
+  isStuckExhausted,
+  LOST_TARGET_EXHAUSTED_REASON,
+  LOST_TARGET_REASON,
+  lostTargetScanAttempt,
+  NO_PROGRESS_REASON,
+  STUCK_EXHAUSTED_REASON,
+} from "./navigation/estimateNavigation.js";
 
 export type { QaActionTrace, RedactionSettings, TraceSink } from "./trace/types.js";
 export { InMemoryTraceSink } from "./trace/inMemoryTraceSink.js";

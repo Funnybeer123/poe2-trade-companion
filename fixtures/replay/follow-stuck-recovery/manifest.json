@@ -1,0 +1,622 @@
+{
+  "id": "follow-stuck-recovery",
+  "scenarioId": "follow-only",
+  "seed": 6,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10100,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10100,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10100,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 10100,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 3,
+      "atMs": 10200,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 4,
+      "atMs": 10300,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10300,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10300,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 10300,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 5,
+      "atMs": 10400,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 6,
+      "atMs": 10500,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10500,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10500,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 10500,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 7,
+      "atMs": 10600,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 8,
+      "atMs": 10700,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10700,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10700,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 10700,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 9,
+      "atMs": 10800,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10800,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10800,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 10800,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 10,
+      "atMs": 10900,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10900,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 10900,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 10900,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 11,
+      "atMs": 11000,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11000,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 11000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 11000,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 12,
+      "atMs": 11100,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 13,
+      "atMs": 11200,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11200,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 11200,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 11200,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 14,
+      "atMs": 11300,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11300,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 11300,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 11300,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 15,
+      "atMs": 11400,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11400,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 11400,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 11400,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 16,
+      "atMs": 11500,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11500,
+          "freshness": "fresh"
+        },
+        "target": {
+          "value": {
+            "identity": "qa-target",
+            "screenPoint": {
+              "x": 1600,
+              "y": 200
+            },
+            "estimatedDistance": "far"
+          },
+          "confidence": 0.92,
+          "observedAtMs": 11500,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "gameplay"
+          },
+          "confidence": 0.8,
+          "observedAtMs": 11500,
+          "freshness": "fresh"
+        }
+      }
+    }
+  ],
+  "expect": [
+    {
+      "tickId": 1,
+      "selectedState": "Follow",
+      "decisionReasonIncludes": "follow-target",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 13,
+      "selectedState": "Follow",
+      "decisionReasonIncludes": "stuck-recovery",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 16,
+      "selectedState": "SafetyHold",
+      "decisionReasonIncludes": "stuck-exhausted",
+      "executed": false,
+      "sinkKind": "noop"
+    }
+  ]
+}

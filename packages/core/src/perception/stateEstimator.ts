@@ -1,5 +1,10 @@
 import type { Clock } from "../clock.js";
 import type { QaArmingState } from "../capabilities/createCapabilities.js";
+import { estimateStuckObservation } from "../navigation/estimateNavigation.js";
+import {
+  DEFAULT_FOLLOW_CONFIG,
+  type FollowConfig,
+} from "../navigation/followConfig.js";
 import { computeFreshness } from "../world-state/freshness.js";
 import type { Freshness, Observation, WorldState } from "../world-state/types.js";
 import { isProcessAllowlistedByArming } from "./allowlist.js";
@@ -9,6 +14,7 @@ import type { PerceptionFrame, StateEstimator } from "./types.js";
 export interface StateEstimatorOptions {
   clock: Clock;
   arming: QaArmingState;
+  followConfig?: FollowConfig;
 }
 
 function effectivePrevFreshness<T>(prev: Observation<T>, nowMs: number): Freshness {
@@ -80,10 +86,12 @@ function withAllowlist(
 export class DefaultStateEstimator implements StateEstimator {
   readonly #clock: Clock;
   readonly #arming: QaArmingState;
+  readonly #followConfig: FollowConfig;
 
   constructor(options: StateEstimatorOptions) {
     this.#clock = options.clock;
     this.#arming = options.arming;
+    this.#followConfig = options.followConfig ?? DEFAULT_FOLLOW_CONFIG;
   }
 
   estimate(prev: WorldState, frame: PerceptionFrame): WorldState {
@@ -109,7 +117,15 @@ export class DefaultStateEstimator implements StateEstimator {
       trade: mergeObservation(prev.trade, frame.trade, nowMs),
       listing: mergeObservation(prev.listing, frame.listing, nowMs),
       ui: mergeObservation(prev.ui, frame.ui, nowMs),
-      stuck: mergeObservation(prev.stuck, frame.stuck, nowMs),
+      stuck:
+        frame.stuck !== undefined
+          ? mergeObservation(prev.stuck, frame.stuck, nowMs)
+          : {
+              value: estimateStuckObservation(prev.stuck, prev.target, target, this.#followConfig),
+              confidence: 1,
+              observedAtMs: nowMs,
+              freshness: "fresh" as const,
+            },
       flags: {
         ...prev.flags,
         ...(frame.flags ?? {}),
