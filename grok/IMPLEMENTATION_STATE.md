@@ -12,7 +12,8 @@
 | Plan branch | `176b090` (`cursor/implementation-plan-05a4`, PR #1) | Adds this implementation plan |
 | Phase 01 | `8c3ba93` on `cursor/phase-01-baseline-f3a0` (PR #2) | Workspace/CI baseline complete |
 | Phase 02 | `ece3287` on `cursor/phase-02-world-state-scheduler-ca64` (PR #3) | WorldState + scheduler complete |
-| Phase 03 branch | `cursor/phase-03-capabilities-interlock-input-9d76` (PR #4) | Capability / interlock / input |
+| Phase 03 first cut | `7f136ba` | Capabilities, interlocks, GameInputController |
+| Current commit | `f6e72b0` | Gate + self-review on `cursor/phase-03-capabilities-interlock-input-9d76` (PR #4) |
 
 ## Active phase
 
