@@ -2,6 +2,52 @@ export function workspaceOk(): true {
   return true;
 }
 
+export { GGG_DISCLAIMER } from "./operator/disclaimer.js";
+export { isQaBannerRequired } from "./operator/banner.js";
+export {
+  PRICE_ESTIMATE_LABEL,
+  formatPriceEstimate,
+  formatValuationEstimate,
+  priceDisplayMentionsGuarantee,
+} from "./operator/priceFormat.js";
+export type { PriceEstimateDisplay } from "./operator/priceFormat.js";
+export {
+  OPERATOR_SETTINGS_KEY,
+  MemorySettingsStore,
+  defaultOperatorSettings,
+  parseOperatorSettings,
+} from "./operator/settings.js";
+export type { OperatorSettings, SettingsPort } from "./operator/settings.js";
+export { capabilitiesDto, armingDto, worldStateDto, tracesDto, cloneDto } from "./operator/dto.js";
+export { toIpcError, withIpcError } from "./operator/ipcFailure.js";
+export { OperatorRuntime, createOperatorRuntime } from "./operator/operatorRuntime.js";
+export type { ClipboardReader, OperatorRuntimeOptions } from "./operator/operatorRuntime.js";
+export { createFixtureReplayCatalog } from "./operator/replayCatalog.js";
+export type { ReplayCatalog } from "./operator/replayCatalog.js";
+export type {
+  CapabilitiesDto,
+  ArmingDto,
+  WorldStateDto,
+  QaActionTraceDto,
+  OperatorSettingsDto,
+  FilterProfileDto,
+  AutomationScenarioDto,
+  ArmResultDto,
+  StopResultDto,
+  ReplayRunDto,
+  ParseClipboardResultDto,
+  ExportFilterResultDto,
+  IpcErrorDto,
+  CatalogItemDto,
+  Poe2tcPreloadApi,
+} from "./operator/ipcTypes.js";
+export {
+  DEFAULT_FILTER_PROFILE,
+  defaultFilterFileName,
+  generateLootFilter,
+} from "./filter/lootFilter.js";
+export type { FilterAction, FilterProfile, FilterRule } from "./filter/lootFilter.js";
+
 export { FrozenClock, SystemClock } from "./clock.js";
 export type { Clock } from "./clock.js";
 

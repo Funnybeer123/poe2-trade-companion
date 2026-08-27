@@ -37,5 +37,8 @@ Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 | 11 | `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip`, `listing-emergency-stop` — added |
 | 12 | trade success + listed failure classes — added |
 | 13 | `full-loop`, interrupt-trade, interrupt-loot, emergency-stop — added |
+| 14 | Operator UI loads `full-loop` via `OperatorRuntime.runReplay(id)` and Playwright `tests/smoke/overlay.spec.ts` |
 
 Rule: replay must use the same controllers/scheduler as live and emit zero native input.
+
+Phase 14 added operator replay viewing (same `ReplayRunner` / `NoopInputSink` as Phase 04–13). Playwright smoke uses a DTO mock of `runReplay("full-loop")` so the overlay can be exercised headless without Electron.

@@ -1,0 +1,179 @@
+:root {
+  color-scheme: dark;
+  --bg: #121212;
+  --panel: #1b1b1b;
+  --line: #2c2c2c;
+  --text: #f4f1ea;
+  --muted: #b5b0a6;
+  --accent: #d4a017;
+  --danger: #d14b4b;
+  --ok: #5aa36a;
+}
+
+html,
+body,
+#app {
+  margin: 0;
+  min-height: 100%;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", sans-serif;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+textarea,
+select {
+  font: inherit;
+  color: inherit;
+}
+
+button {
+  background: #2a2a2a;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+}
+
+button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+button.danger {
+  background: var(--danger);
+  border-color: #8a2a2a;
+  color: #fff;
+}
+
+button.primary {
+  background: #3a3320;
+  border-color: var(--accent);
+}
+
+input,
+textarea,
+select {
+  background: #101010;
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 0.4rem 0.5rem;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.shell {
+  display: grid;
+  grid-template-columns: 220px 1fr;
+  min-height: 100vh;
+}
+
+.nav {
+  background: #161616;
+  border-right: 1px solid var(--line);
+  padding: 1rem 0.75rem;
+}
+
+.nav h1 {
+  font-size: 1rem;
+  margin: 0 0 1rem;
+}
+
+.nav a {
+  display: block;
+  padding: 0.4rem 0.5rem;
+  border-radius: 4px;
+  color: var(--muted);
+}
+
+.nav a.router-link-active {
+  background: #2a2414;
+  color: var(--text);
+}
+
+.content {
+  padding: 1rem 1.25rem 4rem;
+}
+
+.panel {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.muted {
+  color: var(--muted);
+}
+
+.grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.75rem;
+}
+
+.row {
+  display: flex;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+  align-items: center;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+th,
+td {
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  padding: 0.35rem 0.5rem;
+  font-size: 0.9rem;
+}
+
+.qa-banner {
+  background: #7a1f1f;
+  color: #fff;
+  padding: 0.45rem 0.75rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+  position: sticky;
+  top: 0;
+  z-index: 20;
+}
+
+.error-panel {
+  background: #3a1b1b;
+  border: 1px solid var(--danger);
+  color: #ffd5d5;
+  padding: 0.75rem 1rem;
+  margin: 0.75rem 0;
+}
+
+.disclaimer-bar {
+  position: sticky;
+  bottom: 0;
+  background: #0e0e0e;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  padding: 0.5rem 1rem;
+  font-size: 0.8rem;
+}
+
+.estimate-label {
+  color: var(--accent);
+  font-weight: 600;
+}

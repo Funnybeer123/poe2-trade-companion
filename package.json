@@ -20,6 +20,7 @@
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:replay": "vitest run --project replay --passWithNoTests",
+    "test:smoke": "playwright test",
     "check:native-imports": "node scripts/check-native-input-imports.mjs",
     "build": "npm run build --workspaces --if-present"
   },
@@ -32,6 +33,7 @@
     "typescript": "~5.9.2",
     "sharp": "^0.34.3",
     "typescript-eslint": "^8.40.0",
-    "vitest": "^3.2.4"
+    "vitest": "^3.2.4",
+    "@playwright/test": "^1.55.0"
   }
 }
