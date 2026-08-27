@@ -34,4 +34,15 @@ export class SqliteTraceStore implements TraceSink {
     }
     return JSON.parse(row.payload_json) as QaActionTrace;
   }
+
+  listRecent(limit = 200): QaActionTrace[] {
+    const rows = this.db
+      .prepare(
+        `SELECT payload_json FROM qa_action_traces
+         ORDER BY clock_ms DESC, tick_id DESC
+         LIMIT ?`,
+      )
+      .all(limit) as TraceRow[];
+    return rows.map((row) => JSON.parse(row.payload_json) as QaActionTrace);
+  }
 }

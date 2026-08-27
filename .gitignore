@@ -4,6 +4,8 @@ release/
 coverage/
 /artifacts
 playwright-report
+test-results
+blob-report
 *.log
 .env
 .env.*

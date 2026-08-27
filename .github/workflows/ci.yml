@@ -23,5 +23,7 @@ jobs:
       - run: npm run test:unit
       - run: npm run test:integration
       - run: npm run test:replay
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:smoke
       - run: node scripts/check-native-input-imports.mjs
       - run: npm run build

@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 13 complete)
+**Updated:** 2026-08-27 (Phase 14 complete)
 
 ## Covered in Phase 01
 
@@ -126,7 +126,7 @@
 | Listing machine | 11 (done) |
 | Trade machine | 12 (done) |
 | Full-loop orchestrator | 13 (done) |
-| Playwright overlay smoke | 14 |
+| Playwright overlay smoke | 14 (added) |
 | Public vs QA packaging | 15 |
 
 ## Covered in Phase 12
@@ -148,6 +148,17 @@
 - Interrupt clears only the interrupted module’s in-flight step and records `interrupted: true`; counters are preserved
 - Replay: `full-loop`, `full-loop-interrupt-trade`, `full-loop-interrupt-loot`, `full-loop-emergency-stop`
 - Complete timestamped QA trace fields on every full-loop tick
+
+## Covered in Phase 14
+
+- QA banner required when `qaBannerRequired` / authorized-qa; cannot be dismissed; STOP trips the emergency latch
+- Price formatting shows estimate, never a guaranteed sale price
+- Public companion cannot arm; arm/disarm/kill-switch bind to Phase 03 `armQa` / `EmergencyStop`
+- IPC failures set an error panel and do not rearm
+- Local loot-filter generation/export; no OAuth
+- Settings persist via SQLite `settings` table
+- `OperatorRuntime.runReplay(id)` uses the live replay runner (`NoopInputSink`)
+- Playwright smoke: overlay open, banner in QA, arm disabled in public, settings persist, replay states, price estimate label
 
 ## Replay
 

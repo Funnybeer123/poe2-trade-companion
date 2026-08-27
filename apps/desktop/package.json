@@ -10,7 +10,8 @@
     "start": "npm run build && electron ."
   },
   "dependencies": {
-    "@poe2tc/core": "0.1.0"
+    "@poe2tc/core": "0.1.0",
+    "@poe2tc/persistence-sqlite": "0.1.0"
   },
   "devDependencies": {
     "electron": "^40.10.6"
