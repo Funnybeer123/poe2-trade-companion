@@ -18,7 +18,7 @@
 | Phase 06 | `684f24d` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery complete |
 | Phase 07 | `d7e6286` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
 | Phase 08 first cut | `bdfa3c1` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
-| Current commit | (this update) | Gate + self-review on `cursor/phase-08-item-valuation-45b0` (PR #9) |
+| Current commit | `fd8a68e` | Gate + self-review on `cursor/phase-08-item-valuation-45b0` (PR #9) |
 
 ## Active phase
 
