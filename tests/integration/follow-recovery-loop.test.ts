@@ -43,27 +43,21 @@ describe("follow recovery loop", () => {
       },
       {
         tickId: 2,
-        capturedAtMs: 10_100,
+        capturedAtMs: 11_100,
         width: 1920,
         height: 1080,
         derived: {
-          process: { ...PROCESS, observedAtMs: 10_100 },
-          target: {
-            value: null,
-            confidence: 1,
-            observedAtMs: 10_100,
-            freshness: "missing" as const,
-          },
+          process: { ...PROCESS, observedAtMs: 11_100 },
         },
       },
       {
         tickId: 3,
-        capturedAtMs: 10_200,
+        capturedAtMs: 11_200,
         width: 1920,
         height: 1080,
         derived: {
-          process: { ...PROCESS, observedAtMs: 10_200 },
-          target: targetAt(10_200),
+          process: { ...PROCESS, observedAtMs: 11_200 },
+          target: targetAt(11_200),
         },
       },
     ];

@@ -37,7 +37,7 @@
     },
     {
       "tickId": 2,
-      "atMs": 10100,
+      "atMs": 11100,
       "derived": {
         "process": {
           "value": {
@@ -46,26 +46,20 @@
             "allowlisted": true
           },
           "confidence": 1,
-          "observedAtMs": 10100,
+          "observedAtMs": 11100,
           "freshness": "fresh"
-        },
-        "target": {
-          "value": null,
-          "confidence": 1,
-          "observedAtMs": 10100,
-          "freshness": "missing"
         },
         "ui": {
           "value": { "kind": "gameplay" },
           "confidence": 0.8,
-          "observedAtMs": 10100,
+          "observedAtMs": 11100,
           "freshness": "fresh"
         }
       }
     },
     {
       "tickId": 3,
-      "atMs": 10200,
+      "atMs": 11200,
       "derived": {
         "process": {
           "value": {
@@ -74,26 +68,20 @@
             "allowlisted": true
           },
           "confidence": 1,
-          "observedAtMs": 10200,
+          "observedAtMs": 11200,
           "freshness": "fresh"
-        },
-        "target": {
-          "value": null,
-          "confidence": 1,
-          "observedAtMs": 10200,
-          "freshness": "missing"
         },
         "ui": {
           "value": { "kind": "gameplay" },
           "confidence": 0.8,
-          "observedAtMs": 10200,
+          "observedAtMs": 11200,
           "freshness": "fresh"
         }
       }
     },
     {
       "tickId": 4,
-      "atMs": 10300,
+      "atMs": 11300,
       "derived": {
         "process": {
           "value": {
@@ -102,7 +90,7 @@
             "allowlisted": true
           },
           "confidence": 1,
-          "observedAtMs": 10300,
+          "observedAtMs": 11300,
           "freshness": "fresh"
         },
         "target": {
@@ -112,13 +100,13 @@
             "estimatedDistance": "far"
           },
           "confidence": 0.92,
-          "observedAtMs": 10300,
+          "observedAtMs": 11300,
           "freshness": "fresh"
         },
         "ui": {
           "value": { "kind": "gameplay" },
           "confidence": 0.8,
-          "observedAtMs": 10300,
+          "observedAtMs": 11300,
           "freshness": "fresh"
         }
       }

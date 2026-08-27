@@ -1,4 +1,5 @@
 import type { BotDecision, InputAction } from "../input/types.js";
+import { followDirection } from "../navigation/direction.js";
 import {
   LOST_TARGET_EXHAUSTED_REASON,
   STUCK_EXHAUSTED_REASON,
@@ -23,7 +24,7 @@ export class RecoveryController implements Controller {
     this.config = resolveFollowConfig(config);
   }
 
-  decide(world: WorldState, _scenario: AutomationScenario): BotDecision {
+  decide(world: WorldState, scenario: AutomationScenario): BotDecision {
     if (world.flags.emergencyStopLatched || world.selectedState === "EmergencyStop") {
       return {
         module: this.module,
@@ -55,13 +56,13 @@ export class RecoveryController implements Controller {
       };
     }
 
-    return this.recoverTarget(world);
+    return this.recoverTarget(world, scenario);
   }
 
-  private recoverTarget(world: WorldState): BotDecision {
+  private recoverTarget(world: WorldState, scenario: AutomationScenario): BotDecision {
     const lostTicks = world.stuck.value.lostTargetTicks ?? 0;
     const policy = DEFAULT_RECOVERY["follow.lost-target"];
-    const maxAttempts = policy?.maxAttempts ?? 5;
+    const maxAttempts = scenario.retryLimits.recovery ?? policy?.maxAttempts ?? 5;
 
     if (
       world.stuck.value.reason === LOST_TARGET_EXHAUSTED_REASON ||
@@ -89,6 +90,25 @@ export class RecoveryController implements Controller {
         evidenceIds: evidenceIds(world),
         recoveryOf: "follow.lost-target",
         retryIndex: maxAttempts,
+      };
+    }
+
+    const visiblePoint = world.target.value?.screenPoint;
+    if (visiblePoint !== undefined && lostTicks === 0) {
+      const directed = followDirection({
+        target: visiblePoint,
+        maxFollowDistancePx: this.config.maxFollowDistancePx,
+        clickMove: this.config.clickMove,
+      });
+      return {
+        module: this.module,
+        state: "RecoverTarget",
+        reason: "lost-target",
+        confidence: world.target.confidence,
+        intendedActions: directed.actions,
+        evidenceIds: evidenceIds(world),
+        recoveryOf: "follow.lost-target",
+        retryIndex: 1,
       };
     }
 
