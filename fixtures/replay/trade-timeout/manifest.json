@@ -1,0 +1,110 @@
+{
+  "id": "trade-timeout",
+  "scenarioId": "trade-session",
+  "seed": 37,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 30100,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 30100,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 30100,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "ObserveCounterOffer",
+            "enteredAtMs": 10000,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [],
+            "theirSlots": []
+          },
+          "confidence": 0.9,
+          "observedAtMs": 30100,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.9,
+          "observedAtMs": 30100,
+          "freshness": "fresh"
+        }
+      }
+    }
+  ],
+  "expect": [
+    {
+      "tickId": 1,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-timeout",
+      "executed": false,
+      "sinkKind": "noop"
+    }
+  ]
+}

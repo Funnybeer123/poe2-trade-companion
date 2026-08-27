@@ -32,7 +32,7 @@ export function summarizeWorld(world: WorldState): string {
   const identity = world.target.value?.identity;
   const targetText = identity === undefined ? "target=none" : `target=${identity}`;
   const processName = world.process.value.name ?? "unknown";
-  return `${targetText} process=${processName} ui=${world.ui.value.kind} ${summarizeInventory(world)} ${summarizeStash(world)} ${summarizeLoot(world)} ${summarizeListing(world)}`;
+  return `${targetText} process=${processName} ui=${world.ui.value.kind} ${summarizeInventory(world)} ${summarizeStash(world)} ${summarizeLoot(world)} ${summarizeListing(world)} ${summarizeTrade(world)}`;
 }
 
 export function summarizeListing(world: WorldState): string {
@@ -42,6 +42,15 @@ export function summarizeListing(world: WorldState): string {
   const price = view?.priceText ?? "none";
   const machine = session?.state ?? "Idle";
   return `listing=${open}:${price}:${machine}`;
+}
+
+export function summarizeTrade(world: WorldState): string {
+  const view = world.trade.value;
+  const session = world.flags.tradeSession;
+  const open = view?.open === true ? "open" : "closed";
+  const machine = session?.state ?? "Idle";
+  const offer = view?.counterOfferText ?? view?.observedOffer?.currency ?? "none";
+  return `trade=${open}:${machine}:${offer}`;
 }
 
 export function isoTimestampFromMs(ms: number): string {

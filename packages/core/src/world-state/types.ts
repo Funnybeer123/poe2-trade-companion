@@ -95,12 +95,91 @@ export interface UiModeState {
   details?: string;
 }
 
+export interface ObservedTradeOffer {
+  currency: string;
+  amount: number;
+  stackSize?: number;
+}
+
 export interface TradeWindowView {
   open: boolean;
   ourSlots: GridCell[];
   theirSlots: GridCell[];
   acceptEnabled?: boolean;
   counterOfferText?: string;
+  observedOffer?: ObservedTradeOffer;
+  ourItemFingerprint?: string;
+  completed?: boolean;
+  desynced?: boolean;
+}
+
+export type TradeState =
+  | "Idle"
+  | "TradeRequestReceived"
+  | "ValidateRequestedItem"
+  | "InviteOrJoinParty"
+  | "PrepareItem"
+  | "NavigateToTradeContext"
+  | "OpenTrade"
+  | "PlaceItem"
+  | "ObserveCounterOffer"
+  | "ValidateCurrencyOrItems"
+  | "AcceptOrReject"
+  | "ConfirmCompletion"
+  | "CleanupPartySession"
+  | "FailedOrTimedOut";
+
+export type TradeEventSource = "fixture" | "client-log" | "ggg-test-interface";
+
+export type TradeEventKind =
+  | "whisper-trade-request"
+  | "party-invite-accepted"
+  | "party-joined"
+  | "cancelled"
+  | "disconnected"
+  | "ui-desync"
+  | "fixture";
+
+export type TradePartyState = "none" | "invited" | "joined";
+
+export interface ExpectedTrade {
+  itemFingerprint: string;
+  itemLabel?: string;
+  currency: string;
+  amount: number;
+  amountTolerance?: number;
+  stackSize?: number;
+}
+
+export interface TradeEvent {
+  kind: TradeEventKind;
+  source: TradeEventSource;
+  atMs: number;
+  requestedItemFingerprint?: string;
+  requestedItemLabel?: string;
+  expected?: ExpectedTrade;
+  partyState?: TradePartyState;
+  buyerAlias?: string;
+}
+
+export interface TradeSession {
+  id: string;
+  state: TradeState;
+  enteredAtMs: number;
+  expected?: ExpectedTrade;
+  lastEvent?: string;
+  lastReason?: string;
+  partyState?: TradePartyState;
+  requestedItemFingerprint?: string;
+  failAfterCleanup?: boolean;
+}
+
+export interface TradeSessionRecord {
+  id: string;
+  scenarioId: string;
+  state: TradeState;
+  payloadJson: string;
+  updatedAtMs: number;
 }
 
 export interface ListingUiView {
@@ -188,6 +267,14 @@ export interface PendingStashTransfer {
 export interface WorldStateFlags {
   emergencyStopLatched: boolean;
   tradeRequested: boolean;
+  tradeSession?: TradeSession | null;
+  tradeExpected?: ExpectedTrade;
+  tradeEvent?: TradeEvent | null;
+  tradePartyState?: TradePartyState;
+  tradeInContext?: boolean;
+  tradeCancelled?: boolean;
+  tradeDisconnected?: boolean;
+  pendingTradeSessionWrite?: TradeSessionRecord | null;
   stashSessionActive: boolean;
   listingSessionActive: boolean;
   listingSession?: ListingSession | null;

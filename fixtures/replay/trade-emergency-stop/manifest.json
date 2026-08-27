@@ -1,0 +1,2198 @@
+{
+  "id": "trade-emergency-stop",
+  "scenarioId": "trade-session",
+  "seed": 41,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "TradeRequestReceived",
+            "enteredAtMs": 10000,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10100,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10100,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10100,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": true,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10100,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10100,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 3,
+      "atMs": 10200,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "InviteOrJoinParty",
+            "enteredAtMs": 10200,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 4,
+      "atMs": 10300,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10300,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10300,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": true,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10300,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10300,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 5,
+      "atMs": 10400,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "PrepareItem",
+            "enteredAtMs": 10400,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 6,
+      "atMs": 10500,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10500,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10500,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": true,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10500,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10500,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 7,
+      "atMs": 10600,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "NavigateToTradeContext",
+            "enteredAtMs": 10600,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 8,
+      "atMs": 10700,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10700,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10700,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": true,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10700,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10700,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 9,
+      "atMs": 10800,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10800,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10800,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "OpenTrade",
+            "enteredAtMs": 10800,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10800,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10800,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 10,
+      "atMs": 10900,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10900,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10900,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": true,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10900,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10900,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 11,
+      "atMs": 11000,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11000,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "PlaceItem",
+            "enteredAtMs": 11000,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11000,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 12,
+      "atMs": 11100,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": true,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11100,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 13,
+      "atMs": 11200,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11200,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11200,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "ObserveCounterOffer",
+            "enteredAtMs": 11200,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11200,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11200,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 14,
+      "atMs": 11300,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11300,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11300,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": true,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11300,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11300,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 15,
+      "atMs": 11400,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11400,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11400,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "ValidateCurrencyOrItems",
+            "enteredAtMs": 11400,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11400,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11400,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 16,
+      "atMs": 11500,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11500,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11500,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": true,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11500,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11500,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 17,
+      "atMs": 11600,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11600,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11600,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "AcceptOrReject",
+            "enteredAtMs": 11600,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11600,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11600,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 18,
+      "atMs": 11700,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11700,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11700,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": true,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11700,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11700,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 19,
+      "atMs": 11800,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11800,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11800,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "ConfirmCompletion",
+            "enteredAtMs": 11800,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11800,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11800,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 20,
+      "atMs": 11900,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 11900,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11900,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": true,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11900,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11900,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 21,
+      "atMs": 12000,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 12000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 12000,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "astramentis-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "CleanupPartySession",
+            "enteredAtMs": 12000,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "tradePartyState": "joined",
+          "tradeInContext": true
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 12000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 12000,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 22,
+      "atMs": 12100,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 12100,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 12100,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": true,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85
+        },
+        "trade": {
+          "value": {
+            "open": true,
+            "ourSlots": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "astramentis-1"
+              }
+            ],
+            "theirSlots": [],
+            "acceptEnabled": true,
+            "ourItemFingerprint": "astramentis-1",
+            "observedOffer": {
+              "currency": "divine",
+              "amount": 10
+            }
+          },
+          "confidence": 0.95,
+          "observedAtMs": 12100,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "trade"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 12100,
+          "freshness": "fresh"
+        }
+      }
+    }
+  ],
+  "expect": [
+    {
+      "tickId": 1,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 2,
+      "selectedState": "EmergencyStop",
+      "decisionReasonIncludes": "emergency-stop",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 3,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 4,
+      "selectedState": "EmergencyStop",
+      "decisionReasonIncludes": "emergency-stop",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 5,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 6,
+      "selectedState": "EmergencyStop",
+      "decisionReasonIncludes": "emergency-stop",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 7,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 8,
+      "selectedState": "EmergencyStop",
+      "decisionReasonIncludes": "emergency-stop",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 9,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 10,
+      "selectedState": "EmergencyStop",
+      "decisionReasonIncludes": "emergency-stop",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 11,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 12,
+      "selectedState": "EmergencyStop",
+      "decisionReasonIncludes": "emergency-stop",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 13,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 14,
+      "selectedState": "EmergencyStop",
+      "decisionReasonIncludes": "emergency-stop",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 15,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 16,
+      "selectedState": "EmergencyStop",
+      "decisionReasonIncludes": "emergency-stop",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 17,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 18,
+      "selectedState": "EmergencyStop",
+      "decisionReasonIncludes": "emergency-stop",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 19,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 20,
+      "selectedState": "EmergencyStop",
+      "decisionReasonIncludes": "emergency-stop",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 21,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 22,
+      "selectedState": "EmergencyStop",
+      "decisionReasonIncludes": "emergency-stop",
+      "executed": false,
+      "sinkKind": "noop"
+    }
+  ]
+}

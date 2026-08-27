@@ -79,6 +79,14 @@ export function parseAutomationScenario(raw: unknown): AutomationScenario {
       typeof raw.lootMinScore === "number" && Number.isFinite(raw.lootMinScore)
         ? raw.lootMinScore
         : undefined,
+    tradeWaitTimeoutMs:
+      typeof raw.tradeWaitTimeoutMs === "number" && Number.isFinite(raw.tradeWaitTimeoutMs)
+        ? raw.tradeWaitTimeoutMs
+        : undefined,
+    tradeAmountTolerance:
+      typeof raw.tradeAmountTolerance === "number" && Number.isFinite(raw.tradeAmountTolerance)
+        ? raw.tradeAmountTolerance
+        : undefined,
     failureInjection: isRecord(raw.failureInjection)
       ? {
           id: requireString(raw.failureInjection.id, "failureInjection.id"),

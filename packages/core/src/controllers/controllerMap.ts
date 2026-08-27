@@ -6,6 +6,7 @@ import { ListingController } from "./listingController.js";
 import { LootController } from "./lootController.js";
 import { RecoveryController } from "./recoveryController.js";
 import { StashController } from "./stashController.js";
+import { TradeController } from "./tradeController.js";
 import type { Controller } from "./types.js";
 
 export function createControllerMap(
@@ -17,6 +18,7 @@ export function createControllerMap(
   const loot = new LootController(options.desirability);
   const stash = new StashController();
   const listing = new ListingController();
+  const trade = new TradeController();
   return new Map<AutomationStateId, Controller>([
     ["Idle", idle],
     ["Follow", follow],
@@ -28,5 +30,6 @@ export function createControllerMap(
     ["InventoryFull", stash],
     ["StashSort", stash],
     ["Listing", listing],
+    ["TradeSession", trade],
   ]);
 }

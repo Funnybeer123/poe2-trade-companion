@@ -18,6 +18,8 @@ Phase 10 added `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-r
 
 Phase 11 added `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip`, and `listing-emergency-stop` through the live `ListingController`. Recommended listing is policy math, never a guaranteed sale. Dry-run / replay emit zero native input.
 
+Phase 12 added `trade-success`, `trade-wrong-currency`, `trade-insufficient-currency`, `trade-wrong-item`, `trade-missing-item`, `trade-partial-stack`, `trade-timeout`, `trade-cancelled`, `trade-disconnect`, `trade-ui-desync`, and `trade-emergency-stop` through the live `TradeController`. Replay uses `NoopInputSink` only.
+
 Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 
 | Phase | Fixture / suite |
@@ -31,7 +33,7 @@ Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 | 09 | `inventory-stale` — added |
 | 10 | `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab`, `stash-emergency-stop` — added |
 | 11 | `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip`, `listing-emergency-stop` — added |
-| 12 | trade success + listed failure classes |
+| 12 | trade success + listed failure classes — added |
 | 13 | `full-loop`, interrupt-trade, interrupt-loot, emergency-stop |
 
 Rule: replay must use the same controllers/scheduler as live and emit zero native input.

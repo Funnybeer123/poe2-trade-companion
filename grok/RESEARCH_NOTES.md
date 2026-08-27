@@ -101,6 +101,17 @@ Confirmed still true (matches plan §3.1 / §12.1):
 
 No documented official PoE 2 listing/trade-search API in the developer reference (re-confirmed against plan §3.2). Phase 11 drives the visible client listing UI only. No `trade2` client, cookie/session capture, or listing HTTP endpoint was added. Market quotes remain fixture + official Currency Exchange (Phase 08). 429 handling reuses `MarketCachePort` or skips.
 
+## 2026-08-27 — Phase 12 official trade API re-check
+
+Sources: https://www.pathofexile.com/developer/docs/reference (fetched 2026-08-27)
+
+Confirmed still true (matches plan §3.2 / Phase 12):
+
+- Header: “There are currently limited APIs that return PoE2 game information.”
+- Documented PoE 2 surface remains Currency Exchange hourly digests, leagues, and item filters. **No documented official PoE 2 item trade-search API.**
+- Community `/api/trade2` and `POESESSID` flows remain undocumented. Not implemented.
+- Trade-session events come from fixtures, opted-in client-log whisper lines, or a reserved GGG test-interface port. No packet sniffing.
+
 ## Deferred
 
 - Actual PoE 2 process image names / window title on a Windows client (still unverified).
