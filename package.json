@@ -16,10 +16,10 @@
   "scripts": {
     "lint": "eslint .",
     "typecheck": "tsc --noEmit -p tsconfig.json && npm run typecheck --workspaces --if-present",
-    "test": "vitest run",
+    "test": "vitest run --passWithNoTests",
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
-    "test:replay": "vitest run --project replay",
+    "test:replay": "vitest run --project replay --passWithNoTests",
     "build": "npm run build --workspaces --if-present"
   },
   "devDependencies": {

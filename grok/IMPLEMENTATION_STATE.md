@@ -9,17 +9,17 @@
 | Ref | SHA | Notes |
 | --- | --- | --- |
 | Audited base (`main`) | `3bf2f91398a16a5250d351be818a41ca39e32762` | Docs-only repo; no toolchain |
-| Plan branch | `176b090` (`cursor/implementation-plan-05a4`) | Adds this implementation plan |
-| Current branch | `cursor/phase-01-baseline-f3a0` | Phase 01 implementation |
-| Current commit | pending (this Phase 01 commit) | Update after `chore: bootstrap workspace, CI, and baseline tracking` |
+| Plan branch | `176b090` (`cursor/implementation-plan-05a4`, PR #1) | Adds this implementation plan |
+| Phase 01 bootstrap | `020d6b7` | First workspace/CI commit |
+| Current branch | `cursor/phase-01-baseline-f3a0` (PR #2) | Phase 01 vs `main` |
 
 ## Active phase
 
-Phase 01 — Baseline and repository audit (closing).
+None. Phase 01 is complete. Next is Phase 02.
 
 ## Completed phases
 
-- Phase 01 — workspace, CI, MIT license, hello-world Electron/Vue apps, `workspaceOk()`, migration stub, Grok tracking.
+- Phase 01 — workspace, CI, MIT license, hello-world Electron/Vue apps, `workspaceOk()`, migration file, Grok tracking.
 
 ## Build / test status
 
@@ -35,25 +35,31 @@ Pre-phase baseline (reproduced 2026-08-27 from `/workspace` before `package.json
 | `npx tsc --noEmit` | resolved deprecated `tsc@2.0.4`; failed |
 | `npm run replay` | `ENOENT` no `package.json` (exit 254) |
 
-Post-phase gate (must be green before this file marks Phase 01 complete):
+Post-phase gate (2026-08-27, this host) — **green**:
 
 - `npm install`
 - `npm run lint`
 - `npm run typecheck`
-- `npm test` (`tests/unit/workspace-ok.test.ts`, `tests/integration/migrations-exist.test.ts`)
-- `npm run build` (Electron main + overlay compile)
+- `npm test` — `workspace-ok` + `migrations-exist` (2 tests)
+- `npm run test:replay` — zero files, passes with `--passWithNoTests`
+- `npm run build` — desktop `tsc` + overlay Vite build
+
+Electron headless window start was not run (Linux cloud agent, no display). Compile is the Phase 01 gate.
 
 ## Blockers
 
-- None for Phase 01 toolchain on this Linux host.
+- None for Phase 01.
 - External / later-phase: Windows live client, native `SendInput`, OAuth registration freeze, no official PoE 2 stash/trade-search API. See `RESEARCH_NOTES.md`.
 
 ## Plan deviations
 
-- Did **not** create empty `packages/native-input`, `packages/perception-live`, or `packages/persistence-sqlite` workspaces. Phase 01 Add list only requires `packages/core` and `packages/testkit`. Later phases add the others. Target tree in plan §4.4 remains the destination.
-- Did **not** add `electron-builder.*.yml` or the Phase 03 import-guard scripts. Those belong to Phases 03/15.
-- Electron **40.10.x** is pinned per locked default even though Electron 40 reached EOL on 2026-06-30 and current stable is 44.0.0. Swap only if 40.x fails to install.
-- `better-sqlite3` is **not** a Phase 01 dependency. Only `migrations/001_init.sql` is added; the runner lands in Phase 04.
+- `vitest.config.ts` with `test.projects` is used instead of `vitest.workspace.ts`. Vitest 3.2.7 deprecates the workspace file (`The workspace file is deprecated and will be removed in the next major`). Same unit/integration/replay split.
+- `--passWithNoTests` is a Vitest CLI flag, not a typed `ProjectConfig` field. Needed so `test:replay` can be green before Phase 04 fixtures exist.
+- Did **not** create empty `packages/native-input`, `packages/perception-live`, or `packages/persistence-sqlite`. Phase 01 Add list only requires `packages/core` and `packages/testkit`.
+- Did **not** add `electron-builder.*.yml` or Phase 03 import-guard scripts.
+- Electron **40.10.6** installed per locked default (EOL 2026-06-30; current stable is 44.0.0). No swap required.
+- `better-sqlite3` is not a Phase 01 dependency. Only `migrations/001_init.sql` was added.
+- Prettier ignores `*.md` so Phase 01 does not mass-reformat pre-existing docs.
 
 ## Replay fixtures added
 
@@ -61,4 +67,6 @@ None. `tests/replay/.gitkeep` and `fixtures/replay/.gitkeep` exist. See `REPLAY_
 
 ## Next exact work item
 
-Phase 02 — Canonical `WorldState` + deterministic `ScenarioScheduler` (`feat: add WorldState model and deterministic scenario scheduler`).
+Phase 02 — Canonical `WorldState` + deterministic `ScenarioScheduler`.
+
+Suggested commit from the plan: `feat: add WorldState model and deterministic scenario scheduler`.

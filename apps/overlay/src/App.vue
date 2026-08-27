@@ -1,13 +1,9 @@
 <template>
   <main class="shell">
     <h1>PoE2 QA Trade Companion</h1>
-    <p>
-      This product isn't affiliated with or endorsed by Grinding Gear Games in any way.
-    </p>
+    <p>This product isn't affiliated with or endorsed by Grinding Gear Games in any way.</p>
   </main>
 </template>
-
-<script setup lang="ts"></script>
 
 <style>
 html,

@@ -6,6 +6,7 @@
 - npm: `10.9.7`.
 - Electron 40 latest observed: `40.10.6` (EOL 2026-06-30). Current stable: `44.0.0` (2026-08-25). Phase 01 pins `electron@^40.10.6` per plan §4.3. Install succeeded; no swap.
 - Installed toolchain (2026-08-27 `npm install`): TypeScript `5.9.3`, Vitest `3.2.7`, ESLint `9.39.5`, Prettier `3.9.6`, Vue `3.5.42`, Vite `6.4.3`, `vue-tsc` `3.3.11`. ESLint 9.39.5 prints a “no longer supported” warning; kept ESLint 9 per locked default.
+- Vitest 3.2.7 deprecates `vitest.workspace.ts`. Phase 01 uses root `vitest.config.ts` `test.projects` instead.
 - Production (`--omit=dev`) audit: 0 vulnerabilities.
 - EE2 reference stack remains Electron `^40.9.1` from the plan audit; license re-check deferred to Phase 08 copy time.
 

@@ -5,3 +5,5 @@ coverage
 artifacts
 playwright-report
 package-lock.json
+*.md
+
