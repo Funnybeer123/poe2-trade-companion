@@ -53,7 +53,8 @@ describe("templateMatch", () => {
     const template: RgbaImage = { width: 8, height: 8, pixels: templatePixels };
     const noisyPixels = new Uint8Array(cleanPixels);
     for (let i = 0; i < noisyPixels.length; i += 4) {
-      noisyPixels[i] = Math.min(255, (noisyPixels[i] ?? 0) + 80);
+      noisyPixels[i] = Math.max(0, (noisyPixels[i] ?? 0) - 90);
+      noisyPixels[i + 1] = Math.max(0, (noisyPixels[i + 1] ?? 0) - 40);
     }
     const noisy: RgbaImage = { width: 32, height: 32, pixels: noisyPixels };
     expect(templateMatchScoreAt(clean, template, 8, 8)).toBeGreaterThan(

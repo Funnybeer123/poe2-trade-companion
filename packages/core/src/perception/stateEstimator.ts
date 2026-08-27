@@ -11,8 +11,6 @@ export interface StateEstimatorOptions {
   arming: QaArmingState;
 }
 
-const TARGET_ABSENT_FIELDS = new Set(["target"]);
-
 function effectivePrevFreshness<T>(prev: Observation<T>, nowMs: number): Freshness {
   if (prev.freshness === "missing") {
     return "missing";
@@ -91,7 +89,7 @@ export class DefaultStateEstimator implements StateEstimator {
   estimate(prev: WorldState, frame: PerceptionFrame): WorldState {
     const nowMs = this.#clock.nowMs();
     const target = mergeObservation(prev.target, frame.target, nowMs, {
-      absentToMissing: TARGET_ABSENT_FIELDS.has("target"),
+      absentToMissing: true,
     });
     const process = withAllowlist(
       mergeObservation(prev.process, frame.process, nowMs),

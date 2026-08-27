@@ -9,13 +9,12 @@ import {
   NoopInputSink,
   QaTraceWriter,
   type PerceptionAdapter,
-  type PerceptionFrameInput,
 } from "@poe2tc/core";
 import { describe, expect, it } from "vitest";
 import { createTestScenario } from "../../helpers/createTestScenario.js";
 
 class ThrowingAdapter implements PerceptionAdapter {
-  async analyze(_frame: PerceptionFrameInput): Promise<never> {
+  async analyze(): Promise<never> {
     throw new Error("cv-failed");
   }
 }

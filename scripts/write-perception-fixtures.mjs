@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { Buffer } from "node:buffer";
 import { deflateSync } from "node:zlib";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
