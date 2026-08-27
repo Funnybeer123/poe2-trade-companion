@@ -31,6 +31,8 @@ export interface AutomationScenario {
   interruptRules: InterruptRule[];
   marketProviderId: string;
   lootMinScore?: number;
+  tradeWaitTimeoutMs?: number;
+  tradeAmountTolerance?: number;
   failureInjection?: FailureInjection;
 }
 

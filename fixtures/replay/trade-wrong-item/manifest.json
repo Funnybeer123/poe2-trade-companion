@@ -1,0 +1,90 @@
+{
+  "id": "trade-wrong-item",
+  "scenarioId": "trade-session",
+  "seed": 35,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 60,
+            "full": false,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true,
+                "itemFingerprint": "void-1"
+              }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "emergencyStopLatched": false,
+          "tradeRequested": true,
+          "stashSessionActive": false,
+          "listingSessionActive": false,
+          "highValueInterruptScore": 85,
+          "tradeExpected": {
+            "itemFingerprint": "astramentis-1",
+            "itemLabel": "Astramentis",
+            "currency": "divine",
+            "amount": 10
+          },
+          "tradeEvent": {
+            "kind": "whisper-trade-request",
+            "source": "fixture",
+            "atMs": 10000,
+            "requestedItemFingerprint": "void-1",
+            "requestedItemLabel": "Astramentis",
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            },
+            "buyerAlias": "TestBuyer"
+          },
+          "tradeSession": {
+            "id": "trade:trade-session:10000",
+            "state": "ValidateRequestedItem",
+            "enteredAtMs": 10000,
+            "expected": {
+              "itemFingerprint": "astramentis-1",
+              "itemLabel": "Astramentis",
+              "currency": "divine",
+              "amount": 10
+            }
+          }
+        }
+      }
+    }
+  ],
+  "expect": [
+    {
+      "tickId": 1,
+      "selectedState": "TradeSession",
+      "decisionReasonIncludes": "trade-wrong-item",
+      "executed": false,
+      "sinkKind": "noop"
+    }
+  ]
+}

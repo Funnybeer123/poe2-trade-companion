@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 11 complete)
+**Updated:** 2026-08-27 (Phase 12 complete)
 
 ## Covered in Phase 01
 
@@ -124,11 +124,21 @@
 | Inventory / stash reconcile | 09 (done) |
 | Stash transfers | 10 (done) |
 | Listing machine | 11 (done) |
-| Trade machine | 12 |
+| Trade machine | 12 (done) |
 | Full-loop orchestrator | 13 |
 | Playwright overlay smoke | 14 |
 | Public vs QA packaging | 15 |
 
+## Covered in Phase 12
+
+- Strict `TRADE_ALLOWED_EDGES`; illegal edges throw in tests and become `FailedOrTimedOut` in prod
+- Emergency-stop from every `TradeState`; wait-state timeout default 20s
+- Accept only on currency + amount match within tolerance; default reject on any mismatch
+- Adversarial cases: wrong currency, insufficient currency, wrong item, missing item, partial stack, timeout, cancelled, disconnect → cleanup → failed, UI desync
+- `TradeEventPort`: fixture + client-log whisper parse; unsupported sources (`packet-sniff`, `trade2`) throw
+- `trade_sessions` SQLite upsert on each transition
+- Replay packs listed in `REPLAY_BACKLOG.md`; all `executed: false` under `NoopInputSink`
+
 ## Replay
 
-`npm run test:replay` now also includes the Phase 11 listing packs. See `REPLAY_BACKLOG.md`.
+`npm run test:replay` now also includes the Phase 12 trade packs. See `REPLAY_BACKLOG.md`.

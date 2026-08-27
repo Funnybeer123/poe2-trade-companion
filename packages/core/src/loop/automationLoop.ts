@@ -29,6 +29,8 @@ import { STATE_MODULE } from "../scheduler/predicates.js";
 import { listingEffectsFromDecision } from "../listing/session.js";
 import type { ListingHistoryStore } from "../listing/types.js";
 import { stashEffectsFromDecision } from "../stash/session.js";
+import { tradeEffectsFromDecision } from "../trade/session.js";
+import type { TradeSessionStore } from "../trade/types.js";
 import type { AutomationScenario, ScenarioScheduler } from "../scheduler/types.js";
 import type { QaActionTrace } from "../trace/types.js";
 import type { QaTraceWriter } from "../trace/qaTraceWriter.js";
@@ -62,6 +64,7 @@ export interface AutomationLoopOptions {
   snapshotStore?: InventorySnapshotStore;
   shadowState?: ShadowState;
   listingHistory?: ListingHistoryStore;
+  tradeSessions?: TradeSessionStore;
 }
 
 function placeholderDecision(state: AutomationStateId): BotDecision {
@@ -141,6 +144,7 @@ export function applyPostDecisionEffects(
       ...flags,
       ...stashEffectsFromDecision(world, decision, nowMs),
       ...listingEffectsFromDecision(world, decision, nowMs),
+      ...tradeEffectsFromDecision(world, decision, nowMs),
     },
   };
 }
@@ -160,6 +164,7 @@ export class AutomationLoop {
   readonly #desirability: DesirabilityPort;
   readonly #snapshotStore?: InventorySnapshotStore;
   readonly #listingHistory?: ListingHistoryStore;
+  readonly #tradeSessions?: TradeSessionStore;
   readonly #shadow: ShadowState;
   #world: WorldState;
 
@@ -177,6 +182,7 @@ export class AutomationLoop {
     this.#perception = options.perception ?? createFixturePerceptionAdapter();
     this.#snapshotStore = options.snapshotStore;
     this.#listingHistory = options.listingHistory;
+    this.#tradeSessions = options.tradeSessions;
     this.#shadow = options.shadowState ?? new ShadowState();
     this.#estimator =
       options.estimator ??
@@ -247,6 +253,7 @@ export class AutomationLoop {
     const decision = withShadowMismatchReason(decided, world.flags.shadowMismatch === true);
     this.#world = applyPostDecisionEffects(world, decision, this.#clock.nowMs());
     this.#persistListingHistory(this.#world);
+    this.#persistTradeSession(this.#world);
 
     const ctx: InterlockContext = {
       capabilities: this.#capabilities,
@@ -325,6 +332,19 @@ export class AutomationLoop {
       this.#world = {
         ...world,
         flags: { ...world.flags, pendingListingHistory: null },
+      };
+    }
+  }
+
+  #persistTradeSession(world: WorldState): void {
+    const record = world.flags.pendingTradeSessionWrite;
+    if (record !== undefined && record !== null && this.#tradeSessions !== undefined) {
+      this.#tradeSessions.upsert(record);
+    }
+    if (record !== undefined && record !== null) {
+      this.#world = {
+        ...this.#world,
+        flags: { ...this.#world.flags, pendingTradeSessionWrite: null },
       };
     }
   }

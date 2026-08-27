@@ -3,3 +3,4 @@ export { SqliteTraceStore } from "./sqliteTraceStore.js";
 export { SqliteMarketCache } from "./sqliteMarketCache.js";
 export { SqliteInventoryStore } from "./sqliteInventoryStore.js";
 export { SqliteListingHistory } from "./sqliteListingHistory.js";
+export { SqliteTradeSessions } from "./sqliteTradeSessions.js";

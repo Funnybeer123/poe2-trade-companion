@@ -1,6 +1,6 @@
 # Review State
 
-**Phase under review:** 11 — Listing / repricing QA state machine  
+**Phase under review:** 12 — Trade-session QA state machine  
 **Date:** 2026-08-27  
 **Reviewer:** Grok 4.6 xhigh Fast (self-review per `GROK_BOT_QA_PROMPT.md` + `docs/AI_REVIEW_CHECKLIST.md`)
 
@@ -8,44 +8,44 @@
 
 `PASS`
 
-Phase 11 acceptance criteria are implemented. Gate commands are green. Recommended listing is policy math, never a guaranteed sale. Dry-run/replay emit zero native input. Verify mismatch retries once. Emergency stop is legal in every listing state. No trade-session machine. No listing API.
+Phase 12 acceptance criteria are implemented. Gate commands are green. Accept requires observed currency + amount within tolerance (default 0). Replay uses `NoopInputSink` and `executed: false`. Emergency stop is legal in every trade state. Illegal edges throw in tests and become `FailedOrTimedOut` in prod. No packet sniffing. No undocumented trade-site APIs. Phase 13 orchestrator rewrite was not started.
 
 ## Scope reviewed
 
-Actual Phase 11 diff vs `cursor/phase-10-stash-sort-b8bf`:
+Actual Phase 12 diff vs `cursor/phase-11-listing-reprice-e0c0`:
 
-- `packages/core/src/listing/*` (`types`, `pricePolicy`, `listingStateMachine`, `geometry`, `reasons`, `session`, `history`, `quoteResolve`)
-- `ListingController` + `createControllerMap` maps `Listing` to it
-- `applyPostDecisionEffects` writes `listingSession` / `listing_history` pending record
-- `SqliteListingHistory` + `MemoryListingHistoryStore`
-- Replay packs `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip`, `listing-emergency-stop`
+- `packages/core/src/trade/*` (`types`, `tradeStateMachine`, `tradeEventPort`, `offerMatch`, `geometry`, `reasons`, `session`, `store`)
+- `TradeController` + `createControllerMap` maps `TradeSession` to it
+- `applyPostDecisionEffects` writes `tradeSession` / `trade_sessions` pending record
+- `SqliteTradeSessions` + `MemoryTradeSessionStore`
+- Replay packs `trade-success` / `trade-wrong-currency` / `trade-insufficient-currency` / `trade-wrong-item` / `trade-missing-item` / `trade-partial-stack` / `trade-timeout` / `trade-cancelled` / `trade-disconnect` / `trade-ui-desync` / `trade-emergency-stop`
 - Unit / integration tests listed in `TEST_GAPS.md`
 
 ## Repository health
 
 - [x] Diff inspected.
-- [x] `npm test` (291), `test:replay` (21), `lint`, `typecheck` green on this host after review fixes.
-- [x] Searched new code for TODOs / trade2 / listing HTTP / guaranteed sale: none.
-- [x] Failures recorded and fixed (prefer-const; listing_history re-append).
+- [x] `npm test` (332), `test:replay` (33), `lint`, `typecheck` green on this host after review fixes.
+- [x] Searched new code for TODOs / trade2 / POESESSID / packet sniff / native input: none in production trade modules.
+- [x] Failures recorded and fixed (partial-stack fixture used whisper expected without `stackSize`; unused lint imports).
 
-## Valuation / listing checklist
+## Valuation / listing / trade checklist
 
-- [x] Market 429 / throttle uses cache or skip.
-- [x] Price confidence / sample represented on catalog quotes.
-- [x] Offline / replay fixtures exist.
-- [x] Listing changes verify observed `listing.priceText` (never assume apply succeeded).
-- [x] Trade machine not started (Phase 12).
+- [x] No trade-search / listing HTTP client.
+- [x] Offer match is observed, never assumed from the accept click.
+- [x] Default reject on currency / amount / stack mismatch.
+- [x] Timeout, cancel, disconnect → cleanup → failed, UI desync, emergency stop covered.
+- [x] Replay zero native input; same `TradeController` as live.
 
 ## Findings
 
 | Severity | File | Observation | Disposition |
 | --- | --- | --- | --- |
-| MEDIUM | `automationLoop.ts` | After a terminal listing write, `pendingListingHistory` stayed on world flags and could be appended again on a later tick. | Fixed: clear the pending record after persist; integration asserts a single history row. |
-| LOW | `quoteResolve.ts` | `let quote` was never reassigned. | Fixed: `const`. |
-| IMPROVEMENT | `geometry.ts` | Default listing UI points are named QA fixture constants, not live client calibration. | Kept; live overlay remains `BLOCKED: windows-native`. |
+| MEDIUM | `tradeController.ts` / `trade-partial-stack` | Whisper `expected` without `stackSize` overrode the session expected and accepted a 3/5 stack. | Fixed: in-progress session expected wins; fixture includes `stackSize`; controller unit test added. |
+| LOW | `trade/types.ts`, machine test | Unused type imports after the first cut. | Fixed. |
+| IMPROVEMENT | `geometry.ts` | Default trade UI points are named QA fixture constants, not live client calibration. | Kept; live paired-account trade remains `BLOCKED: windows-native`. |
 
 No remaining BLOCKER or HIGH defects for this phase.
 
 ## Invariants deferred
 
-Phase 12–15 (trade machine, packaging). Live listing UI remains `BLOCKED: windows-native`. See `TEST_GAPS.md`.
+Phase 13–15 (orchestrator, UI, packaging). Live trade against a real client remains `BLOCKED: windows-native`. See `TEST_GAPS.md`.

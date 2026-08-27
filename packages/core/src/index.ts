@@ -42,6 +42,15 @@ export type {
   ScenarioId,
   TargetCue,
   TradeWindowView,
+  ObservedTradeOffer,
+  TradeState,
+  TradeEventSource,
+  TradeEventKind,
+  TradePartyState,
+  ExpectedTrade,
+  TradeEvent,
+  TradeSession,
+  TradeSessionRecord,
   PendingLootPickup,
   PendingStashTransfer,
   StashItemMeta,
@@ -196,6 +205,8 @@ export { StashController } from "./controllers/stashController.js";
 export type { StashControllerOptions } from "./controllers/stashController.js";
 export { ListingController } from "./controllers/listingController.js";
 export type { ListingControllerOptions } from "./controllers/listingController.js";
+export { TradeController } from "./controllers/tradeController.js";
+export type { TradeControllerOptions } from "./controllers/tradeController.js";
 export { createControllerMap } from "./controllers/controllerMap.js";
 
 export type { ReconcileResult, ShadowItem } from "./inventory/types.js";
@@ -518,12 +529,104 @@ export {
   snapshotToQuote,
 } from "./listing/quoteResolve.js";
 
+export type {
+  TradeEventPort,
+  TradeMachineEvent,
+  TradeMachineOptions,
+  TradeMachineResult,
+  TradeObservation,
+  TradeOfferEvaluation,
+  TradeSessionStore,
+  TradeTransitionRule,
+} from "./trade/types.js";
+export {
+  DEFAULT_TRADE_WAIT_TIMEOUT_MS,
+  SUPPORTED_TRADE_EVENT_SOURCES,
+  TRADE_MAJOR_STATES,
+  TRADE_STATES,
+  TRADE_WAIT_STATES,
+} from "./trade/types.js";
+export {
+  TRADE_ALLOWED_EDGES,
+  TRADE_TRANSITIONS,
+  assertAllowedTradeEdge,
+  evaluateTradePredicate,
+  isAllowedTradeEdge,
+  isTerminalTradeEvent,
+  isTerminalTradeState,
+  stepTradeMachine,
+  tradeSessionResult,
+} from "./trade/tradeStateMachine.js";
+export {
+  ClientLogTradeEventPort,
+  FixtureTradeEventPort,
+  GggTestInterfaceTradeEventPort,
+  assertSupportedTradeEventSource,
+  createTradeEventPort,
+  parseClientLogWhisperLine,
+} from "./trade/tradeEventPort.js";
+export {
+  currenciesEqual,
+  evaluateTradeOffer,
+  normalizeTradeCurrency,
+  parseOfferText,
+  resolveObservedOffer,
+} from "./trade/offerMatch.js";
+export {
+  TRADE_ACCEPT_REASON,
+  TRADE_CANCELLED_REASON,
+  TRADE_CLEANED_REASON,
+  TRADE_CLEANUP_REASON,
+  TRADE_CONFIRM_REASON,
+  TRADE_DISCONNECT_REASON,
+  TRADE_FAILED_OR_TIMED_OUT_REASON,
+  TRADE_IDLE_REASON,
+  TRADE_ILLEGAL_EDGE_REASON,
+  TRADE_INVITE_REASON,
+  TRADE_MISSING_ITEM_REASON,
+  TRADE_NAVIGATE_REASON,
+  TRADE_OBSERVE_OFFER_REASON,
+  TRADE_OPEN_REASON,
+  TRADE_PLACE_ITEM_REASON,
+  TRADE_PREPARE_ITEM_REASON,
+  TRADE_REJECT_AMOUNT_MISMATCH_REASON,
+  TRADE_REJECT_INSUFFICIENT_CURRENCY_REASON,
+  TRADE_REJECT_MISSING_OFFER_REASON,
+  TRADE_REJECT_PARTIAL_STACK_REASON,
+  TRADE_REJECT_REASON,
+  TRADE_REJECT_WRONG_CURRENCY_REASON,
+  TRADE_REQUEST_RECEIVED_REASON,
+  TRADE_TIMEOUT_REASON,
+  TRADE_UI_DESYNC_REASON,
+  TRADE_VALIDATE_ITEM_REASON,
+  TRADE_VALIDATE_OFFER_REASON,
+  TRADE_WAIT_REASON,
+  TRADE_WRONG_ITEM_REASON,
+  parseTradeEvidence,
+  reasonForTradeEvent,
+  tradeEvidence,
+} from "./trade/reasons.js";
+export {
+  DEFAULT_TRADE_UI,
+  tradeAcceptActions,
+  tradeCleanupActions,
+  tradeInviteActions,
+  tradeNavigateActions,
+  tradeOpenActions,
+  tradePlaceItemActions,
+  tradePrepareItemActions,
+  tradeRejectActions,
+} from "./trade/geometry.js";
+export { currentTradeSession, tradeEffectsFromDecision, tradeSessionRecordFrom } from "./trade/session.js";
+export { MemoryTradeSessionStore, createMemoryTradeSessionStore } from "./trade/store.js";
+
 export {
   isoTimestampFromMs,
   summarizeInventory,
   summarizeListing,
   summarizeLoot,
   summarizeStash,
+  summarizeTrade,
   summarizeWorld,
 } from "./loop/traceHelpers.js";
 export { applyPostDecisionEffects, AutomationLoop, createAutomationLoop } from "./loop/automationLoop.js";
