@@ -145,6 +145,9 @@ export function isPredicateTrue(
     case "EmergencyStop":
       return world.flags?.emergencyStopLatched === true;
     case "SafetyHold":
+      if (world.flags?.stashSafetyHold === true) {
+        return true;
+      }
       if (isStuckExhausted(world.stuck?.value ?? { isStuck: false })) {
         return true;
       }
@@ -207,6 +210,9 @@ export function eligibilityReason(state: AutomationStateId, world: WorldState): 
     case "EmergencyStop":
       return "emergency-stop-latched";
     case "SafetyHold":
+      if (world.flags?.stashSafetyHold === true) {
+        return "FailedOrTimedOut";
+      }
       if (isStuckExhausted(world.stuck?.value ?? { isStuck: false })) {
         return "stuck-exhausted";
       }

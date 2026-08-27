@@ -1,0 +1,191 @@
+{
+  "id": "stash-failed-move-retry",
+  "scenarioId": "stash-sort",
+  "seed": 12,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "stashSessionActive": true,
+          "stashItemCatalog": {
+            "divine-1": { "class": "Currency", "category": "HighValueSell", "score": 95 }
+          }
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "divine-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "stash": {
+          "value": {
+            "tabId": "currency",
+            "tabName": "Currency",
+            "tabFull": false,
+            "cells": [
+              { "tabId": "currency", "x": 0, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "tabId": "currency", "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.9,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "stash" }, "confidence": 0.9, "observedAtMs": 10000, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10200,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "divine-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "stash": {
+          "value": {
+            "tabId": "currency",
+            "tabName": "Currency",
+            "tabFull": false,
+            "cells": [
+              { "tabId": "currency", "x": 0, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "tabId": "currency", "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.9,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "stash" }, "confidence": 0.9, "observedAtMs": 10200, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 3,
+      "atMs": 10600,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "divine-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "stash": {
+          "value": {
+            "tabId": "currency",
+            "tabName": "Currency",
+            "tabFull": false,
+            "cells": [
+              { "tabId": "currency", "x": 0, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "tabId": "currency", "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.9,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "stash" }, "confidence": 0.9, "observedAtMs": 10600, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 4,
+      "atMs": 11400,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 11400,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 1,
+            "capacity": 4,
+            "full": false,
+            "cells": [
+              { "x": 0, "y": 0, "w": 50, "h": 50, "occupied": true, "itemFingerprint": "divine-1" },
+              { "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "x": 0, "y": 1, "w": 50, "h": 50, "occupied": false },
+              { "x": 1, "y": 1, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.95,
+          "observedAtMs": 11400,
+          "freshness": "fresh"
+        },
+        "stash": {
+          "value": {
+            "tabId": "currency",
+            "tabName": "Currency",
+            "tabFull": false,
+            "cells": [
+              { "tabId": "currency", "x": 0, "y": 0, "w": 50, "h": 50, "occupied": false },
+              { "tabId": "currency", "x": 1, "y": 0, "w": 50, "h": 50, "occupied": false }
+            ]
+          },
+          "confidence": 0.9,
+          "observedAtMs": 11400,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "stash" }, "confidence": 0.9, "observedAtMs": 11400, "freshness": "fresh" }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "StashSort", "decisionReasonIncludes": "stash-move:divine-1", "executed": false, "sinkKind": "noop" },
+    { "tickId": 2, "selectedState": "StashSort", "decisionReasonIncludes": "stash-move:divine-1", "executed": false, "sinkKind": "noop" },
+    { "tickId": 3, "selectedState": "StashSort", "decisionReasonIncludes": "stash-move:divine-1", "executed": false, "sinkKind": "noop" },
+    { "tickId": 4, "selectedState": "StashSort", "decisionReasonIncludes": "FailedOrTimedOut", "executed": false, "sinkKind": "noop" }
+  ]
+}

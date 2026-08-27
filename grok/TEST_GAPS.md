@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 09 complete)
+**Updated:** 2026-08-27 (Phase 10 complete)
 
 ## Covered in Phase 01
 
@@ -95,13 +95,23 @@
 - SQLite inventory/stash snapshot persist + reload after a new DB connection (`freshness: "stale"`)
 - Replay `inventory-stale`: 12/12 → `InventoryFull`; drop cell → no longer full
 
+## Covered in Phase 10
+
+- Rule matching: class / rarity / desirability category → product-spec tabs
+- Planner order: high value first; fallback tab when primary is full; empty plan; fallback-full block
+- `StashController` on `InventoryFull` / `StashSort`; empty plan clears `stashSessionActive` when inventory is not full
+- Failed move / wrong tab bounded to `DEFAULT_RECOVERY` maxAttempts 3
+- Transfer success is reconcile/cell confirmation, never the emitted drag
+- Integration: planned drag → next fixture frame new cell → shadow confirmed
+- Replay: `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab`, `stash-emergency-stop`
+
 ## Intentionally absent (later phases)
 
 | Gap | First phase |
 | --- | --- |
 | Parser / valuation | 08 (done) |
 | Inventory / stash reconcile | 09 (done) |
-| Stash transfers | 10 |
+| Stash transfers | 10 (done) |
 | Listing machine | 11 |
 | Trade machine | 12 |
 | Full-loop orchestrator | 13 |

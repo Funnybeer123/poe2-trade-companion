@@ -38,6 +38,8 @@ export type {
   TargetCue,
   TradeWindowView,
   PendingLootPickup,
+  PendingStashTransfer,
+  StashItemMeta,
   StuckObservationValue,
   UiModeState,
   WorldState,
@@ -185,6 +187,8 @@ export { FollowController } from "./controllers/followController.js";
 export { RecoveryController } from "./controllers/recoveryController.js";
 export { LootController } from "./controllers/lootController.js";
 export { InventoryController } from "./controllers/inventoryController.js";
+export { StashController } from "./controllers/stashController.js";
+export type { StashControllerOptions } from "./controllers/stashController.js";
 export { createControllerMap } from "./controllers/controllerMap.js";
 
 export type { ReconcileResult, ShadowItem } from "./inventory/types.js";
@@ -376,7 +380,60 @@ export {
   redactSecrets,
 } from "./trace/redact.js";
 
-export { isoTimestampFromMs, summarizeInventory, summarizeLoot, summarizeWorld } from "./loop/traceHelpers.js";
+export type {
+  PlanStashTab,
+  SortBucket,
+  SortRule,
+  TransferPlan,
+  TransferPlanStep,
+} from "./stash/types.js";
+export { itemScore } from "./stash/types.js";
+export {
+  DEFAULT_SORT_RULES,
+  categoryForBucket,
+  matchSortRule,
+  ruleMatches,
+} from "./stash/sortRules.js";
+export { planTransfers } from "./stash/transferPlanner.js";
+export type { TransferPlannerInput } from "./stash/transferPlanner.js";
+export {
+  applyExpectedTransfer,
+  fingerprintAt,
+  transferObserved,
+  transferObservedInCells,
+} from "./stash/confirmTransfer.js";
+export {
+  DEFAULT_INVENTORY_GRID,
+  DEFAULT_STASH_GRID,
+  DEFAULT_TAB_CLICKS,
+  cellCenter,
+  tabClickPoint,
+} from "./stash/geometry.js";
+export {
+  STASH_BACKOFF_REASON,
+  STASH_FAILED_MOVE_KEY,
+  STASH_FAILED_MOVE_REASON,
+  STASH_FAILED_OR_TIMED_OUT_REASON,
+  STASH_FALLBACK_TAB_FULL_REASON,
+  STASH_MOVE_PREFIX,
+  STASH_PLAN_EMPTY_REASON,
+  STASH_TAB_PREFIX,
+  STASH_WRONG_TAB_KEY,
+  STASH_WRONG_TAB_REASON,
+  stashMoveEvidence,
+  stashMoveReason,
+  stashTabEvidence,
+  stashTabReason,
+} from "./stash/reasons.js";
+export {
+  isStashRecovery,
+  locationEvidenceKey,
+  pendingMoveFromStep,
+  pendingTabClick,
+  stashEffectsFromDecision,
+} from "./stash/session.js";
+
+export { isoTimestampFromMs, summarizeInventory, summarizeLoot, summarizeStash, summarizeWorld } from "./loop/traceHelpers.js";
 export { applyPostDecisionEffects, AutomationLoop, createAutomationLoop } from "./loop/automationLoop.js";
 export type { AutomationLoopOptions, AutomationTickResult } from "./loop/automationLoop.js";
 

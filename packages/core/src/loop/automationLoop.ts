@@ -26,6 +26,7 @@ import type { FrameSource, PerceptionAdapter, PerceptionFrame, StateEstimator } 
 import { analyzeFailureFrame } from "../perception/uiMode.js";
 import { DEFAULT_RECOVERY } from "../recovery/defaultRecovery.js";
 import { STATE_MODULE } from "../scheduler/predicates.js";
+import { stashEffectsFromDecision } from "../stash/session.js";
 import type { AutomationScenario, ScenarioScheduler } from "../scheduler/types.js";
 import type { QaActionTrace } from "../trace/types.js";
 import type { QaTraceWriter } from "../trace/qaTraceWriter.js";
@@ -131,7 +132,7 @@ export function applyPostDecisionEffects(
     }
   }
 
-  return { ...world, flags };
+  return { ...world, flags: { ...flags, ...stashEffectsFromDecision(world, decision, nowMs) } };
 }
 
 export class AutomationLoop {
