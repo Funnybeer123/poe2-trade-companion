@@ -1,73 +1,97 @@
 # AI Development Workflow
 
-This repository uses two AI roles with GitHub as the shared source of truth.
+This repository uses a deliberate two-stage AI workflow with GitHub as the shared source of truth.
 
 ## Roles
 
-### Sol Max / Cursor
-Primary implementation authority.
+### Sol Max / Cursor — Planning authority
 
-Owns:
+Sol Max owns:
 
-- architecture changes;
-- production implementation;
+- full repository audit before implementation;
+- target architecture;
+- phase ordering;
+- exact implementation plan;
+- interfaces/contracts to build;
+- acceptance criteria;
+- test/replay requirements;
+- dependency/risk analysis;
+- highest-risk assumptions.
+
+Sol Max writes/updates:
+
+`plans/IMPLEMENTATION_PLAN.md`
+
+Sol Max then stops. It is not the primary implementation agent under the current workflow.
+
+Use:
+
+`SOL_MAX_PLAN_ONLY_PROMPT.md`
+
+### Grok 4.6 xhigh Fast — Implementation authority
+
+Grok owns:
+
+- production code;
 - refactors;
 - migrations;
-- fixes;
-- packaging;
-- documentation tied to implementation.
+- tests;
+- replay fixtures;
+- bug fixes;
+- implementation documentation;
+- phase commits;
+- implementation-state tracking;
+- self-review before completion.
 
-### Grok Bot
-Independent QA/review authority.
+Preferred configuration:
 
-Owns:
+- Grok 4.6;
+- reasoning `xhigh`;
+- Fast variant when the platform exposes it.
 
-- architecture review;
-- diff review;
-- failure analysis;
-- deterministic regression-test design;
-- replay backlog;
-- test-gap tracking;
-- public external-reference research;
-- GitHub issue creation for confirmed defects;
-- verification of Sol Max fixes.
+Use:
+
+`GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
 
 ## Shared workflow
 
 ```text
-Sol Max implementation
-  -> commit/PR
-  -> Grok review
-  -> tests + replay analysis
-  -> GitHub findings
-  -> Sol Max fix
-  -> Grok re-review
-  -> PASS / NEEDS WORK
+Sol Max repository audit
+  -> architecture + detailed implementation plan
+  -> plans/IMPLEMENTATION_PLAN.md
+  -> Grok 4.6 xhigh Fast handoff
+  -> Grok implements one phase
+  -> tests + deterministic replay
+  -> Grok separate self-review pass
+  -> fix findings
+  -> commit phase
+  -> update grok/IMPLEMENTATION_STATE.md
+  -> next phase
 ```
+
+## Planning rule
+
+Grok should treat the Sol Max plan as the default architecture.
+
+Grok may amend it only when actual code, tests, current dependencies/APIs, licensing, or QA-boundary evidence proves a plan assumption wrong.
+
+Material deviations must be documented in:
+
+`grok/IMPLEMENTATION_STATE.md`
+
+and reflected back into `plans/IMPLEMENTATION_PLAN.md` when later phases are affected.
 
 ## Branch rules
 
-- Sol Max may use normal feature branches or the user-approved implementation flow.
-- Grok should not broadly modify `main`.
-- Grok code changes should use a branch such as `grok/qa-<topic>`.
-- Grok should prefer tests, fixtures, diagnostics, documentation, and narrow fixes.
-- Avoid simultaneous broad refactors by both agents.
-
-## Handoff rule
-
-A Grok issue handed to Sol Max should include enough evidence that Sol Max does not need to repeat the investigation:
-
-- exact file/module;
-- reproduction;
-- expected behavior;
-- actual behavior;
-- severity;
-- recommended regression test;
-- relevant trace/replay evidence.
+- Sol Max planning work may be committed directly as documentation if the user permits.
+- Grok should prefer `grok/implementation` or phase branches such as `grok/phase-01-core-runtime`.
+- Keep Grok commits phase-scoped and reviewable.
+- Do not force-push or rewrite unrelated history.
+- Avoid simultaneous broad implementation by multiple agents.
 
 ## Objective arbiter
 
-Neither agent's confidence is the final authority. Prefer:
+Neither model's confidence is the final authority. Prefer evidence in this order:
 
 1. deterministic tests;
 2. deterministic replay;
@@ -75,33 +99,50 @@ Neither agent's confidence is the final authority. Prefer:
 4. reproducible live QA evidence;
 5. code review.
 
+## Per-phase Grok loop
+
+```text
+read Sol Max phase
+  -> inspect actual code
+  -> implement smallest complete vertical slice
+  -> add/update tests
+  -> add replay fixtures
+  -> lint/typecheck/test/replay
+  -> inspect traces
+  -> self-review actual diff
+  -> fix findings
+  -> commit
+  -> update implementation state
+```
+
 ## Bug workflow
 
 ```text
 failure observed
   -> minimize failing state/input sequence
   -> define expected transition/action
-  -> add/propose regression fixture
+  -> add regression test or replay fixture
   -> confirm failure
-  -> create issue
-  -> Sol Max fixes
-  -> regression passes
-  -> Grok validates
+  -> fix
+  -> confirm pass
+  -> update implementation/review state
 ```
 
 ## Review gates
 
 A phase should not be treated as complete when meaningful behavior is only documented or stubbed.
 
-For stateful automation work, require evidence that:
+Require evidence that:
 
 - state selection is deterministic;
 - recovery is bounded;
 - replay uses the same controller logic as live mode;
+- replay emits zero native input;
 - native input cannot bypass the approved adapter;
 - public mode cannot generate automated game input;
-- failures are observable through structured traces.
+- failures are visible through structured traces;
+- required tests for the phase pass or an external blocker is documented.
 
 ## Safety boundary
 
-The authorized QA mode remains test-only and must preserve its existing controls. Do not introduce license bypass, credential theft, anti-cheat bypass, detection-evasion mechanisms, or proprietary-code copying.
+The authorized QA mode remains test-only and must preserve its controls. Do not introduce license bypass, credential theft, anti-cheat bypass, detection-evasion mechanisms, protected-code extraction, or proprietary-code copying.
