@@ -16,7 +16,7 @@
 | Phase 04 | `b2e17a5` on `cursor/phase-04-replay-trace-9afe` (PR #5) | Replay runner, traces, fixture frame source |
 | Phase 05 | `1f1a0d3` on `cursor/phase-05-perception-estimator-1b5a` (PR #6) | Perception estimator complete |
 | Phase 06 first cut | `0016d72` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery controllers + fixtures |
-| Current branch | `cursor/phase-06-follow-navigation-8044` | Phase 06 complete (gate + self-review) |
+| Current commit | `88616bd` | Gate + self-review on `cursor/phase-06-follow-navigation-8044` (PR #7) |
 
 ## Active phase
 
