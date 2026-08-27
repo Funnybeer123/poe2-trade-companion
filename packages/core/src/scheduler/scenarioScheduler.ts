@@ -35,14 +35,14 @@ export function selectAutomationState(
 
   // Step 1: emergency latch always wins. No randomness.
   if (world.flags?.emergencyStopLatched === true) {
-    return selection("EmergencyStop", world, scenario, current, rules);
+    return selection("EmergencyStop", world, current, rules);
   }
 
   // Step 2: eligible states whose predicates are true and whose module is enabled.
   const eligible = AUTOMATION_STATE_IDS.filter((state) => isStateEligible(state, world, scenario));
 
   if (eligible.length === 0) {
-    return selection("Idle", world, scenario, current, rules);
+    return selection("Idle", world, current, rules);
   }
 
   // Step 3: lowest STATE_PRIORITY number wins.
@@ -66,13 +66,12 @@ export function selectAutomationState(
     selected = "Idle";
   }
 
-  return selection(selected, world, scenario, current, rules);
+  return selection(selected, world, current, rules);
 }
 
 function selection(
   selected: AutomationStateId,
   world: WorldState,
-  scenario: AutomationScenario,
   current: AutomationStateId,
   rules: InterruptRule[],
 ): SchedulerSelection {
@@ -83,7 +82,7 @@ function selection(
   const rule = matchingInterruptRule(selected, current, world, rules);
   return {
     state: selected,
-    reason: eligibilityReason(selected, world, scenario),
+    reason: eligibilityReason(selected, world),
     interrupt: priorityInterrupt || rule !== undefined,
   };
 }

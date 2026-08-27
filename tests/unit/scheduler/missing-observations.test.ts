@@ -1,7 +1,7 @@
 import { createEmptyWorldState, createScenarioScheduler } from "@poe2tc/core";
 import { describe, expect, it } from "vitest";
 import { createTestScenario } from "../../helpers/createTestScenario.js";
-import { createTestWorld } from "../../helpers/createTestWorld.js";
+import { createTestWorld, freshTarget, TEST_CLOCK_MS } from "../../helpers/createTestWorld.js";
 
 const scheduler = createScenarioScheduler();
 
@@ -23,5 +23,25 @@ describe("scheduler missing observations", () => {
     const world = createTestWorld();
     const result = scheduler.select(world, createTestScenario({ enabled: false }));
     expect(result.state).toBe("Idle");
+  });
+
+  it("holds when skip policy blocks low-confidence work and no alternative exists", () => {
+    const world = createTestWorld((w) => {
+      w.target = {
+        value: freshTarget(),
+        confidence: 0.2,
+        observedAtMs: TEST_CLOCK_MS,
+        freshness: "fresh",
+      };
+    });
+    const result = scheduler.select(
+      world,
+      createTestScenario({
+        enabledModules: ["inventory", "perception"],
+        lowConfidencePolicy: "skip",
+      }),
+    );
+    expect(result.state).toBe("SafetyHold");
+    expect(result.reason).toBe("safety-hold-low-confidence-skip");
   });
 });

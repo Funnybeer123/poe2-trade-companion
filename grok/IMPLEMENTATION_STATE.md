@@ -10,23 +10,30 @@
 | --- | --- | --- |
 | Audited base (`main`) | `3bf2f91398a16a5250d351be818a41ca39e32762` | Docs-only repo; no toolchain |
 | Plan branch | `176b090` (`cursor/implementation-plan-05a4`, PR #1) | Adds this implementation plan |
-| Phase 01 bootstrap | `020d6b7` | First workspace/CI commit |
-| Phase 01 gate | `4a261bd` / `8c3ba93` | Gate + self-review on `cursor/phase-01-baseline-f3a0` (PR #2) |
-| Current commit | (this Phase 02 branch; SHA recorded after commit) | `cursor/phase-02-world-state-scheduler-ca64` |
+| Phase 01 | `8c3ba93` on `cursor/phase-01-baseline-f3a0` (PR #2) | Workspace/CI baseline complete |
+| Phase 02 first cut | `64565d6` | WorldState + scheduler + fixtures |
+| Current commit | (this completion commit on `cursor/phase-02-world-state-scheduler-ca64`) | Gate + self-review |
 
 ## Active phase
 
-Phase 02 — Canonical `WorldState` + deterministic `ScenarioScheduler`. Implementation is on the branch; gate commands will be recorded after the official run.
+None. Phase 02 is complete. Next is Phase 03.
 
 ## Completed phases
 
 - Phase 01 — workspace, CI, MIT license, hello-world Electron/Vue apps, `workspaceOk()`, migration file, Grok tracking.
+- Phase 02 — canonical `WorldState`, freshness, `Clock`/`FrozenClock`, deterministic `ScenarioScheduler`, 8 scheduler-priority replay snapshots.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 02 gate (`npm run lint && npm run typecheck && npm test`) not yet recorded on this revision.
+Phase 02 gate (2026-08-27, this host) — **green**:
+
+- `npm run lint`
+- `npm run typecheck`
+- `npm test` — 57 tests (unit + integration + replay)
+
+No controller, input, or native-sink code in this phase.
 
 ## Blockers
 
@@ -39,7 +46,7 @@ Phase 01 deviations unchanged.
 
 Phase 02:
 
-- `AutomationScenario` in §5.6 has no `highValueInterruptScore`. The Phase 02 Add list puts that threshold on `world.flags.highValueInterruptScore` (default `85`). Predicates use the flag, not a scenario field.
+- `AutomationScenario` in §5.6 has no `highValueInterruptScore`. The Phase 02 Add list puts that threshold on `world.flags.highValueInterruptScore` (default `85`). Predicates use the flag.
 - Added named helpers `WorldStateFlags`, `SchedulerSelection`, and a minimal `FailureInjection` type because §5.6 references `failureInjection` without defining it.
 - `RecoverTarget` is eligible whenever follow is enabled and the target is missing or below `confidenceThreshold`. `Idle` therefore requires follow (and other action modules) to be disabled or their predicates false. This matches the predicate table literally.
 
@@ -58,8 +65,10 @@ Phase 02:
 | `07-follow-target.json` | `Follow` |
 | `08-idle.json` | `Idle` |
 
-Loaded by `tests/integration/scheduler-priority.test.ts` and `tests/replay/scheduler-priority.test.ts` through the live `ScenarioScheduler`.
+Loaded by integration and replay tests through the live `ScenarioScheduler` (no `FrameSource` yet).
 
 ## Next exact work item
 
-Run Phase 02 gate, self-review, then Phase 03 — Capability / interlock / input boundary.
+Phase 03 — Capability / interlock / input boundary.
+
+Suggested commit from the plan: `feat: add capabilities, interlocks, and auditable GameInputController`.

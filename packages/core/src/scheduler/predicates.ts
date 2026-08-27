@@ -190,11 +190,7 @@ export function isStateEligible(
   return isModuleEnabledForState(state, scenario) && isPredicateTrue(state, world, scenario);
 }
 
-export function eligibilityReason(
-  state: AutomationStateId,
-  world: WorldState,
-  scenario: AutomationScenario,
-): string {
+export function eligibilityReason(state: AutomationStateId, world: WorldState): string {
   switch (state) {
     case "EmergencyStop":
       return "emergency-stop-latched";
