@@ -22,18 +22,23 @@
     "test:replay": "vitest run --project replay --passWithNoTests",
     "test:smoke": "playwright test",
     "check:native-imports": "node scripts/check-native-input-imports.mjs",
+    "verify:public-pack": "node scripts/verify-public-build-excludes-native.mjs --files-from fixtures/packaging/public-file-list.txt",
+    "pack:public": "node scripts/pack.mjs public",
+    "pack:qa": "node scripts/pack.mjs qa",
     "build": "npm run build --workspaces --if-present"
   },
   "devDependencies": {
     "@eslint/js": "^9.34.0",
+    "@playwright/test": "^1.55.0",
     "@types/node": "^22.17.2",
+    "electron": "^40.10.6",
+    "electron-builder": "^26.15.3",
     "eslint": "^9.34.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.6.2",
-    "typescript": "~5.9.2",
     "sharp": "^0.34.3",
+    "typescript": "~5.9.2",
     "typescript-eslint": "^8.40.0",
-    "vitest": "^3.2.4",
-    "@playwright/test": "^1.55.0"
+    "vitest": "^3.2.4"
   }
 }

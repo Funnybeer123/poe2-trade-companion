@@ -1,5 +1,7 @@
 # Implementation Phases
 
+**Executable order:** `plans/IMPLEMENTATION_PLAN.md` is the authoritative phase sequence (01→15, kernel-first). This file is the historical item-parser-first list and is **not** the implementation order. Keep the mapping in the plan’s §2.6 when both docs are edited.
+
 ## Phase 0 — Research and foundation
 - Verify current GGG docs, PoE 2 APIs, Cursor behavior, and Exiled Exchange 2 upstream/license.
 - Implement runtime capability model.

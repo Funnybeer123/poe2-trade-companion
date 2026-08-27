@@ -13,6 +13,7 @@
     "preload.ts",
     "banner-preload.ts",
     "ipcChannels.ts",
-    "operatorHost.ts"
+    "operatorHost.ts",
+    "buildFlags.ts"
   ]
 }

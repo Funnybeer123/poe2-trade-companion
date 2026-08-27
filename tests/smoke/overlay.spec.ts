@@ -44,6 +44,21 @@ test("replay view loads expected states for a fixture id", async ({ page }) => {
   await expect(page.getByTestId("replay-states")).toContainText("TradeSession");
 });
 
+test("first-run wizard requires AUTHORIZED QA plus acknowledgement", async ({ page }) => {
+  await page.goto("/?runtime=authorized-qa&firstRun=1&compileTime=authorized-qa");
+  await expect(page.getByTestId("first-run-wizard")).toBeVisible();
+  await expect(page.getByTestId("first-run-disclaimer")).toContainText(
+    "This product isn't affiliated with or endorsed by Grinding Gear Games in any way.",
+  );
+  await page.getByTestId("first-run-mode-qa").check();
+  await page.getByTestId("first-run-continue").click();
+  await expect(page.getByTestId("first-run-error")).toBeVisible();
+  await page.getByTestId("first-run-qa-phrase").fill("AUTHORIZED QA");
+  await page.getByTestId("first-run-qa-ack").check();
+  await page.getByTestId("first-run-continue").click();
+  await expect(page.getByTestId("first-run-wizard")).toHaveCount(0);
+});
+
 test("price check shows estimate not guarantee", async ({ page }) => {
   await page.goto("/?runtime=public-companion#/price-check");
   await page.getByTestId("price-check-input").fill("Rarity: Rare\nStorm Grip\nIron Ring");

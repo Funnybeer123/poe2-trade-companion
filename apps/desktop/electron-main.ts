@@ -1,11 +1,12 @@
-import { EmergencyStop, type FilterProfile, type OperatorRuntime } from "@poe2tc/core";
+import { EmergencyStop, createRedactingLogger, type FilterProfile, type OperatorRuntime } from "@poe2tc/core";
 import { app, BrowserWindow, clipboard, globalShortcut, ipcMain } from "electron";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { IPC_CHANNELS } from "./ipcChannels.js";
-import { createDesktopRuntime, resolveRuntimeMode } from "./operatorHost.js";
+import { createDesktopRuntime, resolveRuntimeModeFromDesktop } from "./operatorHost.js";
 
 const appDir = path.dirname(fileURLToPath(import.meta.url));
+const logger = createRedactingLogger({ redactIdentifiers: true });
 
 export const emergencyStop = new EmergencyStop();
 export const EMERGENCY_STOP_ACCELERATOR = "CommandOrControl+Shift+F12";
@@ -15,6 +16,7 @@ let runtime: OperatorRuntime | undefined;
 let overlayWindow: BrowserWindow | undefined;
 let bannerWindow: BrowserWindow | undefined;
 let workerWindow: BrowserWindow | undefined;
+let emergencyStopRegistered = false;
 
 function overlayBaseUrl(): string | undefined {
   const overlayUrl = process.env.POE2TC_OVERLAY_URL;
@@ -96,14 +98,32 @@ function createQaBannerWindow(): BrowserWindow {
   return window;
 }
 
+function tripEmergencyStop(): void {
+  if (runtime !== undefined) {
+    runtime.tripStop();
+    return;
+  }
+  emergencyStop.trip();
+}
+
 export function registerEmergencyStopHotkey(): boolean {
-  return globalShortcut.register(EMERGENCY_STOP_ACCELERATOR, () => {
-    if (runtime !== undefined) {
-      runtime.tripStop();
-      return;
-    }
-    emergencyStop.trip();
-  });
+  const registered = globalShortcut.register(EMERGENCY_STOP_ACCELERATOR, tripEmergencyStop);
+  emergencyStopRegistered = registered || emergencyStopRegistered;
+  if (!registered) {
+    logger.warn("emergency-stop-hotkey-register-failed", { accelerator: EMERGENCY_STOP_ACCELERATOR });
+  }
+  return emergencyStopRegistered;
+}
+
+/**
+ * Re-register the kill switch if the OS dropped it. A previous successful
+ * registration is never treated as lost while the process is alive.
+ */
+export function ensureEmergencyStopRegistered(): boolean {
+  if (emergencyStopRegistered && globalShortcut.isRegistered(EMERGENCY_STOP_ACCELERATOR)) {
+    return true;
+  }
+  return registerEmergencyStopHotkey();
 }
 
 /**
@@ -148,6 +168,10 @@ export function registerIpcHandlers(): void {
   ipcMain.handle(IPC_CHANNELS.getCatalog, () => requireRuntime().getCatalog());
   ipcMain.handle(IPC_CHANNELS.getScenarios, () => requireRuntime().getScenarios());
   ipcMain.handle(IPC_CHANNELS.saveScenario, (_event, scenario) => requireRuntime().saveScenario(scenario));
+  ipcMain.handle(IPC_CHANNELS.getBuildFlags, () => requireRuntime().getBuildFlags());
+  ipcMain.handle(IPC_CHANNELS.completeFirstRun, (_event, submission) =>
+    requireRuntime().completeFirstRun(submission),
+  );
 }
 
 export function createOperatorWindows(): {
@@ -157,7 +181,10 @@ export function createOperatorWindows(): {
 } {
   const overlay = createOverlayWindow();
   const worker = createHiddenWorker();
-  const mode = resolveRuntimeMode();
+  const mode = resolveRuntimeModeFromDesktop(
+    process.env,
+    app.isPackaged ? app.getAppPath() : undefined,
+  );
   const banner =
     mode === "authorized-qa" && runtime?.getCapabilities().qaBannerRequired === true
       ? createQaBannerWindow()
@@ -166,19 +193,24 @@ export function createOperatorWindows(): {
 }
 
 void app.whenReady().then(() => {
-  const hotkeyRegistered = registerEmergencyStopHotkey();
+  const hotkeyRegistered = ensureEmergencyStopRegistered();
   registerPriceCheckHotkey();
   runtime = createDesktopRuntime({
     emergencyStop,
     dbPath: process.env.POE2TC_DB_PATH ?? path.join(app.getPath("userData"), "poe2tc.sqlite"),
+    tracesPath: path.join(app.getPath("userData"), "qa-traces.jsonl"),
+    fsyncTraces: process.env.POE2TC_TRACE_FSYNC !== "0",
     clipboard: { readText: () => clipboard.readText() },
     hotkeyRegistered,
+    packagedAppPath: app.isPackaged ? app.getAppPath() : undefined,
   });
   runtime.setHotkeyRegistered(hotkeyRegistered);
   registerIpcHandlers();
   createOperatorWindows();
 
   app.on("activate", () => {
+    const stillRegistered = ensureEmergencyStopRegistered();
+    runtime?.setHotkeyRegistered(stillRegistered);
     if (BrowserWindow.getAllWindows().length === 0) {
       createOperatorWindows();
     }
@@ -186,7 +218,9 @@ void app.whenReady().then(() => {
 });
 
 app.on("will-quit", () => {
-  globalShortcut.unregisterAll();
+  globalShortcut.unregister(PRICE_CHECK_ACCELERATOR);
+  globalShortcut.unregister(EMERGENCY_STOP_ACCELERATOR);
+  emergencyStopRegistered = false;
 });
 
 app.on("window-all-closed", () => {
@@ -201,4 +235,8 @@ export function getWindows(): {
   banner?: BrowserWindow;
 } {
   return { overlay: overlayWindow, worker: workerWindow, banner: bannerWindow };
+}
+
+export function wasEmergencyStopRegistered(): boolean {
+  return emergencyStopRegistered;
 }

@@ -89,9 +89,9 @@ Use sanitized/static fixtures. Do not store private session cookies, auth tokens
 - lint passes;
 - typecheck passes;
 - unit/integration/replay tests pass;
-- packaging succeeds;
-- clean Windows VM starts;
-- public build cannot expose QA automation;
-- QA build cannot arm without explicit QA configuration;
-- emergency stop tested live;
-- full-loop QA scenario produces complete trace.
+- packaging succeeds (directory pack on Linux; NSIS only on a Windows runner);
+- clean Windows VM starts (`BLOCKED: windows-vm` until a Windows runner exists);
+- public build cannot expose QA automation (`verify-public-build-excludes-native` + compile-time `POE2TC_MODE`);
+- QA build cannot arm without explicit QA configuration (first-run `AUTHORIZED QA` + checkbox);
+- emergency stop tested live (`BLOCKED: windows-vm` / `poe-client-access`);
+- full-loop QA scenario produces complete trace (replay gate is green; live client is blocked).

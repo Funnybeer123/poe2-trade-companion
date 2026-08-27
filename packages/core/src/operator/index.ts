@@ -1,4 +1,24 @@
 export { createCapabilities } from "../capabilities/createCapabilities.js";
+export {
+  COMPILE_TIME_MODE_ENV,
+  RUNTIME_MODE_ENV,
+  isQaBuildEnabled,
+  readCompileTimeMode,
+  resolveRuntimeMode,
+  resolveRuntimeModeFromEnv,
+} from "../capabilities/buildMode.js";
+export type { BuildModeSources } from "../capabilities/buildMode.js";
+export {
+  evaluateFirstRun,
+  firstRunDisclaimer,
+  QA_FIRST_RUN_PHRASE,
+} from "./firstRun.js";
+export type { FirstRunEvaluation, FirstRunSubmission } from "./firstRun.js";
+export {
+  OFFICIAL_ITEM_FILTER_SYNC_STATUS,
+  OfficialItemFilterSync,
+  createOfficialItemFilterSync,
+} from "../filter/officialItemFilterSync.js";
 export { createEmptyWorldState } from "../world-state/createEmptyWorldState.js";
 export type { RuntimeMode, WorldState } from "../world-state/types.js";
 export {
@@ -40,5 +60,8 @@ export type {
   ExportFilterResultDto,
   IpcErrorDto,
   CatalogItemDto,
+  BuildFlagsDto,
+  FirstRunSubmissionDto,
+  FirstRunResultDto,
   Poe2tcPreloadApi,
 } from "./ipcTypes.js";

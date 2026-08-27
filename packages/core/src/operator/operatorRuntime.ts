@@ -1,6 +1,8 @@
 import { FrozenClock, SystemClock, type Clock } from "../clock.js";
 import { armQa, evaluateQaArming } from "../capabilities/armQa.js";
+import { isQaBuildEnabled } from "../capabilities/buildMode.js";
 import { createCapabilities, type QaArmingState, type RuntimeCapabilities } from "../capabilities/createCapabilities.js";
+import { evaluateFirstRun, type FirstRunSubmission } from "./firstRun.js";
 import {
   DEFAULT_ALLOWLISTED_PROCESS_NAMES,
   DEFAULT_ALLOWLISTED_WINDOW_TITLE_INCLUDES,
@@ -12,7 +14,7 @@ import { failedValuation, LOCKED_OUTLIER_METHOD } from "../market/valuation.js";
 import { recommendListingPrice } from "../listing/pricePolicy.js";
 import { createEmptyWorldState } from "../world-state/createEmptyWorldState.js";
 import type { AutomationScenario } from "../scheduler/types.js";
-import type { QaActionTrace } from "../trace/types.js";
+import type { QaActionTrace, TraceSink } from "../trace/types.js";
 import type { RuntimeMode, WorldState } from "../world-state/types.js";
 import {
   DEFAULT_FILTER_PROFILE,
@@ -30,8 +32,10 @@ import {
 } from "./dto.js";
 import type {
   ArmResultDto,
+  BuildFlagsDto,
   CatalogItemDto,
   ExportFilterResultDto,
+  FirstRunResultDto,
   ParseClipboardResultDto,
   ReplayRunDto,
   StopResultDto,
@@ -51,6 +55,7 @@ export interface ClipboardReader {
 
 export interface OperatorRuntimeOptions {
   mode: RuntimeMode;
+  compileTimeMode?: RuntimeMode;
   clock?: Clock;
   emergencyStop?: EmergencyStop;
   settingsStore: SettingsPort;
@@ -59,6 +64,7 @@ export interface OperatorRuntimeOptions {
   clipboard?: ClipboardReader;
   hotkeyRegistered?: boolean;
   initialArming?: Partial<QaArmingState>;
+  traceSink?: TraceSink;
 }
 
 const DEFAULT_QUOTE_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -82,10 +88,12 @@ export class OperatorRuntime {
   readonly capabilities: RuntimeCapabilities;
   readonly emergencyStop: EmergencyStop;
   readonly settingsStore: SettingsPort;
+  readonly compileTimeMode: RuntimeMode;
   readonly #clock: Clock;
   readonly #clipboard?: ClipboardReader;
   readonly #market?: MarketProvider;
   readonly #replayCatalog?: ReplayCatalog;
+  readonly #traceSink?: TraceSink;
   #hotkeyRegistered: boolean;
   #arming: QaArmingState;
   #world: WorldState;
@@ -96,13 +104,19 @@ export class OperatorRuntime {
   #filterProfile: FilterProfile = cloneDto(DEFAULT_FILTER_PROFILE);
 
   constructor(options: OperatorRuntimeOptions) {
-    this.capabilities = createCapabilities(options.mode);
+    this.compileTimeMode = options.compileTimeMode ?? options.mode;
+    const mode =
+      options.mode === "authorized-qa" && !isQaBuildEnabled(this.compileTimeMode)
+        ? "public-companion"
+        : options.mode;
+    this.capabilities = createCapabilities(mode);
     this.emergencyStop = options.emergencyStop ?? new EmergencyStop();
     this.settingsStore = options.settingsStore;
     this.#clock = options.clock ?? new SystemClock();
     this.#clipboard = options.clipboard;
     this.#market = options.market;
     this.#replayCatalog = options.replayCatalog;
+    this.#traceSink = options.traceSink;
     this.#hotkeyRegistered = options.hotkeyRegistered ?? false;
     this.#settings = this.#loadSettings();
     this.#catalog = this.#loadJson(CATALOG_SETTINGS_KEY, []);
@@ -129,6 +143,25 @@ export class OperatorRuntime {
 
   getCapabilities() {
     return capabilitiesDto(this.capabilities);
+  }
+
+  getBuildFlags(): BuildFlagsDto {
+    return {
+      compileTimeMode: this.compileTimeMode,
+      qaBuildEnabled: isQaBuildEnabled(this.compileTimeMode),
+    };
+  }
+
+  completeFirstRun(submission: FirstRunSubmission): FirstRunResultDto {
+    const evaluation = evaluateFirstRun(submission, this.compileTimeMode, this.#settings);
+    if (evaluation.ok) {
+      this.saveSettings(evaluation.settings);
+    }
+    return {
+      ok: evaluation.ok,
+      reasons: evaluation.reasons,
+      settings: cloneDto(this.#settings),
+    };
   }
 
   getWorldState() {
@@ -224,6 +257,7 @@ export class OperatorRuntime {
     }
     const result = await this.#replayCatalog.run(id);
     this.#traces = result.traces;
+    this.#persistTraces(result.traces);
     const last = result.traces[result.traces.length - 1];
     if (last !== undefined) {
       this.#world = {
@@ -382,6 +416,15 @@ export class OperatorRuntime {
 
   #persistJson(key: string, value: unknown): void {
     this.settingsStore.set(key, JSON.stringify(value), this.#clock.nowMs());
+  }
+
+  #persistTraces(traces: readonly QaActionTrace[]): void {
+    if (this.#traceSink === undefined) {
+      return;
+    }
+    for (const trace of traces) {
+      this.#traceSink.append(trace);
+    }
   }
 }
 

@@ -72,6 +72,23 @@ export interface ExportFilterResultDto {
   oauthSync: false;
 }
 
+export interface BuildFlagsDto {
+  compileTimeMode: RuntimeMode;
+  qaBuildEnabled: boolean;
+}
+
+export interface FirstRunSubmissionDto {
+  selectedMode: RuntimeMode;
+  confirmationText?: string;
+  acknowledged: boolean;
+}
+
+export interface FirstRunResultDto {
+  ok: boolean;
+  reasons: string[];
+  settings: OperatorSettingsDto;
+}
+
 export interface IpcErrorDto {
   code: string;
   message: string;
@@ -103,6 +120,8 @@ export interface Poe2tcPreloadApi {
   getCatalog(): Promise<CatalogItemDto[]>;
   getScenarios(): Promise<AutomationScenarioDto[]>;
   saveScenario(scenario: AutomationScenarioDto): Promise<AutomationScenarioDto>;
+  getBuildFlags(): Promise<BuildFlagsDto>;
+  completeFirstRun(submission: FirstRunSubmissionDto): Promise<FirstRunResultDto>;
 }
 
 export type { QaArmingState };

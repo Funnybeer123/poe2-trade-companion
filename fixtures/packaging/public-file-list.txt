@@ -1,0 +1,10 @@
+# Simulated public directory-pack file list for verify-public-build-excludes-native
+package.json
+apps/desktop/dist/electron-main.js
+apps/desktop/dist/preload.js
+apps/overlay/dist/index.html
+packages/core/src/index.ts
+packages/persistence-sqlite/src/index.ts
+migrations/001_init.sql
+NOTICE
+LICENSE
