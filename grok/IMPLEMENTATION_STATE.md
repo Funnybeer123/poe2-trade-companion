@@ -15,7 +15,7 @@
 | Phase 03 | `67ea3ae` on `cursor/phase-03-capabilities-interlock-input-9d76` (PR #4) | Capabilities, interlocks, GameInputController |
 | Phase 04 | `b2e17a5` on `cursor/phase-04-replay-trace-9afe` (PR #5) | Replay runner, traces, fixture frame source |
 | Phase 05 first cut | `70627d7` on `cursor/phase-05-perception-estimator-1b5a` (PR #6) | Estimator, adapters, live capture package |
-| Current branch | `cursor/phase-05-perception-estimator-1b5a` | Phase 05 complete |
+| Current commit | `a2fd95d` | Gate + self-review on `cursor/phase-05-perception-estimator-1b5a` (PR #6) |
 
 ## Active phase
 
