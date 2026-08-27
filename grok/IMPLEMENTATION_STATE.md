@@ -11,64 +11,57 @@
 | Audited base (`main`) | `3bf2f91398a16a5250d351be818a41ca39e32762` | Docs-only repo; no toolchain |
 | Plan branch | `176b090` (`cursor/implementation-plan-05a4`, PR #1) | Adds this implementation plan |
 | Phase 01 | `8c3ba93` on `cursor/phase-01-baseline-f3a0` (PR #2) | Workspace/CI baseline complete |
-| Phase 02 first cut | `64565d6` | WorldState + scheduler + fixtures |
-| Current commit | `cadbaef` | Gate + self-review on `cursor/phase-02-world-state-scheduler-ca64` (PR #3) |
+| Phase 02 | `ece3287` on `cursor/phase-02-world-state-scheduler-ca64` (PR #3) | WorldState + scheduler complete |
+| Phase 03 first cut | `7f136ba` | Capabilities, interlocks, GameInputController |
+| Current commit | `f6e72b0` | Gate + self-review on `cursor/phase-03-capabilities-interlock-input-9d76` (PR #4) |
 
 ## Active phase
 
-None. Phase 02 is complete. Next is Phase 03.
+None. Phase 03 is complete. Next is Phase 04.
 
 ## Completed phases
 
 - Phase 01 — workspace, CI, MIT license, hello-world Electron/Vue apps, `workspaceOk()`, migration file, Grok tracking.
 - Phase 02 — canonical `WorldState`, freshness, `Clock`/`FrozenClock`, deterministic `ScenarioScheduler`, 8 scheduler-priority replay snapshots.
+- Phase 03 — `RuntimeCapabilities`, `InterlockGate`, `GameInputController`, emergency-stop latch, Noop/Forbidden/Recording sinks, `packages/native-input` SendInput adapter, native-import CI guard, Electron `Ctrl+Shift+F12` hotkey.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 02 gate (2026-08-27, this host) — **green**:
+Phase 03 gate (2026-08-27, this host) — **green**:
 
 - `npm run lint`
 - `npm run typecheck`
-- `npm test` — 57 tests (unit + integration + replay)
+- `npm test` — 107 tests (unit + integration + replay)
+- `node scripts/check-native-input-imports.mjs`
 
-No controller, input, or native-sink code in this phase.
+Self-review: `PASS` (`grok/REVIEW_STATE.md`).
 
 ## Blockers
 
-- None for Phase 02.
-- External / later-phase: Windows live client, native `SendInput`, OAuth registration freeze, no official PoE 2 stash/trade-search API. See `RESEARCH_NOTES.md`.
+- **BLOCKED: windows-native** — host is Linux. `NativeInputSink` binds `koffi` → `user32.SendInput` / `SetCursorPos` with a typed `INPUT` struct. Construction throws `native-unavailable` when `koffi` cannot load or `platform !== "win32"` (both paths tested). Live SendInput and a real `globalShortcut` display session are not available here. The plan allows closing Phase 03 without Windows live input.
+- External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search API. See `RESEARCH_NOTES.md`.
 
 ## Plan deviations
 
-Phase 01 deviations unchanged.
+Phase 01–02 deviations unchanged.
 
-Phase 02:
+Phase 03:
 
-- `AutomationScenario` in §5.6 has no `highValueInterruptScore`. The Phase 02 Add list puts that threshold on `world.flags.highValueInterruptScore` (default `85`). Predicates use the flag.
-- Added named helpers `WorldStateFlags`, `SchedulerSelection`, and a minimal `FailureInjection` type because §5.6 references `failureInjection` without defining it.
-- `RecoverTarget` is eligible whenever follow is enabled and the target is missing or below `confidenceThreshold`. `Idle` therefore requires follow (and other action modules) to be disabled or their predicates false. This matches the predicate table literally.
+- `InterlockContext` adds optional `retryIndex` and `identity` so retry-exhausted and realm/account/character allowlists can be evaluated without inventing WorldState fields.
+- `createInputSink()` returns `ForbiddenInputSink` when `canEmitNativeInput` is false, otherwise `NoopInputSink`. Core never constructs `NativeInputSink`.
+- `GameInputController` rejects a `kind: "native"` sink when `canEmitNativeInput` is false and substitutes `ForbiddenInputSink`.
+- Default sleeper is no-op. Timing jitter uses seeded `mulberry32` (`scenario.id` + `tickId`); `default` / `instant` profiles are 0 ms.
+- `evaluateQaArming` / `armQa` implement the “cannot arm without acknowledgement + allowlist + hotkey” invariant.
+- Electron accelerator is `CommandOrControl+Shift+F12` (Ctrl+Shift+F12 on Windows/Linux).
 
 ## Replay fixtures added
 
-`fixtures/replay/scheduler-priority/` — 8 JSON world snapshots (no pixels):
-
-| File | Expected state |
-| --- | --- |
-| `01-emergency-stop-beats-trade.json` | `EmergencyStop` |
-| `02-safety-hold-process.json` | `SafetyHold` |
-| `03-trade-session.json` | `TradeSession` |
-| `04-inventory-full-beats-loot-follow.json` | `InventoryFull` |
-| `05-high-value-loot-beats-follow.json` | `HighValueLoot` |
-| `06-high-value-loot-does-not-beat-trade.json` | `TradeSession` |
-| `07-follow-target.json` | `Follow` |
-| `08-idle.json` | `Idle` |
-
-Loaded by integration and replay tests through the live `ScenarioScheduler` (no `FrameSource` yet).
+None in Phase 03. Intended actions are captured in memory by `GameInputController.recordedActions` and `RecordingInputSink`. Scheduler fixtures from Phase 02 remain.
 
 ## Next exact work item
 
-Phase 03 — Capability / interlock / input boundary.
+Phase 04 — Deterministic replay + trace model.
 
-Suggested commit from the plan: `feat: add capabilities, interlocks, and auditable GameInputController`.
+Suggested commit from the plan: `feat: add replay runner, QA traces, and fixture frame source`.

@@ -20,6 +20,7 @@
     "test:unit": "vitest run --project unit",
     "test:integration": "vitest run --project integration",
     "test:replay": "vitest run --project replay --passWithNoTests",
+    "check:native-imports": "node scripts/check-native-input-imports.mjs",
     "build": "npm run build --workspaces --if-present"
   },
   "devDependencies": {

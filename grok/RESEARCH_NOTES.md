@@ -32,8 +32,16 @@ Confirmed still true (matches plan §3.1–§3.2):
 
 No Phase 01 code change required. Official filter sync and account APIs remain optional/blocked.
 
+## 2026-08-27 — Phase 03 native input
+
+- Host is Linux. `NativeInputSink` binds `koffi` → `user32.SendInput` / `SetCursorPos` and is Windows-only.
+- `koffi` is a dependency of `packages/native-input` only. Installed `koffi@2.16.3` (requested `^2.14.1`). Public Electron start path does not import it.
+- Constructing `NativeInputSink` on this host throws `native-unavailable` (non-win32). The same error is thrown if `koffi` itself cannot load (unit-tested via an injected loader).
+- Live Windows `SendInput` is **BLOCKED: windows-native** on this agent. Phase 03 unit/replay/non-native tests do not require it.
+
 ## Deferred
 
 - Actual PoE 2 process image names / window title (Phase 05).
 - `koffi` / `better-sqlite3` Electron ABI (Phases 03/04/15).
 - EE2 MIT + parser revision immediately before Phase 08 copy.
+- Windows live SendInput + emergency hotkey on a real display (`BLOCKED: windows-native`).
