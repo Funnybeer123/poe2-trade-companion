@@ -127,7 +127,7 @@
 | Trade machine | 12 (done) |
 | Full-loop orchestrator | 13 (done) |
 | Playwright overlay smoke | 14 (added) |
-| Public vs QA packaging | 15 |
+| Public vs QA packaging | 15 (done) |
 
 ## Covered in Phase 12
 
@@ -158,7 +158,17 @@
 - Local loot-filter generation/export; no OAuth
 - Settings persist via SQLite `settings` table
 - `OperatorRuntime.runReplay(id)` uses the live replay runner (`NoopInputSink`)
-- Playwright smoke: overlay open, banner in QA, arm disabled in public, settings persist, replay states, price estimate label
+- Playwright smoke: overlay open, banner in QA, arm disabled in public, settings persist, replay states, price estimate label, first-run wizard
+
+## Covered in Phase 15
+
+- Public compile-time flag: `POE2TC_RUNTIME_MODE=authorized-qa` cannot enable QA unless `POE2TC_MODE` / `import.meta.env.POE2TC_MODE` is `authorized-qa`
+- Redacting logger strips tokens and optional identifiers
+- First-run: public completes without phrase; QA requires `AUTHORIZED QA` + checkbox; public compile-time rejects QA
+- `verify-public-build-excludes-native` against `fixtures/packaging/public-file-list.txt` and a failing native-input list
+- Crash-safe `FileTraceSink` append/fsync
+- Official filter sync stays `BLOCKED: oauth-registration`
+- Existing replay suite unchanged
 
 ## Replay
 

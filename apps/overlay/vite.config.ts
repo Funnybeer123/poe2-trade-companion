@@ -7,6 +7,9 @@ const overlayDir = path.dirname(fileURLToPath(import.meta.url));
 
 export default defineConfig({
   plugins: [vue()],
+  define: {
+    "import.meta.env.POE2TC_MODE": JSON.stringify(process.env.POE2TC_MODE ?? "public-companion"),
+  },
   base: "./",
   resolve: {
     alias: {

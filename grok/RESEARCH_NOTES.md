@@ -112,10 +112,43 @@ Confirmed still true (matches plan §3.2 / Phase 12):
 - Community `/api/trade2` and `POESESSID` flows remain undocumented. Not implemented.
 - Trade-session events come from fixtures, opted-in client-log whisper lines, or a reserved GGG test-interface port. No packet sniffing.
 
+## 2026-08-27 — Phase 15 official filter OAuth re-check
+
+Source: https://www.pathofexile.com/developer/docs/authorization (fetched 2026-08-27)
+
+GGG is still not accepting new OAuth applications. No test client is supplied. Official item-filter sync remains **BLOCKED: oauth-registration**. Local loot-filter export is unchanged (`oauthSync: false`). `OfficialItemFilterSync` exists only as a blocked stub and does not call the network.
+
+## 2026-08-27 — Phase 15 Electron ABI (`better-sqlite3`, `koffi`)
+
+Pinned versions:
+
+- Electron `40.10.6` (Chromium/Node ABI pair shipped with Electron 40).
+- `better-sqlite3` `^12.4.1` (workspace `packages/persistence-sqlite`).
+- `koffi` `^2.14.1` (resolved `2.16.3` in `packages/native-input` and `packages/perception-live`).
+
+Re-verify on this host (2026-08-27):
+
+- Node 22 unit tests load `better-sqlite3` against Node's ABI (`:memory:` / temp file). That is **not** the Electron ABI.
+- `koffi` loads on Linux for unit tests; `NativeInputSink` still throws `native-unavailable` off win32.
+- A real Electron rebuild (`npx electron-rebuild -f -w better-sqlite3 -w koffi` after `npm run pack:*` on Windows) is required before live input/SQLite in a packaged app.
+- This Linux agent cannot produce that Electron-native rebuild for a Windows installer. Recorded as **BLOCKED: windows-vm**.
+
+Ports stay swappable: SQLite via `persistence-sqlite`, input via `InputSink`, capture via `LiveFrameSource`.
+
+## 2026-08-27 — Phase 15 CPU / latency budget
+
+Defaults recorded in `packages/core/src/loop/timing.ts`:
+
+- Screen capture default **≤ 15 fps** (`DEFAULT_CAPTURE_FPS = 15`, interval 67 ms).
+- Automation loop tick **100–200 ms** (`DEFAULT_LOOP_TICK_MS = 150`, clamped to that range).
+
+These are pull-based budgets (the loop calls `nextFrame()` once per tick). They are not a live profiler result. Live overlay against a real PoE 2 client remains **BLOCKED: windows-native** / **poe-client-access**.
+
 ## Deferred
 
 - Actual PoE 2 process image names / window title on a Windows client (still unverified).
-- `koffi` / `better-sqlite3` Electron ABI (Phases 03/04/15).
+- Electron-native rebuild of `koffi` / `better-sqlite3` on a Windows pack (`BLOCKED: windows-vm`).
 - EE2 MIT + parser revision: completed 2026-08-27 (see Phase 08 note).
 - Windows live SendInput + emergency hotkey on a real display (`BLOCKED: windows-native`).
 - Live `desktopCapturer` against a real PoE 2 window.
+- Official item-filter OAuth sync (`BLOCKED: oauth-registration`).

@@ -4,11 +4,14 @@ import {
   DEFAULT_FILTER_PROFILE,
   defaultFilterFileName,
   defaultOperatorSettings,
+  evaluateFirstRun,
   formatPriceEstimate,
   generateLootFilter,
+  isQaBuildEnabled,
   type AutomationScenarioDto,
   type CatalogItemDto,
   type FilterProfileDto,
+  type FirstRunSubmissionDto,
   type OperatorSettingsDto,
   type Poe2tcPreloadApi,
   type QaActionTraceDto,
@@ -23,15 +26,35 @@ function readQueryRuntime(): RuntimeMode {
   return params.get("runtime") === "authorized-qa" ? "authorized-qa" : "public-companion";
 }
 
+function readCompileTimeMode(): RuntimeMode {
+  const params = new URLSearchParams(window.location.search);
+  if (params.get("compileTime") === "authorized-qa" || import.meta.env.POE2TC_MODE === "authorized-qa") {
+    return "authorized-qa";
+  }
+  return "public-companion";
+}
+
+function forceFirstRun(): boolean {
+  return new URLSearchParams(window.location.search).get("firstRun") === "1";
+}
+
 function loadSettings(): OperatorSettingsDto {
+  const defaults = {
+    ...defaultOperatorSettings(),
+    firstRunCompleted: !forceFirstRun(),
+  };
   try {
     const raw = window.localStorage.getItem(SETTINGS_STORAGE_KEY);
     if (raw === null) {
-      return defaultOperatorSettings();
+      return defaults;
     }
-    return { ...defaultOperatorSettings(), ...(JSON.parse(raw) as OperatorSettingsDto) };
+    const parsed = { ...defaults, ...(JSON.parse(raw) as OperatorSettingsDto) };
+    if (forceFirstRun()) {
+      parsed.firstRunCompleted = false;
+    }
+    return parsed;
   } catch {
-    return defaultOperatorSettings();
+    return defaults;
   }
 }
 
@@ -68,6 +91,7 @@ function mockTrace(tickId: number, selectedState: (typeof FULL_LOOP_STATES)[numb
 }
 
 export function installBrowserMock(mode: RuntimeMode = readQueryRuntime()): Poe2tcPreloadApi {
+  const compileTimeMode = mode === "authorized-qa" ? "authorized-qa" : readCompileTimeMode();
   const capabilities = createCapabilities(mode);
   let settings = loadSettings();
   let armed = false;
@@ -253,6 +277,24 @@ export function installBrowserMock(mode: RuntimeMode = readQueryRuntime()): Poe2
     async saveScenario(scenario: AutomationScenarioDto) {
       scenarios = [...scenarios.filter((entry) => entry.id !== scenario.id), scenario];
       return scenario;
+    },
+    async getBuildFlags() {
+      return {
+        compileTimeMode,
+        qaBuildEnabled: isQaBuildEnabled(compileTimeMode),
+      };
+    },
+    async completeFirstRun(submission: FirstRunSubmissionDto) {
+      const evaluation = evaluateFirstRun(submission, compileTimeMode, settings);
+      if (evaluation.ok) {
+        settings = evaluation.settings;
+        window.localStorage.setItem(SETTINGS_STORAGE_KEY, JSON.stringify(settings));
+      }
+      return {
+        ok: evaluation.ok,
+        reasons: evaluation.reasons,
+        settings,
+      };
     },
   };
 

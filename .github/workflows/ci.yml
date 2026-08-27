@@ -26,4 +26,11 @@ jobs:
       - run: npx playwright install --with-deps chromium
       - run: npm run test:smoke
       - run: node scripts/check-native-input-imports.mjs
+      - run: node scripts/verify-public-build-excludes-native.mjs --files-from fixtures/packaging/public-file-list.txt
       - run: npm run build
+      # Windows NSIS installers require windows-latest. This Linux job only
+      # verifies the public file list; it does not produce a fake .exe.
+
+  # Packaging note: a windows-latest pack job is the correct place for NSIS.
+  # It is not added here because this environment cannot validate a Windows
+  # installer. See grok/IMPLEMENTATION_STATE.md (BLOCKED: windows-vm).

@@ -1,0 +1,31 @@
+appId: com.funnybeer.poe2tc.public
+productName: PoE2 Trade Companion
+copyright: Copyright © 2026
+asar: true
+directories:
+  output: release/public
+files:
+  - package.json
+  - apps/desktop/dist/**/*
+  - apps/overlay/dist/**/*
+  - packages/core/package.json
+  - packages/core/src/**/*
+  - packages/persistence-sqlite/package.json
+  - packages/persistence-sqlite/src/**/*
+  - packages/testkit/package.json
+  - packages/testkit/src/**/*
+  - migrations/**/*
+  - fixtures/**/*
+  - "!packages/native-input/**"
+  - "!**/*.map"
+extraMetadata:
+  main: apps/desktop/dist/electron-main.js
+  poe2tcMode: public-companion
+win:
+  target: []
+linux:
+  target:
+    - dir
+mac:
+  target: []
+electronVersion: 40.10.6

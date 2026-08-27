@@ -39,6 +39,9 @@ export type {
   ExportFilterResultDto,
   IpcErrorDto,
   CatalogItemDto,
+  BuildFlagsDto,
+  FirstRunSubmissionDto,
+  FirstRunResultDto,
   Poe2tcPreloadApi,
 } from "./operator/ipcTypes.js";
 export {
@@ -145,6 +148,36 @@ export { createCapabilities } from "./capabilities/createCapabilities.js";
 export type { QaArmingState, RuntimeCapabilities } from "./capabilities/createCapabilities.js";
 export { armQa, evaluateQaArming } from "./capabilities/armQa.js";
 export type { QaArmingEvaluation, QaArmingExtras } from "./capabilities/armQa.js";
+export {
+  COMPILE_TIME_MODE_ENV,
+  RUNTIME_MODE_ENV,
+  isQaBuildEnabled,
+  readCompileTimeMode,
+  resolveRuntimeMode,
+  resolveRuntimeModeFromEnv,
+} from "./capabilities/buildMode.js";
+export type { BuildModeSources } from "./capabilities/buildMode.js";
+export {
+  evaluateFirstRun,
+  firstRunDisclaimer,
+  QA_FIRST_RUN_PHRASE,
+} from "./operator/firstRun.js";
+export type { FirstRunEvaluation, FirstRunSubmission } from "./operator/firstRun.js";
+export { RedactingLogger, createRedactingLogger, formatLogLine, redactLogText } from "./logging/redactingLogger.js";
+export type { LogLevel, RedactingLoggerOptions } from "./logging/redactingLogger.js";
+export {
+  DEFAULT_CAPTURE_FPS,
+  DEFAULT_LOOP_TICK_MAX_MS,
+  DEFAULT_LOOP_TICK_MIN_MS,
+  DEFAULT_LOOP_TICK_MS,
+  captureIntervalMs,
+  clampLoopTickMs,
+} from "./loop/timing.js";
+export {
+  OFFICIAL_ITEM_FILTER_SYNC_STATUS,
+  OfficialItemFilterSync,
+  createOfficialItemFilterSync,
+} from "./filter/officialItemFilterSync.js";
 
 export { createInterlockGate, DefaultInterlockGate } from "./interlock/interlockGate.js";
 export { TokenBucketRateLimiter } from "./interlock/rateLimiter.js";
@@ -436,6 +469,8 @@ export {
 
 export type { QaActionTrace, RedactionSettings, TraceSink } from "./trace/types.js";
 export { InMemoryTraceSink } from "./trace/inMemoryTraceSink.js";
+export { FileTraceSink } from "./trace/fileTraceSink.js";
+export type { FileTraceSinkOptions } from "./trace/fileTraceSink.js";
 export { QaTraceWriter } from "./trace/qaTraceWriter.js";
 export type { QaTraceWriterOptions } from "./trace/qaTraceWriter.js";
 export {

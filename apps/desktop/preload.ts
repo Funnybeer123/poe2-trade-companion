@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   AutomationScenarioDto,
   FilterProfileDto,
+  FirstRunSubmissionDto,
   OperatorSettingsDto,
   Poe2tcPreloadApi,
 } from "@poe2tc/core";
@@ -25,6 +26,9 @@ const api: Poe2tcPreloadApi = {
   getScenarios: () => ipcRenderer.invoke(IPC_CHANNELS.getScenarios),
   saveScenario: (scenario: AutomationScenarioDto) =>
     ipcRenderer.invoke(IPC_CHANNELS.saveScenario, scenario),
+  getBuildFlags: () => ipcRenderer.invoke(IPC_CHANNELS.getBuildFlags),
+  completeFirstRun: (submission: FirstRunSubmissionDto) =>
+    ipcRenderer.invoke(IPC_CHANNELS.completeFirstRun, submission),
 };
 
 contextBridge.exposeInMainWorld("poe2tc", api);

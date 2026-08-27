@@ -3,6 +3,7 @@ import {
   createCapabilities,
   defaultOperatorSettings,
   type ArmingDto,
+  type BuildFlagsDto,
   type CapabilitiesDto,
   type CatalogItemDto,
   type IpcErrorDto,
@@ -34,10 +35,14 @@ export const operatorState = reactive({
   world: undefined as WorldStateDto | undefined,
   traces: [] as QaActionTraceDto[],
   settings: defaultOperatorSettings() as OperatorSettingsDto,
+  buildFlags: {
+    compileTimeMode: publicCaps.mode,
+    qaBuildEnabled: false,
+  } as BuildFlagsDto,
   catalog: [] as CatalogItemDto[],
   priceCheck: undefined as ParseClipboardResultDto | undefined,
   ipcError: undefined as IpcErrorDto | undefined,
-  loading: false,
+  loading: true,
 });
 
 export function dismissIpcError(): void {
@@ -90,9 +95,23 @@ export async function refreshCatalog(): Promise<void> {
   }
 }
 
+export async function refreshBuildFlags(): Promise<void> {
+  try {
+    operatorState.buildFlags = await operatorState.api.getBuildFlags();
+  } catch (error) {
+    applyFailure(error);
+  }
+}
+
 export async function bootstrapOperator(): Promise<void> {
   operatorState.loading = true;
   await refreshCapabilities();
-  await Promise.all([refreshWorld(), refreshTraces(), refreshSettings(), refreshCatalog()]);
+  await Promise.all([
+    refreshWorld(),
+    refreshTraces(),
+    refreshSettings(),
+    refreshCatalog(),
+    refreshBuildFlags(),
+  ]);
   operatorState.loading = false;
 }

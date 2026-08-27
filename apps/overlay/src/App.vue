@@ -1,4 +1,5 @@
 <template>
+  <FirstRunWizard v-if="showFirstRun" />
   <QaBanner />
   <div class="shell" data-testid="overlay-root">
     <nav class="nav">
@@ -22,11 +23,16 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted } from "vue";
+import { computed, onMounted } from "vue";
 import DisclaimerBar from "./components/DisclaimerBar.vue";
 import ErrorPanel from "./components/ErrorPanel.vue";
 import QaBanner from "./components/QaBanner.vue";
-import { bootstrapOperator } from "./operatorState.js";
+import FirstRunWizard from "./views/FirstRunWizard.vue";
+import { bootstrapOperator, operatorState } from "./operatorState.js";
+
+const showFirstRun = computed(
+  () => operatorState.loading === false && operatorState.settings.firstRunCompleted !== true,
+);
 
 onMounted(() => {
   void bootstrapOperator();

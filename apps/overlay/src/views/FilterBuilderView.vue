@@ -1,7 +1,11 @@
 <template>
   <section>
     <h2>Loot filter builder</h2>
-    <p class="muted">Local generation and export only. No OAuth filter sync.</p>
+    <p class="muted">
+      Local generation and export only. Official OAuth filter sync is
+      <strong>BLOCKED: oauth-registration</strong> until GGG accepts applications or supplies a test
+      client.
+    </p>
     <div class="panel">
       <label for="filter-name">Profile name</label>
       <input id="filter-name" data-testid="filter-name" v-model="profile.name" />

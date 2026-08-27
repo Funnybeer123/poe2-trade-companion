@@ -1,3 +1,5 @@
+import type { RuntimeMode } from "../world-state/types.js";
+
 export const OPERATOR_SETTINGS_KEY = "operator";
 
 export interface OperatorSettings {
@@ -6,6 +8,8 @@ export interface OperatorSettings {
   qaAcknowledged: boolean;
   priceCheckHotkey: string;
   overlayOpacity: number;
+  firstRunCompleted: boolean;
+  selectedMode: RuntimeMode;
 }
 
 export function defaultOperatorSettings(): OperatorSettings {
@@ -15,6 +19,8 @@ export function defaultOperatorSettings(): OperatorSettings {
     qaAcknowledged: false,
     priceCheckHotkey: "CommandOrControl+Shift+D",
     overlayOpacity: 1,
+    firstRunCompleted: false,
+    selectedMode: "public-companion",
   };
 }
 
@@ -37,6 +43,8 @@ export function parseOperatorSettings(raw: unknown): OperatorSettings {
       typeof value.overlayOpacity === "number" && Number.isFinite(value.overlayOpacity)
         ? Math.min(1, Math.max(0.2, value.overlayOpacity))
         : defaults.overlayOpacity,
+    firstRunCompleted: value.firstRunCompleted === true,
+    selectedMode: value.selectedMode === "authorized-qa" ? "authorized-qa" : "public-companion",
   };
 }
 

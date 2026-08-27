@@ -1,0 +1,34 @@
+appId: com.funnybeer.poe2tc.qa
+productName: PoE2 QA Automation (Authorized)
+copyright: Copyright © 2026
+asar: true
+directories:
+  output: release/qa
+files:
+  - package.json
+  - apps/desktop/dist/**/*
+  - apps/overlay/dist/**/*
+  - packages/core/package.json
+  - packages/core/src/**/*
+  - packages/persistence-sqlite/package.json
+  - packages/persistence-sqlite/src/**/*
+  - packages/native-input/package.json
+  - packages/native-input/src/**/*
+  - packages/perception-live/package.json
+  - packages/perception-live/src/**/*
+  - packages/testkit/package.json
+  - packages/testkit/src/**/*
+  - migrations/**/*
+  - fixtures/**/*
+  - "!**/*.map"
+extraMetadata:
+  main: apps/desktop/dist/electron-main.js
+  poe2tcMode: authorized-qa
+win:
+  target: []
+linux:
+  target:
+    - dir
+mac:
+  target: []
+electronVersion: 40.10.6

@@ -108,7 +108,8 @@ Do not click Build in Sol Max under the current workflow. Sol Max is planning-on
 - `docs/ARCHITECTURE.md` — architecture.
 - `docs/QA_AUTOMATION_BOUNDARY.md` — automation gates and testing boundary.
 - `docs/GGG_COMPLIANCE.md` — public guidance vs authorized QA separation.
-- `docs/IMPLEMENTATION_PHASES.md` — implementation order.
+- `plans/IMPLEMENTATION_PLAN.md` — authoritative executable phase order (01→15).
+- `docs/IMPLEMENTATION_PHASES.md` — historical item-first list; not the execution order.
 - `docs/TEST_PLAN.md` — test strategy.
 
 `CURSOR_PLAN_PROMPT.md` remains available as legacy planning context, but the current handoff starts with `SOL_MAX_PLAN_ONLY_PROMPT.md`.
@@ -116,3 +117,38 @@ Do not click Build in Sol Max under the current workflow. Sol Max is planning-on
 ## Current official API limitation
 
 GGG's current developer reference marks Account Stashes, Guild Stashes, and Public Stashes as PoE 1 only. Do not invent a PoE 2 stash API. For QA automation, use observable client UI state, clipboard/screen perception, or a dedicated internal test interface only if one is explicitly supplied later.
+
+Official item-filter OAuth sync is **BLOCKED: oauth-registration** (GGG is not accepting new applications; no test client is supplied). Local `.filter` export works without OAuth.
+
+## Commands
+
+```bash
+npm install
+npm run lint
+npm run typecheck
+npm test
+npm run test:replay
+npm run test:smoke
+node scripts/check-native-input-imports.mjs
+node scripts/verify-public-build-excludes-native.mjs --files-from fixtures/packaging/public-file-list.txt
+```
+
+### Packaging
+
+Public and QA artifacts are split. The public pack must not include `packages/native-input` or an armable QA mode.
+
+```bash
+npm run pack:public    # directory pack; bakes POE2TC_MODE=public-companion
+npm run pack:qa        # directory pack; productName "PoE2 QA Automation (Authorized)"
+```
+
+These scripts produce **directory packs** (`electron-builder --dir`). They do **not** invent a Windows installer on Linux. An NSIS installer requires a Windows runner (`BLOCKED: windows-vm` on Linux CI).
+
+Configs: `electron-builder.public.yml`, `electron-builder.qa.yml`.
+
+### Runtime modes
+
+- Public artifact: compile-time `POE2TC_MODE=public-companion`. Setting `POE2TC_RUNTIME_MODE=authorized-qa` cannot enable QA.
+- QA artifact: compile-time `POE2TC_MODE=authorized-qa`. First-run must type `AUTHORIZED QA` and tick the acknowledgement checkbox before QA is selected.
+
+Visible disclaimer: `This product isn't affiliated with or endorsed by Grinding Gear Games in any way.`

@@ -86,4 +86,24 @@ describe("OperatorRuntime", () => {
     expect(exported.body).toContain("No OAuth filter sync");
     expect(exported.fileName.endsWith(".filter")).toBe(true);
   });
+
+  it("cannot become authorized-qa when compile-time mode is public", () => {
+    const runtime = createOperatorRuntime({
+      mode: "authorized-qa",
+      compileTimeMode: "public-companion",
+      settingsStore: new MemorySettingsStore(),
+      hotkeyRegistered: true,
+      initialArming: { acknowledged: true },
+    });
+    expect(runtime.getCapabilities().mode).toBe("public-companion");
+    expect(runtime.getBuildFlags().qaBuildEnabled).toBe(false);
+    expect(runtime.armQa().reasons).toContain("public-mode");
+    const firstRun = runtime.completeFirstRun({
+      selectedMode: "authorized-qa",
+      confirmationText: "AUTHORIZED QA",
+      acknowledged: true,
+    });
+    expect(firstRun.ok).toBe(false);
+    expect(firstRun.reasons).toContain("compile-time-public");
+  });
 });
