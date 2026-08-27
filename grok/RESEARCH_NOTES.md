@@ -97,6 +97,10 @@ Confirmed still true (matches plan §3.1 / §12.1):
 - No documented official PoE 2 stash or inventory API.
 - No `StashApiObservationPort` added. Observation is perception + clipboard hover + local shadow state only. No invented endpoints.
 
+## 2026-08-27 — Phase 11 listing API re-check
+
+No documented official PoE 2 listing/trade-search API in the developer reference (re-confirmed against plan §3.2). Phase 11 drives the visible client listing UI only. No `trade2` client, cookie/session capture, or listing HTTP endpoint was added. Market quotes remain fixture + official Currency Exchange (Phase 08). 429 handling reuses `MarketCachePort` or skips.
+
 ## Deferred
 
 - Actual PoE 2 process image names / window title on a Windows client (still unverified).

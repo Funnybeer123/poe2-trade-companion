@@ -19,12 +19,12 @@
 | Phase 07 | `d7e6286` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
 | Phase 08 | `91da7e2` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
 | Phase 09 | `53072a6` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
-| Phase 10 first cut | `0474568` on `cursor/phase-10-stash-sort-b8bf` (PR #11) | Planner + StashController |
-| Current commit | `0fee99f` | Gate + self-review on `cursor/phase-10-stash-sort-b8bf` (PR #11) |
+| Phase 10 | `0fee99f` on `cursor/phase-10-stash-sort-b8bf` (PR #11) | Stash sort complete |
+| Current branch | `cursor/phase-11-listing-reprice-e0c0` | Phase 11 listing / repricing |
 
 ## Active phase
 
-None. Phase 10 is complete. Next is Phase 11.
+Phase 11 — Listing / repricing QA state machine (implementation in, gate pending).
 
 ## Completed phases
 
@@ -43,51 +43,35 @@ None. Phase 10 is complete. Next is Phase 11.
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 10 gate (2026-08-27, this host) — **green**:
-
-- `npm test` — 263 tests
-- `npm run test:replay` — 17 tests
-- `npm run lint`
-- `npm run typecheck`
-
-Self-review: `PASS` (`grok/REVIEW_STATE.md`).
+Phase 11 gate not yet recorded on this revision.
 
 ## Blockers
 
-- **BLOCKED: windows-native** — unchanged. Live inventory/stash overlay against a real client skipped on this Linux host.
-- External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search API.
+- **BLOCKED: windows-native** — unchanged. Live listing UI against a real client skipped on this Linux host.
+- External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search/listing API.
 
 ## Plan deviations
 
-Phase 01–08 deviations unchanged.
+Phase 01–10 deviations unchanged.
 
-Phase 09:
+Phase 11:
 
-- Official stash/inventory APIs re-checked 2026-08-27: still PoE 1 only. No `StashApiObservationPort`. Perception + clipboard hover + shadow state only.
-- `stashSessionActive` is still applied by `applyPostDecisionEffects` when inventory is full. Controllers return decisions only (§5.10); this matches the Phase 07 loop path and is not a transfer planner.
-- Occupied cells without fingerprints never become `ShadowItem`s. `unexpected` requires an observed fingerprint.
-- First fingerprint-bearing observation seeds the empty shadow as confirmed rather than unexpected.
-- Sparse observed cell lists honor derived `capacity` when it is larger than `cells.length`, so one occupied cell is not treated as a 1/1 full grid.
-- `withShadowMismatchReason` annotates the loop trace whenever `flags.shadowMismatch` is true, including when `InventoryFull` is not the selected state.
-
-Phase 10:
-
-- No invented PoE 2 stash API. Catalog + observed grids only (`flags.stashItemCatalog`).
-- `FailedOrTimedOut` is the recovery `terminalState` string on the decision reason. The world/scheduler state used is `SafetyHold` (`flags.stashSafetyHold`) because `FailedOrTimedOut` is not an `AutomationStateId`.
-- Empty plan clears `stashSessionActive` only when inventory is not full, so a full unidentified grid still starts a stash session (Phase 09 `inventory-stale` / `loot-inventory-full`).
-- Expected pending moves are reclassified by `applyExpectedTransfer` so a confirmed transfer is not a `shadowMismatch`.
-- `InventoryFull` / `StashSort` both use `StashController`. `InventoryController` remains observation-only for unit tests.
+- No listing API. Visible client UI only (named QA fixture coordinates in `listing/geometry.ts`, same pattern as stash tab clicks).
+- Recommended listing = `fair * (1 - undercutPct) * (1 + markupPct)` then floor at `low`, then `minPrice`. `markupPct` default 0 so the locked formula is `fair * (1 - undercutPct)` unless below `low`.
+- `FailedOrTimedOut` is a `ListingState`. The automation state used on that tick is `SafetyHold` because `FailedOrTimedOut` is not an `AutomationStateId`.
+- Verify mismatch retries once (`DEFAULT_RECOVERY["listing.verify-mismatch"].maxAttempts = 2` apply attempts). 429 uses `MarketCachePort` or skip.
+- Listing machine session lives on `world.flags.listingSession` / `listingCatalog`. Controllers stay stateless.
+- Trade-session machine was not started.
 
 ## Replay fixtures added
 
-- `fixtures/replay/stash-sort-success/` — high-value first, then empty plan.
-- `fixtures/replay/stash-full-fallback/` — primary tab full → dump tab click → drag.
-- `fixtures/replay/stash-failed-move-retry/` — three observed failed drags → `FailedOrTimedOut`.
-- `fixtures/replay/stash-wrong-tab/` — wrong tab retry, then dest visible → drag.
-- `fixtures/replay/stash-emergency-stop/` — emergency stop mid-sort.
+- `fixtures/replay/listing-apply-price/` — select → open UI → apply 14.55 → verify `priceText`.
+- `fixtures/replay/listing-reprice-stale/` — open stale listing → reprice → verify.
+- `fixtures/replay/listing-low-confidence-skip/` — skip + reason, no listing clicks.
+- `fixtures/replay/listing-emergency-stop/` — emergency stop during ApplyPrice.
 
-Phase 02/04/05/06/07/08/09 fixtures remain.
+Phase 02–10 fixtures remain.
 
 ## Next exact work item
 
-Phase 11 — Listing / repricing QA state machine. Do not start the trade machine.
+Run Phase 11 gate (`npm test && npm run test:replay && npm run lint && npm run typecheck`), self-review, then Phase 12 — trade-session QA state machine. Do not start the trade machine until Phase 11 is marked complete.

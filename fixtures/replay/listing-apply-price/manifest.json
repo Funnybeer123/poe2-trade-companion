@@ -1,0 +1,114 @@
+{
+  "id": "listing-apply-price",
+  "scenarioId": "list-and-reprice",
+  "seed": 21,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "listingSessionActive": true,
+          "listingCatalog": [
+            {
+              "fingerprint": "astramentis-1",
+              "screenPoint": { "x": 1400, "y": 220 },
+              "quote": {
+                "providerId": "fixture",
+                "quotedAtMs": 10000,
+                "currency": "divine",
+                "low": 12,
+                "fair": 15,
+                "high": 18,
+                "candidateCount": 8,
+                "comparableCount": 7,
+                "confidence": "high"
+              }
+            }
+          ]
+        },
+        "listing": {
+          "value": { "open": false },
+          "confidence": 0.9,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "inventory" }, "confidence": 0.9, "observedAtMs": 10000, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10200,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "listing": {
+          "value": { "open": false, "itemFingerprint": "astramentis-1" },
+          "confidence": 0.9,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "inventory" }, "confidence": 0.9, "observedAtMs": 10200, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 3,
+      "atMs": 10400,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "listing": {
+          "value": { "open": true, "itemFingerprint": "astramentis-1" },
+          "confidence": 0.95,
+          "observedAtMs": 10400,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "listing" }, "confidence": 0.95, "observedAtMs": 10400, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 4,
+      "atMs": 10600,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "listing": {
+          "value": {
+            "open": true,
+            "itemFingerprint": "astramentis-1",
+            "priceText": "14.55 divine",
+            "currency": "divine"
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10600,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "listing" }, "confidence": 0.95, "observedAtMs": 10600, "freshness": "fresh" }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "Listing", "decisionReasonIncludes": "listing-select-item", "executed": false, "sinkKind": "noop" },
+    { "tickId": 2, "selectedState": "Listing", "decisionReasonIncludes": "listing-open-ui", "executed": false, "sinkKind": "noop" },
+    { "tickId": 3, "selectedState": "Listing", "decisionReasonIncludes": "listing-apply-price", "executed": false, "sinkKind": "noop" },
+    { "tickId": 4, "selectedState": "Listing", "decisionReasonIncludes": "listing-verify-match", "executed": false, "sinkKind": "noop" }
+  ]
+}

@@ -1,0 +1,70 @@
+{
+  "id": "listing-emergency-stop",
+  "scenarioId": "list-and-reprice",
+  "seed": 24,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "listingSessionActive": true,
+          "listingCatalog": [
+            {
+              "fingerprint": "astramentis-1",
+              "screenPoint": { "x": 1400, "y": 220 },
+              "quote": {
+                "providerId": "fixture",
+                "quotedAtMs": 10000,
+                "currency": "divine",
+                "low": 12,
+                "fair": 15,
+                "high": 18,
+                "candidateCount": 8,
+                "comparableCount": 7,
+                "confidence": "high"
+              }
+            }
+          ]
+        },
+        "listing": {
+          "value": { "open": true, "itemFingerprint": "astramentis-1" },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "listing" }, "confidence": 0.95, "observedAtMs": 10000, "freshness": "fresh" }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10100,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10100,
+          "freshness": "fresh"
+        },
+        "flags": { "emergencyStopLatched": true },
+        "listing": {
+          "value": { "open": true, "itemFingerprint": "astramentis-1" },
+          "confidence": 0.95,
+          "observedAtMs": 10100,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "listing" }, "confidence": 0.95, "observedAtMs": 10100, "freshness": "fresh" }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "Listing", "decisionReasonIncludes": "listing-apply-price", "executed": false, "sinkKind": "noop" },
+    { "tickId": 2, "selectedState": "EmergencyStop", "decisionReasonIncludes": "emergency-stop", "executed": false, "sinkKind": "noop" }
+  ]
+}

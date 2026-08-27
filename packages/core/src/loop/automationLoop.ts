@@ -26,6 +26,8 @@ import type { FrameSource, PerceptionAdapter, PerceptionFrame, StateEstimator } 
 import { analyzeFailureFrame } from "../perception/uiMode.js";
 import { DEFAULT_RECOVERY } from "../recovery/defaultRecovery.js";
 import { STATE_MODULE } from "../scheduler/predicates.js";
+import { listingEffectsFromDecision } from "../listing/session.js";
+import type { ListingHistoryStore } from "../listing/types.js";
 import { stashEffectsFromDecision } from "../stash/session.js";
 import type { AutomationScenario, ScenarioScheduler } from "../scheduler/types.js";
 import type { QaActionTrace } from "../trace/types.js";
@@ -59,6 +61,7 @@ export interface AutomationLoopOptions {
   desirability?: DesirabilityPort;
   snapshotStore?: InventorySnapshotStore;
   shadowState?: ShadowState;
+  listingHistory?: ListingHistoryStore;
 }
 
 function placeholderDecision(state: AutomationStateId): BotDecision {
@@ -132,7 +135,14 @@ export function applyPostDecisionEffects(
     }
   }
 
-  return { ...world, flags: { ...flags, ...stashEffectsFromDecision(world, decision, nowMs) } };
+  return {
+    ...world,
+    flags: {
+      ...flags,
+      ...stashEffectsFromDecision(world, decision, nowMs),
+      ...listingEffectsFromDecision(world, decision, nowMs),
+    },
+  };
 }
 
 export class AutomationLoop {
@@ -149,6 +159,7 @@ export class AutomationLoop {
   readonly #estimator: StateEstimator;
   readonly #desirability: DesirabilityPort;
   readonly #snapshotStore?: InventorySnapshotStore;
+  readonly #listingHistory?: ListingHistoryStore;
   readonly #shadow: ShadowState;
   #world: WorldState;
 
@@ -165,6 +176,7 @@ export class AutomationLoop {
     this.#controllers = options.controllers ?? createControllerMap({ desirability: this.#desirability });
     this.#perception = options.perception ?? createFixturePerceptionAdapter();
     this.#snapshotStore = options.snapshotStore;
+    this.#listingHistory = options.listingHistory;
     this.#shadow = options.shadowState ?? new ShadowState();
     this.#estimator =
       options.estimator ??
@@ -234,6 +246,7 @@ export class AutomationLoop {
     const decided = controller?.decide(world, this.#scenario) ?? placeholderDecision(selection.state);
     const decision = withShadowMismatchReason(decided, world.flags.shadowMismatch === true);
     this.#world = applyPostDecisionEffects(world, decision, this.#clock.nowMs());
+    this.#persistListingHistory(this.#world);
 
     const ctx: InterlockContext = {
       capabilities: this.#capabilities,
@@ -301,6 +314,14 @@ export class AutomationLoop {
         stashSnapshotFromWorld(world, `stash:${String(tickId)}:${String(world.stash.observedAtMs)}`),
       );
     }
+  }
+
+  #persistListingHistory(world: WorldState): void {
+    const record = world.flags.pendingListingHistory;
+    if (record === undefined || record === null || this.#listingHistory === undefined) {
+      return;
+    }
+    this.#listingHistory.append(record);
   }
 }
 

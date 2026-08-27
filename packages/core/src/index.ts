@@ -26,6 +26,11 @@ export type {
   GridCell,
   HexSha256,
   IsoTimestamp,
+  ListingCatalogItem,
+  ListingHistoryRecord,
+  ListingQuoteSnapshot,
+  ListingSession,
+  ListingState,
   ListingUiView,
   LootTarget,
   LowConfidencePolicy,
@@ -189,6 +194,8 @@ export { LootController } from "./controllers/lootController.js";
 export { InventoryController } from "./controllers/inventoryController.js";
 export { StashController } from "./controllers/stashController.js";
 export type { StashControllerOptions } from "./controllers/stashController.js";
+export { ListingController } from "./controllers/listingController.js";
+export type { ListingControllerOptions } from "./controllers/listingController.js";
 export { createControllerMap } from "./controllers/controllerMap.js";
 
 export type { ReconcileResult, ShadowItem } from "./inventory/types.js";
@@ -433,7 +440,92 @@ export {
   stashEffectsFromDecision,
 } from "./stash/session.js";
 
-export { isoTimestampFromMs, summarizeInventory, summarizeLoot, summarizeStash, summarizeWorld } from "./loop/traceHelpers.js";
+export type {
+  ListingEvent,
+  ListingHistoryStore,
+  ListingMachineResult,
+  ListingObservation,
+  ListingTransitionRule,
+  PricePolicy,
+} from "./listing/types.js";
+export { LISTING_STATES } from "./listing/types.js";
+export {
+  CONFIDENCE_RANK,
+  DEFAULT_PRICE_POLICY,
+  LISTING_PRICE_EPSILON,
+  STALE_LISTING_DEFAULT_MS,
+  currenciesMatch,
+  formatListingPrice,
+  isListingStale,
+  isMarketThrottled,
+  isRecommendedSkip,
+  listingPriceMatchesText,
+  meetsMinConfidence,
+  parsePriceText,
+  pricesMatch,
+  recommendListingPrice,
+  resolvePricePolicy,
+  roundListingPrice,
+} from "./listing/pricePolicy.js";
+export type { QuoteLike, RecommendListingResult, RecommendSkip, RecommendedListing } from "./listing/pricePolicy.js";
+export {
+  DEFAULT_LISTING_MAX_OPEN_ATTEMPTS,
+  DEFAULT_LISTING_MAX_VERIFY_ATTEMPTS,
+  LISTING_TRANSITIONS,
+  evaluateListingPredicate,
+  isTerminalListingEvent,
+  listingHistoryResult,
+  reasonForListingEvent,
+  stepListingMachine,
+} from "./listing/listingStateMachine.js";
+export {
+  LISTING_ALREADY_LISTED_REASON,
+  LISTING_APPLY_REASON,
+  LISTING_DONE_REASON,
+  LISTING_FAILED_OR_TIMED_OUT_REASON,
+  LISTING_NO_CANDIDATE_REASON,
+  LISTING_NOT_GUARANTEED_REASON,
+  LISTING_OPEN_UI_REASON,
+  LISTING_READ_REASON,
+  LISTING_SELECT_REASON,
+  LISTING_SKIP_LOW_CONFIDENCE_REASON,
+  LISTING_SKIP_NO_QUOTE_REASON,
+  LISTING_SKIP_THROTTLED_REASON,
+  LISTING_STALE_REPRICE_REASON,
+  LISTING_VERIFY_MATCH_REASON,
+  LISTING_VERIFY_MISMATCH_KEY,
+  LISTING_VERIFY_MISMATCH_REASON,
+  listingEvidence,
+  listingSkipLowConfidenceReason,
+  parseListingEvidence,
+} from "./listing/reasons.js";
+export {
+  DEFAULT_LISTING_UI,
+  listingApplyActions,
+  listingOpenUiActions,
+  listingSelectActions,
+} from "./listing/geometry.js";
+export { listingEffectsFromDecision } from "./listing/session.js";
+export {
+  MemoryListingHistoryStore,
+  createMemoryListingHistoryStore,
+  listingHistoryId,
+  listingHistoryRecord,
+} from "./listing/history.js";
+export {
+  DEFAULT_LISTING_QUOTE_CONTEXT,
+  resolveListingQuote,
+  snapshotToQuote,
+} from "./listing/quoteResolve.js";
+
+export {
+  isoTimestampFromMs,
+  summarizeInventory,
+  summarizeListing,
+  summarizeLoot,
+  summarizeStash,
+  summarizeWorld,
+} from "./loop/traceHelpers.js";
 export { applyPostDecisionEffects, AutomationLoop, createAutomationLoop } from "./loop/automationLoop.js";
 export type { AutomationLoopOptions, AutomationTickResult } from "./loop/automationLoop.js";
 

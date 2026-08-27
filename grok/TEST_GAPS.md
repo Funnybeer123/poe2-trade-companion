@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 10 complete)
+**Updated:** 2026-08-27 (Phase 11 implemented)
 
 ## Covered in Phase 01
 
@@ -105,6 +105,17 @@
 - Integration: planned drag → next fixture frame new cell → shadow confirmed
 - Replay: `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab`, `stash-emergency-stop`
 
+## Covered in Phase 11
+
+- Price policy math: `fair * (1 - undercutPct)` then floor at `low` / `minPrice`; never a guaranteed sale
+- Skip on quote confidence below `minConfidence` (default medium)
+- Stale detection after `staleAfterMs` (default 6h)
+- Table-driven listing machine; emergency-stop legal in every `ListingState`
+- Verify mismatch → retry once → `FailedOrTimedOut`
+- 429 / throttle → cache or skip
+- `listing_history` SQLite persist + reload
+- Replay: `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip`, `listing-emergency-stop`
+
 ## Intentionally absent (later phases)
 
 | Gap | First phase |
@@ -112,7 +123,7 @@
 | Parser / valuation | 08 (done) |
 | Inventory / stash reconcile | 09 (done) |
 | Stash transfers | 10 (done) |
-| Listing machine | 11 |
+| Listing machine | 11 (done) |
 | Trade machine | 12 |
 | Full-loop orchestrator | 13 |
 | Playwright overlay smoke | 14 |

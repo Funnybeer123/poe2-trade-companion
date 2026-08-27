@@ -36,6 +36,12 @@ export const DEFAULT_RECOVERY: Record<string, RecoveryPolicy> = {
     suppressMs: 0,
     terminalState: "FailedOrTimedOut",
   },
+  "listing.verify-mismatch": {
+    maxAttempts: 2,
+    backoffMs: [0],
+    suppressMs: 0,
+    terminalState: "FailedOrTimedOut",
+  },
   "trade.timeout": {
     maxAttempts: 1,
     backoffMs: [0],
