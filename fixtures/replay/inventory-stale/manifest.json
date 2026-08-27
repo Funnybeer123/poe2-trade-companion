@@ -1,0 +1,262 @@
+{
+  "id": "inventory-stale",
+  "scenarioId": "stash-sort",
+  "seed": 9,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 12,
+            "capacity": 12,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 1,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 3,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 0,
+                "y": 1,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 1,
+                "y": 1,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 2,
+                "y": 1,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 3,
+                "y": 1,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 0,
+                "y": 2,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 1,
+                "y": 2,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 2,
+                "y": 2,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 3,
+                "y": 2,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              }
+            ],
+            "full": true
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "inventory"
+          },
+          "confidence": 0.9,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        }
+      }
+    },
+    {
+      "tickId": 2,
+      "atMs": 10200,
+      "derived": {
+        "process": {
+          "value": {
+            "name": "PathOfExile.exe",
+            "title": "Path of Exile 2",
+            "allowlisted": true
+          },
+          "confidence": 1,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "inventory": {
+          "value": {
+            "occupied": 12,
+            "capacity": 12,
+            "cells": [
+              {
+                "x": 0,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 1,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 2,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 3,
+                "y": 0,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 0,
+                "y": 1,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 1,
+                "y": 1,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 2,
+                "y": 1,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 3,
+                "y": 1,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 0,
+                "y": 2,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 1,
+                "y": 2,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 2,
+                "y": 2,
+                "w": 1,
+                "h": 1,
+                "occupied": true
+              },
+              {
+                "x": 3,
+                "y": 2,
+                "w": 1,
+                "h": 1,
+                "occupied": false
+              }
+            ],
+            "full": true
+          },
+          "confidence": 0.95,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        },
+        "ui": {
+          "value": {
+            "kind": "inventory"
+          },
+          "confidence": 0.9,
+          "observedAtMs": 10200,
+          "freshness": "fresh"
+        }
+      }
+    }
+  ],
+  "expect": [
+    {
+      "tickId": 1,
+      "selectedState": "InventoryFull",
+      "decisionReasonIncludes": "inventory-full",
+      "executed": false,
+      "sinkKind": "noop"
+    },
+    {
+      "tickId": 2,
+      "selectedState": "StashSort",
+      "executed": false,
+      "sinkKind": "noop"
+    }
+  ]
+}

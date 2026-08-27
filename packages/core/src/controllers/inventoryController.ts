@@ -1,3 +1,4 @@
+import { INVENTORY_NOT_FULL_REASON, INVENTORY_OBSERVED_REASON, SHADOW_MISMATCH_REASON } from "../inventory/reasons.js";
 import type { BotDecision } from "../input/types.js";
 import { SKIP_INVENTORY_FULL } from "../loot/skipReasons.js";
 import type { AutomationScenario } from "../scheduler/types.js";
@@ -9,6 +10,8 @@ export class InventoryController implements Controller {
 
   decide(world: WorldState, scenario: AutomationScenario): BotDecision {
     void scenario;
+    const evidenceIds = world.inventory.evidenceId ? [world.inventory.evidenceId] : [];
+
     if (world.flags.emergencyStopLatched) {
       return {
         module: this.module,
@@ -16,7 +19,18 @@ export class InventoryController implements Controller {
         reason: "emergency-stop",
         confidence: 1,
         intendedActions: [{ type: "noop", reason: "emergency-stop" }],
-        evidenceIds: world.inventory.evidenceId ? [world.inventory.evidenceId] : [],
+        evidenceIds,
+      };
+    }
+
+    if (world.flags.shadowMismatch === true) {
+      return {
+        module: this.module,
+        state: world.selectedState,
+        reason: SHADOW_MISMATCH_REASON,
+        confidence: world.inventory.confidence,
+        intendedActions: [{ type: "noop", reason: SHADOW_MISMATCH_REASON }],
+        evidenceIds,
       };
     }
 
@@ -27,17 +41,17 @@ export class InventoryController implements Controller {
         reason: SKIP_INVENTORY_FULL,
         confidence: world.inventory.confidence,
         intendedActions: [{ type: "noop", reason: SKIP_INVENTORY_FULL }],
-        evidenceIds: world.inventory.evidenceId ? [world.inventory.evidenceId] : [],
+        evidenceIds,
       };
     }
 
     return {
       module: this.module,
       state: world.selectedState,
-      reason: "inventory-observed",
+      reason: INVENTORY_OBSERVED_REASON,
       confidence: world.inventory.confidence,
-      intendedActions: [{ type: "noop", reason: "inventory-not-full" }],
-      evidenceIds: world.inventory.evidenceId ? [world.inventory.evidenceId] : [],
+      intendedActions: [{ type: "noop", reason: INVENTORY_NOT_FULL_REASON }],
+      evidenceIds,
     };
   }
 }

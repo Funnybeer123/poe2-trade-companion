@@ -5,6 +5,7 @@ import {
   createStateEstimator,
   FrozenClock,
   templateMatch,
+  type PerceptionFrameInput,
   type RgbaImage,
 } from "@poe2tc/core";
 import { readFileSync } from "node:fs";
@@ -21,9 +22,12 @@ async function loadPng(rel: string): Promise<RgbaImage> {
   return { width: info.width, height: info.height, pixels: new Uint8Array(data) };
 }
 
-function loadJson(rel: string): { derived?: Record<string, unknown>; box?: { x: number; y: number; w: number; h: number } } {
+function loadJson(rel: string): {
+  derived?: PerceptionFrameInput["derived"];
+  box?: { x: number; y: number; w: number; h: number };
+} {
   return JSON.parse(readFileSync(join(root, rel), "utf8")) as {
-    derived?: Record<string, unknown>;
+    derived?: PerceptionFrameInput["derived"];
     box?: { x: number; y: number; w: number; h: number };
   };
 }
@@ -94,5 +98,44 @@ describe("PNG fixture → adapter → estimator", () => {
     const afterStash = estimator.estimate(afterInventory, stashFrame);
     expect(afterStash.stash.value.tabName).toBe("Currency");
     expect(afterStash.ui.value.kind).toBe("stash");
+  });
+
+  it("fills inventory-grid and stash-tab cells from labeled PNG fixtures", async () => {
+    const clock = new FrozenClock(10_000);
+    const adapter = createFixturePerceptionAdapter();
+    const estimator = createStateEstimator({ clock, arming: createReplayArming() });
+
+    const inventoryGrid = loadJson("inventory-grid/frame.json");
+    const inventoryImage = await loadPng("inventory-grid/frame.png");
+    const inventoryFrame = await adapter.analyze({
+      tickId: 1,
+      capturedAtMs: 10_000,
+      width: inventoryImage.width,
+      height: inventoryImage.height,
+      pixels: inventoryImage.pixels,
+      pngPath: "fixtures/perception/inventory-grid/frame.png",
+      derived: inventoryGrid.derived,
+    });
+    const afterInventory = estimator.estimate(createEmptyWorldState({ clock }), inventoryFrame);
+    expect(afterInventory.inventory.value.cells).toHaveLength(12);
+    expect(afterInventory.inventory.value.occupied).toBe(3);
+    expect(afterInventory.inventory.value.full).toBe(false);
+
+    const stashGrid = loadJson("stash-tab/frame.json");
+    const stashImage = await loadPng("stash-tab/frame.png");
+    const stashFrame = await adapter.analyze({
+      tickId: 2,
+      capturedAtMs: 10_000,
+      width: stashImage.width,
+      height: stashImage.height,
+      pixels: stashImage.pixels,
+      pngPath: "fixtures/perception/stash-tab/frame.png",
+      derived: stashGrid.derived,
+    });
+    const afterStash = estimator.estimate(afterInventory, stashFrame);
+    expect(afterStash.stash.value.cells).toHaveLength(12);
+    expect(afterStash.stash.value.cells.filter((cell) => cell.occupied)).toHaveLength(2);
+    expect(afterStash.stash.value.tabName).toBe("Currency");
+    expect(afterStash.stash.value.tabFull).toBe(false);
   });
 });

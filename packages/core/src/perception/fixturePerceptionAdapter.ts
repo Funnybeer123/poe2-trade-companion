@@ -8,6 +8,7 @@ import type {
   WorldState,
   WorldStateFlags,
 } from "../world-state/types.js";
+import { detectGrids } from "./gridDetector.js";
 import { detectLootLabels } from "./lootLabelDetector.js";
 import type { OcrPort } from "./ocrPort.js";
 import { analyzeFailureFrame } from "./uiMode.js";
@@ -68,12 +69,36 @@ export class FixturePerceptionAdapter implements PerceptionAdapter {
   async analyze(frame: PerceptionFrameInput): Promise<PerceptionFrame> {
     try {
       const base = derivedToPerceptionFrame(frame);
+      const grids = detectGrids(frame);
+      const withGrids: PerceptionFrame = {
+        ...base,
+        inventory:
+          grids.inventory === undefined
+            ? base.inventory
+            : {
+                value: grids.inventory,
+                confidence: base.inventory?.confidence ?? 0.85,
+                observedAtMs: frame.capturedAtMs,
+                freshness: "fresh",
+                evidenceId: grids.evidenceId ?? base.inventory?.evidenceId,
+              },
+        stash:
+          grids.stash === undefined
+            ? base.stash
+            : {
+                value: grids.stash,
+                confidence: base.stash?.confidence ?? 0.85,
+                observedAtMs: frame.capturedAtMs,
+                freshness: "fresh",
+                evidenceId: grids.evidenceId ?? base.stash?.evidenceId,
+              },
+      };
       const detected = await detectLootLabels(frame, { ocr: this.#ocr });
       if (detected.source === "fixture" || detected.loot.length === 0) {
-        return base;
+        return withGrids;
       }
       return {
-        ...base,
+        ...withGrids,
         loot: {
           value: detected.loot,
           confidence: detected.confidence,

@@ -1,5 +1,8 @@
 import type { Clock } from "../clock.js";
 import type { QaArmingState } from "../capabilities/createCapabilities.js";
+import { estimateInventory } from "../inventory/estimateInventory.js";
+import { DEFAULT_SHADOW_STALE_AFTER_MS } from "../inventory/reconcile.js";
+import { ShadowState } from "../inventory/shadowState.js";
 import { estimateLootPickup } from "../loot/estimateLootPickup.js";
 import { estimateStuckObservation } from "../navigation/estimateNavigation.js";
 import {
@@ -16,6 +19,8 @@ export interface StateEstimatorOptions {
   clock: Clock;
   arming: QaArmingState;
   followConfig?: FollowConfig;
+  shadowState?: ShadowState;
+  staleAfterMs?: number;
 }
 
 function effectivePrevFreshness<T>(prev: Observation<T>, nowMs: number): Freshness {
@@ -88,11 +93,19 @@ export class DefaultStateEstimator implements StateEstimator {
   readonly #clock: Clock;
   readonly #arming: QaArmingState;
   readonly #followConfig: FollowConfig;
+  readonly #shadow: ShadowState;
+  readonly #staleAfterMs: number;
 
   constructor(options: StateEstimatorOptions) {
     this.#clock = options.clock;
     this.#arming = options.arming;
     this.#followConfig = options.followConfig ?? DEFAULT_FOLLOW_CONFIG;
+    this.#shadow = options.shadowState ?? new ShadowState();
+    this.#staleAfterMs = options.staleAfterMs ?? DEFAULT_SHADOW_STALE_AFTER_MS;
+  }
+
+  get shadow(): ShadowState {
+    return this.#shadow;
   }
 
   estimate(prev: WorldState, frame: PerceptionFrame): WorldState {
@@ -105,14 +118,21 @@ export class DefaultStateEstimator implements StateEstimator {
       this.#arming,
     );
     const loot = mergeObservation(prev.loot, frame.loot, nowMs);
-    const inventory = mergeObservation(prev.inventory, frame.inventory, nowMs);
-    const estimatedLoot = estimateLootPickup({
+    const estimatedGrid = estimateInventory({
       flags: {
         ...prev.flags,
         ...(frame.flags ?? {}),
       },
+      inventory: mergeObservation(prev.inventory, frame.inventory, nowMs),
+      stash: mergeObservation(prev.stash, frame.stash, nowMs),
+      shadow: this.#shadow,
+      nowMs,
+      staleAfterMs: this.#staleAfterMs,
+    });
+    const estimatedLoot = estimateLootPickup({
+      flags: estimatedGrid.flags,
       loot,
-      inventory,
+      inventory: estimatedGrid.inventory,
       nowMs,
     });
 
@@ -124,8 +144,8 @@ export class DefaultStateEstimator implements StateEstimator {
       process,
       target,
       loot: estimatedLoot.loot,
-      inventory,
-      stash: mergeObservation(prev.stash, frame.stash, nowMs),
+      inventory: estimatedGrid.inventory,
+      stash: estimatedGrid.stash,
       trade: mergeObservation(prev.trade, frame.trade, nowMs),
       listing: mergeObservation(prev.listing, frame.listing, nowMs),
       ui: mergeObservation(prev.ui, frame.ui, nowMs),

@@ -41,7 +41,7 @@ function parseFrame(value: unknown, index: number): ReplayManifestFrame {
     tickId: requireFiniteNumber(value.tickId, `frames[${String(index)}].tickId`),
     atMs: requireFiniteNumber(value.atMs, `frames[${String(index)}].atMs`),
     pngPath,
-    derived: value.derived,
+    derived: value.derived as ReplayManifestFrame["derived"],
   };
 }
 

@@ -6,6 +6,15 @@ import type { Controller } from "../controllers/types.js";
 import type { DefaultGameInputController } from "../input/gameInputController.js";
 import type { BotDecision, InputAction } from "../input/types.js";
 import type { InterlockContext, InterlockVerdict } from "../interlock/types.js";
+import {
+  applyStaleSnapshots,
+  inventorySnapshotFromWorld,
+  shouldPersistInventory,
+  shouldPersistStash,
+  stashSnapshotFromWorld,
+  type InventorySnapshotStore,
+} from "../inventory/snapshots.js";
+import { ShadowState } from "../inventory/shadowState.js";
 import type { DesirabilityPort } from "../items/desirabilityPort.js";
 import { createCompositeDesirability } from "../items/compositeDesirability.js";
 import { annotateLoot } from "../loot/annotateLoot.js";
@@ -46,6 +55,8 @@ export interface AutomationLoopOptions {
   perception?: PerceptionAdapter;
   estimator?: StateEstimator;
   desirability?: DesirabilityPort;
+  snapshotStore?: InventorySnapshotStore;
+  shadowState?: ShadowState;
 }
 
 function placeholderDecision(state: AutomationStateId): BotDecision {
@@ -135,6 +146,8 @@ export class AutomationLoop {
   readonly #perception: PerceptionAdapter;
   readonly #estimator: StateEstimator;
   readonly #desirability: DesirabilityPort;
+  readonly #snapshotStore?: InventorySnapshotStore;
+  readonly #shadow: ShadowState;
   #world: WorldState;
 
   constructor(options: AutomationLoopOptions) {
@@ -149,17 +162,28 @@ export class AutomationLoop {
     this.#desirability = options.desirability ?? createCompositeDesirability();
     this.#controllers = options.controllers ?? createControllerMap({ desirability: this.#desirability });
     this.#perception = options.perception ?? createFixturePerceptionAdapter();
+    this.#snapshotStore = options.snapshotStore;
+    this.#shadow = options.shadowState ?? new ShadowState();
     this.#estimator =
       options.estimator ??
       createStateEstimator({
         clock: options.clock,
         arming: options.arming,
+        shadowState: this.#shadow,
       });
     this.#world = createEmptyWorldState({
       clock: options.clock,
       runtimeMode: options.capabilities.mode,
       activeScenarioId: options.scenario.id,
     });
+    if (this.#snapshotStore !== undefined) {
+      const latest = {
+        inventory: this.#snapshotStore.loadLatestInventory(),
+        stash: this.#snapshotStore.loadLatestStash(),
+      };
+      this.#world = applyStaleSnapshots(this.#world, latest);
+      this.#shadow.seedFromSnapshots(latest);
+    }
   }
 
   get world(): WorldState {
@@ -188,6 +212,7 @@ export class AutomationLoop {
       estimated = this.#estimator.estimate(this.#world, analyzeFailureFrame(frame, error));
     }
     const scored = annotateLoot(estimated, this.#scenario, this.#desirability);
+    this.#persistSnapshots(scored, frame.tickId);
     const previousState = scored.selectedState;
     const selection = this.#scheduler.select(scored, this.#scenario);
     const world: WorldState = {
@@ -257,6 +282,22 @@ export class AutomationLoop {
     });
 
     return { result: "ticked", trace, world: this.#world, decision, verdict };
+  }
+
+  #persistSnapshots(world: WorldState, tickId: number): void {
+    if (this.#snapshotStore === undefined) {
+      return;
+    }
+    if (shouldPersistInventory(world)) {
+      this.#snapshotStore.writeInventory(
+        inventorySnapshotFromWorld(world, `inv:${String(tickId)}:${String(world.inventory.observedAtMs)}`),
+      );
+    }
+    if (shouldPersistStash(world)) {
+      this.#snapshotStore.writeStash(
+        stashSnapshotFromWorld(world, `stash:${String(tickId)}:${String(world.stash.observedAtMs)}`),
+      );
+    }
   }
 }
 

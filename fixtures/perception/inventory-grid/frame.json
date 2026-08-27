@@ -1,0 +1,141 @@
+{
+  "kind": "inventory-grid",
+  "geometry": {
+    "originX": 0,
+    "originY": 0,
+    "cellWidth": 16,
+    "cellHeight": 16,
+    "columns": 4,
+    "rows": 3
+  },
+  "occupied": [
+    [
+      0,
+      0
+    ],
+    [
+      1,
+      0
+    ],
+    [
+      2,
+      0
+    ]
+  ],
+  "expectedOccupied": 3,
+  "expectedCapacity": 12,
+  "derived": {
+    "inventoryGrid": {
+      "originX": 0,
+      "originY": 0,
+      "cellWidth": 16,
+      "cellHeight": 16,
+      "columns": 4,
+      "rows": 3
+    },
+    "inventory": {
+      "value": {
+        "occupied": 3,
+        "capacity": 12,
+        "full": false,
+        "cells": [
+          {
+            "x": 0,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "occupied": true
+          },
+          {
+            "x": 1,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "occupied": true
+          },
+          {
+            "x": 2,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "occupied": true
+          },
+          {
+            "x": 3,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "occupied": false
+          },
+          {
+            "x": 0,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "occupied": false
+          },
+          {
+            "x": 1,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "occupied": false
+          },
+          {
+            "x": 2,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "occupied": false
+          },
+          {
+            "x": 3,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "occupied": false
+          },
+          {
+            "x": 0,
+            "y": 2,
+            "w": 1,
+            "h": 1,
+            "occupied": false
+          },
+          {
+            "x": 1,
+            "y": 2,
+            "w": 1,
+            "h": 1,
+            "occupied": false
+          },
+          {
+            "x": 2,
+            "y": 2,
+            "w": 1,
+            "h": 1,
+            "occupied": false
+          },
+          {
+            "x": 3,
+            "y": 2,
+            "w": 1,
+            "h": 1,
+            "occupied": false
+          }
+        ]
+      },
+      "confidence": 0.9,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    },
+    "ui": {
+      "value": {
+        "kind": "inventory"
+      },
+      "confidence": 0.85,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    }
+  }
+}

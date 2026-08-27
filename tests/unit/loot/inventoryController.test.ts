@@ -4,7 +4,7 @@ import { createTestScenario } from "../../helpers/createTestScenario.js";
 import { createTestWorld, fillInventory, observeLoot } from "../../helpers/createTestWorld.js";
 
 describe("InventoryController", () => {
-  it("returns inventory-full and the loop stub sets stashSessionActive", () => {
+  it("returns inventory-full and the loop sets stashSessionActive", () => {
     const world = createTestWorld((next) => {
       next.selectedState = "InventoryFull";
       fillInventory(next);

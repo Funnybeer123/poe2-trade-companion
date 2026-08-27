@@ -1,3 +1,4 @@
+import type { GridDetectionHints } from "../inventory/gridGeometry.js";
 import type {
   ListingUiView,
   LootTarget,
@@ -17,7 +18,7 @@ export interface PerceptionFrameInput {
   height: number;
   pixels?: Uint8Array;
   pngPath?: string;
-  derived?: Partial<WorldState>;
+  derived?: Partial<WorldState> & GridDetectionHints;
 }
 
 export interface FrameSource {

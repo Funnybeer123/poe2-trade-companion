@@ -18,11 +18,26 @@
 | Phase 06 | `684f24d` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery complete |
 | Phase 07 | `d7e6286` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
 | Phase 08 first cut | `bdfa3c1` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
-| Current commit | `fd8a68e` | Gate + self-review on `cursor/phase-08-item-valuation-45b0` (PR #9) |
+| Current commit | `91da7e2` | Phase 08 docs note on `cursor/phase-08-item-valuation-45b0` (PR #9) |
+| Phase 09 branch | `cursor/phase-09-inventory-observe-a61e` | Inventory / stash observation (this work) |
 
 ## Active phase
 
-None. Phase 08 is complete. Next is Phase 09.
+Phase 09 — Inventory / stash observation and reconciliation.
+
+## Completed phases (01–08)
+
+Unchanged. Phase 09 implementation is on this branch and not yet gate-complete.
+
+## Phase 09 work in this revision
+
+- `gridDetector` (fixture cells + pixel occupancy + clipboard hover fingerprint)
+- `ShadowState` + `reconcile` (`ShadowItem` / `ReconcileResult`)
+- Estimator fills inventory/stash cells and recomputes occupancy/`full`
+- Real `InventoryController` (sets `stashSessionActive` when full via existing post-decision effect; no transfers)
+- SQLite `inventory_snapshots` / `stash_snapshots` via `SqliteInventoryStore`
+- Restart path: last snapshots load with `freshness: "stale"`
+- Replay `inventory-stale`: 12/12 → `InventoryFull`; drop cell → no longer full
 
 ## Completed phases
 
