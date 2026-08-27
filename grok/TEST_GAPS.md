@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 12 complete)
+**Updated:** 2026-08-27 (Phase 13 in progress)
 
 ## Covered in Phase 01
 
@@ -125,7 +125,7 @@
 | Stash transfers | 10 (done) |
 | Listing machine | 11 (done) |
 | Trade machine | 12 (done) |
-| Full-loop orchestrator | 13 |
+| Full-loop orchestrator | 13 (in progress) |
 | Playwright overlay smoke | 14 |
 | Public vs QA packaging | 15 |
 
@@ -139,6 +139,16 @@
 - `trade_sessions` SQLite upsert on each transition
 - Replay packs listed in `REPLAY_BACKLOG.md`; all `executed: false` under `NoopInputSink`
 
+## Covered in Phase 13
+
+- `ScenarioOrchestrator` is the only tick entry; `AutomationLoop.tick()` delegates to it
+- Action budget exhaustion → `SafetyHold` (`action-budget-exhausted`) until the window refills
+- Session flags owned by `beginStashSession` / `beginListingSession` / `beginTradeSession`; controllers stay decision-only
+- Interrupt matrix: trade beats loot/follow; inventory full beats loot/follow; high-value loot beats follow not trade; emergency stop beats all
+- Interrupt clears only the interrupted module’s in-flight step and records `interrupted: true`; counters are preserved
+- Replay: `full-loop`, `full-loop-interrupt-trade`, `full-loop-interrupt-loot`, `full-loop-emergency-stop`
+- Complete timestamped QA trace fields on every full-loop tick
+
 ## Replay
 
-`npm run test:replay` now also includes the Phase 12 trade packs. See `REPLAY_BACKLOG.md`.
+`npm run test:replay` now also includes the Phase 13 full-loop packs. See `REPLAY_BACKLOG.md`.

@@ -289,6 +289,7 @@ export interface WorldStateFlags {
   stashItemCatalog?: Record<string, StashItemMeta>;
   pendingStashTransfer?: PendingStashTransfer | null;
   stashSafetyHold?: boolean;
+  actionBudgetHold?: boolean;
 }
 
 export interface WorldState {

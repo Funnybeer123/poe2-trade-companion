@@ -21,77 +21,51 @@
 | Phase 09 | `53072a6` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
 | Phase 10 | `0fee99f` on `cursor/phase-10-stash-sort-b8bf` (PR #11) | Stash sort complete |
 | Phase 11 | `da19a84` / `1e85af7` on `cursor/phase-11-listing-reprice-e0c0` (PR #12) | Listing machine complete |
-| Phase 12 first cut | `792f814` on `cursor/phase-12-trade-session-b5b9` (PR #13) | Trade machine + replay corpus |
-| Current commit | `a30b1f9` | Gate + self-review on `cursor/phase-12-trade-session-b5b9` (PR #13) |
+| Phase 12 | `a30b1f9` / `69517e6` on `cursor/phase-12-trade-session-b5b9` (PR #13) | Trade machine complete |
+| Current commit | (this branch) | Phase 13 in progress on `cursor/phase-13-orchestration-e32b` |
 
 ## Active phase
 
-None. Phase 12 is complete. Next is Phase 13.
+Phase 13 — Full orchestration / interruption / recovery.
 
 ## Completed phases
 
-- Phase 01 — workspace, CI, MIT license, hello-world Electron/Vue apps, `workspaceOk()`, migration file, Grok tracking.
-- Phase 02 — canonical `WorldState`, freshness, `Clock`/`FrozenClock`, deterministic `ScenarioScheduler`, 8 scheduler-priority replay snapshots.
-- Phase 03 — `RuntimeCapabilities`, `InterlockGate`, `GameInputController`, emergency-stop latch, Noop/Forbidden/Recording sinks, `packages/native-input` SendInput adapter, native-import CI guard, Electron `Ctrl+Shift+F12` hotkey.
-- Phase 04 — `FixtureFrameSource`, `ReplayRunner`, `QaTraceWriter`, `InMemoryTraceSink`, `AutomationLoop`, SQLite migration runner + `SqliteTraceStore`, `follow-acquired` replay fixture, scenario catalog JSON.
-- Phase 05 — `StateEstimator`, `FixturePerceptionAdapter`, merge/freshness/allowlist, `templateMatch`, `packages/perception-live` (Win32 process, `desktopCapturer` frame source, read-only clipboard), perception fixtures + `perception-estimate` replay.
-- Phase 06 — `FollowController`, `RecoveryController`, `direction.ts` click-to-move, `stuckDetector`, `lostTargetTicks`, `DEFAULT_RECOVERY`, replay packs `follow-lost-reacquire` / `follow-stuck-recovery` / `follow-emergency-stop`.
-- Phase 07 — `lootLabelDetector`, `LootController`, `InventoryController` stub, `FixtureDesirabilityScorer` / `DesirabilityPort`, rank/skip/suppression, replay packs `loot-desirable-vs-junk` / `loot-inventory-full` / `loot-unreachable-backoff`.
-- Phase 08 — English `parseItem` adapter, SHA-256 fingerprint, fixture + official Currency Exchange providers, Tukey 1.5 IQR valuation, `DesirabilityEngine` / composite router, `loot-market-aware` replay.
-- Phase 09 — `gridDetector`, `ShadowState` / `reconcile` (`ShadowItem`, `ReconcileResult`), estimator fills grid cells, real `InventoryController` (sets `stashSessionActive` when full; no transfers), SQLite inventory/stash snapshot persist + stale reload, replay `inventory-stale`.
-- Phase 10 — `sortRules`, `transferPlanner` (pure, high value first), `StashController` for `InventoryFull` / `StashSort`. Transfers confirm after reconcile only. Max 3 attempts via `stash.failed-move` / `stash.wrong-tab`. Replay packs `stash-sort-success` / `stash-full-fallback` / `stash-failed-move-retry` / `stash-wrong-tab` / `stash-emergency-stop`.
-- Phase 11 — `pricePolicy`, table-driven `listingStateMachine`, `ListingController`. Recommended listing = `fair * (1 - undercutPct)` unless below `low`. Persist `listing_history`. Replay packs `listing-apply-price` / `listing-reprice-stale` / `listing-low-confidence-skip` / `listing-emergency-stop`.
-- Phase 12 — table-driven `tradeStateMachine` with `TRADE_ALLOWED_EDGES`, `TradeController`, `TradeEventPort` (fixture / opted-in client-log / reserved GGG test interface), `trade_sessions` upsert on each transition. Accept only on observed currency + amount within tolerance (default reject). Replay packs for success and every listed failure class, plus emergency stop in each major state.
+- Phase 01–12 as previously recorded.
+- Phase 13 implementation is in progress: `ScenarioOrchestrator` is the only tick entry; `ActionBudget` forces `SafetyHold` until the window refills; session flags are orchestrator-owned (`beginStashSession`, `beginListingSession`, `beginTradeSession`); interrupt traces record `interrupted: true` and clear only the interrupted module’s in-flight step.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 12 gate (2026-08-27, this host) — **green**:
-
-- `npm test` — 332 tests
-- `npm run test:replay` — 33 tests
-- `npm run lint`
-- `npm run typecheck`
-
-Self-review: `PASS` (`grok/REVIEW_STATE.md`).
+Phase 13 gate not yet run on this revision.
 
 ## Blockers
 
-- **BLOCKED: windows-native** — unchanged. Live paired-account trade against a real client skipped on this Linux host.
+- **BLOCKED: windows-native** — unchanged. Live full-loop against a real client skipped on this Linux host.
 - External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search/listing API.
 
 ## Plan deviations
 
-Phase 01–11 deviations unchanged.
+Phase 01–12 deviations unchanged.
 
-Phase 12:
+Phase 13:
 
-- No packet sniffing. No undocumented `trade2` / trade-site APIs.
-- `TradeEventPort` accepts only `fixture`, opted-in `client-log` whisper lines, or `ggg-test-interface`.
-- Accept only when observed currency + amount match expected within scenario tolerance. Default tolerance `0` (any mismatch rejects).
-- `FailedOrTimedOut` is a `TradeState`. The automation state used on that tick is `SafetyHold` because `FailedOrTimedOut` is not an `AutomationStateId`.
-- Trade machine session lives on `world.flags.tradeSession`. Controllers stay stateless.
-- Phase 13 orchestrator rewrite was not started. `TradeController` is wired into the existing `createControllerMap` / `AutomationLoop` only.
-- Default wait-state timeout is 20s (`tradeWaitTimeoutMs`). Named QA fixture coordinates in `trade/geometry.ts`.
-- In-progress `tradeSession.expected` wins over a new whisper `expected` so mid-session stack/amount rules cannot be overwritten.
+- `AutomationLoop.tick()` delegates to `DefaultScenarioOrchestrator.runTick()`. `ScenarioOrchestrator.tick()` returns the `QaActionTrace` as specified; `runTick()` keeps the existing `AutomationTickResult` for replay/tests.
+- `applyPostDecisionEffects` remains the exported compatibility wrapper and now calls `applyOrchestratorDecisionEffects`.
+- Action-budget exhaustion sets `flags.actionBudgetHold` and selects `SafetyHold` with reason `action-budget-exhausted`. Emergency stop still wins.
+- Listing session starts after a stash session ends when a listing catalog is already on world flags. Trade session starts when a `tradeEvent` is present and `tradeRequested` is not already set.
+- Recovery counters are not reset on interrupt; only the interrupted module’s in-flight step is cleared (`pendingLootPickup`, `pendingStashTransfer`, pending listing/trade writes).
+- Phase 14 operator UI was not started.
 
 ## Replay fixtures added
 
-- `fixtures/replay/trade-success/` — request → validate → invite → prepare → navigate → open → place → observe → validate → accept → cleanup.
-- `fixtures/replay/trade-wrong-currency/` — reject path.
-- `fixtures/replay/trade-insufficient-currency/` — reject path.
-- `fixtures/replay/trade-wrong-item/` — validate fails.
-- `fixtures/replay/trade-missing-item/` — validate fails.
-- `fixtures/replay/trade-partial-stack/` — reject path.
-- `fixtures/replay/trade-timeout/` — 20s wait-state timeout.
-- `fixtures/replay/trade-cancelled/` — cancelled → FailedOrTimedOut.
-- `fixtures/replay/trade-disconnect/` — cleanup then failed.
-- `fixtures/replay/trade-ui-desync/` — FailedOrTimedOut.
-- `fixtures/replay/trade-emergency-stop/` — emergency stop in each major state.
+- `fixtures/replay/full-loop/` — follow → loot → inventory full → stash → list → trade event.
+- `fixtures/replay/full-loop-interrupt-trade/` — loot interrupted by trade.
+- `fixtures/replay/full-loop-interrupt-loot/` — follow interrupted by high-value loot.
+- `fixtures/replay/full-loop-emergency-stop/` — emergency stop beats the loop.
 
-Phase 02–11 fixtures remain.
+Phase 02–12 fixtures remain.
 
 ## Next exact work item
 
-Phase 13 — Full orchestration / interruption / recovery. Do not start operator UI.
+Run `npm test && npm run test:replay && npm run lint && npm run typecheck`, self-review, then mark Phase 13 complete. Next work after that is Phase 14.
