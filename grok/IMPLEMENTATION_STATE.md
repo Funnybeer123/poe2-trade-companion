@@ -21,7 +21,7 @@
 | Phase 09 | `53072a6` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
 | Phase 10 | `0fee99f` on `cursor/phase-10-stash-sort-b8bf` (PR #11) | Stash sort complete |
 | Phase 11 first cut | `a4faa0f` on `cursor/phase-11-listing-reprice-e0c0` (PR #12) | Listing machine + replay packs |
-| Current commit | (this revision) | Gate + self-review on `cursor/phase-11-listing-reprice-e0c0` (PR #12) |
+| Current commit | `da19a84` | Gate + self-review on `cursor/phase-11-listing-reprice-e0c0` (PR #12) |
 
 ## Active phase
 
