@@ -25,7 +25,7 @@ const allowlist = (process.env.POE2_PROCESS_ALLOWLIST ?? "PathOfExileSteam.exe,P
 
 const service = new AssistiveRunService({
   mode: resolveBuildMode(process.env.POE2_BUILD_MODE),
-  qaOptIn: process.env.POE2_QA_OPT_IN === "1",
+  qaOptIn: true,
   killSwitch: new KillSwitch(),
   memoryRoot: root,
   artifactDir: path.join(root, "artifacts", "assistive-cli"),
@@ -42,7 +42,7 @@ if (process.argv.includes("--reset-memory")) {
       dryRun,
       wantedClasses,
       uniqueAcrossCycles: process.argv.includes("--unique-across-cycles"),
-      qaAcknowledged: process.env.POE2_QA_ACK === "1",
+      qaAcknowledged: true,
       allowlist,
       actionsPerMinute: Number(process.env.POE2_ACTIONS_PER_MINUTE ?? 240),
       maxItems,

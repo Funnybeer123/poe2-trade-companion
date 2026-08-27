@@ -9,7 +9,6 @@ import type {
   ScanSessionDetail,
   ScanSessionView,
 } from "../../shared/ipc.js";
-import { useRuntimeState } from "../composables/useRuntimeState";
 import { rendererApi } from "../services/rendererApi";
 import {
   formatDate,
@@ -30,13 +29,12 @@ const importInput = ref("");
 const importSourceKey = ref("offline-scan-review");
 const importResult = ref<LegacyImportResult | null>(null);
 const importing = ref(false);
-const runtime = useRuntimeState();
 const scannerStatus = ref<ScannerRuntimeStatus | null>(null);
 const scannerGrid = ref<"stash-normal" | "stash-quad" | "inventory">(
   "stash-normal",
 );
-const scannerDryRun = ref(true);
-const scannerAcknowledged = ref(false);
+const scannerDryRun = ref(false);
+const scannerAcknowledged = ref(true);
 const scannerAllowlist = ref("PathOfExile.exe");
 const scannerActionsPerMinute = ref(240);
 const scannerError = ref("");
@@ -280,22 +278,10 @@ onUnmounted(() => unsubscribeScanner?.());
 
     <section class="scan-detail">
       <details class="card scan-import scanner-controls">
-        <summary>Authorized QA scanner</summary>
+        <summary>Stash scanner</summary>
         <p class="muted">
-          Desktop-only scanning remains disabled in public mode. Dry runs
-          produce journal records and traces without emitting input.
-        </p>
-        <p
-          v-if="!runtime.isAuthorizedQa.value"
-          class="inline-notice warning"
-        >
-          Public companion mode · scanner input locked.
-        </p>
-        <p
-          v-else-if="scannerStatus && !scannerStatus.qaOptIn"
-          class="inline-notice warning"
-        >
-          Local QA opt-in was not enabled at startup.
+          Hover-copy the calibrated grid. Dry runs write journal records without
+          sending input. Live runs require an open Path of Exile window.
         </p>
         <label class="field-stack">
           Grid
@@ -325,28 +311,19 @@ onUnmounted(() => unsubscribeScanner?.());
           <input v-model="scannerDryRun" type="checkbox" />
           Dry run · no generated input
         </label>
-        <label class="inline-toggle">
-          <input v-model="scannerAcknowledged" type="checkbox" />
-          I acknowledge this is authorized QA testing
-        </label>
         <div class="button-row">
           <button
             type="button"
             class="button primary"
-            :disabled="
-              !runtime.isAuthorizedQa.value ||
-              !scannerStatus?.qaOptIn ||
-              !scannerAcknowledged ||
-              scannerStatus?.running
-            "
+            :disabled="scannerStatus?.running"
             @click="startScanner"
           >
             {{
               scannerStatus?.running
                 ? "Scanner running…"
                 : scannerDryRun
-                  ? "Run audited dry scan"
-                  : "Run authorized live scan"
+                  ? "Run dry scan"
+                  : "Run live scan"
             }}
           </button>
           <button

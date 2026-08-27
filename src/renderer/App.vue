@@ -30,18 +30,18 @@ watch(intelligence.externalEvaluationVersion, () => {
 <template>
   <a class="skip-link" href="#workspace">Skip to workspace</a>
   <div
-    v-if="runtime.isAuthorizedQa.value"
+    v-if="runtime.isNative.value"
     class="qa-banner"
     role="status"
     aria-live="polite"
   >
-    <span>Authorized QA mode</span>
-    <span>Generated input is capability-gated and audited</span>
+    <span>Automation on</span>
+    <span>Stash transfers and scans can send input to Path of Exile</span>
     <kbd>Ctrl</kbd><span>+</span><kbd>Shift</kbd><span>+</span><kbd>Esc</kbd>
     <span>emergency stop</span>
   </div>
 
-  <div class="app-shell" :class="{ 'has-qa-banner': runtime.isAuthorizedQa.value }">
+  <div class="app-shell" :class="{ 'has-qa-banner': runtime.isNative.value }">
     <aside class="side-rail" aria-label="Primary">
       <RouterLink class="brand" to="/items" aria-label="PoE2 Intelligence home">
         <span class="brand-mark" aria-hidden="true">II</span>
@@ -116,12 +116,6 @@ watch(intelligence.externalEvaluationVersion, () => {
             title="Browser preview uses local fixture evaluation and never generates game input."
           >
             Preview · no input
-          </span>
-          <span
-            v-else-if="!runtime.isAuthorizedQa.value"
-            class="status-chip safe"
-          >
-            Public mode · input locked
           </span>
           <span
             v-else-if="!runtime.killLatched.value"

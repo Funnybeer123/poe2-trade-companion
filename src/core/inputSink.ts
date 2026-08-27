@@ -34,8 +34,7 @@ export class NativeInputSink implements InputSink {
     if (!this.enabled) {
       throw new Error("native-input-disabled");
     }
-    // Live SendInput is only armed in authorized-qa packaged builds with explicit enablement.
-    // Replay and tests must use FakeInputSink.
+    // Replay and tests must use FakeInputSink. Live OS input uses WinHostInputSink.
     void action;
   }
 

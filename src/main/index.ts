@@ -239,7 +239,7 @@ function installVoiceHotkey(next: VoiceTransferConfig): void {
     globalShortcut.unregister(previous);
     registeredVoiceHotkey = undefined;
   }
-  if (buildMode !== "authorized-qa" || !next.enabled) {
+  if (!next.enabled) {
     voiceHotkeyError = "";
     return;
   }
@@ -297,7 +297,7 @@ app.whenReady().then(() => {
   registerItemIntelligenceIpc(ipcMain, itemIntelligenceService);
   scannerService = new ScannerRuntimeService({
     mode: buildMode,
-    qaOptIn: process.env.POE2_QA_OPT_IN === "1",
+    qaOptIn: true,
     killSwitch,
     sessions: new ScanSessionStore(
       new JsonlScanSessionStorage(
@@ -343,7 +343,7 @@ app.whenReady().then(() => {
   voiceConfig = loadVoiceTransferConfig(memoryRoot);
   assistiveService = new AssistiveRunService({
     mode: buildMode,
-    qaOptIn: process.env.POE2_QA_OPT_IN === "1",
+    qaOptIn: true,
     killSwitch,
     memoryRoot,
     artifactDir,
@@ -352,7 +352,7 @@ app.whenReady().then(() => {
   });
   stashSortService = new StashSortService({
     mode: buildMode,
-    qaOptIn: process.env.POE2_QA_OPT_IN === "1",
+    qaOptIn: true,
     killSwitch,
     artifactDir,
     profile: readMergedProfile,
@@ -403,7 +403,7 @@ app.whenReady().then(() => {
   ipcMain.handle("assistive:status", () => ({
     ...assistiveService?.status,
     mode: buildMode,
-    qaOptIn: process.env.POE2_QA_OPT_IN === "1",
+    qaOptIn: true,
   }));
   ipcMain.handle("assistive:start", (_event, request: AssistiveRunRequest) => assistiveService?.start(request));
   ipcMain.handle("assistive:stop", () => {

@@ -4,9 +4,9 @@ import { describe, expect, it } from "vitest";
 describe("overlay smoke", () => {
   it("public UI copy cannot imply arming always works", () => {
     const vue = readFileSync("src/renderer/App.vue", "utf8");
-    expect(vue).toContain("Public mode · input locked");
-    expect(vue).toContain("Authorized QA mode");
-    expect(vue).toContain("runtime.isAuthorizedQa.value");
+    expect(vue).toContain("Automation on");
+    expect(vue).toContain("E-stop ready · Ctrl+Shift+Esc");
+    expect(vue).toContain("runtime.isNative.value");
     expect(vue).toContain("<RouterView");
     expect(vue).toContain("Tools &amp; QA");
     const cal = readFileSync("src/renderer/CalibrationPanel.vue", "utf8");

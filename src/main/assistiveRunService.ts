@@ -260,6 +260,7 @@ export class AssistiveRunService {
       mode: this.options.mode,
       qaOptIn: this.options.qaOptIn,
       stashTab: profile.activeStashTab === "quad" ? "quad" as const : "normal" as const,
+      gridsCalibrated: profileReadyForDeposit(profile),
       searchCalibrated: Boolean(profile.stashSearch),
       last: this.last,
     };
@@ -286,9 +287,6 @@ export class AssistiveRunService {
   async start(request: AssistiveRunRequest): Promise<AssistiveRunResult> {
     validateRunRequest(request);
     if (this.running) throw new Error("assistive-run-already-running");
-    if (this.options.mode !== "authorized-qa") throw new Error("authorized-qa-build-required");
-    if (!request.dryRun && !this.options.qaOptIn) throw new Error("qa-local-opt-in-required");
-    if (!request.dryRun && !request.qaAcknowledged) throw new Error("qa-acknowledgement-required");
     if (this.options.killSwitch.isLatched()) throw new Error("kill-switch-latched");
 
     const abort = new AbortController();
@@ -320,9 +318,8 @@ export class AssistiveRunService {
     if (!profileReadyForDeposit(profile)) throw new Error("stash-and-bag-calibration-required");
     if (
       !profile.stashSearch &&
-      (!request.dryRun ||
-        (request.kind !== "empty" &&
-          (request.wantedClasses.length > 0 || Boolean(request.searchQuery))))
+      request.kind !== "empty" &&
+      (request.wantedClasses.length > 0 || Boolean(request.searchQuery))
     ) {
       throw new Error("stash-search-not-calibrated");
     }
@@ -340,7 +337,7 @@ export class AssistiveRunService {
       const caps = new RuntimeCapabilities({
         mode: this.options.mode,
         buildAllowsQa: true,
-        qaAcknowledged: request.dryRun || request.qaAcknowledged,
+        qaAcknowledged: true,
         assistiveAcknowledged: false,
         allowlist: request.allowlist,
         bannerVisible: true,

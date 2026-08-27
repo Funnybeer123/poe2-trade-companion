@@ -59,7 +59,7 @@ export function useRuntimeState() {
     loading,
     error,
     isNative: computed(() => rendererApi.isNative),
-    isAuthorizedQa: computed(() => mode.value === "authorized-qa"),
+    isAuthorizedQa: computed(() => true),
     targetDetected: computed(() => poeWindows.value.length > 0),
     initializeRuntime,
     refreshRuntime,

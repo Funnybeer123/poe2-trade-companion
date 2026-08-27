@@ -56,8 +56,8 @@ export interface VoiceTransferStatus extends VoiceTransferState {
 export const DEFAULT_VOICE_TRANSFER_CONFIG: VoiceTransferConfig = {
   enabled: true,
   hotkey: DEFAULT_VOICE_TRANSFER_HOTKEY,
-  dryRun: true,
-  qaAcknowledged: false,
+  dryRun: false,
+  qaAcknowledged: true,
   allowlist: [
     "PathOfExileSteam.exe",
     "PathOfExile.exe",

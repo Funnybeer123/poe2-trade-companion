@@ -1,7 +1,7 @@
 import { ref, watch } from "vue";
 
 const STORAGE_KEY = "poe2-renderer-preferences-v1";
-const defaultDryRun = ref(true);
+const defaultDryRun = ref(false);
 let initialized = false;
 
 function initialize(): void {

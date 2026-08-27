@@ -4,15 +4,13 @@ import {
   withPackagedElectron,
 } from "./electron-smoke.js";
 
-test("QA build stays labeled, dry-run, and unarmed", async ({}, testInfo) => {
+test("full build exposes live automation with e-stop ready", async ({}, testInfo) => {
   await withPackagedElectron("authorized-qa", testInfo, async ({ page }) => {
     const banner = page.locator(".qa-banner");
     await expect(banner).toBeVisible();
+    await expect(banner.getByText("Automation on", { exact: true })).toBeVisible();
     await expect(
-      banner.getByText("Authorized QA mode", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      banner.getByText("Generated input is capability-gated and audited", {
+      banner.getByText("Stash transfers and scans can send input to Path of Exile", {
         exact: true,
       }),
     ).toBeVisible();
@@ -27,23 +25,14 @@ test("QA build stays labeled, dry-run, and unarmed", async ({}, testInfo) => {
       page.getByRole("heading", { name: "Automation dashboard", exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByText("authorized-qa", { exact: true }).first(),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("checkbox", {
-        name: /Authorized QA acknowledgement/i,
-      }),
-    ).not.toBeChecked();
-    await expect(
       page.getByRole("checkbox", { name: /Dry-run default/i }),
-    ).toBeChecked();
+    ).not.toBeChecked();
     await expect(
       page.getByRole("button", {
         name: "Stage selected modules",
         exact: true,
       }),
-    ).toBeDisabled();
-    await expect(page.getByText("Not staged", { exact: true })).toBeVisible();
+    ).toBeEnabled();
 
     await navigatePrimary(page, "Items", "Item intelligence", "/items");
     await expect(banner).toBeVisible();
@@ -56,15 +45,10 @@ test("QA build stays labeled, dry-run, and unarmed", async ({}, testInfo) => {
     await expect(scannerControls).toHaveCount(1);
     await scannerControls.locator("summary").click();
     await expect(
-      page.getByText("Local QA opt-in was not enabled at startup.", {
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(
       page.getByRole("button", {
-        name: "Run audited dry scan",
+        name: "Run live scan",
         exact: true,
       }),
-    ).toBeDisabled();
+    ).toBeEnabled();
   });
 });

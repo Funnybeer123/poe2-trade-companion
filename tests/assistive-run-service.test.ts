@@ -175,6 +175,8 @@ describe("assistive run service", () => {
         allowlist: ["PathOfExile.exe"],
       }),
     ).resolves.toMatchObject({ dryRun: true, kind: "empty" });
+    expect(service.status.gridsCalibrated).toBe(true);
+    expect(service.status.searchCalibrated).toBe(false);
   });
 
   it("runs a calibrated Belt search through audited live input and clears the query", async () => {

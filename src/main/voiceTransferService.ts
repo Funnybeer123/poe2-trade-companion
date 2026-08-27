@@ -75,9 +75,7 @@ export class VoiceTransferService {
     const config = this.options.config();
     const status = this.options.assistiveStatus();
     let error: string | undefined;
-    if (this.options.mode !== "authorized-qa") {
-      error = "authorized-qa-build-required";
-    } else if (!config.enabled) {
+    if (!config.enabled) {
       error = "voice-transfer-disabled";
     } else if (status.running) {
       error = "assistive-run-already-running";
@@ -85,10 +83,6 @@ export class VoiceTransferService {
       error = "kill-switch-latched";
     } else if (!status.searchCalibrated) {
       error = "stash-search-not-calibrated";
-    } else if (!config.dryRun && !status.qaOptIn) {
-      error = "qa-local-opt-in-required";
-    } else if (!config.dryRun && !config.qaAcknowledged) {
-      error = "qa-acknowledgement-required";
     } else if (!config.dryRun && config.allowlist.length === 0) {
       error = "process-allowlist-required";
     }

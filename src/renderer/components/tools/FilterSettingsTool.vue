@@ -104,7 +104,7 @@ async function copyFilter(): Promise<void> {
       <label class="toggle-card">
         <input v-model="defaultDryRun" type="checkbox" />
         <span>
-          <strong>Default QA scenarios to dry-run</strong>
+          <strong>Default scenarios to dry-run</strong>
           <small>Stored locally and shared with the QA/replay workspace.</small>
         </span>
       </label>

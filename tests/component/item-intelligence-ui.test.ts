@@ -311,22 +311,16 @@ describe("item intelligence renderer", () => {
     wrapper.unmount();
   });
 
-  it("keeps scanner controls visible but disabled in public mode", async () => {
+  it("keeps scanner controls available for live use", async () => {
     const wrapper = mount(ScansView);
     await flushPromises();
 
-    expect(wrapper.get(".scanner-controls summary").text()).toBe(
-      "Authorized QA scanner",
-    );
-    expect(wrapper.text()).toContain(
-      "Public companion mode · scanner input locked.",
-    );
-    expect(
-      wrapper
-        .findAll("button")
-        .find((button) => button.text().includes("Run audited dry scan"))
-        ?.attributes("disabled"),
-    ).toBeDefined();
+    expect(wrapper.get(".scanner-controls summary").text()).toBe("Stash scanner");
+    const liveButton = wrapper
+      .findAll("button")
+      .find((button) => button.text().includes("Run live scan"));
+    expect(liveButton).toBeDefined();
+    expect(liveButton?.attributes("disabled")).toBeUndefined();
     wrapper.unmount();
   });
 

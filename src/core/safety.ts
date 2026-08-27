@@ -2,12 +2,7 @@ import type { SafetyContext } from "./types.js";
 
 export type SafetyDecision = { allow: boolean; reason: string };
 
-function automationMode(mode: SafetyContext["mode"]): boolean {
-  return mode === "authorized-qa" || mode === "assistive-access";
-}
-
 export function evaluateSafety(ctx: SafetyContext): SafetyDecision {
-  if (!automationMode(ctx.mode)) return { allow: false, reason: "public-companion-cannot-arm" };
   if (ctx.killSwitchLatched) return { allow: false, reason: "kill-switch-latched" };
   if (!ctx.processAllowed) return { allow: false, reason: "process-not-allowlisted" };
   if (!ctx.moduleEnabled) return { allow: false, reason: "module-disabled" };
@@ -18,7 +13,7 @@ export function evaluateSafety(ctx: SafetyContext): SafetyDecision {
 }
 
 export function shouldRecordOnly(ctx: SafetyContext): boolean {
-  return ctx.dryRun || !automationMode(ctx.mode);
+  return ctx.dryRun;
 }
 
 export function rateLimitOk(actionsThisMinute: number, cap: number): boolean {

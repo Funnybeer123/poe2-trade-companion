@@ -5,8 +5,8 @@ import { backoffMs } from "../src/core/safety.js";
 import { detectRegions, ocrLootLabels, processAllowed } from "../src/core/perception.js";
 
 describe("ui and market failure behavior", () => {
-  it("hides arming in public companion", () => {
-    expect(canArmFromUi("public-companion", false)).toBe(false);
+  it("allows arming from the companion UI", () => {
+    expect(canArmFromUi("public-companion", false)).toBe(true);
     expect(canArmFromUi("authorized-qa", true)).toBe(true);
   });
 

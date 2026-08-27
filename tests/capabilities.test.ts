@@ -6,32 +6,32 @@ import { clampToRect } from "../src/core/screenLayout.js";
 import { inventoryGrid, shouldKeepInInventory } from "../src/core/stashAssist.js";
 
 describe("capabilities and safety", () => {
-  it("defaults unknown builds to public companion", () => {
-    expect(resolveBuildMode(undefined)).toBe("public-companion");
+  it("defaults unknown builds to the full companion", () => {
+    expect(resolveBuildMode(undefined)).toBe("authorized-qa");
   });
 
-  it("cannot arm automation without QA gates", () => {
+  it("cannot arm automation without an allowlist and emergency stop", () => {
     const caps = new RuntimeCapabilities({
       mode: "authorized-qa",
       buildAllowsQa: false,
-      qaAcknowledged: true,
+      qaAcknowledged: false,
       assistiveAcknowledged: false,
-      allowlist: ["PathOfExile.exe"],
-      bannerVisible: true,
-      emergencyStopRegistered: true,
+      allowlist: [],
+      bannerVisible: false,
+      emergencyStopRegistered: false,
     });
     expect(caps.canArmAutomation()).toBe(false);
-    expect(caps.mode).toBe("public-companion");
+    expect(caps.mode).toBe("authorized-qa");
   });
 
-  it("arms only when every gate is set", () => {
+  it("arms when allowlist and emergency stop are set", () => {
     const caps = new RuntimeCapabilities({
-      mode: "authorized-qa",
-      buildAllowsQa: true,
-      qaAcknowledged: true,
+      mode: "public-companion",
+      buildAllowsQa: false,
+      qaAcknowledged: false,
       assistiveAcknowledged: false,
       allowlist: ["PathOfExile.exe"],
-      bannerVisible: true,
+      bannerVisible: false,
       emergencyStopRegistered: true,
     });
     expect(caps.canArmAutomation()).toBe(true);
@@ -50,7 +50,7 @@ describe("capabilities and safety", () => {
     expect(emptyAllowlist.isProcessAllowed("PathOfExile.exe")).toBe(false);
   });
 
-  it("arms assistive access without a QA build", () => {
+  it("arms assistive access with the same process allowlist", () => {
     const caps = new RuntimeCapabilities({
       mode: "assistive-access",
       buildAllowsQa: false,
@@ -85,7 +85,7 @@ describe("capabilities and safety", () => {
     expect(ks.isLatched()).toBe(false);
   });
 
-  it("blocks public companion input", () => {
+  it("allows companion input when the process is allowlisted", () => {
     const decision = evaluateSafety({
       mode: "public-companion",
       killSwitchLatched: false,
@@ -97,8 +97,8 @@ describe("capabilities and safety", () => {
       actionsThisMinute: 0,
       actionsPerMinute: 30,
     });
-    expect(decision.allow).toBe(false);
-    expect(decision.reason).toBe("public-companion-cannot-arm");
+    expect(decision.allow).toBe(true);
+    expect(decision.reason).toBe("ok");
   });
 
   it("builds an inventory grid and keep policy", () => {

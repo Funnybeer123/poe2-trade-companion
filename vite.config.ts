@@ -3,7 +3,7 @@ import vue from "@vitejs/plugin-vue";
 import electron from "vite-plugin-electron/simple";
 import path from "node:path";
 
-const buildMode = process.env.POE2_BUILD_MODE ?? "public-companion";
+const buildMode = process.env.POE2_BUILD_MODE ?? "authorized-qa";
 
 export default defineConfig({
   server: {

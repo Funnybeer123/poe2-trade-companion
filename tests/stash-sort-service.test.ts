@@ -129,7 +129,7 @@ describe("stash sort IPC and UI boundary", () => {
     expect(preload).toContain("stashSort:");
     expect(panel).toContain("Scan &amp; preview");
     expect(panel).toContain("Execute this preview");
-    expect(panel).toContain('status.value.mode === "authorized-qa"');
+    expect(panel).toContain("status.value.calibrated");
     expect(panel).toContain("Ctrl+Shift+Esc");
     expect(service).toContain("GameInputController");
     expect(service).toContain("executeStashSort");

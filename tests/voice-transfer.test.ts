@@ -102,12 +102,12 @@ describe("voice stash command resolution", () => {
 });
 
 describe("voice transfer configuration", () => {
-  it("defaults to dry-run, no literal fallback, and a reserved-safe hotkey", () => {
+  it("defaults to live voice fill, no literal fallback, and a reserved-safe hotkey", () => {
     const config = normalizeVoiceTransferConfig(undefined);
     expect(config).toMatchObject({
       enabled: true,
-      dryRun: true,
-      qaAcknowledged: false,
+      dryRun: false,
+      qaAcknowledged: true,
       allowLiteralFallback: false,
       hotkey: "CommandOrControl+Alt+V",
     });
@@ -198,37 +198,25 @@ describe("voice transfer orchestration", () => {
     );
   });
 
-  it("refuses public mode and low-confidence speech before transfer", async () => {
+  it("refuses low-confidence speech before transfer", async () => {
     const startTransfer = vi.fn(async () => transferResult());
     const recognizer: LocalSpeechRecognizer = {
       recognize: vi.fn(async () => ({ text: "currency", confidence: 0.2 })),
     };
-    const base = {
+    const service = new VoiceTransferService({
+      mode: "public-companion",
       recognizer,
       config: () => DEFAULT_VOICE_TRANSFER_CONFIG,
       assistiveStatus: () => ({
         running: false,
         killLatched: false,
-        qaOptIn: false,
+        qaOptIn: true,
         searchCalibrated: true,
       }),
       startTransfer,
       stopTransfer: vi.fn(),
-    };
-    const publicService = new VoiceTransferService({
-      ...base,
-      mode: "public-companion",
     });
-    await expect(publicService.trigger("ui")).resolves.toMatchObject({
-      phase: "error",
-      error: "authorized-qa-build-required",
-    });
-
-    const qaService = new VoiceTransferService({
-      ...base,
-      mode: "authorized-qa",
-    });
-    await expect(qaService.trigger("ui")).resolves.toMatchObject({
+    await expect(service.trigger("ui")).resolves.toMatchObject({
       phase: "error",
       error: "voice-confidence-too-low:0.20",
     });

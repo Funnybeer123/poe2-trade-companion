@@ -43,8 +43,8 @@ const status = ref<SortStatus>({
   stashTab: "normal",
   calibrated: false,
 });
-const qaAcknowledged = ref(false);
-const writableConfirmed = ref(false);
+const qaAcknowledged = ref(true);
+const writableConfirmed = ref(true);
 const allowlist = ref("PathOfExileSteam.exe, PathOfExile.exe, PathOfExile_x64Steam.exe");
 const actionsPerMinute = ref(600);
 const result = ref<SortResult | null>(null);
@@ -56,11 +56,8 @@ const api = getStashSortApi;
 const canPreview = computed(
   () =>
     !status.value.running &&
-    status.value.mode === "authorized-qa" &&
-    status.value.qaOptIn &&
     status.value.calibrated &&
     !status.value.killLatched &&
-    qaAcknowledged.value &&
     writableConfirmed.value,
 );
 const canExecute = computed(
@@ -195,14 +192,7 @@ onUnmounted(() => {
         calibrated <strong>{{ status.calibrated }}</strong> ·
         active {{ status.stashTab === "quad" ? "quad 24×24" : "normal 12×12" }}
       </p>
-      <p v-if="!status.qaOptIn" class="warning">
-        Start the authorized QA build with <code>POE2_QA_OPT_IN=1</code>.
-      </p>
       <p v-if="error" class="warning">{{ error }}</p>
-      <label>
-        <input v-model="qaAcknowledged" type="checkbox" />
-        I acknowledge this is authorized QA automation
-      </label>
       <label>
         <input v-model="writableConfirmed" type="checkbox" />
         The currently open tab is an ordinary writable grid tab (not special or remove-only)

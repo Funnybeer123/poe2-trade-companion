@@ -1,11 +1,6 @@
 # How to use PoE2 Trade Companion
 
-Windows-first Electron app for Path of Exile 2 item intelligence. Two modes:
-
-- **Public Companion** (default): parse items, value them locally, build stash queries, track builds, write rules, review scans. Never generates game input.
-- **Authorized QA**: same intelligence plus gated automation for explicit GGG-authorized testing only.
-
-This is not a live-trade bot for public play. Prices shown today come from bundled fixture quotes, not live listings.
+Windows-first Electron app for Path of Exile 2 item intelligence. The default app includes parsing, stash queries, builds, and stash automation. Prices shown today come from bundled fixture quotes, not live listings. Emergency stop is **Ctrl+Shift+Esc**.
 
 ## Install and launch
 
@@ -34,7 +29,7 @@ Optional public Windows package:
 npm run pack
 ```
 
-That artifact is still public-companion. QA packaging is a separate command (`npm run pack:qa`) and still requires local opt-in before any live input.
+`npm run pack` builds the same companion with transfers enabled.
 
 ## Copy an item from Path of Exile 2
 
@@ -45,15 +40,15 @@ That artifact is still public-companion. QA packaging is a separate command (`np
    - open **Items** and click **Read clipboard**, or
    - paste the text and click **Evaluate text** / **Ctrl+Enter**.
 
-The bottom-left rail shows **Client detected** or **Client not detected**. Detection is informational in public mode. Input stays locked unless you start an authorized QA build.
+The bottom-left rail shows **Client detected** or **Client not detected**. Transfers only click when that window is Path of Exile.
 
 ## Status chips
 
 | Chip | Meaning |
 | --- | --- |
-| **Public mode · input locked** | Normal companion. No clicks, keys, or movement are sent to the game. |
+| **Automation on** | Transfers, sort, and scans can send input to Path of Exile. |
 | **Preview · no input** | Browser-only Vite page, not the Electron app. Intelligence still works on pasted text. |
-| **E-stop ready · Ctrl+Shift+Esc** | Authorized QA is armed and can be killed instantly. |
+| **E-stop ready · Ctrl+Shift+Esc** | Generated input can be killed instantly. |
 | **Emergency stop latched** | Generated input is frozen until you click **Re-arm input**. |
 
 ## Items
@@ -115,7 +110,7 @@ Offline review of imported or QA-generated sessions.
 
 - Import JSONL for review. That creates records only and sends no input.
 - Open a session to inspect slot status (matched / missed / timeout) and any parsed item payload.
-- **Authorized QA scanner** is collapsed at the top of the detail pane. In public mode it stays locked. In QA mode you pick a grid (normal stash 12×12, quad 24×24, inventory 12×5), keep **Dry run** on unless you intend live input, acknowledge QA, then start. **Stop** cancels the run. **Ctrl+Shift+Esc** latches the kill switch.
+- **Stash scanner** is collapsed at the top of the detail pane. Pick a grid (normal stash 12×12, quad 24×24, inventory 12×5) and start. Check **Dry run** if you only want a journal. **Ctrl+Shift+Esc** latches the kill switch.
 
 ## Tools & QA
 
@@ -133,43 +128,21 @@ Generates local filter text from a hide-below threshold and unique highlight opt
 
 - Default QA scenarios to dry-run (stored locally).
 - Runtime: mode, e-stop, detected PoE windows.
-- Reminder: **Ctrl+D** price-check, **Ctrl+Shift+Esc** e-stop, **Ctrl+Alt+V** voice transfer (QA only).
+- Reminder: **Ctrl+D** price-check, **Ctrl+Shift+Esc** e-stop, **Ctrl+Alt+V** voice transfer.
 
-### Calibration, Transfers, Sort stash, QA dashboard, Replay
+### Calibration, Transfers, Sort stash, dashboard, Replay
 
-These are authorized-QA operational tools. In public mode they explain why they are locked. They do not silently fall back to live input.
+Calibrate the stash, bag, and search box before live transfers. Sort and replay stay in this Tools section.
 
-## Authorized QA only
+## Move bag items into stash
 
-Do not start this mode on a normal player account. It exists for environments GGG has explicitly authorized.
+1. Calibrate once under **Tools & QA → Calibration**: bag grid, stash grid, and stash search box.
+2. In Path of Exile, open stash and inventory yourself. The app does not click the hideout chest.
+3. Open **Tools & QA → Transfers**.
+4. Click **Empty** for bag → stash. **Fill** is stash → bag.
+5. Leave **Dry-run / preview** unchecked for live clicks. Check it if you only want a plan.
 
-```powershell
-$env:POE2_BUILD_MODE = "authorized-qa"
-$env:POE2_QA_OPT_IN = "1"
-npm run dev
-```
-
-You should see a persistent **Authorized QA mode** banner.
-
-Before live input can arm:
-
-1. QA build mode is `authorized-qa`.
-2. `POE2_QA_OPT_IN=1` was set at startup.
-3. You check the on-screen **authorized QA acknowledgement**.
-4. A process allowlist matches the live client (`PathOfExile.exe`, Steam variants, etc.).
-5. The PoE window is the configured target.
-6. Emergency stop is registered (**Ctrl+Shift+Esc**).
-7. Leave **Dry run** on until you intentionally disable it.
-
-Live tools:
-
-- **Scans → Authorized QA scanner**: hover/copy cells on a chosen grid.
-- **Tools → Calibration**: capture the PoE window and draw stash, bag, and search boxes. Transfers need stash-search calibration.
-- **Tools → Transfers**: audited stash ↔ bag movement, optional class filter, voice trigger (**Ctrl+Alt+V**).
-- **Tools → Sort stash**: preview a pack plan, then execute only when gated.
-- **Tools → Replay & traces**: fixture replay with a fake input sink. Use this to inspect decisions without touching the live client.
-
-Action traces append under the Electron user-data folder (`assistive-artifacts/qa-action-trace.jsonl`).
+Voice fill uses **Ctrl+Alt+V** by default. **Ctrl+Shift+Esc** stops all generated input.
 
 ## Where data lives
 
@@ -189,8 +162,8 @@ No account telemetry is sent by default. Do not commit this folder, cookies, or 
 
 - Call undocumented GGG Trade2 APIs or scrape Mobalytics.
 - Treat fixture quotes as live guaranteed sale prices.
-- Arm automation from public-companion or from a browser preview.
-- Silently switch from QA to public and keep sending input.
+- Send input from a browser preview.
+- Click windows that are not on the Path of Exile process allowlist.
 
 ## If something looks wrong
 
@@ -201,7 +174,7 @@ No account telemetry is sent by default. Do not commit this folder, cookies, or 
 | Item will not parse | Clipboard must include `Item Class:`. Re-copy from the game tooltip. |
 | Finder is empty | Evaluate or select a catalog item first. |
 | Prices look fake or stale | They are fixture data. Confirm on official trade. |
-| QA buttons disabled | You need `POE2_BUILD_MODE=authorized-qa`, `POE2_QA_OPT_IN=1`, acknowledgement, allowlist, and an unlocked e-stop. |
+| Transfer buttons disabled | Calibrate stash + bag + search, unlock the e-stop, and keep Path of Exile in the allowlist. |
 | Input will not stop | **Ctrl+Shift+Esc**, then confirm the chip says **Emergency stop latched**. |
 
 ## Related docs

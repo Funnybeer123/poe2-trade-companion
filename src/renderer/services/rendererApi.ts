@@ -457,7 +457,7 @@ export const rendererApi = {
   },
 
   async mode(): Promise<RuntimeMode> {
-    return nativeBridge()?.mode() ?? Promise.resolve("public-companion");
+    return nativeBridge()?.mode() ?? Promise.resolve("authorized-qa");
   },
 
   async windows(): Promise<Array<{ name: string; title: string }>> {
@@ -495,8 +495,8 @@ export const rendererApi = {
       return nativeBridge()?.scanner.status() ?? {
         schemaVersion: 1,
         running: false,
-        mode: "public-companion",
-        qaOptIn: false,
+        mode: "authorized-qa",
+        qaOptIn: true,
         killLatched: false,
       };
     },
@@ -504,7 +504,7 @@ export const rendererApi = {
       const bridge = nativeBridge();
       if (!bridge) {
         throw new Error(
-          "Live and dry-run scanner execution is available only in the authorized QA desktop build.",
+          "Scanner execution is available only in the Electron desktop app.",
         );
       }
       return bridge.scanner.start(request);
@@ -727,6 +727,7 @@ export interface AssistiveApi {
     mode: string;
     qaOptIn: boolean;
     stashTab: "normal" | "quad";
+    gridsCalibrated: boolean;
     searchCalibrated: boolean;
     last?: AssistiveRunResult;
   }>;
@@ -746,6 +747,7 @@ export interface AssistiveApi {
     mode: string;
     qaOptIn: boolean;
     stashTab: "normal" | "quad";
+    gridsCalibrated: boolean;
     searchCalibrated: boolean;
     last?: AssistiveRunResult;
   }>;

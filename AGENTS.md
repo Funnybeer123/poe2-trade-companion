@@ -36,25 +36,13 @@ The QA automation capabilities are first-class requirements. Do not remove, weak
 - Do not copy GPL code unless the repository intentionally adopts the GPL and the user approves that licensing choice.
 
 ## Operating-mode boundary
-Create a central capability service such as `RuntimeCapabilities`.
+This app ships as one automation-capable companion. Stash transfer, sort, scan, and voice features are on by default. Do not reintroduce a public-only lock or QA opt-in checkbox.
 
-Minimum modes:
-
-### `public-companion`
-- No automated movement, looting, stash movement, trade completion, or multi-action macros.
-- Follow current published GGG third-party/macro/API guidance.
-
-### `authorized-qa`
-- Enables the automation test modules required by this repository.
-- Must show a persistent QA banner/watermark.
-- Must require an explicit local opt-in/configuration value on startup.
-- Must support a global emergency stop.
-- Must support dry-run/simulation mode.
-- Must produce structured action telemetry for every perceived state, decision, and generated input.
-- Must have configurable rate limits and randomized timing profiles for test scenarios.
-- Must keep all game-affecting input behind one auditable `GameInputController`.
-
-Do not silently fall back from `authorized-qa` to automation in `public-companion`.
+Keep these interlocks:
+- a global emergency stop (`Ctrl+Shift+Esc`);
+- process/window allowlisting so input only targets Path of Exile;
+- optional dry-run/preview that emits no OS input;
+- structured action traces through `GameInputController`.
 
 ## Authorized QA automation requirements
 The following are required in `authorized-qa` mode:

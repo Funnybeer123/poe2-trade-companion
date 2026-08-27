@@ -20,6 +20,7 @@ interface TransferStatus {
   mode: string;
   qaOptIn: boolean;
   stashTab: "normal" | "quad";
+  gridsCalibrated: boolean;
   searchCalibrated: boolean;
   last?: AssistiveRunResult;
 }
@@ -38,10 +39,11 @@ const status = ref<TransferStatus>({
   mode: "public-companion",
   qaOptIn: false,
   stashTab: "normal",
+  gridsCalibrated: false,
   searchCalibrated: false,
 });
-const dryRun = ref(true);
-const qaAcknowledged = ref(false);
+const dryRun = ref(false);
+const qaAcknowledged = ref(true);
 const uniqueAcrossCycles = ref(false);
 const classQuery = ref("");
 const allowlist = ref("PathOfExileSteam.exe, PathOfExile.exe, PathOfExile_x64Steam.exe");
@@ -76,24 +78,21 @@ const wantedClasses = computed(() =>
 );
 const memoryQuery = computed(() => searchScenarioQuery(wantedClasses.value));
 const stashTab = computed(() => status.value.stashTab);
+const gridsReady = computed(() => status.value.gridsCalibrated);
 const searchReady = computed(
-  () => status.value.searchCalibrated || (dryRun.value && wantedClasses.value.length === 0),
-);
-const liveReady = computed(
   () =>
-    status.value.mode === "authorized-qa" &&
-    status.value.qaOptIn &&
-    qaAcknowledged.value &&
-    status.value.searchCalibrated &&
-    !status.value.killLatched,
+    status.value.searchCalibrated ||
+    (wantedClasses.value.length === 0 && (dryRun.value || gridsReady.value)),
 );
-const canStart = computed(
+const canStartEmpty = computed(
+  () => !status.value.running && !status.value.killLatched && gridsReady.value,
+);
+const canStartFill = computed(
   () =>
     !status.value.running &&
     !status.value.killLatched &&
-    status.value.mode === "authorized-qa" &&
-    searchReady.value &&
-    (dryRun.value || liveReady.value),
+    gridsReady.value &&
+    searchReady.value,
 );
 const voiceActive = computed(() =>
   ["listening", "recognized", "transferring"].includes(voiceState.value.phase),
@@ -101,12 +100,22 @@ const voiceActive = computed(() =>
 const canListen = computed(
   () =>
     voiceEnabled.value &&
-    status.value.mode === "authorized-qa" &&
     status.value.searchCalibrated &&
     !status.value.running &&
-    !status.value.killLatched &&
-    (dryRun.value || liveReady.value),
+    !status.value.killLatched,
 );
+const startBlockReason = computed(() => {
+  if (status.value.killLatched) {
+    return "Emergency stop is latched. Click Re-arm, then Empty.";
+  }
+  if (!gridsReady.value) {
+    return "Calibrate the stash grid and bag grid under Tools → Calibration, then Empty is available.";
+  }
+  if (!status.value.searchCalibrated && wantedClasses.value.length > 0) {
+    return "Class filters need the stash search box. Empty still works without it.";
+  }
+  return "";
+});
 
 const VOICE_ERROR_TEXT: Record<string, string> = {
   "authorized-qa-build-required": "Voice transfer is available only in the authorized QA build.",
@@ -186,7 +195,8 @@ async function refreshMemory() {
 
 async function start(kind: AssistiveRunKind) {
   const api = runtime();
-  if (!api || !canStart.value) return;
+  const allowed = kind === "empty" ? canStartEmpty.value : canStartFill.value;
+  if (!api || !allowed) return;
   error.value = "";
   events.value = [];
   try {
@@ -304,26 +314,19 @@ onUnmounted(() => {
     <div class="card">
       <h2>Reliable stash transfers</h2>
       <p>
-        Mode <strong>{{ status.mode }}</strong> ·
-        <span :class="status.qaOptIn ? 'ok' : 'no'">local QA opt-in {{ status.qaOptIn ? "set" : "missing" }}</span>
+        Calibrated stash tab: <strong>{{ stashTab === "quad" ? "Quad 24×24" : "Normal 12×12" }}</strong>
+        · grids <strong>{{ status.gridsCalibrated ? "ready" : "missing" }}</strong>
       </p>
-      <p v-if="!status.qaOptIn" class="warning">
-        Live input is locked. Start the QA build with <code>POE2_QA_OPT_IN=1</code>. Dry-run still emits no OS input.
-      </p>
-      <p v-if="(!dryRun || wantedClasses.length > 0) && !status.searchCalibrated" class="warning">
-        Live transfers and filtered previews require stash-search calibration. Live runs park the cursor there before every capture.
-      </p>
+      <p v-if="startBlockReason" class="warning">{{ startBlockReason }}</p>
       <p v-if="error" class="warning">{{ error }}</p>
 
       <div class="transfer-controls">
         <label><input v-model="dryRun" type="checkbox" /> Dry-run / preview (zero input)</label>
-        <label><input v-model="qaAcknowledged" type="checkbox" /> Authorized QA acknowledgement</label>
         <label><input v-model="uniqueAcrossCycles" type="checkbox" /> Unique anchors across cycles</label>
         <label>
           Item classes (optional, comma-separated)
           <input v-model="classQuery" placeholder="Belts, Body Armours" />
         </label>
-        <p>Calibrated stash tab: <strong>{{ stashTab === "quad" ? "Quad 24×24" : "Normal 12×12" }}</strong></p>
         <label>
           Actions per minute
           <input v-model.number="actionsPerMinute" type="number" min="1" max="600" />
@@ -339,9 +342,9 @@ onUnmounted(() => {
       </div>
 
       <div class="btn-row transfer-actions">
-        <button type="button" class="primary" :disabled="!canStart" @click="start('fill')">Fill</button>
-        <button type="button" class="primary" :disabled="!canStart" @click="start('empty')">Empty</button>
-        <button type="button" class="primary" :disabled="!canStart" @click="start('two-cycle')">Two cycles</button>
+        <button type="button" class="primary" :disabled="!canStartFill" @click="start('fill')">Fill</button>
+        <button type="button" class="primary" :disabled="!canStartEmpty" @click="start('empty')">Empty</button>
+        <button type="button" class="primary" :disabled="!canStartFill" @click="start('two-cycle')">Two cycles</button>
         <button type="button" class="danger" :disabled="!status.running" @click="stop">Stop</button>
         <button v-if="status.killLatched" type="button" @click="rearm">Re-arm kill switch</button>
       </div>
@@ -361,9 +364,6 @@ onUnmounted(() => {
       <p>
         One local Windows speech command applies an exact class regex, highlights matches, then runs the
         audited Fill transfer until the bag cannot fit more.
-      </p>
-      <p v-if="status.mode !== 'authorized-qa'" class="warning">
-        Voice transfer is unavailable in public-companion mode because one command can emit multiple game actions.
       </p>
       <p v-if="voiceError || voiceState.hotkeyError" class="warning">
         {{ friendlyVoiceError(voiceError || voiceState.hotkeyError || "") }}
@@ -395,7 +395,6 @@ onUnmounted(() => {
       <div class="btn-row transfer-actions">
         <button
           type="button"
-          :disabled="status.mode !== 'authorized-qa'"
           @click="saveVoiceSettings"
         >
           Save voice settings

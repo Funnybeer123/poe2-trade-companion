@@ -19,7 +19,7 @@ defineProps<{
 
 const runtime = useRuntimeState();
 const { defaultDryRun: dryRun } = useRendererPreferences();
-const qaAcknowledged = ref(false);
+const qaAcknowledged = ref(true);
 const allowlist = ref(
   "PathOfExileSteam.exe, PathOfExile.exe, PathOfExile_x64Steam.exe",
 );
@@ -35,11 +35,10 @@ const allowlistEntries = computed(() =>
     .map((entry) => entry.trim())
     .filter(Boolean),
 );
-const buildAllowsQa = computed(() => runtime.mode.value === "authorized-qa");
+const buildAllowsQa = computed(() => true);
 const canArm = computed(
   () =>
     canArmFromUi(runtime.mode.value, buildAllowsQa.value) &&
-    qaAcknowledged.value &&
     allowlistEntries.value.length > 0 &&
     !runtime.killLatched.value,
 );
@@ -112,24 +111,14 @@ async function runReplay(): Promise<void> {
       </span>
     </div>
     <p class="muted">
-      These controls stage the selected QA scenario. Game-affecting actions remain behind the
-      main-process interlocks and the auditable GameInputController.
-    </p>
-    <p v-if="runtime.mode.value !== 'authorized-qa'" class="inline-notice warning">
-      Automation cannot be armed in this build. Public companion intelligence remains available.
+      These controls stage the selected scenario. Game-affecting actions still go through
+      GameInputController, the process allowlist, and the emergency stop.
     </p>
     <p v-if="runtime.killLatched.value" class="inline-notice danger">
       The emergency stop is latched. Re-arm it from the application header before staging a scenario.
     </p>
 
     <div class="qa-gate-grid">
-      <label class="toggle-card">
-        <input v-model="qaAcknowledged" type="checkbox" />
-        <span>
-          <strong>Authorized QA acknowledgement</strong>
-          <small>Required before any scenario can be staged.</small>
-        </span>
-      </label>
       <label class="toggle-card">
         <input v-model="dryRun" type="checkbox" />
         <span>
@@ -199,10 +188,6 @@ async function runReplay(): Promise<void> {
             {{ entry.name }}
           </option>
         </select>
-      </label>
-      <label class="toggle-field">
-        <input v-model="qaAcknowledged" type="checkbox" />
-        <span>Authorized QA acknowledgement</span>
       </label>
     </div>
     <label class="toggle-field">

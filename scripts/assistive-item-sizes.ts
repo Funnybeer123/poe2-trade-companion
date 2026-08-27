@@ -181,9 +181,6 @@ try {
 
   if (!activeStashGrid(profile)) throw new Error("stash-grid-calibration-required");
   const mode = resolveBuildMode(process.env.POE2_BUILD_MODE);
-  if (mode !== "authorized-qa") throw new Error("authorized-qa-build-required");
-  if (process.env.POE2_QA_OPT_IN !== "1") throw new Error("qa-local-opt-in-required");
-  if (process.env.POE2_QA_ACK !== "1") throw new Error("qa-acknowledgement-required");
   const allowlist = (process.env.POE2_PROCESS_ALLOWLIST ??
     "PathOfExileSteam.exe,PathOfExile.exe,PathOfExile_x64Steam.exe")
     .split(/[;,]/)

@@ -69,25 +69,10 @@ describe("scanner runtime integration", () => {
     });
   });
 
-  it("keeps public builds and unacknowledged QA runs outside the scanner", async () => {
-    const publicService = new ScannerRuntimeService({
+  it("refuses a scanner run without a process allowlist", async () => {
+    const service = new ScannerRuntimeService({
       mode: "public-companion",
-      qaOptIn: true,
-      killSwitch: new KillSwitch(),
-      sessions: new ScanSessionStore(new InMemoryScanSessionStorage()),
-      clipboard: {
-        readText: async () => "",
-        writeText: async () => undefined,
-      },
-      profile,
-    });
-    await expect(publicService.start(request())).rejects.toThrow(
-      "authorized-qa-scanner-required",
-    );
-
-    const qaService = new ScannerRuntimeService({
-      mode: "authorized-qa",
-      qaOptIn: true,
+      qaOptIn: false,
       killSwitch: new KillSwitch(),
       sessions: new ScanSessionStore(new InMemoryScanSessionStorage()),
       clipboard: {
@@ -97,8 +82,8 @@ describe("scanner runtime integration", () => {
       profile,
     });
     await expect(
-      qaService.start({ ...request(), qaAcknowledged: false }),
-    ).rejects.toThrow("scanner-capability-not-armed");
+      service.start({ ...request(), allowlist: [] }),
+    ).rejects.toThrow("scanner-process-allowlist-required");
   });
 
   it("cancels a scan through the shared abort and controller boundary", async () => {

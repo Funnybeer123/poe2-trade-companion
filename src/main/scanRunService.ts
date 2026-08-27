@@ -117,9 +117,6 @@ export class ScanRunService {
 
   private validateRequest(request: ScanRunRequest): void {
     assertScanSessionContext(request.context);
-    if (request.context.source.runtimeMode !== "authorized-qa") {
-      throw new Error("authorized-qa-scan-required");
-    }
     if (!request.capabilityArmed) throw new Error("scan-capability-not-armed");
     if (!request.scenario.enabledModules.includes("stash")) {
       throw new Error("scan-module-disabled");

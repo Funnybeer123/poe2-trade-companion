@@ -60,7 +60,7 @@ describe("replay harness", () => {
     expect(controller.actionTraces[0]?.reason).toContain("kill-switch-latched");
   });
 
-  it("does not emit in public companion mode", async () => {
+  it("does not emit when the process is not allowlisted", async () => {
     const sink = new FakeInputSink();
     const controller = new GameInputController(sink, new KillSwitch(), "public-companion");
     const scenario = { ...PRESET_SCENARIOS.find((entry) => entry.id === "loot-only")!, dryRun: false };

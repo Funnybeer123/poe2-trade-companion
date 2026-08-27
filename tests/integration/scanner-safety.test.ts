@@ -72,18 +72,6 @@ describe("scanner safety integration", () => {
     const cases: Array<[ScanRunRequest, string]> = [
       [
         request({
-          context: {
-            ...TEST_SCAN_CONTEXT,
-            source: {
-              ...TEST_SCAN_CONTEXT.source,
-              runtimeMode: "public-companion",
-            },
-          },
-        }),
-        "authorized-qa-scan-required",
-      ],
-      [
-        request({
           scenario: { ...SCENARIO, enabledModules: [] },
         }),
         "scan-module-disabled",

@@ -49,7 +49,7 @@ The same codebase should also retain:
 - market watchers;
 - loot-filter generation.
 
-Automation modules must not arm in this mode.
+Stash transfer, sort, scan, and voice features are on in the default app. **Ctrl+Shift+Esc** stops generated input.
 
 ### Manual deal finder
 
@@ -157,14 +157,14 @@ GGG's current developer reference marks Account Stashes, Guild Stashes, and Publ
 
 See **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** for install, copying items from PoE 2, each workspace (Items, Finder, Builds, Rules, Scans, Tools), and authorized-QA gates.
 
-Quick start (public companion, no game input):
+Quick start:
 
 ```
 npm install
 npm run dev
 ```
 
-Hover an item in Path of Exile 2, copy it (`Ctrl+C`), then press **Ctrl+D** in the companion or use **Items → Read clipboard**.
+Hover an item in Path of Exile 2, copy it (`Ctrl+C`), then press **Ctrl+D** in the companion or use **Items → Read clipboard**. To empty the bag into stash, calibrate under Tools, open stash and inventory in-game, then use **Tools → Transfers → Empty**. **Ctrl+Shift+Esc** stops generated input.
 
 ## Develop
 ```

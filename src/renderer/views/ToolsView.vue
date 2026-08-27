@@ -57,12 +57,12 @@ const selectedTool = computed<ToolId>(() => {
       <section v-if="selectedTool === 'overview'" class="tools-overview">
         <div class="card tool-hero">
           <div>
-            <span class="eyebrow">Operational boundary</span>
-            <h2>Companion intelligence and QA controls stay separated</h2>
+            <span class="eyebrow">Operations</span>
+            <h2>Item intelligence and stash automation share one app</h2>
             <p>
-              Analysis tools are available in every build. Input-capable transfer and stash
-              workflows remain gated by authorized-QA mode, local opt-in, process allowlists,
-              and the global emergency stop.
+              Transfers, sorting, and scans can send input to Path of Exile. They still
+              require calibration, a matching game window, and the emergency stop
+              <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>Esc</kbd>.
             </p>
           </div>
           <div class="safety-seal" :class="{ qa: runtime.isAuthorizedQa.value }">

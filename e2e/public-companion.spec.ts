@@ -21,11 +21,11 @@ const RARE_RING = [
   "+35% to Cold Resistance",
 ].join("\n");
 
-test("public build keeps primary navigation companion-only", async ({}, testInfo) => {
+test("companion build exposes transfers and scanner controls", async ({}, testInfo) => {
   await withPackagedElectron("public-companion", testInfo, async ({ page }) => {
-    await expect(page.locator(".qa-banner")).toHaveCount(0);
+    await expect(page.getByText("Automation on", { exact: true })).toBeVisible();
     await expect(
-      page.getByText("Public mode · input locked", { exact: true }),
+      page.getByText("E-stop ready · Ctrl+Shift+Esc", { exact: true }),
     ).toBeVisible();
 
     const routes = [
@@ -42,16 +42,11 @@ test("public build keeps primary navigation companion-only", async ({}, testInfo
     await expect(scannerControls).toHaveCount(1);
     await scannerControls.locator("summary").click();
     await expect(
-      page.getByText("Public companion mode · scanner input locked.", {
-        exact: true,
-      }),
-    ).toBeVisible();
-    await expect(
       page.getByRole("button", {
-        name: "Run audited dry scan",
+        name: "Run live scan",
         exact: true,
       }),
-    ).toBeDisabled();
+    ).toBeEnabled();
 
     await navigatePrimary(page, "Tools & QA", "Tools & QA", "/tools/overview");
     const tools = page.getByRole("navigation", {
@@ -63,36 +58,14 @@ test("public build keeps primary navigation companion-only", async ({}, testInfo
       page.getByRole("heading", { name: "Automation dashboard", exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByText(
-        "Automation cannot be armed in this build. Public companion intelligence remains available.",
-        { exact: true },
-      ),
-    ).toBeVisible();
-    await expect(
       page.getByRole("button", {
         name: "Stage selected modules",
         exact: true,
       }),
-    ).toBeDisabled();
+    ).toBeEnabled();
     await expect(
       page.getByRole("checkbox", { name: /Dry-run default/i }),
-    ).toBeChecked();
-    await expect(page.getByText("Not staged", { exact: true })).toBeVisible();
-    await expect(page.locator(".qa-banner")).toHaveCount(0);
-    await expect(
-      page.getByText("Public mode · input locked", { exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("checkbox", {
-        name: /Authorized QA acknowledgement/i,
-      }),
     ).not.toBeChecked();
-    await expect(
-      page.getByRole("button", { name: "Disarm", exact: true }),
-    ).toBeDisabled();
-    await expect(
-      page.getByText("public-companion", { exact: true }).first(),
-    ).toBeVisible();
   });
 });
 
