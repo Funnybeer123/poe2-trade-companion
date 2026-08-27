@@ -17,11 +17,12 @@
 | Phase 05 | `1f1a0d3` on `cursor/phase-05-perception-estimator-1b5a` (PR #6) | Perception estimator complete |
 | Phase 06 | `684f24d` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery complete |
 | Phase 07 | `d7e6286` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
-| Current commit | (this branch) | Phase 08 first cut on `cursor/phase-08-item-valuation-45b0` |
+| Phase 08 first cut | `bdfa3c1` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
+| Current commit | (this update) | Gate + self-review on `cursor/phase-08-item-valuation-45b0` (PR #9) |
 
 ## Active phase
 
-Phase 08 — Item parsing / market valuation / desirability (first cut, gate pending).
+None. Phase 08 is complete. Next is Phase 09.
 
 ## Completed phases
 
@@ -32,12 +33,20 @@ Phase 08 — Item parsing / market valuation / desirability (first cut, gate pen
 - Phase 05 — `StateEstimator`, `FixturePerceptionAdapter`, merge/freshness/allowlist, `templateMatch`, `packages/perception-live` (Win32 process, `desktopCapturer` frame source, read-only clipboard), perception fixtures + `perception-estimate` replay.
 - Phase 06 — `FollowController`, `RecoveryController`, `direction.ts` click-to-move, `stuckDetector`, `lostTargetTicks`, `DEFAULT_RECOVERY`, replay packs `follow-lost-reacquire` / `follow-stuck-recovery` / `follow-emergency-stop`.
 - Phase 07 — `lootLabelDetector`, `LootController`, `InventoryController` stub, `FixtureDesirabilityScorer` / `DesirabilityPort`, rank/skip/suppression, replay packs `loot-desirable-vs-junk` / `loot-inventory-full` / `loot-unreachable-backoff`.
+- Phase 08 — English `parseItem` adapter, SHA-256 fingerprint, fixture + official Currency Exchange providers, Tukey 1.5 IQR valuation, `DesirabilityEngine` / composite router, `loot-market-aware` replay.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 08 first cut not yet gated. See later update after `npm test && npm run test:replay && npm run lint && npm run typecheck`.
+Phase 08 gate (2026-08-27, this host) — **green**:
+
+- `npm test` — 216 tests
+- `npm run test:replay` — 11 tests
+- `npm run lint`
+- `npm run typecheck`
+
+Self-review: `PASS` (`grok/REVIEW_STATE.md`).
 
 ## Blockers
 
@@ -55,7 +64,7 @@ Phase 08:
 - `parseClipboard` is **not executed**. `Parser.ts` imports `@/web/Config` and `@/assets/data`, and the data module imports `@/web/background/TradeData` plus Vite-hosted ndjson that is not in the EE2 git tree. Calling it would pull a trade-site client, which Phase 08 forbids. `parseItem` is the English clipboard adapter using EE2 `itemTextToSections` / nameplate grammar and vendored `ItemCategory` from `parser/meta.ts` (the only compiled vendor module).
 - Outlier method locked: Tukey 1.5 IQR (`OUTLIER_METHOD`). Samples with n < 4 are not filtered; low/fair/high then use min/median/max.
 - Default market path: fixtures + optional official Currency Exchange (`realm=poe2` only). No `trade2` client, no POESESSID/cookie capture.
-- `FixtureDesirabilityScorer` kept for label-only and adversarial loot. `DesirabilityEngine` runs when a `NormalizedItem` is available (parsed clipboard or direct item). `CompositeDesirabilityPort` routes.
+- `FixtureDesirabilityScorer` kept for label-only and adversarial loot. `DesirabilityEngine` runs when a `NormalizedItem` is available. Default port is `CompositeDesirabilityPort`.
 - `LootTarget.clipboardText` added so derived loot can carry clipboard dumps. Existing label-only fixtures unchanged.
 - SQLite cache writes go through `MarketCachePort` (`MemoryMarketCache` in core, `SqliteMarketCache` in persistence-sqlite). No new migration; uses `market_comparables_cache` / `valuations` from `001_init.sql`.
 
@@ -67,4 +76,4 @@ Phase 02/04/05/06/07 fixtures remain.
 
 ## Next exact work item
 
-Finish Phase 08 gate (`npm test && npm run test:replay && npm run lint && npm run typecheck`), self-review, then Phase 09 — Inventory / stash observation and reconciliation.
+Phase 09 — Inventory / stash observation and reconciliation.

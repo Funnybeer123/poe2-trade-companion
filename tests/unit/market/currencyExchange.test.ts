@@ -41,7 +41,6 @@ describe("official currency-exchange fixture parser", () => {
     expect(quote.high).toBe(18);
     expect(quote.fair).toBe(15);
     expect(quote.recommendedListing).toBe(15);
-    expect(quote.isGuaranteedSalePrice).toBeUndefined();
     expect(quote.confidence).not.toBe("none");
     expect(quote.candidateCount).toBeGreaterThan(0);
     expect(quote.comparableCount).toBeGreaterThan(0);

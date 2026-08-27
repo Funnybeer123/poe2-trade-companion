@@ -215,7 +215,7 @@ export function parseItem(snapshot: ItemSnapshot): ParseItemResult {
           areaLevel = area;
           continue;
         }
-        if (itemClassNormalized.includes("gem")) {
+        if (itemClassNormalized.includes("gem") && gemLevel === undefined) {
           const level = parseNumber(line, /^Level:\s*(\d+)/i);
           if (level !== undefined) {
             gemLevel = level;
@@ -240,7 +240,6 @@ export function parseItem(snapshot: ItemSnapshot): ParseItemResult {
       itemClassNormalized.includes("currency") ||
       className === ItemCategory.Currency;
     const resolvedBase = currencyLike ? name : (base ?? name);
-    const resolvedName = currencyLike || rarity === "normal" || rarity === "magic" ? name : name;
 
     const pseudos: Record<string, number> = {};
     if (areaLevel !== undefined) {
@@ -253,7 +252,7 @@ export function parseItem(snapshot: ItemSnapshot): ParseItemResult {
     const draft: Omit<NormalizedItem, "fingerprint"> = {
       class: className,
       rarity,
-      name: resolvedName,
+      name,
       base: resolvedBase,
       itemLevel,
       quality,

@@ -1,4 +1,4 @@
-import { createFixtureDesirabilityScorer } from "../items/fixtureDesirabilityScorer.js";
+import { createCompositeDesirability } from "../items/compositeDesirability.js";
 import type { DesirabilityPort } from "../items/desirabilityPort.js";
 import type { AutomationScenario } from "../scheduler/types.js";
 import type { LootTarget, WorldState } from "../world-state/types.js";
@@ -22,7 +22,7 @@ export function annotateLootTargets(
     port?: DesirabilityPort;
   } = {},
 ): LootTarget[] {
-  const port = options.port ?? createFixtureDesirabilityScorer();
+  const port = options.port ?? createCompositeDesirability();
   const minScore = resolveLootMinScore(scenario);
   const adversarial = isAdversarialScenario(scenario);
   const inventoryFull = options.inventoryFull === true;
