@@ -12,7 +12,7 @@
 | Plan branch | `176b090` (`cursor/implementation-plan-05a4`, PR #1) | Adds this implementation plan |
 | Phase 01 | `8c3ba93` on `cursor/phase-01-baseline-f3a0` (PR #2) | Workspace/CI baseline complete |
 | Phase 02 first cut | `64565d6` | WorldState + scheduler + fixtures |
-| Current commit | (this completion commit on `cursor/phase-02-world-state-scheduler-ca64`) | Gate + self-review |
+| Current commit | `cadbaef` | Gate + self-review on `cursor/phase-02-world-state-scheduler-ca64` (PR #3) |
 
 ## Active phase
 
