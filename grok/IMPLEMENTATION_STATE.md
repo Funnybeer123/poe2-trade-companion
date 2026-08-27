@@ -18,7 +18,8 @@
 | Phase 06 | `684f24d` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery complete |
 | Phase 07 | `d7e6286` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
 | Phase 08 | `91da7e2` on `cursor/phase-08-item-valuation-45b0` (PR #9) | Parse / valuation / desirability |
-| Phase 09 | `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
+| Phase 09 first cut | `b4af56f` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
+| Current commit | `b0a7e63` | Gate + self-review on `cursor/phase-09-inventory-observe-a61e` (PR #10) |
 
 ## Active phase
 
@@ -42,8 +43,8 @@ Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
 Phase 09 gate (2026-08-27, this host) — **green**:
 
-- `npm test`
-- `npm run test:replay`
+- `npm test` — 240 tests
+- `npm run test:replay` — 12 tests
 - `npm run lint`
 - `npm run typecheck`
 
