@@ -16,6 +16,8 @@ Phase 09 added `inventory-stale` (12/12 occupancy → `InventoryFull`; fixture d
 
 Phase 10 added `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab`, and `stash-emergency-stop` through the live `StashController`. Success is observed on the next fixture frame, never assumed from the drag.
 
+Phase 11 added `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip`, and `listing-emergency-stop` through the live `ListingController`. Recommended listing is policy math, never a guaranteed sale. Dry-run / replay emit zero native input.
+
 Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 
 | Phase | Fixture / suite |
@@ -28,7 +30,7 @@ Planned packs from `plans/IMPLEMENTATION_PLAN.md`:
 | 08 | `loot-market-aware` — added |
 | 09 | `inventory-stale` — added |
 | 10 | `stash-sort-success`, `stash-full-fallback`, `stash-failed-move-retry`, `stash-wrong-tab`, `stash-emergency-stop` — added |
-| 11 | `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip` |
+| 11 | `listing-apply-price`, `listing-reprice-stale`, `listing-low-confidence-skip`, `listing-emergency-stop` — added |
 | 12 | trade success + listed failure classes |
 | 13 | `full-loop`, interrupt-trade, interrupt-loot, emergency-stop |
 

@@ -110,6 +110,57 @@ export interface ListingUiView {
   currency?: string;
 }
 
+export type ListingState =
+  | "Idle"
+  | "SelectItem"
+  | "OpenListingUi"
+  | "ReadCurrentPrice"
+  | "ApplyPrice"
+  | "VerifyPrice"
+  | "StaleReprice"
+  | "FailedOrTimedOut"
+  | "Done";
+
+export interface ListingQuoteSnapshot {
+  providerId: string;
+  quotedAtMs: number;
+  currency: string;
+  low?: number;
+  fair?: number;
+  high?: number;
+  candidateCount: number;
+  comparableCount: number;
+  confidence: ConfidenceBucket;
+  lowConfidenceReason?: string;
+}
+
+export interface ListingCatalogItem {
+  fingerprint: string;
+  screenPoint?: PixelPoint;
+  quote: ListingQuoteSnapshot;
+  listedAtMs?: number;
+}
+
+export interface ListingSession {
+  state: ListingState;
+  fingerprint?: string;
+  verifyAttempts: number;
+  recommendedPrice?: number;
+  currency?: string;
+  lastEvent?: string;
+  repricing?: boolean;
+  openAttempts?: number;
+}
+
+export interface ListingHistoryRecord {
+  id: string;
+  fingerprint: string;
+  price?: number;
+  currency?: string;
+  createdAtMs: number;
+  result: string;
+}
+
 export interface PendingLootPickup {
   id: string;
   occupancy: number;
@@ -139,6 +190,9 @@ export interface WorldStateFlags {
   tradeRequested: boolean;
   stashSessionActive: boolean;
   listingSessionActive: boolean;
+  listingSession?: ListingSession | null;
+  listingCatalog?: ListingCatalogItem[];
+  pendingListingHistory?: ListingHistoryRecord | null;
   highValueInterruptScore: number;
   pendingLootPickup?: PendingLootPickup | null;
   lootSuppressedUntilMs?: Record<string, number>;

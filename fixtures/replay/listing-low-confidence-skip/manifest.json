@@ -1,0 +1,50 @@
+{
+  "id": "listing-low-confidence-skip",
+  "scenarioId": "list-and-reprice",
+  "seed": 23,
+  "frames": [
+    {
+      "tickId": 1,
+      "atMs": 10000,
+      "derived": {
+        "process": {
+          "value": { "name": "PathOfExile.exe", "title": "Path of Exile 2", "allowlisted": true },
+          "confidence": 1,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "flags": {
+          "listingSessionActive": true,
+          "listingCatalog": [
+            {
+              "fingerprint": "junk-ring-1",
+              "screenPoint": { "x": 1400, "y": 220 },
+              "quote": {
+                "providerId": "fixture",
+                "quotedAtMs": 10000,
+                "currency": "exalted",
+                "low": 0.1,
+                "fair": 0.2,
+                "high": 0.4,
+                "candidateCount": 2,
+                "comparableCount": 1,
+                "confidence": "low",
+                "lowConfidenceReason": "small-sample"
+              }
+            }
+          ]
+        },
+        "listing": {
+          "value": { "open": false },
+          "confidence": 0.8,
+          "observedAtMs": 10000,
+          "freshness": "fresh"
+        },
+        "ui": { "value": { "kind": "inventory" }, "confidence": 0.8, "observedAtMs": 10000, "freshness": "fresh" }
+      }
+    }
+  ],
+  "expect": [
+    { "tickId": 1, "selectedState": "Listing", "decisionReasonIncludes": "listing-skip:low-confidence", "executed": false, "sinkKind": "noop" }
+  ]
+}
