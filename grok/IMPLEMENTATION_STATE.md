@@ -11,7 +11,7 @@
 | Audited base (`main`) | `3bf2f91398a16a5250d351be818a41ca39e32762` | Docs-only repo; no toolchain |
 | Plan branch | `176b090` (`cursor/implementation-plan-05a4`, PR #1) | Adds this implementation plan |
 | Phase 01 bootstrap | `020d6b7` | First workspace/CI commit |
-| Current branch | `cursor/phase-01-baseline-f3a0` (PR #2) | Phase 01 vs `main` |
+| Current commit | `4a261bd` | Gate + self-review on `cursor/phase-01-baseline-f3a0` (PR #2) |
 
 ## Active phase
 
