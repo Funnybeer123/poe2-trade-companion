@@ -1,0 +1,15 @@
+{
+  "name": "@poe2tc/desktop",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/electron-main.js",
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.json",
+    "start": "npm run build && electron ."
+  },
+  "devDependencies": {
+    "electron": "^40.10.6"
+  }
+}
