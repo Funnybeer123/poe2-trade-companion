@@ -66,7 +66,9 @@ export function isInventoryFull(world: WorldState): boolean {
 
 export function hasHighValueLoot(world: WorldState): boolean {
   const threshold = highValueInterruptScore(world);
-  return lootTargets(world).some((item) => (item.score ?? 0) >= threshold);
+  return lootTargets(world).some(
+    (item) => item.skipReason === undefined && (item.score ?? 0) >= threshold,
+  );
 }
 
 export function hasPickupLoot(world: WorldState): boolean {

@@ -30,6 +30,7 @@ export interface AutomationScenario {
   retryLimits: Partial<Record<ModuleId, number>>;
   interruptRules: InterruptRule[];
   marketProviderId: string;
+  lootMinScore?: number;
   failureInjection?: FailureInjection;
 }
 

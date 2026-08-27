@@ -15,12 +15,13 @@
 | Phase 03 | `67ea3ae` on `cursor/phase-03-capabilities-interlock-input-9d76` (PR #4) | Capabilities, interlocks, GameInputController |
 | Phase 04 | `b2e17a5` on `cursor/phase-04-replay-trace-9afe` (PR #5) | Replay runner, traces, fixture frame source |
 | Phase 05 | `1f1a0d3` on `cursor/phase-05-perception-estimator-1b5a` (PR #6) | Perception estimator complete |
-| Phase 06 first cut | `0016d72` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery controllers + fixtures |
-| Current commit | `88616bd` | Gate + self-review on `cursor/phase-06-follow-navigation-8044` (PR #7) |
+| Phase 06 | `684f24d` on `cursor/phase-06-follow-navigation-8044` (PR #7) | Follow/recovery complete |
+| Phase 07 first cut | `ca1357e` on `cursor/phase-07-loot-detection-944f` (PR #8) | Loot detector / rank / pickup |
+| Current commit | `d7e6286` | Gate + self-review on `cursor/phase-07-loot-detection-944f` (PR #8) |
 
 ## Active phase
 
-None. Phase 06 is complete. Next is Phase 07.
+None. Phase 07 is complete. Next is Phase 08.
 
 ## Completed phases
 
@@ -30,15 +31,16 @@ None. Phase 06 is complete. Next is Phase 07.
 - Phase 04 — `FixtureFrameSource`, `ReplayRunner`, `QaTraceWriter`, `InMemoryTraceSink`, `AutomationLoop`, SQLite migration runner + `SqliteTraceStore`, `follow-acquired` replay fixture, scenario catalog JSON.
 - Phase 05 — `StateEstimator`, `FixturePerceptionAdapter`, merge/freshness/allowlist, `templateMatch`, `packages/perception-live` (Win32 process, `desktopCapturer` frame source, read-only clipboard), perception fixtures + `perception-estimate` replay.
 - Phase 06 — `FollowController`, `RecoveryController`, `direction.ts` click-to-move, `stuckDetector`, `lostTargetTicks`, `DEFAULT_RECOVERY`, replay packs `follow-lost-reacquire` / `follow-stuck-recovery` / `follow-emergency-stop`.
+- Phase 07 — `lootLabelDetector`, `LootController`, `InventoryController` stub, `FixtureDesirabilityScorer` / `DesirabilityPort`, rank/skip/suppression, replay packs `loot-desirable-vs-junk` / `loot-inventory-full` / `loot-unreachable-backoff`.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 06 gate (2026-08-27, this host) — **green**:
+Phase 07 gate (2026-08-27, this host) — **green**:
 
-- `npm test` — 173 tests
-- `npm run test:replay` — 7 tests
+- `npm test` — 197 tests
+- `npm run test:replay` — 10 tests
 - `npm run lint`
 - `npm run typecheck`
 
@@ -46,33 +48,33 @@ Self-review: `PASS` (`grok/REVIEW_STATE.md`).
 
 ## Blockers
 
-- **BLOCKED: windows-native** — unchanged. Live follow dry-run overlay / one armed click-move is skipped on this Linux host. Defaults stay `PathOfExile.exe` / `PathOfExile_x64.exe` / `PathOfExileSteam.exe` and title include `Path of Exile 2`. See `RESEARCH_NOTES.md`.
+- **BLOCKED: windows-native** — unchanged. Live dry-run loot highlights / one armed pickup skipped on this Linux host.
 - External / later-phase: Windows live client, OAuth registration freeze, no official PoE 2 stash/trade-search API.
 
 ## Plan deviations
 
-Phase 01–05 deviations unchanged except: Phase 04 Follow placeholder noops are removed from the live controller map.
+Phase 01–06 deviations unchanged.
 
-Phase 06:
+Phase 07:
 
-- `FollowConfig` matches the plan. Screen size used for v1 click-to-move is the existing replay default `1920x1080` (`DEFAULT_SCREEN_WIDTH/HEIGHT`), not a new WorldState field.
-- Estimator writes `world.stuck` (`ticks`, `lostTargetTicks`, `isStuck`, `reason`) so controllers stay stateless and do not keep a parallel world model. Fixture `derived.stuck` still overrides when provided.
-- `SafetyHold` is eligible when `stuck.reason === "stuck-exhausted"`. `RecoverTarget` is ineligible when `stuck.reason === "lost-target-exhausted"` so lost-target recovery terminates at Idle.
-- Recovery scan clicks are bounded by `DEFAULT_RECOVERY["follow.lost-target"].maxAttempts` (5). `lostTargetTicks` (default 8) is the consecutive-missing counter and the RecoverTarget eligibility window.
-- Lost-target replay frames omit `target` and advance past `AGING_MAX_AGE_MS` so the estimator marks `missing` (same merge path as Phase 05). A confidence-1 `target: null` observation would block a later lower-confidence reacquire.
-- `createPhase04ControllerMap` is replaced by `createControllerMap` (Follow + Recovery + Idle + EmergencyStop/SafetyHold).
-- Loot/stash/listing/trade are not implemented (Phase 07+).
+- `AutomationScenario.lootMinScore` is optional (default 40). Adversarial means `lowConfidencePolicy === "adversarial-execute"`.
+- `FixtureDesirabilityScorer` is the real `DesirabilityPort` for this gate. Keyword/rarity/fixture-score mapping only; no parser or market (Phase 08).
+- `lootLabelDetector` prefers `derived.loot`, otherwise color-blob rarity detection on `frame.pixels` plus optional `OcrPort`. No `tesseract.js` in `packages/core`.
+- Pickup attempt / 15s suppression lives on `WorldState.flags` (`pendingLootPickup`, `lootAttemptCounts`, `lootLastAttemptMs`, `lootSuppressedUntilMs`). Estimator observes success (label gone or occupancy up) and applies `DEFAULT_RECOVERY["loot.unreachable"]`. Controllers stay stateless.
+- Inventory controller is a Phase 07 stub: `InventoryFull` → noop `inventory-full`; `applyPostDecisionEffects` sets `flags.stashSessionActive`. Real inventory/stash observation is Phase 09.
+- `hasHighValueLoot` ignores items with `skipReason` so suppressed or junk labels do not keep HighValueLoot selected.
+- Scoring/skip annotation runs in `AutomationLoop` after the estimator and before the scheduler so `LootTarget.score` / `skipReason` are visible to `HighValueLoot` / `LootPickup`.
 
 ## Replay fixtures added
 
-- `fixtures/replay/follow-lost-reacquire/` — follow → lost → recover → reacquire.
-- `fixtures/replay/follow-stuck-recovery/` — no-progress ticks → stuck-recovery → SafetyHold `stuck-exhausted`.
-- `fixtures/replay/follow-emergency-stop/` — follow tick then emergency latch.
+- `fixtures/replay/loot-desirable-vs-junk/` — Divine picked, Wisdom skipped, observed pickup → Idle.
+- `fixtures/replay/loot-inventory-full/` — full inventory → `InventoryFull`, no pickup clicks.
+- `fixtures/replay/loot-unreachable-backoff/` — two failed pickups → 15s suppress.
 
-Phase 02/04/05 fixtures remain.
+Phase 02/04/05/06 fixtures remain.
 
 ## Next exact work item
 
-Phase 07 — Loot detection / ranking / pickup.
+Phase 08 — Item parsing / market valuation / desirability.
 
-Suggested commit from the plan: `feat: add loot detection, ranking, and pickup controller`.
+Suggested commit from the plan: `feat: add PoE2 item parse, valuation, and desirability engine`.

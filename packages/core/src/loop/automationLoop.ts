@@ -4,19 +4,24 @@ import type { RuntimeCapabilities, QaArmingState } from "../capabilities/createC
 import { createControllerMap } from "../controllers/controllerMap.js";
 import type { Controller } from "../controllers/types.js";
 import type { DefaultGameInputController } from "../input/gameInputController.js";
-import type { BotDecision } from "../input/types.js";
+import type { BotDecision, InputAction } from "../input/types.js";
 import type { InterlockContext, InterlockVerdict } from "../interlock/types.js";
+import type { DesirabilityPort } from "../items/desirabilityPort.js";
+import { createFixtureDesirabilityScorer } from "../items/fixtureDesirabilityScorer.js";
+import { annotateLoot } from "../loot/annotateLoot.js";
+import { LOOT_RECOVERY_KEY } from "../loot/skipReasons.js";
 import { createFixturePerceptionAdapter } from "../perception/fixturePerceptionAdapter.js";
 import { createStateEstimator } from "../perception/stateEstimator.js";
 import type { FrameSource, PerceptionAdapter, PerceptionFrame, StateEstimator } from "../perception/types.js";
 import { analyzeFailureFrame } from "../perception/uiMode.js";
+import { DEFAULT_RECOVERY } from "../recovery/defaultRecovery.js";
 import { STATE_MODULE } from "../scheduler/predicates.js";
 import type { AutomationScenario, ScenarioScheduler } from "../scheduler/types.js";
 import type { QaActionTrace } from "../trace/types.js";
 import type { QaTraceWriter } from "../trace/qaTraceWriter.js";
 import { createEmptyWorldState } from "../world-state/createEmptyWorldState.js";
 import type { AutomationStateId, WorldState } from "../world-state/types.js";
-import { isoTimestampFromMs, summarizeWorld } from "./traceHelpers.js";
+import { isoTimestampFromMs, summarizeLoot, summarizeWorld } from "./traceHelpers.js";
 
 export type AutomationTickResult =
   | { result: "end-of-stream" }
@@ -40,6 +45,7 @@ export interface AutomationLoopOptions {
   controllers?: Map<AutomationStateId, Controller>;
   perception?: PerceptionAdapter;
   estimator?: StateEstimator;
+  desirability?: DesirabilityPort;
 }
 
 function placeholderDecision(state: AutomationStateId): BotDecision {
@@ -60,6 +66,62 @@ function syncFrozenClock(clock: Clock, targetMs: number): void {
   }
 }
 
+function lootIdFromDecision(decision: BotDecision, world: WorldState, click: InputAction): string | undefined {
+  const fromEvidence = decision.evidenceIds.find((id) => id.startsWith("loot:"));
+  if (fromEvidence !== undefined) {
+    return fromEvidence.slice("loot:".length);
+  }
+  const pickMatch = /pick:([^;]+)/.exec(decision.reason);
+  if (pickMatch?.[1] !== undefined) {
+    return pickMatch[1];
+  }
+  if (click.type !== "mouse-click") {
+    return undefined;
+  }
+  return world.loot.value.find(
+    (item) => item.screenPoint.x === click.x && item.screenPoint.y === click.y,
+  )?.id;
+}
+
+export function applyPostDecisionEffects(
+  world: WorldState,
+  decision: BotDecision,
+  nowMs: number,
+): WorldState {
+  const flags = { ...world.flags };
+  if (
+    world.inventory.value.full &&
+    (decision.module === "inventory" ||
+      decision.state === "InventoryFull" ||
+      world.selectedState === "InventoryFull")
+  ) {
+    flags.stashSessionActive = true;
+  }
+
+  const click = decision.intendedActions.find((action) => action.type === "mouse-click");
+  if (decision.module === "loot" && click !== undefined) {
+    const id = lootIdFromDecision(decision, world, click);
+    if (id !== undefined) {
+      flags.pendingLootPickup = {
+        id,
+        occupancy: world.inventory.value.occupied,
+        clickedAtMs: nowMs,
+      };
+      flags.lootLastAttemptMs = { ...(flags.lootLastAttemptMs ?? {}), [id]: nowMs };
+    }
+  }
+
+  if (decision.suppressTargetIds !== undefined && decision.suppressTargetIds.length > 0) {
+    const until = nowMs + (DEFAULT_RECOVERY[LOOT_RECOVERY_KEY]?.suppressMs ?? 15_000);
+    flags.lootSuppressedUntilMs = { ...(flags.lootSuppressedUntilMs ?? {}) };
+    for (const id of decision.suppressTargetIds) {
+      flags.lootSuppressedUntilMs[id] = until;
+    }
+  }
+
+  return { ...world, flags };
+}
+
 export class AutomationLoop {
   readonly #frameSource: FrameSource;
   readonly #scheduler: ScenarioScheduler;
@@ -72,6 +134,7 @@ export class AutomationLoop {
   readonly #controllers: Map<AutomationStateId, Controller>;
   readonly #perception: PerceptionAdapter;
   readonly #estimator: StateEstimator;
+  readonly #desirability: DesirabilityPort;
   #world: WorldState;
 
   constructor(options: AutomationLoopOptions) {
@@ -91,6 +154,7 @@ export class AutomationLoop {
         clock: options.clock,
         arming: options.arming,
       });
+    this.#desirability = options.desirability ?? createFixtureDesirabilityScorer();
     this.#world = createEmptyWorldState({
       clock: options.clock,
       runtimeMode: options.capabilities.mode,
@@ -123,16 +187,17 @@ export class AutomationLoop {
     } catch (error) {
       estimated = this.#estimator.estimate(this.#world, analyzeFailureFrame(frame, error));
     }
-    const previousState = estimated.selectedState;
-    const selection = this.#scheduler.select(estimated, this.#scenario);
+    const scored = annotateLoot(estimated, this.#scenario, this.#desirability);
+    const previousState = scored.selectedState;
+    const selection = this.#scheduler.select(scored, this.#scenario);
     const world: WorldState = {
-      ...estimated,
+      ...scored,
       previousState,
       selectedState: selection.state,
       flags: {
-        ...estimated.flags,
+        ...scored.flags,
         emergencyStopLatched:
-          estimated.flags.emergencyStopLatched || this.#arming.emergencyStopLatched,
+          scored.flags.emergencyStopLatched || this.#arming.emergencyStopLatched,
       },
       clockMs: this.#clock.nowMs(),
     };
@@ -140,6 +205,7 @@ export class AutomationLoop {
 
     const controller = this.#controllers.get(selection.state);
     const decision = controller?.decide(world, this.#scenario) ?? placeholderDecision(selection.state);
+    this.#world = applyPostDecisionEffects(world, decision, this.#clock.nowMs());
 
     const ctx: InterlockContext = {
       capabilities: this.#capabilities,
@@ -177,7 +243,7 @@ export class AutomationLoop {
           ? { name: processValue.name, title: processValue.title }
           : undefined,
       evidenceId: world.target.evidenceId ?? perceptionFrame.evidenceId,
-      observedSummary: summarizeWorld(world),
+      observedSummary: summarizeWorld(this.#world),
       confidence: decision.confidence,
       decisionReason: decision.reason,
       intendedActions: decision.intendedActions,
@@ -185,11 +251,12 @@ export class AutomationLoop {
       executed,
       dryRun,
       result: executed ? "executed" : (results[0]?.blockedReason ?? verdict.code),
+      followUpSummary: summarizeLoot(this.#world),
       recoveryOf: decision.recoveryOf,
       retryIndex: decision.retryIndex,
     });
 
-    return { result: "ticked", trace, world, decision, verdict };
+    return { result: "ticked", trace, world: this.#world, decision, verdict };
   }
 }
 

@@ -23,5 +23,6 @@
     { "higher": "StashSort", "lower": "Follow", "when": "stash-session-active" },
     { "higher": "Listing", "lower": "Follow", "when": "listing-session-active" }
   ],
-  "marketProviderId": "fixture"
+  "marketProviderId": "fixture",
+  "lootMinScore": 40
 }
