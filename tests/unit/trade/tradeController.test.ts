@@ -67,6 +67,29 @@ describe("TradeController", () => {
     expect(next.flags.tradeSession?.state).toBe("CleanupPartySession");
   });
 
+  it("rejects a partial stack even when currency and amount match", () => {
+    const world = withTradeSession(
+      createTradeWorld((next) => {
+        next.flags.tradeExpected = { ...next.flags.tradeExpected!, stackSize: 5 };
+        next.trade = {
+          value: {
+            open: true,
+            ourSlots: [],
+            theirSlots: [],
+            observedOffer: { currency: "divine", amount: 10, stackSize: 3 },
+          },
+          confidence: 0.95,
+          observedAtMs: 10_000,
+          freshness: "fresh",
+        };
+      }),
+      "AcceptOrReject",
+      { expected: { itemFingerprint: "astramentis-1", currency: "divine", amount: 10, stackSize: 5 } },
+    );
+    const decision = new TradeController().decide(world, createTestScenario());
+    expect(decision.reason).toBe("trade-reject:partial-stack");
+  });
+
   it("fails a missing requested item", () => {
     const world = withTradeSession(createTradeWorld((next) => {
       next.inventory = {

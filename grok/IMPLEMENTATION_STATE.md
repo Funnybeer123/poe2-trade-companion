@@ -21,11 +21,12 @@
 | Phase 09 | `53072a6` on `cursor/phase-09-inventory-observe-a61e` (PR #10) | Inventory / stash observation |
 | Phase 10 | `0fee99f` on `cursor/phase-10-stash-sort-b8bf` (PR #11) | Stash sort complete |
 | Phase 11 | `da19a84` / `1e85af7` on `cursor/phase-11-listing-reprice-e0c0` (PR #12) | Listing machine complete |
-| Current commit | (this branch) | Phase 12 trade-session machine on `cursor/phase-12-trade-session-b5b9` |
+| Phase 12 first cut | `792f814` on `cursor/phase-12-trade-session-b5b9` (PR #13) | Trade machine + replay corpus |
+| Current commit | (this revision) | Gate + self-review on `cursor/phase-12-trade-session-b5b9` (PR #13) |
 
 ## Active phase
 
-Phase 12 — Trade-session QA state machine. Gate commands pending on this revision.
+None. Phase 12 is complete. Next is Phase 13.
 
 ## Completed phases
 
@@ -40,12 +41,20 @@ Phase 12 — Trade-session QA state machine. Gate commands pending on this revis
 - Phase 09 — `gridDetector`, `ShadowState` / `reconcile` (`ShadowItem`, `ReconcileResult`), estimator fills grid cells, real `InventoryController` (sets `stashSessionActive` when full; no transfers), SQLite inventory/stash snapshot persist + stale reload, replay `inventory-stale`.
 - Phase 10 — `sortRules`, `transferPlanner` (pure, high value first), `StashController` for `InventoryFull` / `StashSort`. Transfers confirm after reconcile only. Max 3 attempts via `stash.failed-move` / `stash.wrong-tab`. Replay packs `stash-sort-success` / `stash-full-fallback` / `stash-failed-move-retry` / `stash-wrong-tab` / `stash-emergency-stop`.
 - Phase 11 — `pricePolicy`, table-driven `listingStateMachine`, `ListingController`. Recommended listing = `fair * (1 - undercutPct)` unless below `low`. Persist `listing_history`. Replay packs `listing-apply-price` / `listing-reprice-stale` / `listing-low-confidence-skip` / `listing-emergency-stop`.
+- Phase 12 — table-driven `tradeStateMachine` with `TRADE_ALLOWED_EDGES`, `TradeController`, `TradeEventPort` (fixture / opted-in client-log / reserved GGG test interface), `trade_sessions` upsert on each transition. Accept only on observed currency + amount within tolerance (default reject). Replay packs for success and every listed failure class, plus emergency stop in each major state.
 
 ## Build / test status
 
 Host Node: `v22.14.0`. `.nvmrc` pins `22`. No Node-version deviation.
 
-Phase 12 typecheck: green on this host before the first commit. Full `npm test && npm run test:replay && npm run lint && npm run typecheck` pending.
+Phase 12 gate (2026-08-27, this host) — **green**:
+
+- `npm test` — 332 tests
+- `npm run test:replay` — 33 tests
+- `npm run lint`
+- `npm run typecheck`
+
+Self-review: `PASS` (`grok/REVIEW_STATE.md`).
 
 ## Blockers
 
@@ -65,21 +74,24 @@ Phase 12:
 - Trade machine session lives on `world.flags.tradeSession`. Controllers stay stateless.
 - Phase 13 orchestrator rewrite was not started. `TradeController` is wired into the existing `createControllerMap` / `AutomationLoop` only.
 - Default wait-state timeout is 20s (`tradeWaitTimeoutMs`). Named QA fixture coordinates in `trade/geometry.ts`.
+- In-progress `tradeSession.expected` wins over a new whisper `expected` so mid-session stack/amount rules cannot be overwritten.
 
 ## Replay fixtures added
 
-- `trade-success`
-- `trade-wrong-currency`
-- `trade-insufficient-currency`
-- `trade-wrong-item`
-- `trade-missing-item`
-- `trade-partial-stack`
-- `trade-timeout`
-- `trade-cancelled`
-- `trade-disconnect`
-- `trade-ui-desync`
-- `trade-emergency-stop` (each major state) plus in-memory ReplayRunner coverage per major state
+- `fixtures/replay/trade-success/` — request → validate → invite → prepare → navigate → open → place → observe → validate → accept → cleanup.
+- `fixtures/replay/trade-wrong-currency/` — reject path.
+- `fixtures/replay/trade-insufficient-currency/` — reject path.
+- `fixtures/replay/trade-wrong-item/` — validate fails.
+- `fixtures/replay/trade-missing-item/` — validate fails.
+- `fixtures/replay/trade-partial-stack/` — reject path.
+- `fixtures/replay/trade-timeout/` — 20s wait-state timeout.
+- `fixtures/replay/trade-cancelled/` — cancelled → FailedOrTimedOut.
+- `fixtures/replay/trade-disconnect/` — cleanup then failed.
+- `fixtures/replay/trade-ui-desync/` — FailedOrTimedOut.
+- `fixtures/replay/trade-emergency-stop/` — emergency stop in each major state.
+
+Phase 02–11 fixtures remain.
 
 ## Next exact work item
 
-Finish the Phase 12 gate (`npm test && npm run test:replay && npm run lint && npm run typecheck`), self-review, then Phase 13 — full-loop orchestrator.
+Phase 13 — Full orchestration / interruption / recovery. Do not start operator UI.

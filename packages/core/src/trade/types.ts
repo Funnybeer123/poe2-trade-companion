@@ -1,9 +1,7 @@
 import type {
   ExpectedTrade,
-  ObservedTradeOffer,
   TradeEvent,
   TradeEventSource,
-  TradeSession,
   TradeSessionRecord,
   TradeState,
 } from "../world-state/types.js";

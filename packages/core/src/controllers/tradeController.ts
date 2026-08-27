@@ -60,7 +60,10 @@ function placedFingerprint(world: WorldState): string | undefined {
 }
 
 function resolveExpected(world: WorldState, session: TradeSession, event: TradeEvent | undefined): ExpectedTrade | undefined {
-  return event?.expected ?? session.expected ?? world.flags.tradeExpected;
+  if (session.state !== "Idle" && session.expected !== undefined) {
+    return session.expected;
+  }
+  return event?.expected ?? world.flags.tradeExpected;
 }
 
 export class TradeController implements Controller {

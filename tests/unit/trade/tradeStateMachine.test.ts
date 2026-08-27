@@ -1,5 +1,4 @@
 import {
-  TRADE_ALLOWED_EDGES,
   TRADE_MAJOR_STATES,
   TRADE_STATES,
   TRADE_TRANSITIONS,
@@ -58,6 +57,7 @@ describe("trade state machine", () => {
   it("publishes a strict allowed-edges map covering every transition rule", () => {
     for (const rule of TRADE_TRANSITIONS) {
       expect(isAllowedTradeEdge(rule.from, rule.to), `${rule.from}->${rule.to}`).toBe(true);
+      expect(() => assertAllowedTradeEdge(rule.from, rule.to)).not.toThrow();
     }
     expect(TRADE_MAJOR_STATES.length).toBeGreaterThan(0);
     expect(TRADE_WAIT_STATES.length).toBeGreaterThan(0);

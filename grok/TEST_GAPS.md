@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 12 implemented)
+**Updated:** 2026-08-27 (Phase 12 complete)
 
 ## Covered in Phase 01
 
@@ -124,7 +124,7 @@
 | Inventory / stash reconcile | 09 (done) |
 | Stash transfers | 10 (done) |
 | Listing machine | 11 (done) |
-| Trade machine | 12 (implemented) |
+| Trade machine | 12 (done) |
 | Full-loop orchestrator | 13 |
 | Playwright overlay smoke | 14 |
 | Public vs QA packaging | 15 |
