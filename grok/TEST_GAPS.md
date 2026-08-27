@@ -1,6 +1,6 @@
 # Test Gaps
 
-**Updated:** 2026-08-27 (Phase 08 complete)
+**Updated:** 2026-08-27 (Phase 09 complete)
 
 ## Covered in Phase 01
 
@@ -84,12 +84,23 @@
 - Integration: label-only skip vs market-aware pickup
 - Replay: `loot-market-aware`
 
+## Covered in Phase 09
+
+- Reconcile match / missing / unexpected / stale / full
+- Occupied cells without fingerprints do not invent shadow items
+- `gridDetector` fixture cells + pixel occupancy + clipboard hover fingerprint
+- Estimator fills grid cells from the detector and recomputes `full`
+- `InventoryController` sets `stashSessionActive` when full and emits no transfers
+- Trace reason `shadow-mismatch` when reconcile reports missing/unexpected
+- SQLite inventory/stash snapshot persist + reload after a new DB connection (`freshness: "stale"`)
+- Replay `inventory-stale`: 12/12 → `InventoryFull`; drop cell → no longer full
+
 ## Intentionally absent (later phases)
 
 | Gap | First phase |
 | --- | --- |
 | Parser / valuation | 08 (done) |
-| Inventory / stash reconcile | 09 |
+| Inventory / stash reconcile | 09 (done) |
 | Stash transfers | 10 |
 | Listing machine | 11 |
 | Trade machine | 12 |
@@ -99,4 +110,4 @@
 
 ## Replay
 
-`npm run test:replay` now also includes `loot-desirable-vs-junk`, `loot-inventory-full`, and `loot-unreachable-backoff`. See `REPLAY_BACKLOG.md`.
+`npm run test:replay` now also includes `inventory-stale`. See `REPLAY_BACKLOG.md`.

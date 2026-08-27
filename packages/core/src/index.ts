@@ -150,6 +150,16 @@ export type {
   LootLabelDetectorOptions,
   RarityColor,
 } from "./perception/lootLabelDetector.js";
+export {
+  DEFAULT_EMPTY_CELL_COLOR,
+  DEFAULT_OCCUPIED_DISTANCE,
+  DEFAULT_OCCUPIED_VOTE_RATIO,
+  GridDetector,
+  createGridDetector,
+  detectGrids,
+  gridHintsFromDerived,
+} from "./perception/gridDetector.js";
+export type { DetectedGrids, GridDetectorOptions } from "./perception/gridDetector.js";
 export { FixtureOcrPort, NoopOcrPort } from "./perception/ocrPort.js";
 export type { OcrInput, OcrPort, OcrResult } from "./perception/ocrPort.js";
 export { createStateEstimator, DefaultStateEstimator } from "./perception/stateEstimator.js";
@@ -176,6 +186,43 @@ export { RecoveryController } from "./controllers/recoveryController.js";
 export { LootController } from "./controllers/lootController.js";
 export { InventoryController } from "./controllers/inventoryController.js";
 export { createControllerMap } from "./controllers/controllerMap.js";
+
+export type { ReconcileResult, ShadowItem } from "./inventory/types.js";
+export { hasShadowMismatch, locationKey } from "./inventory/types.js";
+export {
+  INVENTORY_NOT_FULL_REASON,
+  INVENTORY_OBSERVED_REASON,
+  SHADOW_MISMATCH_REASON,
+  withShadowMismatchReason,
+} from "./inventory/reasons.js";
+export type { GridDetectionHints, GridGeometry, GridHover } from "./inventory/gridGeometry.js";
+export {
+  makeGridCells,
+  occupancyFromCells,
+  stashTabFull,
+} from "./inventory/occupancy.js";
+export type { OccupancyCounts, OccupancyFallback } from "./inventory/occupancy.js";
+export { DEFAULT_SHADOW_STALE_AFTER_MS, reconcile } from "./inventory/reconcile.js";
+export type { ReconcileInput } from "./inventory/reconcile.js";
+export { ShadowState, createShadowState, shadowItemsFromCells } from "./inventory/shadowState.js";
+export { estimateInventory } from "./inventory/estimateInventory.js";
+export type { EstimateInventoryInput, EstimateInventoryResult } from "./inventory/estimateInventory.js";
+export {
+  MemoryInventorySnapshotStore,
+  applyStaleSnapshots,
+  createMemoryInventorySnapshotStore,
+  inventorySnapshotFromWorld,
+  shouldPersistInventory,
+  shouldPersistStash,
+  stashSnapshotFromWorld,
+} from "./inventory/snapshots.js";
+export type {
+  InventoryGridSnapshot,
+  InventorySnapshotStore,
+  StashGridSnapshot,
+  StoredInventorySnapshot,
+  StoredStashSnapshot,
+} from "./inventory/snapshots.js";
 
 export type {
   DesirabilityCategory,
@@ -329,7 +376,7 @@ export {
   redactSecrets,
 } from "./trace/redact.js";
 
-export { isoTimestampFromMs, summarizeLoot, summarizeWorld } from "./loop/traceHelpers.js";
+export { isoTimestampFromMs, summarizeInventory, summarizeLoot, summarizeWorld } from "./loop/traceHelpers.js";
 export { applyPostDecisionEffects, AutomationLoop, createAutomationLoop } from "./loop/automationLoop.js";
 export type { AutomationLoopOptions, AutomationTickResult } from "./loop/automationLoop.js";
 

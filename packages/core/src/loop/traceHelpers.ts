@@ -12,11 +12,17 @@ export function summarizeLoot(world: WorldState): string {
     .join(",")}`;
 }
 
+export function summarizeInventory(world: WorldState): string {
+  const inventory = world.inventory.value;
+  const mismatch = world.flags.shadowMismatch === true ? " mismatch=shadow-mismatch" : "";
+  return `inventory=${String(inventory.occupied)}/${String(inventory.capacity)} full=${String(inventory.full)}${mismatch}`;
+}
+
 export function summarizeWorld(world: WorldState): string {
   const identity = world.target.value?.identity;
   const targetText = identity === undefined ? "target=none" : `target=${identity}`;
   const processName = world.process.value.name ?? "unknown";
-  return `${targetText} process=${processName} ui=${world.ui.value.kind} ${summarizeLoot(world)}`;
+  return `${targetText} process=${processName} ui=${world.ui.value.kind} ${summarizeInventory(world)} ${summarizeLoot(world)}`;
 }
 
 export function isoTimestampFromMs(ms: number): string {

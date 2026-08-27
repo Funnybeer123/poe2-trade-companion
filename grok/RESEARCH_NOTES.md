@@ -85,6 +85,18 @@ Confirmed still true (matches plan §3.1–§3.2):
 
 Rate-limit behavior: honor `Retry-After`; do not retry-storm. Unit tests inject `fetch` and use `fixtures/market/currency-exchange-hourly.json`.
 
+## 2026-08-27 — Phase 09 official stash API re-check
+
+Source fetched: https://www.pathofexile.com/developer/docs/reference
+
+Confirmed still true (matches plan §3.1 / §12.1):
+
+- Header: “There are currently limited APIs that return PoE2 game information.”
+- Account Stashes, Guild Stashes, Public Stashes: **PoE 1 only**.
+- Character `inventory` and `rucksack`: **PoE1 only**.
+- No documented official PoE 2 stash or inventory API.
+- No `StashApiObservationPort` added. Observation is perception + clipboard hover + local shadow state only. No invented endpoints.
+
 ## Deferred
 
 - Actual PoE 2 process image names / window title on a Windows client (still unverified).

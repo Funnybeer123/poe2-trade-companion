@@ -1,0 +1,150 @@
+{
+  "kind": "stash-tab",
+  "geometry": {
+    "originX": 0,
+    "originY": 0,
+    "cellWidth": 16,
+    "cellHeight": 16,
+    "columns": 4,
+    "rows": 3,
+    "tabId": "currency"
+  },
+  "occupied": [
+    [
+      0,
+      0
+    ],
+    [
+      1,
+      0
+    ]
+  ],
+  "expectedOccupied": 2,
+  "derived": {
+    "stashGrid": {
+      "originX": 0,
+      "originY": 0,
+      "cellWidth": 16,
+      "cellHeight": 16,
+      "columns": 4,
+      "rows": 3,
+      "tabId": "currency"
+    },
+    "stash": {
+      "value": {
+        "tabId": "currency",
+        "tabName": "Currency",
+        "tabFull": false,
+        "cells": [
+          {
+            "x": 0,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "occupied": true,
+            "tabId": "currency"
+          },
+          {
+            "x": 1,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "occupied": true,
+            "tabId": "currency"
+          },
+          {
+            "x": 2,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "occupied": false,
+            "tabId": "currency"
+          },
+          {
+            "x": 3,
+            "y": 0,
+            "w": 1,
+            "h": 1,
+            "occupied": false,
+            "tabId": "currency"
+          },
+          {
+            "x": 0,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "occupied": false,
+            "tabId": "currency"
+          },
+          {
+            "x": 1,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "occupied": false,
+            "tabId": "currency"
+          },
+          {
+            "x": 2,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "occupied": false,
+            "tabId": "currency"
+          },
+          {
+            "x": 3,
+            "y": 1,
+            "w": 1,
+            "h": 1,
+            "occupied": false,
+            "tabId": "currency"
+          },
+          {
+            "x": 0,
+            "y": 2,
+            "w": 1,
+            "h": 1,
+            "occupied": false,
+            "tabId": "currency"
+          },
+          {
+            "x": 1,
+            "y": 2,
+            "w": 1,
+            "h": 1,
+            "occupied": false,
+            "tabId": "currency"
+          },
+          {
+            "x": 2,
+            "y": 2,
+            "w": 1,
+            "h": 1,
+            "occupied": false,
+            "tabId": "currency"
+          },
+          {
+            "x": 3,
+            "y": 2,
+            "w": 1,
+            "h": 1,
+            "occupied": false,
+            "tabId": "currency"
+          }
+        ]
+      },
+      "confidence": 0.87,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    },
+    "ui": {
+      "value": {
+        "kind": "stash"
+      },
+      "confidence": 0.85,
+      "observedAtMs": 10000,
+      "freshness": "fresh"
+    }
+  }
+}

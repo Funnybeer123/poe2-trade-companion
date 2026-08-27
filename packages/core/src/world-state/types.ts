@@ -126,6 +126,7 @@ export interface WorldStateFlags {
   lootSuppressedUntilMs?: Record<string, number>;
   lootAttemptCounts?: Record<string, number>;
   lootLastAttemptMs?: Record<string, number>;
+  shadowMismatch?: boolean;
 }
 
 export interface WorldState {
