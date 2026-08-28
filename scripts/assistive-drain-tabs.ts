@@ -66,14 +66,47 @@ async function readWindow(): Promise<ListRow[]> {
 /** The list scrolls only via its scrollbar (x~2005); drag the thumb to either end. */
 const LIST_SCROLLBAR_X = 2005;
 async function scrollList(toTop: boolean): Promise<void> {
+  // Grab well inside the thumb (it spans roughly the upper half of the track).
   await nav.send({
     op: "drag",
     x: LIST_SCROLLBAR_X,
-    y: toTop ? 700 : 900,
+    y: 600,
     x2: LIST_SCROLLBAR_X,
     y2: toTop ? 185 : 1580,
   });
   await sleep(600);
+}
+
+function normalizePattern(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9]/g, "");
+}
+
+/**
+ * Label-driven navigation, immune to list reordering: scan the live window
+ * (top, then bottom), click the first row whose label matches the pattern and
+ * whose row hasn't been marked done this session.
+ */
+const doneLabels = new Set<string>();
+async function gotoLabelMatch(pattern: string): Promise<string | undefined> {
+  const wanted = normalizePattern(pattern);
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    for (const toTop of [true, false]) {
+      await scrollList(toTop);
+      const window = await readWindow();
+      if (window.length < 5) continue;
+      for (const row of window) {
+        const normalized = normalizePattern(row.label);
+        if (!normalized.includes(wanted)) continue;
+        const doneKey = `${normalized}@${row.clickY}-${toTop ? "t" : "b"}`;
+        if (doneLabels.has(doneKey)) continue;
+        const clicked = await nav.send({ op: "click", x: LIST_ROW_X, y: row.clickY });
+        if (!clicked.ok) continue;
+        await sleep(650);
+        return doneKey;
+      }
+    }
+  }
+  return undefined;
 }
 
 async function gotoTab(index: number): Promise<void> {
@@ -85,12 +118,23 @@ async function gotoTab(index: number): Promise<void> {
         await nav.send({ op: "click", x: LIST_TOGGLE.x, y: LIST_TOGGLE.y });
         await sleep(700);
         window = await readWindow();
-        if (window.length < 5) continue;
+        if (window.length < 5) {
+          console.log(`  goto ${index}: list unreadable (${window.length} rows)`);
+          continue;
+        }
       }
       const shift = alignWindow(window, canonical);
-      if (shift === undefined) continue;
+      if (shift === undefined) {
+        console.log(
+          `  goto ${index}: alignment failed, top3=[${window.slice(0, 3).map((r) => r.label).join(" | ")}]`,
+        );
+        continue;
+      }
       const row = window[index - shift];
-      if (!row) continue;
+      if (!row) {
+        console.log(`  goto ${index}: row not visible (shift ${shift}, rows ${window.length})`);
+        continue;
+      }
       const clicked = await nav.send({ op: "click", x: LIST_ROW_X, y: row.clickY });
       if (!clicked.ok) continue;
       await sleep(650);
@@ -401,11 +445,13 @@ try {
     let targetedNext = true;
     let shiftNext = false;
     let shiftTried = false;
+    let tripErrors = 0;
     for (;;) {
       if (totalTrips >= maxTrips) {
         console.log("trip budget exhausted");
         break;
       }
+      try {
       await ensurePanelsOpen();
       await gotoTab(pair.source);
       if (view) {
@@ -519,6 +565,17 @@ try {
       if (fillReason === "source-empty") {
         console.log("source empty");
         break;
+      }
+      tripErrors = 0;
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        tripErrors += 1;
+        console.log(`  trip error (${tripErrors}): ${reason}`);
+        if (tripErrors >= 2) {
+          console.log("  two consecutive trip errors — moving to next pair");
+          break;
+        }
+        await sleep(1000);
       }
     }
     }
