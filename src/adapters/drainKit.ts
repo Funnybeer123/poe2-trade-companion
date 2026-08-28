@@ -62,14 +62,18 @@ export class DrainKit {
   }
 
   async scrollList(toTop: boolean): Promise<void> {
-    await this.host.send({
-      op: "drag",
-      x: LIST_SCROLLBAR_X,
-      y: 600,
-      x2: LIST_SCROLLBAR_X,
-      y2: toTop ? 185 : 1580,
-    });
-    await sleep(600);
+    // The thumb may sit in either half of the track; drag from both grab
+    // points so one always catches it.
+    for (const grabY of [600, 1100]) {
+      await this.host.send({
+        op: "drag",
+        x: LIST_SCROLLBAR_X,
+        y: grabY,
+        x2: LIST_SCROLLBAR_X,
+        y2: toTop ? 185 : 1580,
+      });
+      await sleep(450);
+    }
   }
 
   async ensureListReadable(): Promise<ListRow[]> {
@@ -92,14 +96,16 @@ export class DrainKit {
   /** Find and select the first row matching `pattern`; returns its label. */
   async gotoLabel(pattern: string, excludeRemoveOnly = false): Promise<string | undefined> {
     const wanted = normalizePattern(pattern);
-    for (const toTop of [true, false]) {
-      await this.scrollList(toTop);
-      const window = await this.ensureListReadable();
-      for (const row of window) {
-        const normalized = normalizePattern(row.label);
-        if (!normalized.includes(wanted)) continue;
-        if (excludeRemoveOnly && /remove/.test(normalized)) continue;
-        if (await this.clickRow(row)) return row.label;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      for (const toTop of [true, false]) {
+        await this.scrollList(toTop);
+        const window = await this.ensureListReadable();
+        for (const row of window) {
+          const normalized = normalizePattern(row.label);
+          if (!normalized.includes(wanted)) continue;
+          if (excludeRemoveOnly && /remove/.test(normalized)) continue;
+          if (await this.clickRow(row)) return row.label;
+        }
       }
     }
     return undefined;

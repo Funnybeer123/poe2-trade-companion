@@ -1,4 +1,4 @@
-/**
+﻿/**
  * Label-driven remove-only drainer, immune to tab-list reordering: walks
  * every visible list row fresh (top window, then bottom window), and for any
  * row whose label matches a configured remove-only source pattern, drains
@@ -13,9 +13,16 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { readFileSync } from "node:fs";
 import { startWinHost } from "../src/adapters/winHost.js";
 import { DrainKit, normalizePattern } from "../src/adapters/drainKit.js";
 import { signatureDistance } from "../src/core/tabRouter.js";
+
+interface SubView {
+  name: string;
+  x: number;
+  y: number;
+}
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const templateDir = path.join(root, "fixtures", "perception", "templates");
@@ -45,12 +52,30 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 const exhausted: number[][] = [];
 function looksExhausted(signature: number[]): boolean {
   // Animated specialty layouts (breach, delirium) shift their signature a
-  // little between visits — allow generous drift.
+  // little between visits â€” allow generous drift.
   return signature.length > 0 && exhausted.some((known) => signatureDistance(known, signature) < 10);
 }
 
 /** How many times each label was drained; a label never yields twice. */
 const drainedLabels = new Map<string, number>();
+
+function viewsForLabel(label: string): SubView[] {
+  try {
+    const parsed = JSON.parse(
+      readFileSync(path.join(templateDir, "specialty-views.json"), "utf8"),
+    ) as { layouts: Array<{ match: string; views: SubView[] }> };
+    const normalized = label.toLowerCase();
+    return parsed.layouts.find((layout) => normalized.includes(layout.match.toLowerCase()))?.views ?? [];
+  } catch {
+    return [];
+  }
+}
+
+async function clickSubView(view: SubView): Promise<void> {
+  const snap = await kit.snapshot();
+  await host.send({ op: "click", x: snap.client.left + view.x, y: snap.client.top + view.y });
+  await sleep(500);
+}
 
 let totalTrips = 0;
 let totalMoved = 0;
@@ -75,28 +100,29 @@ async function emptyBagInto(destPattern: string): Promise<number> {
         state.count === previous.size &&
         [...state.keys].every((key) => previous.has(key))
       ) {
-        console.log(`  ${state.count} cells stuck at "${label}" — trying next destination`);
+        console.log(`  ${state.count} cells stuck at "${label}" â€” trying next destination`);
         break;
       }
     }
   }
   if (state.count > 0) {
     for (const key of state.keys) kit.undepositable.add(key);
-    console.log(`  ${state.count} cell(s) refuse deposit everywhere — set aside as undepositable`);
+    console.log(`  ${state.count} cell(s) refuse deposit everywhere â€” set aside as undepositable`);
     state = await kit.verifiedBag();
   }
   return state.count;
 }
 
-async function drainCurrentTabInto(destPattern: string, sourceLabel: string): Promise<void> {
+async function drainCurrentTabInto(destPattern: string, sourceLabel: string, view?: SubView): Promise<void> {
+  if (view) await clickSubView(view);
   let latticeNoGain = 0;
   let latticePhase = 0;
   let targeted = true;
   let shiftTried = false;
   let bagAfter = (await kit.verifiedBag()).count;
   if (bagAfter > 0) {
-    // A pre-loaded bag makes every sweep a silent no-op — deposit it first.
-    console.log(`  bag starts with ${bagAfter} cells — emptying before sweeping`);
+    // A pre-loaded bag makes every sweep a silent no-op â€” deposit it first.
+    console.log(`  bag starts with ${bagAfter} cells â€” emptying before sweeping`);
     bagAfter = await emptyBagInto(destPattern);
     if (!(await returnToSource(sourceLabel))) return;
   }
@@ -116,6 +142,7 @@ async function drainCurrentTabInto(destPattern: string, sourceLabel: string): Pr
           console.log(`  trip ${totalTrips}: +${shifted - bagAfter} cells (shift-ctrl)`);
           bagAfter = await emptyBagInto(destPattern);
           if (!(await returnToSource(sourceLabel))) return;
+          if (view) await clickSubView(view);
           continue;
         }
       }
@@ -138,13 +165,14 @@ async function drainCurrentTabInto(destPattern: string, sourceLabel: string): Pr
     console.log(`  trip ${totalTrips}: +${bagCells - bagAfter} cells`);
     bagAfter = await emptyBagInto(destPattern);
     if (!(await returnToSource(sourceLabel))) return;
+    if (view) await clickSubView(view);
   }
 }
 
 async function returnToSource(sourceLabel: string): Promise<boolean> {
   const found = await kit.gotoLabel(sourceLabel);
   if (!found) {
-    console.log(`  source "${sourceLabel}" no longer found — done with it`);
+    console.log(`  source "${sourceLabel}" no longer found â€” done with it`);
     return false;
   }
   return true;
@@ -157,7 +185,7 @@ try {
 
   const startBag = (await kit.verifiedBag()).count;
   if (startBag > 0) {
-    console.log(`bag starts with ${startBag} cells — emptying into "${routes[0]!.dest}" first`);
+    console.log(`bag starts with ${startBag} cells â€” emptying into "${routes[0]!.dest}" first`);
     await emptyBagInto(routes[0]!.dest);
   }
 
@@ -174,7 +202,7 @@ try {
       }
       const arrival = await kit.snapshot();
       if (looksExhausted(arrival.signature)) {
-        console.log(`"${label}" already exhausted — no more fresh matches`);
+        console.log(`"${label}" already exhausted â€” no more fresh matches`);
         break;
       }
       if (arrival.facts.occupiedStash.length === 0 && arrival.rgbStash.length === 0) {
@@ -185,12 +213,19 @@ try {
       const normalizedLabel = normalizePattern(label);
       const timesDrained = drainedLabels.get(normalizedLabel) ?? 0;
       if (timesDrained >= 2) {
-        console.log(`"${label}" already drained ${timesDrained}x — moving on`);
+        console.log(`"${label}" already drained ${timesDrained}x â€” moving on`);
         break;
       }
       drainedLabels.set(normalizedLabel, timesDrained + 1);
       console.log(`draining "${label}" (${arrival.facts.occupiedStash.length} occupied-ish cells)`);
       await drainCurrentTabInto(route.dest, label);
+      // Specialty layouts hide items behind nested sub-tabs — sweep each.
+      for (const view of viewsForLabel(label)) {
+        if (totalTrips >= maxTrips) break;
+        if (!(await returnToSource(label))) break;
+        console.log(`  -- sub-view "${view.name}" --`);
+        await drainCurrentTabInto(route.dest, label, view);
+      }
       const final = await kit.snapshot();
       if (final.signature.length) exhausted.push(final.signature);
       await sleep(300);

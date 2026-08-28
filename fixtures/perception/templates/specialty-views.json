@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "layouts": [
+    {
+      "match": "skill gems",
+      "views": [
+        { "name": "skill", "x": 213, "y": 317 },
+        { "name": "support", "x": 513, "y": 317 },
+        { "name": "persistent-buff", "x": 816, "y": 317 },
+        { "name": "uncut", "x": 1119, "y": 317 }
+      ]
+    }
+  ]
+}
