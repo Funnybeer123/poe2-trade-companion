@@ -81,7 +81,7 @@ let totalTrips = 0;
 let totalMoved = 0;
 
 async function emptyBagInto(destPattern: string): Promise<number> {
-  const destinations = [destPattern, ...(fallback ? [fallback] : [])];
+  const destinations = [destPattern, ...(fallback ? fallback.split(",").map((s) => s.trim()) : [])];
   let state = await kit.verifiedBag();
   for (const dest of destinations) {
     if (state.count === 0) return 0;
