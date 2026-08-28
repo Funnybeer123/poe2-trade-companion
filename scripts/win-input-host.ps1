@@ -369,6 +369,33 @@ while ($true) {
     }
     continue
   }
+  if ($op -eq "waitkey") {
+    # Block until a numpad key (0-9) is pressed while PoE is foreground, or
+    # until timeoutMs elapses. Edge-triggered: the key must be seen released
+    # first so held keys do not retrigger.
+    $timeoutMs = [int]$cmd.timeoutMs
+    if ($timeoutMs -le 0) { $timeoutMs = 30000 }
+    $deadline = [DateTime]::UtcNow.AddMilliseconds($timeoutMs)
+    $armed = @{}
+    for ($vk = 0x60; $vk -le 0x69; $vk++) { $armed[$vk] = $false }
+    $hit = -1
+    while ([DateTime]::UtcNow -lt $deadline) {
+      $fg = ([AssistiveWin]::GetForegroundWindow() -eq $hwnd)
+      for ($vk = 0x60; $vk -le 0x69; $vk++) {
+        $down = ([AssistiveWin]::GetAsyncKeyState($vk) -band 0x8000) -ne 0
+        if (-not $down) { $armed[$vk] = $true }
+        elseif ($armed[$vk] -and $fg) { $hit = $vk - 0x60; break }
+      }
+      if ($hit -ge 0) { break }
+      Start-Sleep -Milliseconds 35
+    }
+    if ($hit -ge 0) {
+      Emit @{ ok = $true; key = $hit }
+    } else {
+      Emit @{ ok = $false; error = "timeout" }
+    }
+    continue
+  }
   if ($op -eq "wheel") {
     $x = [int]$cmd.x
     $y = [int]$cmd.y

@@ -59,16 +59,45 @@ event logging; the kill switch must stop any action instantly.
   and nested sub-views; mapped views are in
   `fixtures/perception/templates/specialty-views.json`.
 
-## Open questions for the user
+## User's answers (2026-08-28) — DECIDED
 
-1. Which numpad keys → which actions? (e.g. Num1=Stash, Num2=Sort, Num3=Fill,
-   Num4=Vendor?)
-2. Vendor: what exactly should it do — open the nearest vendor (which NPC?),
-   ctrl-click all bag items into the sell window, and stop before accepting
-   the trade (user confirms the sale manually)? Auto-accepting a sale is
-   riskier and needs an explicit go-ahead.
-3. For the future sorting-stash: which item classes have affinities set on
-   your tabs (those can be blind ctrl-clicked), and should unrouted items
-   stay in the bag or go to a designated dump tab?
-4. Should the hotkeys work only while the stash/vendor is reachable in the
-   hideout, or anywhere (with the action refusing gracefully elsewhere)?
+1. **Key mapping**: Num1=Stash, Num2=Sort, Num3=Fill, Num4=Vendor.
+2. **Vendor = quick sell**: ctrl-click the **"ZELINA"** nameplate (locate via
+   OCR, like the Stash nameplate) — that auto-opens her vendor window — then
+   sell EVERYTHING in the bag (populate the sell pane by ctrl-clicking all
+   bag cells, then complete the sale). A later feature will inspect each
+   item's value before vendoring; for now it sells all.
+3. **Affinities are set** on the user's tabs. Affinity tabs CAN FILL UP —
+   after a deposit pass, cells that stay in the bag mean the affinity tab is
+   full: **log this explicitly to the text logs** (e.g.
+   "AFFINITY TAB FULL? N cells stayed: ...").
+4. **Hideout-only.** The nameplate requirement (Stash / ZELINA via OCR)
+   enforces this naturally — if the nameplate isn't found, log and refuse.
+
+## Build state / remaining steps
+
+DONE: host op `waitkey` in `scripts/win-input-host.ps1` — blocks until a
+numpad key (0-9) is pressed while PoE is foreground (edge-triggered,
+timeoutMs param, returns `{ok, key}` or timeout). Self-testable by injecting
+`keybd_event(0x61)` from a second host instance.
+
+TODO (in order):
+1. `scripts/action-daemon.ts`: startWinHost + DrainKit; loop `waitkey`
+   (30s timeout, reissue); debounce 1.5s; one action at a time; append every
+   action + result to `artifacts/action-daemon.log` AND console.
+   - Num1 Stash: `kit.ensurePanelsOpen()` → `kit.depositBag()` → verify via
+     `kit.verifiedBag()`; retry once with shift; leftover>0 ⇒ log the
+     affinity-tab-full warning with the cell list.
+   - Num2 Sort: spawn `npx tsx scripts/assistive-sort-tabs.ts --run`.
+   - Num3 Fill: AssistiveRunService kind=fill in-process (copy the service
+     construction from `scripts/assistive-drain-tabs.ts`).
+   - Num4 Vendor: verify bag non-empty; full-screen-ish OCR for a line
+     matching /^zelina$/i; ctrl-click its center; wait ~2.5s; capture and
+     OCR the vendor window to find the sell pane / confirm button (UNKNOWN
+     UI — capture a PNG on first run, look at it, then wire the exact
+     clicks); populate sell pane via `kit.depositBag()`-style ctrl-clicks of
+     all 60 bag cells; click the sell/accept control; verify bag emptied;
+     log everything.
+2. npm script `actions:daemon`; document Num keys in USER_GUIDE.
+3. Live-test each action; the vendor window layout needs one
+   capture-and-look iteration (same method used for the gem tab and map tab).
