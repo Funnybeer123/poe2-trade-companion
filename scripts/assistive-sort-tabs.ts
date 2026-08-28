@@ -11,11 +11,12 @@
  *   npx tsx scripts/assistive-sort-tabs.ts --probe        # verify each configured tab point switches tabs
  *   npx tsx scripts/assistive-sort-tabs.ts --init-config  # write a template tab-routes.json to edit
  */
-import { appendFileSync } from "node:fs";
+import { appendFileSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { bgrToGray, readBmpBgr } from "../src/adapters/bmp.js";
 import { startWinHost } from "../src/adapters/winHost.js";
+import { TabNavigator } from "../src/adapters/tabNavigator.js";
 import { WinHostInputSink } from "../src/adapters/winHostInputSink.js";
 import { emptyBagMask, findPlacement, stashItems, type StashItem } from "../src/core/bagPack.js";
 import { RuntimeCapabilities, resolveBuildMode } from "../src/core/capabilities.js";
@@ -175,14 +176,25 @@ try {
     return { facts, client, signature };
   }
 
-  function tabScreenPoint(client: ScreenRect, tab: TabPoint): { x: number; y: number } {
-    return { x: client.left + tab.x, y: client.top + tab.y };
+  let navigator: TabNavigator | undefined;
+  function getNavigator(): TabNavigator {
+    if (!navigator) {
+      const inventoryFile = path.join(root, "artifacts", "tab-survey", "tab-inventory.json");
+      const inventory = JSON.parse(readFileSync(inventoryFile, "utf8")) as { canonical: string[] };
+      navigator = new TabNavigator(host, inventory.canonical);
+    }
+    return navigator;
   }
 
   async function switchTab(client: ScreenRect, tab: TabPoint, reason: string): Promise<Snapshot> {
-    const point = tabScreenPoint(client, tab);
-    await auditedSteady([{ kind: "click", x: point.x, y: point.y }], reason);
-    await sleep(600);
+    if (tab.index !== undefined) {
+      await getNavigator().goto(tab.index);
+    } else if (Number.isFinite(tab.x) && Number.isFinite(tab.y)) {
+      await auditedSteady([{ kind: "click", x: client.left + tab.x!, y: client.top + tab.y! }], reason);
+      await sleep(600);
+    } else {
+      throw new Error(`tab-${tab.label}-has-no-index-or-point`);
+    }
     const after = await snapshot(`switch-${tab.label}`);
     if (!after.facts.stashPanelOpen) throw new Error(`stash-closed-after-switch-${tab.label}`);
     return after;

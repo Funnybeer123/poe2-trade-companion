@@ -6,17 +6,23 @@ import { regionStats } from "./grayImage.js";
 import { itemMatchesWantedClass } from "./itemClassFilter.js";
 import type { ScreenRect } from "./screenLayout.js";
 
-/** A calibrated click point on the stash tab strip, in client coordinates. */
+/**
+ * A destination tab: either a canonical dropdown index (preferred — the tab
+ * strip reorders itself, the dropdown does not) or a calibrated click point.
+ */
 export interface TabPoint {
   label: string;
-  x: number;
-  y: number;
+  x?: number;
+  y?: number;
+  index?: number;
 }
 
 export interface TabRoute {
   tab: TabPoint;
   /** Item classes (as printed by the game's "Item Class:" line) this tab receives. */
   classes: string[];
+  /** Case-insensitive regex sources matched against item name/base type; wins over classes. */
+  namePatterns?: string[];
 }
 
 export interface TabRoutesConfig {
@@ -56,17 +62,45 @@ export function saveTabRoutes(dir: string, config: TabRoutesConfig): string {
 /** Small allowance boxes around calibrated tab points for the input guard. */
 export function tabGuardBoxes(config: TabRoutesConfig, halfW = 40, halfH = 24): ClientBox[] {
   const points = [config.source, ...config.routes.map((route) => route.tab)];
-  return points.map((point) => ({
-    x: point.x - halfW,
-    y: point.y - halfH,
-    w: halfW * 2,
-    h: halfH * 2,
-  }));
+  return points
+    .filter((point): point is TabPoint & { x: number; y: number } =>
+      Number.isFinite(point.x) && Number.isFinite(point.y),
+    )
+    .map((point) => ({
+      x: point.x - halfW,
+      y: point.y - halfH,
+      w: halfW * 2,
+      h: halfH * 2,
+    }));
 }
 
 export function routeForClass(config: TabRoutesConfig, itemClass: string | undefined): TabRoute | undefined {
   if (!itemClass) return undefined;
-  return config.routes.find((route) => itemMatchesWantedClass(itemClass, route.classes));
+  // Routes with no classes are name-pattern-only; an empty wanted list would
+  // otherwise match every item.
+  return config.routes.find(
+    (route) => route.classes.length > 0 && itemMatchesWantedClass(itemClass, route.classes),
+  );
+}
+
+/** Name-pattern routes win over class routes; first match in config order. */
+export function routeForItem(
+  config: TabRoutesConfig,
+  itemClass: string | undefined,
+  name: string | undefined,
+): TabRoute | undefined {
+  if (name) {
+    for (const route of config.routes) {
+      for (const source of route.namePatterns ?? []) {
+        try {
+          if (new RegExp(source, "i").test(name)) return route;
+        } catch {
+          // Invalid pattern in user config — skip it rather than fail the sort.
+        }
+      }
+    }
+  }
+  return routeForClass(config, itemClass);
 }
 
 export interface RoutedGroups<T> {
@@ -74,14 +108,14 @@ export interface RoutedGroups<T> {
   unrouted: T[];
 }
 
-export function groupItemsByRoute<T extends { itemClass?: string }>(
+export function groupItemsByRoute<T extends { itemClass?: string; name?: string }>(
   items: T[],
   config: TabRoutesConfig,
 ): RoutedGroups<T> {
   const byLabel = new Map<string, { route: TabRoute; items: T[] }>();
   const unrouted: T[] = [];
   for (const item of items) {
-    const route = routeForClass(config, item.itemClass);
+    const route = routeForItem(config, item.itemClass, item.name);
     if (!route) {
       unrouted.push(item);
       continue;
