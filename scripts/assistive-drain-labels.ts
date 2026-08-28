@@ -53,7 +53,10 @@ const exhausted: number[][] = [];
 function looksExhausted(signature: number[]): boolean {
   // Animated specialty layouts (breach, delirium) shift their signature a
   // little between visits â€” allow generous drift.
-  return signature.length > 0 && exhausted.some((known) => signatureDistance(known, signature) < 10);
+  // Tight threshold: distinct full gear quads can sit within ~10 of each
+  // other, which false-skipped undrained tabs. Loop control comes from the
+  // per-label counters instead.
+  return signature.length > 0 && exhausted.some((known) => signatureDistance(known, signature) < 3);
 }
 
 /** How many times each label was drained; a label never yields twice. */
@@ -114,7 +117,14 @@ async function emptyBagInto(destPattern: string): Promise<number> {
 }
 
 async function drainCurrentTabInto(destPattern: string, sourceLabel: string, view?: SubView): Promise<void> {
-  if (view) await clickSubView(view);
+  if (view) {
+    await clickSubView(view);
+    const peek = await kit.snapshot();
+    if (peek.facts.occupiedStash.length === 0 && peek.rgbStash.length === 0) {
+      console.log(`  view "${view.name}" empty`);
+      return;
+    }
+  }
   let latticeNoGain = 0;
   let latticePhase = 0;
   let targeted = true;
@@ -206,13 +216,18 @@ try {
         break;
       }
       if (arrival.facts.occupiedStash.length === 0 && arrival.rgbStash.length === 0) {
-        console.log(`"${label}" visibly empty`);
+        console.log(`\"${label}\" visibly empty`);
         exhausted.push(arrival.signature);
+        const key = "empty:" + normalizePattern(label);
+        const seen = (drainedLabels.get(key) ?? 0) + 1;
+        drainedLabels.set(key, seen);
+        if (seen >= 3) { console.log("  repeatedly empty - moving on"); break; }
         continue;
       }
       const normalizedLabel = normalizePattern(label);
+      const emptySeen = (drainedLabels.get("empty:" + normalizedLabel) ?? 0);
       const timesDrained = drainedLabels.get(normalizedLabel) ?? 0;
-      if (timesDrained >= 2) {
+      if (timesDrained >= 3) {
         console.log(`"${label}" already drained ${timesDrained}x â€” moving on`);
         break;
       }
