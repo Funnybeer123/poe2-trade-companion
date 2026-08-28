@@ -31,8 +31,9 @@ export function validateTransferInput(
   actions: InputAction[],
   profile: CalibrationProfile,
   client: ScreenRect,
+  extraBoxes: ClientBox[] = [],
 ): TransferInputValidation {
-  const marks = [activeStashGrid(profile), profile.bagGrid, profile.stashSearch].filter(
+  const marks = [activeStashGrid(profile), profile.bagGrid, profile.stashSearch, ...extraBoxes].filter(
     (box): box is ClientBox => Boolean(box),
   );
   const boxes = marks.map((box) => toScreenBox(box, client));
