@@ -62,9 +62,11 @@ export class DrainKit {
   }
 
   async scrollList(toTop: boolean): Promise<void> {
-    // The thumb may sit in either half of the track; drag from both grab
-    // points so one always catches it.
-    for (const grabY of [600, 1100]) {
+    // Two drags with grab points ordered by direction: the first catches the
+    // thumb wherever it sits; the second grab point then lies INSIDE the
+    // parked thumb (never on bare track, which would page-jump backwards).
+    const grabs = toTop ? [1100, 600] : [600, 1100];
+    for (const grabY of grabs) {
       await this.host.send({
         op: "drag",
         x: LIST_SCROLLBAR_X,
