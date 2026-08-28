@@ -54,10 +54,13 @@ export class TabNavigator {
     return snapRows((Array.isArray(reply.lines) ? reply.lines : []) as OcrLine[]);
   }
 
+  /**
+   * The list cannot be wheel-scrolled; it scrolls to follow the SELECTED tab.
+   * A row outside the visible window is reached by walking the selection
+   * toward it: click the top/bottom visible row, re-read, re-align, repeat.
+   */
   async goto(index: number): Promise<void> {
     for (let attempt = 0; attempt < 3; attempt += 1) {
-      await this.host.send({ op: "wheel", ...this.options.listCenter, steps: 12 });
-      await sleep(300);
       let window = await this.readWindow();
       if (window.length < 5) {
         await this.host.send({ op: "click", x: this.options.listToggle.x, y: this.options.listToggle.y });
@@ -65,22 +68,29 @@ export class TabNavigator {
         window = await this.readWindow();
         if (window.length < 5) continue;
       }
-      let shift = alignWindow(window, this.canonical) ?? 0;
-      if (index >= shift + window.length) {
-        const bottom = window.at(-1)!;
-        await this.host.send({ op: "click", x: this.options.rowClickX, y: bottom.clickY });
-        await sleep(650);
+      let stuck = false;
+      for (let step = 0; step < 12 && !stuck; step += 1) {
+        const shift = alignWindow(window, this.canonical);
+        if (shift === undefined) {
+          stuck = true;
+          break;
+        }
+        const row = window[index - shift];
+        if (row) {
+          const clicked = await this.host.send({ op: "click", x: this.options.rowClickX, y: row.clickY });
+          if (!clicked.ok) {
+            stuck = true;
+            break;
+          }
+          await sleep(650);
+          return;
+        }
+        const walkRow = index < shift ? window[0]! : window.at(-1)!;
+        await this.host.send({ op: "click", x: this.options.rowClickX, y: walkRow.clickY });
+        await sleep(600);
         window = await this.readWindow();
-        const aligned = alignWindow(window, this.canonical);
-        if (aligned === undefined) continue;
-        shift = aligned;
+        if (window.length < 5) stuck = true;
       }
-      const row = window[index - shift];
-      if (!row) continue;
-      const clicked = await this.host.send({ op: "click", x: this.options.rowClickX, y: row.clickY });
-      if (!clicked.ok) continue;
-      await sleep(650);
-      return;
     }
     throw new Error(`goto-tab-${index}-failed`);
   }

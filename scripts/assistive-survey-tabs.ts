@@ -45,16 +45,27 @@ async function readWindow(): Promise<ListRow[]> {
   return snapRows((Array.isArray(reply.lines) ? reply.lines : []) as OcrLine[]);
 }
 
+/**
+ * The list scrolls to follow the selected tab (wheel does nothing), so
+ * reaching the absolute top means walking the selection up: click the top
+ * visible row until the window stops changing.
+ */
 async function anchorTop(): Promise<ListRow[]> {
-  await host.send({ op: "wheel", x: LIST_CENTER.x, y: LIST_CENTER.y, steps: 12 });
-  await sleep(350);
   let rows = await readWindow();
   if (rows.length < 5) {
     await host.send({ op: "click", x: LIST_TOGGLE.x, y: LIST_TOGGLE.y });
     await sleep(700);
-    await host.send({ op: "wheel", x: LIST_CENTER.x, y: LIST_CENTER.y, steps: 12 });
-    await sleep(350);
     rows = await readWindow();
+    if (rows.length < 5) return rows;
+  }
+  for (let step = 0; step < 12; step += 1) {
+    const firstLabel = rows[0]!.label;
+    await host.send({ op: "click", x: LIST_ROW_X, y: rows[0]!.clickY });
+    await sleep(600);
+    const next = await readWindow();
+    if (next.length < 5) break;
+    if (next[0]!.label === firstLabel) return next;
+    rows = next;
   }
   return rows;
 }
