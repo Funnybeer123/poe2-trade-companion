@@ -56,6 +56,74 @@ function Get-ClientScreenRect([IntPtr]$hwnd) {
   }
 }
 
+$script:OcrReady = $false
+function Initialize-Ocr {
+  if ($script:OcrReady) { return $true }
+  try {
+    Add-Type -AssemblyName System.Runtime.WindowsRuntime
+    $null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
+    $null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime]
+    $null = [Windows.Storage.Streams.InMemoryRandomAccessStream, Windows.Foundation, ContentType = WindowsRuntime]
+    $script:AsTaskGeneric = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object {
+      $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and
+      $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1'
+    })[0]
+    $script:OcrEngine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromUserProfileLanguages()
+    if ($null -eq $script:OcrEngine) {
+      $script:OcrEngine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage((New-Object Windows.Globalization.Language 'en-US'))
+    }
+    $script:OcrReady = ($null -ne $script:OcrEngine)
+  } catch {
+    $script:OcrReady = $false
+  }
+  return $script:OcrReady
+}
+
+function Await-WinRt($operation, $resultType) {
+  $task = $script:AsTaskGeneric.MakeGenericMethod($resultType).Invoke($null, @($operation))
+  [void]$task.Wait()
+  return $task.Result
+}
+
+function Invoke-OcrRegion([int]$left, [int]$top, [int]$width, [int]$height) {
+  Add-Type -AssemblyName System.Drawing
+  $bmp = New-Object System.Drawing.Bitmap $width, $height
+  $g = [System.Drawing.Graphics]::FromImage($bmp)
+  $g.CopyFromScreen($left, $top, 0, 0, $bmp.Size)
+  $g.Dispose()
+  $ms = New-Object System.IO.MemoryStream
+  $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
+  $bmp.Dispose()
+  $bytes = $ms.ToArray()
+  $ms.Dispose()
+  $stream = New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
+  $writer = New-Object Windows.Storage.Streams.DataWriter($stream.GetOutputStreamAt(0))
+  $writer.WriteBytes($bytes)
+  [void](Await-WinRt ($writer.StoreAsync()) ([UInt32]))
+  $decoder = Await-WinRt ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
+  $softwareBitmap = Await-WinRt ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
+  $result = Await-WinRt ($script:OcrEngine.RecognizeAsync($softwareBitmap)) ([Windows.Media.Ocr.OcrResult])
+  $lines = @()
+  foreach ($line in $result.Lines) {
+    $minX = [double]::MaxValue; $minY = [double]::MaxValue; $maxX = 0.0; $maxY = 0.0
+    foreach ($word in $line.Words) {
+      $r = $word.BoundingRect
+      if ($r.X -lt $minX) { $minX = $r.X }
+      if ($r.Y -lt $minY) { $minY = $r.Y }
+      if (($r.X + $r.Width) -gt $maxX) { $maxX = $r.X + $r.Width }
+      if (($r.Y + $r.Height) -gt $maxY) { $maxY = $r.Y + $r.Height }
+    }
+    $lines += @{
+      text = [string]$line.Text
+      x = [int]($left + $minX)
+      y = [int]($top + $minY)
+      w = [int]($maxX - $minX)
+      h = [int]($maxY - $minY)
+    }
+  }
+  return @{ text = [string]$result.Text; lines = $lines }
+}
+
 function Resolve-PinnedPoeWindow {
   if ($script:PinnedPoePid -gt 0 -and $script:PinnedPoeHwnd -ne 0) {
     try {
@@ -298,6 +366,43 @@ while ($true) {
       title = [string]$proc.MainWindowTitle
       hwnd = $script:PinnedPoeHwnd
       foregroundIsPoe = ($fg -eq $hwnd)
+    }
+    continue
+  }
+  if ($op -eq "wheel") {
+    $x = [int]$cmd.x
+    $y = [int]$cmd.y
+    $steps = [int]$cmd.steps
+    if ($steps -eq 0) { $steps = 1 }
+    [void][AssistiveWin]::SetCursorPos($x, $y)
+    Start-Sleep -Milliseconds 16
+    $direction = if ($steps -gt 0) { 120 } else { -120 }
+    for ($i = 0; $i -lt [Math]::Abs($steps); $i++) {
+      [AssistiveWin]::mouse_event(0x0800, 0, 0, [uint32]($direction -band 0xFFFFFFFF), [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 40
+    }
+    Emit @{ ok = $true; x = $x; y = $y; steps = $steps }
+    continue
+  }
+  if ($op -eq "ocr") {
+    if (-not (Initialize-Ocr)) {
+      Emit @{ ok = $false; error = "ocr-unavailable" }
+      continue
+    }
+    $meta = Window-Meta $hwnd $cmd
+    $ox = if ($null -ne $cmd.left) { [int]$cmd.left } else { [int]$meta.left }
+    $oy = if ($null -ne $cmd.top) { [int]$cmd.top } else { [int]$meta.top }
+    $ow = if ($null -ne $cmd.width) { [int]$cmd.width } else { [int]$meta.width }
+    $oh = if ($null -ne $cmd.height) { [int]$cmd.height } else { [int]$meta.height }
+    if ($ow -lt 4 -or $oh -lt 4) {
+      Emit @{ ok = $false; error = "ocr-region-too-small" }
+      continue
+    }
+    try {
+      $ocr = Invoke-OcrRegion $ox $oy $ow $oh
+      Emit @{ ok = $true; text = $ocr.text; lines = @($ocr.lines) }
+    } catch {
+      Emit @{ ok = $false; error = "ocr-failed"; detail = [string]$_.Exception.Message }
     }
     continue
   }
