@@ -1,0 +1,178 @@
+/**
+ * Label-driven remove-only drainer, immune to tab-list reordering: walks
+ * every visible list row fresh (top window, then bottom window), and for any
+ * row whose label matches a configured remove-only source pattern, drains
+ * that tab into the first non-remove-only tab matching its destination
+ * pattern. Already-exhausted tabs are recognized by content signature and
+ * skipped. The bag is verifiably emptied before every new sweep.
+ *
+ * Usage:
+ *   npx tsx scripts/assistive-drain-labels.ts \
+ *     --routes "dist remove>dist;runes remove>runes;une remove>runes;maps remove>big maps" \
+ *     [--fallback "great gear"] [--max-trips=90]
+ */
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import { startWinHost } from "../src/adapters/winHost.js";
+import { DrainKit, normalizePattern } from "../src/adapters/drainKit.js";
+import { signatureDistance } from "../src/core/tabRouter.js";
+
+const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+const templateDir = path.join(root, "fixtures", "perception", "templates");
+
+const routesArg = process.argv.find((arg) => arg.startsWith("--routes"));
+const routesValue = routesArg?.includes("=")
+  ? routesArg.slice(routesArg.indexOf("=") + 1)
+  : process.argv[process.argv.indexOf("--routes") + 1];
+if (!routesValue) {
+  console.error('Usage: --routes "srcPattern>destPattern;..." [--fallback destPattern] [--max-trips=N]');
+  process.exit(1);
+}
+const routes = routesValue.split(";").map((token) => {
+  const [source, dest] = token.split(">").map((part) => part.trim());
+  if (!source || !dest) throw new Error(`bad route: ${token}`);
+  return { source, dest };
+});
+const fallbackIdx = process.argv.indexOf("--fallback");
+const fallback = fallbackIdx >= 0 ? process.argv[fallbackIdx + 1] : undefined;
+const maxTrips = Number(process.argv.find((arg) => arg.startsWith("--max-trips="))?.slice(12) ?? 90);
+
+const host = startWinHost({ requestTimeoutMs: 30_000 });
+const kit = new DrainKit(host, root, templateDir);
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/** Signatures of tabs already drained to exhaustion this session. */
+const exhausted: number[][] = [];
+function looksExhausted(signature: number[]): boolean {
+  return signature.length > 0 && exhausted.some((known) => signatureDistance(known, signature) < 3);
+}
+
+let totalTrips = 0;
+let totalMoved = 0;
+
+async function emptyBagInto(destPattern: string): Promise<number> {
+  const destinations = [destPattern, ...(fallback ? [fallback] : [])];
+  let state = await kit.verifiedBag();
+  for (const dest of destinations) {
+    if (state.count === 0) return 0;
+    const label = await kit.gotoLabel(dest, true);
+    if (!label) {
+      console.log(`  destination "${dest}" not found in list`);
+      continue;
+    }
+    for (let pass = 0; pass < 3 && state.count > 0; pass += 1) {
+      const previous = state.keys;
+      await kit.depositBag(pass > 0);
+      state = await kit.verifiedBag();
+      if (
+        state.count > 0 &&
+        pass > 0 &&
+        state.count === previous.size &&
+        [...state.keys].every((key) => previous.has(key))
+      ) {
+        console.log(`  ${state.count} cells stuck at "${label}" — trying next destination`);
+        break;
+      }
+    }
+  }
+  if (state.count > 0) {
+    for (const key of state.keys) kit.undepositable.add(key);
+    console.log(`  ${state.count} cell(s) refuse deposit everywhere — set aside as undepositable`);
+    state = await kit.verifiedBag();
+  }
+  return state.count;
+}
+
+async function drainCurrentTabInto(destPattern: string, sourceLabel: string): Promise<void> {
+  let latticeNoGain = 0;
+  let latticePhase = 0;
+  let targeted = true;
+  let shiftTried = false;
+  let bagAfter = (await kit.verifiedBag()).count;
+  for (;;) {
+    if (totalTrips >= maxTrips) return;
+    const wasTargeted = targeted;
+    const bagCells = await kit.sweepStash(targeted, latticePhase);
+    if (bagCells - bagAfter <= 0) {
+      if (wasTargeted && !shiftTried) {
+        shiftTried = true;
+        const shifted = await kit.sweepStash(true, latticePhase, true);
+        if (shifted - bagAfter > 0) {
+          targeted = true;
+          latticeNoGain = 0;
+          totalTrips += 1;
+          totalMoved += shifted - bagAfter;
+          console.log(`  trip ${totalTrips}: +${shifted - bagAfter} cells (shift-ctrl)`);
+          bagAfter = await emptyBagInto(destPattern);
+          if (!(await returnToSource(sourceLabel))) return;
+          continue;
+        }
+      }
+      if (wasTargeted) {
+        targeted = false;
+        continue;
+      }
+      latticePhase += 1;
+      latticeNoGain += 1;
+      if (latticeNoGain >= 2) {
+        console.log("  exhausted");
+        return;
+      }
+      continue;
+    }
+    targeted = true;
+    latticeNoGain = 0;
+    totalTrips += 1;
+    totalMoved += bagCells - bagAfter;
+    console.log(`  trip ${totalTrips}: +${bagCells - bagAfter} cells`);
+    bagAfter = await emptyBagInto(destPattern);
+    if (!(await returnToSource(sourceLabel))) return;
+  }
+}
+
+async function returnToSource(sourceLabel: string): Promise<boolean> {
+  const found = await kit.gotoLabel(sourceLabel);
+  if (!found) {
+    console.log(`  source "${sourceLabel}" no longer found — done with it`);
+    return false;
+  }
+  return true;
+}
+
+try {
+  const rect = await host.send({ op: "rect" });
+  if (!rect.ok) throw new Error("PoE window not found");
+  await kit.ensurePanelsOpen();
+
+  for (const route of routes) {
+    console.log(`\n=== route "${route.source}" -> "${route.dest}" ===`);
+    // Keep finding rows matching this source pattern until none yield items.
+    for (let round = 0; round < 12; round += 1) {
+      if (totalTrips >= maxTrips) break;
+      await kit.ensurePanelsOpen();
+      const label = await kit.gotoLabel(route.source);
+      if (!label) {
+        console.log("no matching source row found");
+        break;
+      }
+      const arrival = await kit.snapshot();
+      if (looksExhausted(arrival.signature)) {
+        console.log(`"${label}" already exhausted — no more fresh matches`);
+        break;
+      }
+      if (arrival.facts.occupiedStash.length === 0 && arrival.rgbStash.length === 0) {
+        console.log(`"${label}" visibly empty`);
+        exhausted.push(arrival.signature);
+        continue;
+      }
+      console.log(`draining "${label}" (${arrival.facts.occupiedStash.length} occupied-ish cells)`);
+      await drainCurrentTabInto(route.dest, label);
+      const final = await kit.snapshot();
+      if (final.signature.length) exhausted.push(final.signature);
+      await sleep(300);
+    }
+  }
+  console.log(`\n=== done: ${totalTrips} trips, ~${totalMoved} cells moved, ${kit.undepositable.size} undepositable ===`);
+} finally {
+  await host.close();
+}
