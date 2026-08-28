@@ -44,8 +44,13 @@ const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 /** Signatures of tabs already drained to exhaustion this session. */
 const exhausted: number[][] = [];
 function looksExhausted(signature: number[]): boolean {
-  return signature.length > 0 && exhausted.some((known) => signatureDistance(known, signature) < 3);
+  // Animated specialty layouts (breach, delirium) shift their signature a
+  // little between visits — allow generous drift.
+  return signature.length > 0 && exhausted.some((known) => signatureDistance(known, signature) < 10);
 }
+
+/** How many times each label was drained; a label never yields twice. */
+const drainedLabels = new Map<string, number>();
 
 let totalTrips = 0;
 let totalMoved = 0;
@@ -89,6 +94,12 @@ async function drainCurrentTabInto(destPattern: string, sourceLabel: string): Pr
   let targeted = true;
   let shiftTried = false;
   let bagAfter = (await kit.verifiedBag()).count;
+  if (bagAfter > 0) {
+    // A pre-loaded bag makes every sweep a silent no-op — deposit it first.
+    console.log(`  bag starts with ${bagAfter} cells — emptying before sweeping`);
+    bagAfter = await emptyBagInto(destPattern);
+    if (!(await returnToSource(sourceLabel))) return;
+  }
   for (;;) {
     if (totalTrips >= maxTrips) return;
     const wasTargeted = targeted;
@@ -144,6 +155,12 @@ try {
   if (!rect.ok) throw new Error("PoE window not found");
   await kit.ensurePanelsOpen();
 
+  const startBag = (await kit.verifiedBag()).count;
+  if (startBag > 0) {
+    console.log(`bag starts with ${startBag} cells — emptying into "${routes[0]!.dest}" first`);
+    await emptyBagInto(routes[0]!.dest);
+  }
+
   for (const route of routes) {
     console.log(`\n=== route "${route.source}" -> "${route.dest}" ===`);
     // Keep finding rows matching this source pattern until none yield items.
@@ -165,6 +182,13 @@ try {
         exhausted.push(arrival.signature);
         continue;
       }
+      const normalizedLabel = normalizePattern(label);
+      const timesDrained = drainedLabels.get(normalizedLabel) ?? 0;
+      if (timesDrained >= 2) {
+        console.log(`"${label}" already drained ${timesDrained}x — moving on`);
+        break;
+      }
+      drainedLabels.set(normalizedLabel, timesDrained + 1);
       console.log(`draining "${label}" (${arrival.facts.occupiedStash.length} occupied-ish cells)`);
       await drainCurrentTabInto(route.dest, label);
       const final = await kit.snapshot();
