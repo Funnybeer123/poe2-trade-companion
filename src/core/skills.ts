@@ -319,6 +319,7 @@ export class FillBagFromStash implements Skill {
   private initialBagCells: number | undefined;
   private bestBagCells = 0;
   private oneCellProbeRejected = false;
+  private amnestyUsed = false;
 
   constructor(
     private readonly knownItems?: StashItem[],
@@ -461,16 +462,30 @@ export class FillBagFromStash implements Skill {
     const finish = (reason: "bag-full" | "no-more-auto-fit" | "source-empty" | "filter-exhausted" | "failed"): SkillStep => {
       return { kind: "done", reason };
     };
+    // Retried-out items may be victims of a transient misread (stale search
+    // highlight, tooltip over a cell). Before concluding no-more-auto-fit,
+    // grant one fresh look at everything that was retried or failed.
+    const amnesty = (): SkillStep | null => {
+      if (this.amnestyUsed) return null;
+      if (this.failed.size === 0 && this.retryCounts.size === 0) return null;
+      this.amnestyUsed = true;
+      this.failed.clear();
+      this.retryCounts.clear();
+      this.stagnantBursts = 0;
+      return { kind: "wait", reason: "amnesty-rescan", durationMs: 160 };
+    };
 
     if (facts.occupiedBag.length >= 60) return finish("bag-full");
     if (this.oneCellProbeRejected) return finish("no-more-auto-fit");
     const hasProgress =
       this.bestBagCells > (this.initialBagCells ?? this.bestBagCells) ||
       this.confirmed.size > 0;
-    if (
-      this.burstCount >= MAX_TRANSFER_BURSTS ||
-      this.stagnantBursts >= MAX_STAGNANT_BURSTS
-    ) {
+    if (this.burstCount >= MAX_TRANSFER_BURSTS) {
+      return finish(hasProgress ? "no-more-auto-fit" : "failed");
+    }
+    if (this.stagnantBursts >= MAX_STAGNANT_BURSTS) {
+      const secondLook = amnesty();
+      if (secondLook) return secondLook;
       return finish(hasProgress ? "no-more-auto-fit" : "failed");
     }
 
@@ -499,6 +514,8 @@ export class FillBagFromStash implements Skill {
       if (occupiedStash.length === 0 || (this.knownItems?.length ?? 0) === this.confirmed.size) {
         return finish("source-empty");
       }
+      const secondLook = amnesty();
+      if (secondLook) return secondLook;
       return finish("no-more-auto-fit");
     }
 

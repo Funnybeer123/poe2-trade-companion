@@ -352,6 +352,49 @@ describe("FillBagFromStash", () => {
     }
   });
 
+  it("grants one amnesty rescan before finishing while stash cells remain", () => {
+    const itemA = {
+      id: "1,2:1x1",
+      w: 1,
+      h: 1,
+      grab: { row: 1, col: 2, x: 220, y: 220, bag: "stash" as const },
+      cells: [{ row: 1, col: 2 }],
+    };
+    const itemB = {
+      id: "1,4:1x1",
+      w: 1,
+      h: 1,
+      grab: { row: 1, col: 4, x: 260, y: 220, bag: "stash" as const },
+      cells: [{ row: 1, col: 4 }],
+    };
+    const both = perceiveUi(stashAndBagFrame([], [{ row: 1, col: 2 }]), TEST_CLIENT, {}, hudProfile([{ row: 1, col: 2 }]));
+    both.stashItems = [itemA, itemB];
+    both.occupiedStash = [itemA, itemB].map((entry) => ({ ...entry.cells[0]!, x: entry.grab.x, y: entry.grab.y, bag: "stash" }));
+    both.occupiedBag = [];
+    const skill = new FillBagFromStash([itemA, itemB]);
+    expect(skill.plan(both).kind).toBe("burst");
+
+    // A transferred; B stays put and keeps getting rejected on every retry.
+    const onlyB = {
+      ...both,
+      stashItems: [itemB],
+      occupiedStash: [{ ...itemB.cells[0]!, x: itemB.grab.x, y: itemB.grab.y, bag: "stash" }],
+      occupiedBag: [{ row: 0, col: 0, x: 0, y: 0, bag: "bag" }],
+      bagEmpty: false,
+    };
+    const seen: string[] = [];
+    for (let i = 0; i < 12; i += 1) {
+      const step = skill.plan(onlyB);
+      seen.push(`${step.kind}:${step.kind === "done" ? step.reason : step.reason}`);
+      if (step.kind === "done") break;
+    }
+    expect(seen).toContain("wait:amnesty-rescan");
+    // After the amnesty, B gets fresh attempts before the run finally ends.
+    const amnestyIndex = seen.indexOf("wait:amnesty-rescan");
+    expect(seen.slice(amnestyIndex + 1).some((entry) => entry.startsWith("burst"))).toBe(true);
+    expect(seen.at(-1)).toBe("done:no-more-auto-fit");
+  });
+
   it("waits before treating a mid-fill world look as closed", () => {
     const skill = new FillBagFromStash();
     const open = perceiveUi(stashAndBagFrame([], [{ row: 1, col: 2 }]), TEST_CLIENT, {}, hudProfile([{ row: 1, col: 2 }]));

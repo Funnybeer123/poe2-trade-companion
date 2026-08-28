@@ -52,6 +52,42 @@ export function downsample(image: GrayImage, width: number, height: number): Gra
   return out;
 }
 
+/**
+ * mean/variance/bright-fraction over a region, allocation-free. Matches
+ * crop()+meanVariance() exactly: fractional origin floors, sub-1 sizes clamp
+ * to one pixel, and out-of-bounds samples repeat the edge pixel.
+ */
+export function regionStats(
+  image: GrayImage,
+  x: number,
+  y: number,
+  w: number,
+  h: number,
+  brightThreshold = Number.POSITIVE_INFINITY,
+): { mean: number; variance: number; brightFraction: number } {
+  const outW = Math.max(1, Math.floor(w));
+  const outH = Math.max(1, Math.floor(h));
+  const x0 = Math.floor(x);
+  const y0 = Math.floor(y);
+  let sum = 0;
+  let sumSq = 0;
+  let bright = 0;
+  for (let yy = 0; yy < outH; yy += 1) {
+    const sy = Math.min(image.height - 1, Math.max(0, y0 + yy));
+    const row = sy * image.width;
+    for (let xx = 0; xx < outW; xx += 1) {
+      const sx = Math.min(image.width - 1, Math.max(0, x0 + xx));
+      const value = image.pixels[row + sx]!;
+      sum += value;
+      sumSq += value * value;
+      if (value > brightThreshold) bright += 1;
+    }
+  }
+  const n = outW * outH;
+  const mean = sum / n;
+  return { mean, variance: sumSq / n - mean * mean, brightFraction: bright / n };
+}
+
 export function meanVariance(image: GrayImage): { mean: number; variance: number } {
   if (image.pixels.length === 0) return { mean: 0, variance: 0 };
   let sum = 0;

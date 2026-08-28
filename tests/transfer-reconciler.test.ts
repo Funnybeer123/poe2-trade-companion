@@ -121,6 +121,17 @@ describe("transfer reconciliation", () => {
     expect(result.rejected).toEqual([]);
   });
 
+  it("never aggregate-confirms a still-present one-cell item in a mixed burst", () => {
+    const stayed = item(2, 2, 1, 1);
+    const left = item(2, 4, 1, 1);
+    const before = facts([], cells([[2, 2], [2, 4]], "stash"), [stayed, left]);
+    const after = facts(cells([[0, 0]], "bag"), cells([[2, 2]], "stash"), [stayed]);
+
+    const result = reconcileTransfer("stash-to-bag", [stayed, left], before, after);
+    expect(result.rejected.map((entry) => entry.item.id)).toEqual([stayed.id]);
+    expect(result.moved.map((entry) => entry.item.id)).toEqual([left.id]);
+  });
+
   it("keeps a perception-only source disappearance ambiguous", () => {
     const attempted = item(2, 2, 2, 2);
     const before = facts(

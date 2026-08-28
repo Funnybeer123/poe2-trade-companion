@@ -1,7 +1,8 @@
-import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import { bgrToGray, readBmpBgr } from "../adapters/bmp.js";
+import { pruneArtifacts } from "../core/artifactRetention.js";
 import { startWinHost } from "../adapters/winHost.js";
 import { WinHostInputSink } from "../adapters/winHostInputSink.js";
 import {
@@ -338,6 +339,7 @@ export class StashSortService {
     validateRequest(request);
     if (this.running) throw new Error("stash-sort-already-running");
     if (this.options.killSwitch.isLatched()) throw new Error("kill-switch-latched");
+    pruneArtifacts(this.options.artifactDir);
 
     const abort = new AbortController();
     this.currentAbort = abort;
@@ -755,6 +757,8 @@ export class StashSortService {
       },
     );
     const bgr = readBmpBgr(bmpPath);
+    // The raw ~24MB BMP is only needed for this decode; the PNG preview stays.
+    rmSync(bmpPath, { force: true });
     const frame = bgrToGray(bgr);
     const perceived = perceiveUi(frame, client, {}, ctx.profile, bgr);
     const facts = this.baseline ? this.baseline.refine(perceived, frame, bgr, client).facts : perceived;

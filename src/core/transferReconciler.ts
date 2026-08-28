@@ -119,12 +119,16 @@ export function reconcileTransfer(
     const observedSize = Math.max(1, beforePresence);
     if (
       afterPresence > 0 &&
+      expected > 1 &&
       unclaimedDestinationGain >= observedSize &&
       unclaimedSourceLoss >= observedSize
     ) {
       // Search highlighting can leave stale/neighbor occupancy over a source
       // footprint. A matching aggregate source loss plus destination growth is
       // still item-level evidence, and prevents re-clicking an emptied anchor.
+      // One-cell items are exempt: in a burst of adjacent small items the
+      // aggregate cannot tell WHICH one moved, and confirming a still-present
+      // item poisons its anchor for the rest of the run.
       result.status = "moved";
       moved.push(result);
       unclaimedDestinationGain -= observedSize;

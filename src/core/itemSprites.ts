@@ -1,4 +1,4 @@
-import { crop, meanVariance, type GrayImage } from "./grayImage.js";
+import { crop, meanVariance, regionStats, type GrayImage } from "./grayImage.js";
 import type { ScreenRect } from "./screenLayout.js";
 import { LEGAL_SIZES, type StashItem } from "./bagPack.js";
 import type { BBox, OccupiedCell } from "./uiPerception.js";
@@ -24,24 +24,25 @@ function cellBox(region: BBox, col: number, row: number, cols: number, rows: num
   };
 }
 
-function insetCrop(
+function insetStats(
   frame: GrayImage,
   client: ScreenRect,
   box: { x: number; y: number; w: number; h: number },
+  brightThreshold = Number.POSITIVE_INFINITY,
   inset = 0.18,
-): GrayImage {
+): { mean: number; variance: number; brightFraction: number } {
   const sx = frame.width / client.width;
   const sy = frame.height / client.height;
   const fx = (box.x - client.left + box.w * inset) * sx;
   const fy = (box.y - client.top + box.h * inset) * sy;
-  return crop(frame, fx, fy, box.w * (1 - inset * 2) * sx, box.h * (1 - inset * 2) * sy);
-}
-
-function brightFraction(image: GrayImage, threshold: number): number {
-  if (image.pixels.length === 0) return 0;
-  let n = 0;
-  for (const value of image.pixels) if (value > threshold) n += 1;
-  return n / image.pixels.length;
+  return regionStats(
+    frame,
+    fx,
+    fy,
+    box.w * (1 - inset * 2) * sx,
+    box.h * (1 - inset * 2) * sy,
+    brightThreshold,
+  );
 }
 
 export function scoreGridCells(
@@ -55,8 +56,7 @@ export function scoreGridCells(
   for (let row = 0; row < rows; row += 1) {
     for (let col = 0; col < cols; col += 1) {
       const box = cellBox(region, col, row, cols, rows);
-      const patch = insetCrop(frame, client, box);
-      const stats = meanVariance(patch);
+      const stats = insetStats(frame, client, box);
       raw.push({
         row,
         col,
@@ -72,8 +72,7 @@ export function scoreGridCells(
   const threshold = baseline + 20;
   return raw.map((cell) => {
     const box = cellBox(region, cell.col, cell.row, cols, rows);
-    const patch = insetCrop(frame, client, box);
-    return { ...cell, itemFrac: brightFraction(patch, threshold) };
+    return { ...cell, itemFrac: insetStats(frame, client, box, threshold).brightFraction };
   });
 }
 
