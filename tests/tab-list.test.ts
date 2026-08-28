@@ -27,7 +27,9 @@ describe("tabList", () => {
   });
 
   it("matches garbled OCR labels loosely", () => {
-    expect(labelsSimilar("-price 1 divine", "price 1 IVIne")).toBe(false);
+    expect(labelsSimilar("-price 1 divine", "price 1 IVIne")).toBe(true);
+    expect(labelsSimilar("Maps", "Ma s")).toBe(true);
+    expect(labelsSimilar("O Rune", "Rune")).toBe(true);
     expect(labelsSimilar("CUR (Remove-only)", "cUR (Remove-only)")).toBe(true);
     expect(labelsSimilar("-price 18 exalted (Remove-onl", "-price 18 exalted (Remove-only)")).toBe(true);
     expect(labelsSimilar("Runes", "Dist")).toBe(false);

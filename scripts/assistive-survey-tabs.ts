@@ -30,7 +30,7 @@ const maxTabs = maxArg ? Number(maxArg) : 64;
 const LIST_REGION = { left: 1340, top: 180, width: 760, height: 1430 };
 const LIST_ROW_X = 1700;
 const LIST_CENTER = { x: 1700, y: 800 };
-const LIST_TOGGLE = { x: 1259, y: 219 };
+const LIST_TOGGLE = { x: 1287, y: 212 };
 const PARK = { x: 660, y: 1900 };
 
 const profile = loadProfile(templateDir);
@@ -45,11 +45,7 @@ async function readWindow(): Promise<ListRow[]> {
   return snapRows((Array.isArray(reply.lines) ? reply.lines : []) as OcrLine[]);
 }
 
-/**
- * The list scrolls to follow the selected tab (wheel does nothing), so
- * reaching the absolute top means walking the selection up: click the top
- * visible row until the window stops changing.
- */
+/** The list scrolls only via its scrollbar; drag the thumb to the top. */
 async function anchorTop(): Promise<ListRow[]> {
   let rows = await readWindow();
   if (rows.length < 5) {
@@ -58,16 +54,9 @@ async function anchorTop(): Promise<ListRow[]> {
     rows = await readWindow();
     if (rows.length < 5) return rows;
   }
-  for (let step = 0; step < 12; step += 1) {
-    const firstLabel = rows[0]!.label;
-    await host.send({ op: "click", x: LIST_ROW_X, y: rows[0]!.clickY });
-    await sleep(600);
-    const next = await readWindow();
-    if (next.length < 5) break;
-    if (next[0]!.label === firstLabel) return next;
-    rows = next;
-  }
-  return rows;
+  await host.send({ op: "drag", x: 2005, y: 700, x2: 2005, y2: 185 });
+  await sleep(600);
+  return readWindow();
 }
 
 async function capture(tag: string) {
@@ -114,10 +103,8 @@ try {
       window = await anchorTop();
       shift = alignWindow(window, canonical) ?? 0;
       if (index >= shift + window.length) {
-        // Hidden below the fold: select the bottom visible row to force the
-        // list to scroll, then re-read and re-align.
-        const bottom = window.at(-1)!;
-        await host.send({ op: "click", x: LIST_ROW_X, y: bottom.clickY });
+        // Hidden below the fold: drag the scrollbar to the bottom.
+        await host.send({ op: "drag", x: 2005, y: 900, x2: 2005, y2: 1580 });
         await sleep(650);
         window = await readWindow();
         const aligned = alignWindow(window, canonical);

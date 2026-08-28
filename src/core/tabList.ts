@@ -26,7 +26,20 @@ export function normalizeTabLabel(text: string): string {
   return text.toLowerCase().replace(/[^a-z0-9]/g, "");
 }
 
-/** Loose match that survives OCR garble: exact, or one contains the other (len>=4). */
+function isSubsequence(needle: string, haystack: string): boolean {
+  let i = 0;
+  for (const ch of haystack) {
+    if (ch === needle[i]) i += 1;
+    if (i === needle.length) return true;
+  }
+  return i === needle.length;
+}
+
+/**
+ * Loose match that survives OCR garble: exact, containment, or one side being
+ * a subsequence of the other covering most of it ("Ma s" matches "Maps",
+ * "O Rune" matches "Rune" via containment after normalization).
+ */
 export function labelsSimilar(a: string, b: string): boolean {
   const na = normalizeTabLabel(a);
   const nb = normalizeTabLabel(b);
@@ -34,7 +47,8 @@ export function labelsSimilar(a: string, b: string): boolean {
   if (na === nb) return true;
   if (na.length >= 4 && nb.includes(na)) return true;
   if (nb.length >= 4 && na.includes(nb)) return true;
-  return false;
+  const [short, long] = na.length <= nb.length ? [na, nb] : [nb, na];
+  return short.length >= 3 && short.length >= long.length * 0.6 && isSubsequence(short, long);
 }
 
 export function snapRows(lines: OcrLine[], pitch = DEFAULT_ROW_PITCH): ListRow[] {
@@ -81,7 +95,11 @@ export function alignWindow(window: ListRow[], canonical: string[]): number | un
       if (labelsSimilar(row.label, target)) score += 1;
     }
     if (comparable < 3) continue;
-    if (score / comparable >= 0.7 && (best === undefined || score > best.score)) {
+    // A correct shift matches most readable labels; wrong shifts only hit
+    // duplicates. Require a solid absolute score plus a modest ratio so a few
+    // badly garbled rows cannot sink the alignment.
+    const ratio = score / comparable;
+    if ((ratio >= 0.55 || (score >= 6 && ratio >= 0.45)) && score >= Math.min(3, comparable) && (best === undefined || score > best.score)) {
       best = { shift, score };
     }
   }

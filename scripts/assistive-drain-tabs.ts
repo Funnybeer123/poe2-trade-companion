@@ -22,11 +22,12 @@ const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const templateDir = path.join(root, "fixtures", "perception", "templates");
 
 const pairsArg = process.argv.find((arg) => arg.startsWith("--pairs="))?.slice(8);
-if (!pairsArg) {
-  console.error("Usage: --pairs=SRC:DEST[,SRC:DEST...] [--overflow=IDX,IDX] [--max-trips=N]");
+const inspectArg = process.argv.find((arg) => arg.startsWith("--inspect="))?.slice(10);
+if (!pairsArg && inspectArg === undefined) {
+  console.error("Usage: --pairs=SRC:DEST[,...] [--sweep] [--overflow=IDX,IDX] [--max-trips=N] | --inspect=IDX");
   process.exit(1);
 }
-const pairs = pairsArg.split(",").map((token) => {
+const pairs = (pairsArg ?? "").split(",").filter(Boolean).map((token) => {
   const [source, dest] = token.split(":").map(Number);
   if (!Number.isInteger(source) || !Number.isInteger(dest)) throw new Error(`bad pair: ${token}`);
   return { source: source!, dest: dest! };
@@ -48,7 +49,7 @@ const canonical = inventory.canonical;
 const LIST_REGION = { left: 1340, top: 180, width: 760, height: 1430 };
 const LIST_ROW_X = 1700;
 const LIST_CENTER = { x: 1700, y: 800 };
-const LIST_TOGGLE = { x: 1259, y: 219 };
+const LIST_TOGGLE = { x: 1287, y: 212 };
 const PARK = { x: 660, y: 1900 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -62,47 +63,39 @@ async function readWindow(): Promise<ListRow[]> {
   return snapRows((Array.isArray(reply.lines) ? reply.lines : []) as OcrLine[]);
 }
 
-/**
- * The list cannot be wheel-scrolled; it scrolls to follow the SELECTED tab.
- * Reaching a row outside the visible window means walking the selection
- * toward it: click the top/bottom visible row, re-read, re-align, repeat.
- */
+/** The list scrolls only via its scrollbar (x~2005); drag the thumb to either end. */
+const LIST_SCROLLBAR_X = 2005;
+async function scrollList(toTop: boolean): Promise<void> {
+  await nav.send({
+    op: "drag",
+    x: LIST_SCROLLBAR_X,
+    y: toTop ? 700 : 900,
+    x2: LIST_SCROLLBAR_X,
+    y2: toTop ? 185 : 1580,
+  });
+  await sleep(600);
+}
+
 async function gotoTab(index: number): Promise<void> {
   for (let attempt = 0; attempt < 3; attempt += 1) {
-    let window = await readWindow();
-    if (window.length < 5) {
-      await nav.send({ op: "click", x: LIST_TOGGLE.x, y: LIST_TOGGLE.y });
-      await sleep(700);
-      window = await readWindow();
-      if (window.length < 5) continue;
-    }
-    let ok = true;
-    for (let step = 0; step < 12; step += 1) {
-      const shift = alignWindow(window, canonical);
-      if (shift === undefined) {
-        ok = false;
-        break;
-      }
-      const row = window[index - shift];
-      if (row) {
-        const clicked = await nav.send({ op: "click", x: LIST_ROW_X, y: row.clickY });
-        if (!clicked.ok) {
-          ok = false;
-          break;
-        }
-        await sleep(650);
-        return;
-      }
-      const walkRow = index < shift ? window[0]! : window.at(-1)!;
-      await nav.send({ op: "click", x: LIST_ROW_X, y: walkRow.clickY });
-      await sleep(600);
-      window = await readWindow();
+    for (const toTop of [index <= 25, index > 25]) {
+      await scrollList(toTop);
+      let window = await readWindow();
       if (window.length < 5) {
-        ok = false;
-        break;
+        await nav.send({ op: "click", x: LIST_TOGGLE.x, y: LIST_TOGGLE.y });
+        await sleep(700);
+        window = await readWindow();
+        if (window.length < 5) continue;
       }
+      const shift = alignWindow(window, canonical);
+      if (shift === undefined) continue;
+      const row = window[index - shift];
+      if (!row) continue;
+      const clicked = await nav.send({ op: "click", x: LIST_ROW_X, y: row.clickY });
+      if (!clicked.ok) continue;
+      await sleep(650);
+      return;
     }
-    if (!ok) continue;
   }
   throw new Error(`goto-tab-${index}-failed`);
 }
@@ -279,6 +272,26 @@ async function ensurePanelsOpen(): Promise<void> {
 /** Cells proven undepositable everywhere (quest items) — excluded from counts. */
 const undepositable = new Set<string>();
 
+/**
+ * Specialty layouts with nested sub-views, learned from live captures and
+ * stored as client-coordinate click points per tab-label pattern.
+ */
+interface SpecialtyLayout {
+  match: string;
+  views: Array<{ name: string; x: number; y: number }>;
+}
+
+function viewsForLabel(label: string): Array<{ name: string; x: number; y: number }> {
+  const file = path.join(templateDir, "specialty-views.json");
+  try {
+    const parsed = JSON.parse(readFileSync(file, "utf8")) as { layouts: SpecialtyLayout[] };
+    const normalized = label.toLowerCase();
+    return parsed.layouts.find((layout) => normalized.includes(layout.match.toLowerCase()))?.views ?? [];
+  } catch {
+    return [];
+  }
+}
+
 /** A bag report taken while the panel is closed says nothing — restore and recount. */
 async function verifiedBag(): Promise<{ count: number; keys: Set<string> }> {
   await ensurePanelsOpen();
@@ -348,6 +361,19 @@ try {
   const rect = await nav.send({ op: "rect" });
   if (!rect.ok) throw new Error("PoE window not found");
 
+  if (inspectArg !== undefined) {
+    const idx = Number(inspectArg);
+    await ensurePanelsOpen();
+    await gotoTab(idx);
+    const png = path.join(root, "artifacts", "tab-survey", `inspect-${idx}.png`);
+    const bmp = png.replace(/\.png$/, ".bmp");
+    const cap = await nav.send({ op: "capture", path: bmp, previewPath: png });
+    const { rmSync } = await import("node:fs");
+    rmSync(bmp, { force: true });
+    console.log(`inspect #${idx} "${canonical[idx]}" -> ${png} (ok=${cap.ok})`);
+    process.exit(0);
+  }
+
   let totalTrips = 0;
   let stopAll = false;
   const stats = new Map<string, DrainStats>();
@@ -360,6 +386,15 @@ try {
     const stat: DrainStats = { trips: 0, cellsMoved: 0 };
     stats.set(key, stat);
     console.log(`\n=== drain #${pair.source} "${canonical[pair.source]}" -> #${dest} "${canonical[dest]}" ===`);
+    // Specialty tabs have nested sub-views (map tiers, fragment pages, ...);
+    // sweep the default view first, then each configured sub-view.
+    const subViews: Array<{ name: string; x: number; y: number } | null> = [
+      null,
+      ...viewsForLabel(canonical[pair.source] ?? ""),
+    ];
+    for (const view of subViews) {
+    if (stopAll || totalTrips >= maxTrips) break;
+    if (view) console.log(`-- sub-view "${view.name}" --`);
     let bagAfterDeposit = 0;
     let latticeNoGain = 0;
     let latticePhase = 0;
@@ -373,6 +408,11 @@ try {
       }
       await ensurePanelsOpen();
       await gotoTab(pair.source);
+      if (view) {
+        const at = await snapshotFacts();
+        await nav.send({ op: "click", x: at.client.left + view.x, y: at.client.top + view.y });
+        await sleep(500);
+      }
       let bagCells: number;
       let fillReason = "sweep";
       if (sweepMode) {
@@ -480,6 +520,7 @@ try {
         console.log("source empty");
         break;
       }
+    }
     }
   }
 
