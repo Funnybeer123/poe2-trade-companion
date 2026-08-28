@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain } from "electron";
+import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -22,6 +22,13 @@ import {
 } from "../core/voiceTransfer.js";
 import { readMergedProfile, registerCalibrationIpc } from "./calibrationIpc.js";
 import { AssistiveRunService, type AssistiveRunRequest } from "./assistiveRunService.js";
+import {
+  findCompanionRepoRoot,
+  gatherCursorHandoffEvidence,
+  launchCursorWithPrompt,
+  spawnCursorCli,
+} from "./cursorHandoff.js";
+import { DryRunOverlayWindow } from "./dryRunOverlayWindow.js";
 import { StashSortService, type SortStashRequest } from "./stashSortService.js";
 import { VoiceTransferService } from "./voiceTransferService.js";
 import {
@@ -48,6 +55,7 @@ const killSwitch = new KillSwitch();
 
 let mainWindow: BrowserWindow | undefined;
 let assistiveService: AssistiveRunService | undefined;
+let dryRunOverlay: DryRunOverlayWindow | undefined;
 let stashSortService: StashSortService | undefined;
 let voiceService: VoiceTransferService | undefined;
 let voiceConfig = normalizeVoiceTransferConfig(undefined);
@@ -341,20 +349,28 @@ app.whenReady().then(() => {
   });
   registerScanIpc(ipcMain, scannerService);
   voiceConfig = loadVoiceTransferConfig(memoryRoot);
+  dryRunOverlay = new DryRunOverlayWindow();
+  const baselineDir = path.join(memoryRoot, "perception-templates");
   assistiveService = new AssistiveRunService({
     mode: buildMode,
     qaOptIn: true,
     killSwitch,
     memoryRoot,
     artifactDir,
+    baselineDir,
     profile: readMergedProfile,
     onEvent: (event) => mainWindow?.webContents.send("assistive:event", event),
+    onDryRunOverlay: (plan) => {
+      if (plan) dryRunOverlay?.show(plan);
+      else dryRunOverlay?.hide();
+    },
   });
   stashSortService = new StashSortService({
     mode: buildMode,
     qaOptIn: true,
     killSwitch,
     artifactDir,
+    baselineDir,
     profile: readMergedProfile,
     sizeDatabase: () => loadItemSizeDatabase(sizeDatabaseFile()),
     onEvent: (event) => mainWindow?.webContents.send("stash-sort:event", event),
@@ -410,6 +426,47 @@ app.whenReady().then(() => {
     void voiceService?.cancel("operator-stop");
     assistiveService?.stop("operator-stop");
     return assistiveService?.status;
+  });
+  ipcMain.handle("assistive:hide-overlay", () => {
+    assistiveService?.hideOverlay();
+    return assistiveService?.status;
+  });
+  ipcMain.handle("assistive:overlay-select", (_event, x: number, y: number, additive?: boolean) => {
+    const cell = dryRunOverlay?.cellAtLocalPoint(Number(x), Number(y));
+    return assistiveService?.selectOverlayCell(cell, { additive: Boolean(additive) });
+  });
+  ipcMain.handle("assistive:overlay-label", (_event, label: "right" | "wrong") =>
+    assistiveService?.labelOverlayCell(label === "wrong" ? "wrong" : "right"),
+  );
+  ipcMain.handle("assistive:send-to-cursor", async () => {
+    if (!assistiveService) {
+      return {
+        ok: false,
+        opened: false,
+        copied: false,
+        truncated: false,
+        findings: false,
+        method: "none" as const,
+        message: "Fix in Cursor needs the Electron app.",
+      };
+    }
+    const workspace = findCompanionRepoRoot([
+      process.env.POE2_REPO_ROOT ?? "",
+      process.cwd(),
+      app.getAppPath(),
+    ]);
+    const evidence = gatherCursorHandoffEvidence({
+      memoryRoot,
+      artifactDir,
+      profile: readMergedProfile(),
+      snapshot: assistiveService.cursorHandoffSnapshot(),
+      ...(workspace ? { workspace } : {}),
+    });
+    return launchCursorWithPrompt(evidence, { artifactDir }, {
+      writeText: (text) => clipboard.writeText(text),
+      openExternal: (url) => shell.openExternal(url),
+      spawnCursor: spawnCursorCli,
+    });
   });
   ipcMain.handle(
     "assistive:memory-status",
@@ -476,6 +533,8 @@ app.on("window-all-closed", () => {
   assistiveService?.stop("app-closed");
   stashSortService?.stop("app-closed");
   scannerService?.stop("app-closed");
+  dryRunOverlay?.dispose();
+  dryRunOverlay = undefined;
   localPersistence?.close();
   localPersistence = undefined;
   globalShortcut.unregisterAll();

@@ -7,9 +7,13 @@ import {
   matchGridLayout,
   matchGridRim,
   profileHasGrids,
+  resolveStashGrids,
   toScreenBox,
   type CalibrationProfile,
+  type ClientBox,
   type GridMark,
+  type ResolvedStashGrids,
+  type StashTabKind,
 } from "./calibrationProfile.js";
 import { detectSpriteItems, occupiedFromScores, scoreGridCells } from "./itemSprites.js";
 import { locateStashNameplate, NAMEPLATE_NCC, pickStashNameplate } from "./nameplates.js";
@@ -197,11 +201,12 @@ export function lookCalibrated(
   bgr?: BgrImage,
 ): UiFacts {
   const bagDirect = gridLooksOpen(frame, client, profile.bagGrid);
-  const normalOpen = gridLooksOpen(frame, client, profile.stashGrid);
-  const quadOpen = gridLooksOpen(frame, client, profile.quadStashGrid);
-  let stashGrid = chooseOpenStashGrid(profile, normalOpen, quadOpen);
-  const vendorOpen = gridLooksOpen(frame, client, profile.ventorBagGrid);
+  const stashGrids = resolveStashGrids(profile);
+  const stashGrid = chooseOpenStashGrid(frame, client, profile, stashGrids);
   const stashPanelOpen = Boolean(stashGrid);
+  // The game never shows the vendor and stash panels at once, and the vendor
+  // box often overlaps the stash area, so an open stash wins the arbitration.
+  const vendorOpen = !stashPanelOpen && gridLooksOpen(frame, client, profile.ventorBagGrid);
   const bagOpenRaw = bagDirect || bagOpenBesideStash(frame, client, profile, stashPanelOpen);
   const bagOpen =
     bagOpenRaw &&
@@ -338,28 +343,69 @@ function gridLooksOpen(frame: GrayImage, client: ScreenRect, grid?: GridMark): b
   const full = matchChrome(frame, client, chrome);
   const rim = matchGridRim(frame, client, chrome);
   const layout = matchGridLayout(frame, client, chrome);
-  return (
+  if (
     full >= GRID_NCC ||
     rim >= GRID_NCC ||
     layout >= GRID_LAYOUT_NCC ||
     (rim >= 0.5 && layout >= 0.14)
-  );
+  ) {
+    return true;
+  }
+  // Chrome matching fails when an overlay (tab dropdown, tooltip, selection
+  // glow) sits near the panel border even though the grid itself is visible.
+  return hasConsistentCellGrid(frame, uv, grid.cols, grid.rows);
 }
 
 function chooseOpenStashGrid(
+  frame: GrayImage,
+  client: ScreenRect,
   profile: CalibrationProfile,
-  normalOpen: boolean,
-  quadOpen: boolean,
+  grids: ResolvedStashGrids,
 ): GridMark | undefined {
-  if (profile.activeStashTab === "quad" && profile.quadStashGrid && (quadOpen || normalOpen)) {
-    return profile.quadStashGrid;
+  const normalOpen = gridLooksOpen(frame, client, grids.normal);
+  const quadOpen = gridLooksOpen(frame, client, grids.quad);
+  if (grids.shared && grids.normal && grids.quad) {
+    if (!normalOpen && !quadOpen) return undefined;
+    const kind = pickSharedStashTab(frame, client, grids.normal, profile.activeStashTab);
+    return kind === "quad" ? grids.quad : grids.normal;
   }
-  if (quadOpen && !normalOpen) return profile.quadStashGrid;
-  if (normalOpen && !quadOpen) return profile.stashGrid;
+  if (profile.activeStashTab === "quad" && grids.quad && (quadOpen || normalOpen)) {
+    return grids.quad;
+  }
+  if (quadOpen && !normalOpen) return grids.quad;
+  if (normalOpen && !quadOpen) return grids.normal;
   if (quadOpen && normalOpen) {
-    return profile.activeStashTab === "quad" ? profile.quadStashGrid : profile.stashGrid;
+    return profile.activeStashTab === "quad" ? grids.quad : grids.normal;
   }
   return undefined;
+}
+
+/** Shared panel: cell regularity and occupancy density pick 12×12 vs 24×24. */
+export function pickSharedStashTab(
+  frame: GrayImage,
+  client: ScreenRect,
+  box: ClientBox,
+  hint?: StashTabKind,
+): StashTabKind {
+  const uv = {
+    x: box.x / client.width,
+    y: box.y / client.height,
+    w: box.w / client.width,
+    h: box.h / client.height,
+  };
+  const normalCells = hasRegularCellGrid(frame, uv, 12, 12);
+  const quadCells = hasRegularCellGrid(frame, uv, 24, 24);
+  if (normalCells !== quadCells) return quadCells ? "quad" : "normal";
+
+  const region = toScreenBox(client, box);
+  const items12 = detectSpriteItems(frame, client, region, 12, 12);
+  const items24 = detectSpriteItems(frame, client, region, 24, 24);
+  const odd24 = items24.some((item) => item.w % 2 === 1 || item.h % 2 === 1);
+  const even24 = items24.length > 0 && items24.every((item) => item.w % 2 === 0 && item.h % 2 === 0);
+  if (odd24 && !even24) return "quad";
+  if (even24 && items12.length > 0) return "normal";
+  if (items24.length > items12.length * 2 && odd24) return "quad";
+  return hint === "quad" ? "quad" : "normal";
 }
 
 export function canActOnFacts(facts: UiFacts): boolean {
@@ -415,13 +461,12 @@ function scaleBox(box: BBox, from: GrayImage, client: ScreenRect): BBox {
   };
 }
 
-/** Empty-ish cells should look alike, and cell borders should differ from interiors. */
-export function hasRegularCellGrid(
+function cellGridSignals(
   frame: GrayImage,
   uv: { x: number; y: number; w: number; h: number },
   cols: number,
   rows: number,
-): boolean {
+): { lowVar: number; border: number; borderFraction: number } {
   const means: number[] = [];
   const borderSignals: number[] = [];
   const cellW = (uv.w * frame.width) / cols;
@@ -443,9 +488,40 @@ export function hasRegularCellGrid(
   const sorted = [...means].sort((a, b) => a - b);
   const lowN = Math.max(4, Math.floor(means.length * 0.35));
   const low = sorted.slice(0, lowN);
-  const lowVar = sampleVariance(low);
-  const border = average(borderSignals);
-  return lowVar < 320 && border > 3.5;
+  return {
+    lowVar: sampleVariance(low),
+    border: average(borderSignals),
+    borderFraction:
+      borderSignals.length === 0
+        ? 0
+        : borderSignals.filter((signal) => signal > 2.5).length / borderSignals.length,
+  };
+}
+
+/** Empty-ish cells should look alike, and cell borders should differ from interiors. */
+export function hasRegularCellGrid(
+  frame: GrayImage,
+  uv: { x: number; y: number; w: number; h: number },
+  cols: number,
+  rows: number,
+): boolean {
+  const signals = cellGridSignals(frame, uv, cols, rows);
+  return signals.lowVar < 320 && signals.border > 3.5;
+}
+
+/**
+ * Stricter variant for overriding a failed chrome match: a real grid shows
+ * border-vs-interior contrast in most individual cells, while world scenery
+ * that merely averages out gets rejected.
+ */
+export function hasConsistentCellGrid(
+  frame: GrayImage,
+  uv: { x: number; y: number; w: number; h: number },
+  cols: number,
+  rows: number,
+): boolean {
+  const signals = cellGridSignals(frame, uv, cols, rows);
+  return signals.lowVar < 320 && signals.border > 3.5 && signals.borderFraction >= 0.6;
 }
 
 function sampleVariance(values: number[]): number {

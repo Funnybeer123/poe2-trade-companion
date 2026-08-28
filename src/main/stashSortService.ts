@@ -8,6 +8,7 @@ import {
   activeStashGrid,
   cropClientBox,
   profileReadyForDeposit,
+  stashTabFromGridSize,
   type CalibrationProfile,
 } from "../core/calibrationProfile.js";
 import { RuntimeCapabilities } from "../core/capabilities.js";
@@ -52,6 +53,7 @@ import type {
   RuntimeMode,
 } from "../core/types.js";
 import { validateTransferInput } from "../core/transferInputGuard.js";
+import { BaselineRuntime } from "../core/baselineRuntime.js";
 import { perceiveUi, type UiFacts } from "../core/uiPerception.js";
 
 export type SortStashAction = "preview" | "execute";
@@ -95,6 +97,8 @@ interface StashSortServiceOptions {
   qaOptIn: boolean;
   killSwitch: KillSwitch;
   artifactDir: string;
+  /** Where learned empty-cell baseline models persist; refinement is skipped when unset. */
+  baselineDir?: string;
   profile: () => CalibrationProfile;
   onEvent?: (event: SortStashEvent) => void;
   hostFactory?: typeof startWinHost;
@@ -239,9 +243,10 @@ function tabDescriptor(
   targetHwnd: string,
   safety: SortTabSafety,
   tabVisualHash: string,
+  detected?: { cols?: number; rows?: number },
 ): SortTabDescriptor {
-  const grid = activeStashGrid(profile);
-  const kind = profile.activeStashTab === "quad" ? "quad" : "normal";
+  const grid = activeStashGrid(profile, detected);
+  const kind = stashTabFromGridSize(detected) ?? (profile.activeStashTab === "quad" ? "quad" : "normal");
   const supported =
     Boolean(grid) &&
     ((kind === "normal" && grid!.cols === 12 && grid!.rows === 12) ||
@@ -304,7 +309,10 @@ export class StashSortService {
 
   constructor(private readonly options: StashSortServiceOptions) {
     mkdirSync(options.artifactDir, { recursive: true });
+    this.baseline = options.baselineDir ? new BaselineRuntime(options.baselineDir) : undefined;
   }
+
+  private readonly baseline: BaselineRuntime | undefined;
 
   get status() {
     const profile = this.options.profile();
@@ -599,6 +607,7 @@ export class StashSortService {
                 ctx.targetHwnd,
                 request.tabSafety,
                 capture.tabVisualHash,
+                capture.facts.stashGridSize,
               ).signature,
               stable:
                 capture.facts.stashPanelOpen &&
@@ -747,7 +756,8 @@ export class StashSortService {
     );
     const bgr = readBmpBgr(bmpPath);
     const frame = bgrToGray(bgr);
-    const facts = perceiveUi(frame, client, {}, ctx.profile, bgr);
+    const perceived = perceiveUi(frame, client, {}, ctx.profile, bgr);
+    const facts = this.baseline ? this.baseline.refine(perceived, frame, bgr, client).facts : perceived;
     const evidenceHash = createHash("sha256")
       .update(
         JSON.stringify({
@@ -856,8 +866,8 @@ export class StashSortService {
     ) {
       throw new Error("stable-open-stash-and-bag-required");
     }
-    const tab = tabDescriptor(ctx.profile, ctx.targetHwnd, safety, initial.tabVisualHash);
-    const grid = activeStashGrid(ctx.profile);
+    const tab = tabDescriptor(ctx.profile, ctx.targetHwnd, safety, initial.tabVisualHash, initial.facts.stashGridSize);
+    const grid = activeStashGrid(ctx.profile, initial.facts.stashGridSize);
     if (!grid || grid.cols !== tab.cols || grid.rows !== tab.rows) {
       throw new Error("active-grid-calibration-mismatch");
     }

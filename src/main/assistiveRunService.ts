@@ -31,6 +31,8 @@ import {
 import {
   activeStashGrid,
   profileReadyForDeposit,
+  stashTabFromGridSize,
+  withDetectedStashTab,
   type CalibrationProfile,
 } from "../core/calibrationProfile.js";
 import { RuntimeCapabilities } from "../core/capabilities.js";
@@ -65,6 +67,21 @@ import {
 import { isStashSearchClick, searchLooksFailed, stashSearchClick } from "../core/stashSearch.js";
 import { runSkill, type SkillInput } from "../core/skillRunner.js";
 import { validateTransferInput } from "../core/transferInputGuard.js";
+import {
+  applyOverlayDetectionLabels,
+  overlayItemCellsAt,
+  overlaySelectionSummary,
+  planDryRunOverlay,
+  updateOverlaySelection,
+  type DryRunOverlayPlan,
+  type OverlayCellRef,
+  type OverlayDetectionLabel,
+} from "../core/dryRunOverlay.js";
+import {
+  applyOccupancyLabels,
+  occupancyLabelsPath,
+  recordOccupancyLabel,
+} from "../core/occupancyLabels.js";
 import type {
   AutomationScenario,
   BotDecision,
@@ -72,6 +89,7 @@ import type {
   QaActionTrace,
   RuntimeMode,
 } from "../core/types.js";
+import { BaselineRuntime } from "../core/baselineRuntime.js";
 import { perceiveUi, type UiFacts } from "../core/uiPerception.js";
 import { isSafeStashSearchQuery } from "../core/voiceTransfer.js";
 
@@ -120,8 +138,11 @@ interface AssistiveRunServiceOptions {
   killSwitch: KillSwitch;
   memoryRoot: string;
   artifactDir: string;
+  /** Where learned empty-cell baseline models persist; defaults to the repo template layout under memoryRoot. */
+  baselineDir?: string;
   profile: () => CalibrationProfile;
   onEvent?: (event: AssistiveRunEvent) => void;
+  onDryRunOverlay?: (plan: DryRunOverlayPlan | null) => void;
   hostFactory?: typeof startWinHost;
 }
 
@@ -223,16 +244,12 @@ function occupiedSignature(cells: UiFacts["occupiedBag"]): string {
 }
 
 function transferPreflightStable(skill: Skill, before: UiFacts, after: UiFacts): boolean {
-  if (
-    !before.stashPanelOpen ||
-    !before.inventoryPanelOpen ||
-    !after.stashPanelOpen ||
-    !after.inventoryPanelOpen ||
-    before.confidence < 0.4 ||
-    after.confidence < 0.4
-  ) {
-    return false;
+  if (before.confidence < 0.4 || after.confidence < 0.4) return false;
+  if (!before.stashPanelOpen || !after.stashPanelOpen) return false;
+  if (skill.id === "deposit-bag-to-stash" && (!before.inventoryPanelOpen || !after.inventoryPanelOpen)) {
+    return before.inventoryPanelOpen === after.inventoryPanelOpen;
   }
+  if (!before.inventoryPanelOpen || !after.inventoryPanelOpen) return false;
   if (occupiedSignature(before.occupiedBag) !== occupiedSignature(after.occupiedBag)) return false;
   if (
     skill.id === "fill-bag-from-stash" &&
@@ -247,10 +264,18 @@ export class AssistiveRunService {
   private running = false;
   private currentAbort?: AbortController;
   private last?: AssistiveRunResult;
+  private overlayPlan: DryRunOverlayPlan | null = null;
+  private overlaySelection: OverlayCellRef[] = [];
+  private overlaySessionLabels: OverlayDetectionLabel[] = [];
 
   constructor(private readonly options: AssistiveRunServiceOptions) {
     mkdirSync(options.artifactDir, { recursive: true });
+    this.baseline = new BaselineRuntime(
+      options.baselineDir ?? path.join(options.memoryRoot, "fixtures", "perception", "templates"),
+    );
   }
+
+  private readonly baseline: BaselineRuntime;
 
   get status() {
     const profile = this.options.profile();
@@ -262,13 +287,85 @@ export class AssistiveRunService {
       stashTab: profile.activeStashTab === "quad" ? "quad" as const : "normal" as const,
       gridsCalibrated: profileReadyForDeposit(profile),
       searchCalibrated: Boolean(profile.stashSearch),
+      overlayVisible: this.overlayPlan !== null,
+      overlaySelection: this.overlaySelection,
+      overlayWrongCount: this.overlaySessionLabels.filter((label) => label.label === "wrong").length,
+      overlayLabelFile: occupancyLabelsPath(this.options.memoryRoot),
       last: this.last,
     };
+  }
+
+  cursorHandoffSnapshot() {
+    return {
+      last: this.last
+        ? {
+            ok: this.last.ok,
+            reason: this.last.reason,
+            kind: this.last.kind,
+            dryRun: this.last.dryRun,
+            cycles: this.last.cycles,
+            elapsedMs: this.last.elapsedMs,
+            bagCells: this.last.bagCells,
+            stashCells: this.last.stashCells,
+            traces: this.last.traces.slice(-40),
+          }
+        : null,
+      overlayPlan: this.overlayPlan,
+      overlaySelection: [...this.overlaySelection],
+      overlaySessionLabels: [...this.overlaySessionLabels],
+    };
+  }
+
+  hideOverlay(): void {
+    this.overlaySelection = [];
+    this.overlaySessionLabels = [];
+    this.publishOverlay(null);
+  }
+
+  selectOverlayCell(cell?: OverlayCellRef | null, options?: { additive?: boolean }) {
+    if (!this.overlayPlan) return { selected: [] as OverlayCellRef[] };
+    const incoming = cell ? overlayItemCellsAt(this.overlayPlan, cell) : [];
+    const additive = Boolean(options?.additive) && incoming.length > 0;
+    this.overlaySelection = updateOverlaySelection(this.overlaySelection, incoming, additive);
+    this.republishOverlay();
+    this.emit("overlay", overlaySelectionSummary(this.overlaySelection));
+    return { selected: this.overlaySelection };
+  }
+
+  labelOverlayCell(label: "right" | "wrong") {
+    const selected = this.overlaySelection;
+    if (!this.overlayPlan || selected.length === 0) {
+      return { ok: false as const, reason: "no-overlay-cell-selected" };
+    }
+    const labels = selected.map((cell) =>
+      recordOccupancyLabel(this.options.memoryRoot, {
+        area: cell.area,
+        row: cell.row,
+        col: cell.col,
+        perceivedOccupied: cell.occupied,
+        label,
+        evidenceHash: this.overlayPlan?.evidenceHash,
+        screenshotId: this.overlayPlan?.screenshotId,
+      }),
+    );
+    for (const cell of selected) {
+      this.overlaySessionLabels.push({
+        area: cell.area,
+        row: cell.row,
+        col: cell.col,
+        perceivedOccupied: cell.occupied,
+        label,
+      });
+    }
+    this.republishOverlay();
+    this.emit("overlay", `${label} ${overlaySelectionSummary(selected)}`);
+    return { ok: true as const, selected, labels };
   }
 
   stop(reason = "operator-stop"): void {
     this.currentAbort?.abort(reason);
     this.options.killSwitch.trip();
+    this.hideOverlay();
     this.emit("stopped", reason);
   }
 
@@ -292,6 +389,7 @@ export class AssistiveRunService {
     const abort = new AbortController();
     this.currentAbort = abort;
     this.running = true;
+    this.hideOverlay();
     try {
       const result = await this.run({ ...request, wantedClasses: safeClasses(request.wantedClasses) }, abort);
       this.last = result;
@@ -304,6 +402,19 @@ export class AssistiveRunService {
 
   private emit(phase: string, message: string, extra: Partial<AssistiveRunEvent> = {}): void {
     this.options.onEvent?.({ at: now(), phase, message, ...extra });
+  }
+
+  private publishOverlay(plan: DryRunOverlayPlan | null): void {
+    this.overlayPlan = plan;
+    this.options.onDryRunOverlay?.(plan);
+  }
+
+  private republishOverlay(): void {
+    if (!this.overlayPlan) return;
+    this.publishOverlay({
+      ...applyOverlayDetectionLabels(this.overlayPlan, this.overlaySessionLabels),
+      selected: this.overlaySelection,
+    });
   }
 
   private appendTrace(entries: unknown[]): void {
@@ -416,7 +527,8 @@ export class AssistiveRunService {
       };
       const query = request.searchQuery ?? searchScenarioQuery(request.wantedClasses);
       const memoryKey = scenarioMemoryKey(
-        profile.activeStashTab === "quad" ? "quad" : "normal",
+        stashTabFromGridSize(capture.facts.stashGridSize) ??
+          (profile.activeStashTab === "quad" ? "quad" : "normal"),
         query,
       );
       let memory = loadAssistiveMemory(this.options.memoryRoot);
@@ -451,8 +563,7 @@ export class AssistiveRunService {
                 withdrawn,
                 request.wantedClasses,
               );
-        const preview = await this.previewSkill(ctx, skill, capture.facts);
-        results.push(preview);
+        results.push(await this.previewSkill(ctx, skill, capture.facts));
       } else {
         if (
           request.kind !== "empty" &&
@@ -474,7 +585,10 @@ export class AssistiveRunService {
             stashCells: capture.facts.occupiedStash.length,
           });
 
-          if ((request.kind === "empty" || request.kind === "two-cycle") && capture.facts.occupiedBag.length > 0) {
+          if (
+            request.kind === "empty" ||
+            (request.kind === "two-cycle" && capture.facts.occupiedBag.length > 0)
+          ) {
             const before = capture.facts;
             const benchmarkStartedAt = Date.now();
             const traceStart = ctx.controller.actionTraces.length;
@@ -523,10 +637,12 @@ export class AssistiveRunService {
                   }))
                 : [
                     { wantedClasses: [] as string[], query: "" },
-                    ...DEFAULT_ONE_CELL_FINISHERS.map((itemClass) => ({
-                      wantedClasses: [itemClass],
-                      query: searchQueryForClass(itemClass),
-                    })),
+                    ...(profile.stashSearch
+                      ? DEFAULT_ONE_CELL_FINISHERS.map((itemClass) => ({
+                          wantedClasses: [itemClass],
+                          query: searchQueryForClass(itemClass),
+                        }))
+                      : []),
                   ];
             let stopAllFills = false;
             for (const fillRequest of fillRequests) {
@@ -756,6 +872,23 @@ export class AssistiveRunService {
         traces: controller.actionTraces,
         memory: assistiveMemoryStatus(memory, memoryKey),
       };
+      if (request.dryRun && ctx.lastCapture) {
+        this.overlaySelection = [];
+        this.overlaySessionLabels = [];
+        this.publishOverlay(
+          planDryRunOverlay({
+            kind: request.kind,
+            traces: controller.actionTraces,
+            profile: withDetectedStashTab(profile, ctx.lastCapture.facts.stashGridSize),
+            client: ctx.lastCapture.client,
+            occupiedStash: ctx.lastCapture.facts.occupiedStash,
+            occupiedBag: ctx.lastCapture.facts.occupiedBag,
+            stashItems: ctx.lastCapture.facts.stashItems,
+            evidenceHash: ctx.lastCapture.evidenceHash,
+            screenshotId: path.basename(ctx.lastCapture.previewPath),
+          }),
+        );
+      }
       this.emit("complete", result.reason, {
         bagCells: result.bagCells,
         stashCells: result.stashCells,
@@ -842,7 +975,9 @@ export class AssistiveRunService {
     );
     const bgr = readBmpBgr(file);
     const frame = bgrToGray(bgr);
-    const facts = perceiveUi(frame, client, {}, profile, bgr);
+    const refined = this.baseline.refine(perceiveUi(frame, client, {}, profile, bgr), frame, bgr, client);
+    // Operator labels stay the last word on any cell the baseline touched.
+    const facts = applyOccupancyLabels(refined.facts, this.options.memoryRoot, profile, client);
     const evidenceHash = createHash("sha256")
       .update(JSON.stringify({
         bag: facts.occupiedBag.map((cell) => [cell.row, cell.col]),
@@ -861,6 +996,12 @@ export class AssistiveRunService {
       confidence: facts.confidence,
       bagCells: facts.occupiedBag.length,
       stashCells: facts.occupiedStash.length,
+      baseline: refined.adjustments.map((adjustment) => ({
+        area: adjustment.area,
+        removed: adjustment.removed.length,
+        added: adjustment.added.length,
+        learned: adjustment.learned,
+      })),
     };
     this.appendTrace([perceptionTrace]);
     this.emit("capture", phase, {
@@ -1039,7 +1180,9 @@ export class AssistiveRunService {
 
   private searchPoint(profile: CalibrationProfile, capture: Capture): { x: number; y: number } {
     const box = profile.stashSearch;
-    if (!box) throw new Error("stash-search-not-calibrated");
+    if (!box) {
+      throw new Error("stash-search-not-calibrated");
+    }
     if (!capture.facts.stashPanelOpen || !capture.facts.stashRegion) {
       throw new Error("stash-panel-required-for-search");
     }
@@ -1131,7 +1274,7 @@ export class AssistiveRunService {
     maxMatches?: number,
   ): Promise<{ items: StashItem[]; skipped: StashItem[]; attempts: number; capture: Capture }> {
     const bagRegion = capture.facts.inventoryRegion;
-    const grid = activeStashGrid(profile);
+    const grid = activeStashGrid(profile, capture.facts.stashGridSize);
     if (!bagRegion || !grid) throw new Error("stash-and-bag-not-visible");
     const result = await sizeFillPool({
       sprites,
@@ -1177,7 +1320,7 @@ export class AssistiveRunService {
     const after = await this.capture(ctx, profile, "class-search");
     const stash = after.facts.stashRegion;
     const bag = after.facts.inventoryRegion;
-    const grid = activeStashGrid(profile);
+    const grid = activeStashGrid(profile, after.facts.stashGridSize);
     if (!stash || !grid) throw new Error("stash-grid-not-visible");
     if (!bag) throw new Error("bag-grid-not-visible");
     const classSizes = wantedClassSizes(wantedClasses);
