@@ -173,39 +173,125 @@ async function snapshotFacts() {
       scoreGridCellsRgb(bgr, client, facts.stashRegion, facts.stashGridSize.cols, facts.stashGridSize.rows),
     );
   }
-  let unionBag = facts.occupiedBag.length;
-  if (facts.inventoryPanelOpen && facts.inventoryRegion) {
+  // Count the bag directly over its calibrated box — a very full bag defeats
+  // panel-open detection, and "can't see the panel" must never read as empty.
+  const profile = loadProfile(templateDir);
+  const bagKeys = new Set<string>();
+  let bagBox: { x: number; y: number; w: number; h: number } | undefined;
+  if (profile.bagGrid) {
+    bagBox = {
+      x: client.left + profile.bagGrid.x,
+      y: client.top + profile.bagGrid.y,
+      w: profile.bagGrid.w,
+      h: profile.bagGrid.h,
+    };
     const { occupiedFromScores, scoreGridCells } = await import("../src/core/itemSprites.js");
-    const gray = occupiedFromScores(scoreGridCells(frame, client, facts.inventoryRegion, 12, 5));
-    const keys = new Set(facts.occupiedBag.map((cell) => `${cell.row},${cell.col}`));
-    for (const cell of gray) keys.add(`${cell.row},${cell.col}`);
-    unionBag = keys.size;
+    for (const cell of occupiedFromScores(scoreGridCells(frame, client, bagBox, 12, 5))) {
+      bagKeys.add(`${cell.row},${cell.col}`);
+    }
+    for (const cell of occupiedFromRgbScores(scoreGridCellsRgb(bgr, client, bagBox, 12, 5))) {
+      bagKeys.add(`${cell.row},${cell.col}`);
+    }
   }
-  return { facts, client, rgbStash, unionBag };
+  for (const cell of facts.occupiedBag) bagKeys.add(`${cell.row},${cell.col}`);
+  return { facts, client, rgbStash, unionBag: bagKeys.size, bagKeys, bagBox };
 }
 
-/** A bag report taken while the panel is closed says nothing — reopen and recount. */
-async function verifiedBagCount(): Promise<number> {
-  let snap = await snapshotFacts();
-  if (!snap.facts.inventoryPanelOpen) {
+/** Deposit by ctrl-clicking every bag cell center — no perception dependency. */
+async function bagSweepDeposit(shift = false): Promise<void> {
+  const snap = await snapshotFacts();
+  if (!snap.bagBox) throw new Error("bag-grid-not-calibrated");
+  const points: Array<{ x: number; y: number }> = [];
+  for (let row = 0; row < 5; row += 1) {
+    for (let col = 0; col < 12; col += 1) {
+      points.push({
+        x: Math.round(snap.bagBox.x + (snap.bagBox.w * (col + 0.5)) / 12),
+        y: Math.round(snap.bagBox.y + (snap.bagBox.h * (row + 0.5)) / 5),
+      });
+    }
+  }
+  await nav.send({ op: "focus" });
+  await sleep(250);
+  await burstWithRetry(points, shift);
+  await sleep(400);
+}
+
+/**
+ * Ground truth for panel state comes from OCR of the panel titles, not grid
+ * heuristics — world floor tiles can hallucinate a grid. The STASH banner
+ * and INVENTORY banner sit in fixed header bands at 4K fullscreen.
+ */
+async function panelsViaOcr(): Promise<{ stash: boolean; inventory: boolean }> {
+  const stashBand = await nav.send({ op: "ocr", left: 450, top: 100, width: 700, height: 110 });
+  const invBand = await nav.send({ op: "ocr", left: 2900, top: 100, width: 800, height: 110 });
+  return {
+    stash: /stash/i.test(String(stashBand.text ?? "")),
+    inventory: /inventor/i.test(String(invBand.text ?? "")),
+  };
+}
+
+async function clickStashChest(): Promise<void> {
+  // Find the world "Stash" nameplate by OCR and click just below it.
+  const world = await nav.send({ op: "ocr", left: 1200, top: 300, width: 1800, height: 1000 });
+  const lines = (Array.isArray(world.lines) ? world.lines : []) as Array<{ text: string; x: number; y: number; w: number; h: number }>;
+  const plate = lines.find((line) => /^stash$/i.test(line.text.trim()));
+  const x = plate ? Math.round(plate.x + plate.w / 2) : 1790;
+  const y = plate ? Math.round(plate.y + plate.h / 2 + 70) : 505;
+  await nav.send({ op: "focus" });
+  await sleep(300);
+  await nav.send({ op: "click", x, y });
+  await sleep(2600);
+}
+
+async function ensurePanelsOpen(): Promise<void> {
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    const panels = await panelsViaOcr();
+    if (panels.stash && panels.inventory) return;
+    if (!panels.stash) {
+      console.log("  stash closed — reopening via chest");
+      await clickStashChest();
+      continue;
+    }
+    console.log("  bag closed — pressing i");
     await nav.send({ op: "focus" });
-    await sleep(300);
+    await sleep(250);
     await nav.send({ op: "hotkey", keys: "i" });
     await sleep(700);
-    snap = await snapshotFacts();
-    if (!snap.facts.inventoryPanelOpen) throw new Error("bag-not-visible");
   }
-  return snap.unionBag;
+  const panels = await panelsViaOcr();
+  if (!panels.stash || !panels.inventory) throw new Error("panels-not-restorable");
 }
 
-async function burstWithRetry(points: Array<{ x: number; y: number }>): Promise<void> {
+/** Cells proven undepositable everywhere (quest items) — excluded from counts. */
+const undepositable = new Set<string>();
+
+/** A bag report taken while the panel is closed says nothing — restore and recount. */
+async function verifiedBag(): Promise<{ count: number; keys: Set<string> }> {
+  await ensurePanelsOpen();
+  const snap = await snapshotFacts();
+  const keys = new Set(snap.bagKeys);
+  for (const key of undepositable) keys.delete(key);
+  return { count: keys.size, keys };
+}
+
+async function verifiedBagCount(): Promise<number> {
+  return (await verifiedBag()).count;
+}
+
+function sameCells(a: Set<string>, b: Set<string>): boolean {
+  if (a.size !== b.size) return false;
+  for (const key of a) if (!b.has(key)) return false;
+  return true;
+}
+
+async function burstWithRetry(points: Array<{ x: number; y: number }>, shift = false): Promise<void> {
   for (let i = 0; i < points.length; i += 40) {
     const slice = points.slice(i, i + 40);
-    let burst = await nav.send({ op: "ctrlburst", points: slice });
+    let burst = await nav.send({ op: "ctrlburst", points: slice, shift });
     if (!burst.ok && /focus/i.test(String(burst.error ?? ""))) {
       await nav.send({ op: "focus" });
       await sleep(400);
-      burst = await nav.send({ op: "ctrlburst", points: slice });
+      burst = await nav.send({ op: "ctrlburst", points: slice, shift });
     }
     if (!burst.ok) throw new Error(`sweep-burst-failed:${burst.error}`);
     await sleep(110);
@@ -218,7 +304,7 @@ async function burstWithRetry(points: Array<{ x: number; y: number }>): Promise<
  * lattice). When a targeted pass stops producing, fall back to staggered
  * lattice passes that also catch anything perception misses entirely.
  */
-async function sweepSourceIntoBag(targeted: boolean, latticePhase: number): Promise<number> {
+async function sweepSourceIntoBag(targeted: boolean, latticePhase: number, shift = false): Promise<number> {
   const before = await snapshotFacts();
   let points: Array<{ x: number; y: number }>;
   const candidates = new Map<string, { x: number; y: number }>();
@@ -239,7 +325,7 @@ async function sweepSourceIntoBag(targeted: boolean, latticePhase: number): Prom
   }
   await nav.send({ op: "focus" });
   await sleep(250);
-  await burstWithRetry(points);
+  await burstWithRetry(points, shift);
   await sleep(350);
   return verifiedBagCount();
 }
@@ -264,11 +350,14 @@ try {
     let latticeNoGain = 0;
     let latticePhase = 0;
     let targetedNext = true;
+    let shiftNext = false;
+    let shiftTried = false;
     for (;;) {
       if (totalTrips >= maxTrips) {
         console.log("trip budget exhausted");
         break;
       }
+      await ensurePanelsOpen();
       await gotoTab(pair.source);
       let bagCells: number;
       let fillReason = "sweep";
@@ -279,8 +368,16 @@ try {
           break;
         }
         const wasTargeted = targetedNext;
-        bagCells = await sweepSourceIntoBag(targetedNext, latticePhase);
+        const wasShift = shiftNext;
+        bagCells = await sweepSourceIntoBag(targetedNext, latticePhase, shiftNext);
+        shiftNext = false;
         if (bagCells - bagAfterDeposit <= 0) {
+          if (wasTargeted && !wasShift && !shiftTried) {
+            // Duplicate uniques only move with shift+ctrl — try that once.
+            shiftTried = true;
+            shiftNext = true;
+            continue;
+          }
           if (wasTargeted) {
             // Classifier candidates exhausted — mop up with the blind lattice.
             targetedNext = false;
@@ -315,23 +412,41 @@ try {
       // into the destination, verify with independent perception, retry, and
       // escalate through overflow tabs; if nothing accepts the rest, stop the
       // whole run rather than churn with a partially full bag.
+      // If a re-run leaves the exact same cells stuck, the destination has no
+      // room for those items — stop clicking them and report full.
       const emptyInto = async (tabIndex: number): Promise<number> => {
         await gotoTab(tabIndex);
-        await run("empty");
-        let count = await verifiedBagCount();
-        for (let retry = 0; retry < 2 && count > 0; retry += 1) {
-          console.log(`  bag still holds ${count} cells at #${tabIndex} — re-running empty`);
-          await run("empty");
-          count = await verifiedBagCount();
+        await bagSweepDeposit();
+        let state = await verifiedBag();
+        for (let retry = 0; retry < 2 && state.count > 0; retry += 1) {
+          const previous = state.keys;
+          console.log(`  bag still holds ${state.count} cells at #${tabIndex} — one more deposit pass`);
+          // Second pass uses shift+ctrl, which duplicate uniques require.
+          await bagSweepDeposit(retry > 0);
+          state = await verifiedBag();
+          if (state.count > 0 && sameCells(previous, state.keys) && retry > 0) {
+            console.log(`  same ${state.count} cells stuck — destination #${tabIndex} is full for them`);
+            break;
+          }
         }
-        return count;
+        return state.count;
       };
       let leftover = await emptyInto(dest);
       while (leftover > 0) {
         const next = overflowQueue.shift();
         if (next === undefined) {
-          console.log(`bag cannot be fully emptied (${leftover} cells stuck) — stopping the run`);
-          stopAll = true;
+          // Nothing accepts these cells anywhere — they are quest/undepositable
+          // items. Set them aside and keep draining instead of stopping.
+          const stuck = await verifiedBag();
+          for (const key of stuck.keys) undepositable.add(key);
+          console.log(
+            `${stuck.keys.size} cell(s) refuse deposit everywhere — treating as undepositable and continuing`,
+          );
+          if (undepositable.size > 10) {
+            console.log("too many undepositable cells — stopping for review");
+            stopAll = true;
+          }
+          leftover = 0;
           break;
         }
         console.log(`destination full — overflowing to #${next} "${canonical[next]}"`);

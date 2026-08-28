@@ -145,10 +145,14 @@ export class BaselineRuntime {
       if (score.reference !== "cell") continue;
       const reference = model.cells[score.row * model.cols + score.col];
       if (!reference || reference.samples < MIN_SAMPLES) continue;
+      // A well-established reference (many merged observations) can flag
+      // occupancy at the normal threshold — dark item art (runes, masks)
+      // sits in the 25-40 diff band that the conservative bar misses.
+      const addThreshold = reference.samples >= 4 ? BASELINE_OCCUPIED_DIFF : CONFIDENT_OCCUPIED;
       const key = `${score.row},${score.col}`;
       if (occupiedKeys.has(key) && score.diff < CONFIDENT_EMPTY) {
         removed.push({ row: score.row, col: score.col });
-      } else if (!occupiedKeys.has(key) && score.diff > CONFIDENT_OCCUPIED) {
+      } else if (!occupiedKeys.has(key) && score.diff > addThreshold) {
         added.push({ row: score.row, col: score.col });
       }
     }
