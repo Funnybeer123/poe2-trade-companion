@@ -684,6 +684,10 @@ while ($true) {
       [AssistiveWin]::keybd_event(0x1B, 0, 0, [UIntPtr]::Zero)
       Start-Sleep -Milliseconds 20
       [AssistiveWin]::keybd_event(0x1B, 0, 2, [UIntPtr]::Zero)
+    } elseif ($keys -eq "enter") {
+      [AssistiveWin]::keybd_event(0x0D, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 20
+      [AssistiveWin]::keybd_event(0x0D, 0, 2, [UIntPtr]::Zero)
     } else {
       Emit @{ ok = $false; error = "unsupported-hotkey"; focused = $focused }
       continue
