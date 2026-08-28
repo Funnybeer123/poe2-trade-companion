@@ -99,7 +99,9 @@ const service = new AssistiveRunService({
   killSwitch: new KillSwitch(),
   memoryRoot: root,
   artifactDir: path.join(root, "artifacts", "assistive-cli"),
-  profile: () => loadProfile(templateDir),
+  // Drains never involve a vendor; the vendor box overlaps the open tab-list
+  // dropdown and produces false vendor-open aborts, so suppress it here.
+  profile: () => ({ ...loadProfile(templateDir), ventorBagGrid: undefined }),
   onEvent: (event) => {
     if (event.phase === "benchmark" || event.phase === "complete") {
       console.log(`  [${event.phase}] ${event.message}`);
@@ -113,15 +115,21 @@ const allowlist = (process.env.POE2_PROCESS_ALLOWLIST ?? "PathOfExileSteam.exe,P
   .filter(Boolean);
 
 async function run(kind: "fill" | "empty") {
-  return service.start({
-    kind,
-    dryRun: false,
-    wantedClasses: [],
-    uniqueAcrossCycles: false,
-    qaAcknowledged: true,
-    allowlist,
-    actionsPerMinute: Number(process.env.POE2_ACTIONS_PER_MINUTE ?? 240),
-  });
+  try {
+    return await service.start({
+      kind,
+      dryRun: false,
+      wantedClasses: [],
+      uniqueAcrossCycles: false,
+      qaAcknowledged: true,
+      allowlist,
+      actionsPerMinute: Number(process.env.POE2_ACTIONS_PER_MINUTE ?? 240),
+    });
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    console.log(`  [${kind}] service error: ${reason}`);
+    return { ok: false, reason, bagCells: -1, stashCells: -1 } as Awaited<ReturnType<typeof service.start>>;
+  }
 }
 
 interface DrainStats {
@@ -138,38 +146,17 @@ interface DrainStats {
 const SWEEP_BOX = { x: 40, y: 262, w: 1250, h: 1240 };
 const SWEEP_STEP = 56;
 
-let sweepPass = 0;
-
-async function sweepSourceIntoBag(): Promise<number> {
-  const rect = await nav.send({ op: "rect", });
+async function snapshotFacts() {
+  const rect = await nav.send({ op: "rect" });
   if (!rect.ok) throw new Error("target-window-missing");
-  const left = Number(rect.left);
-  const top = Number(rect.top);
-  // Stagger alternate passes by half a step so slot centers a fixed lattice
-  // straddles still get hit on the next pass.
-  const offset = sweepPass % 2 === 0 ? 0 : Math.floor(SWEEP_STEP / 2);
-  sweepPass += 1;
-  const points: Array<{ x: number; y: number }> = [];
-  for (let y = SWEEP_BOX.y + offset; y < SWEEP_BOX.y + SWEEP_BOX.h; y += SWEEP_STEP) {
-    for (let x = SWEEP_BOX.x + offset; x < SWEEP_BOX.x + SWEEP_BOX.w; x += SWEEP_STEP) {
-      points.push({ x: left + x, y: top + y });
-    }
-  }
-  await nav.send({ op: "focus" });
-  await sleep(250);
-  for (let i = 0; i < points.length; i += 40) {
-    const burst = await nav.send({ op: "ctrlburst", points: points.slice(i, i + 40) });
-    if (!burst.ok) throw new Error(`sweep-burst-failed:${burst.error}`);
-    await sleep(120);
-  }
-  await sleep(400);
   const probeFile = path.join(root, "artifacts", "assistive-cli", `sweep-${Date.now()}.bmp`);
   const captured = await nav.send({ op: "capture", path: probeFile });
-  if (!captured.ok) return -1;
+  if (!captured.ok) throw new Error(String(captured.error ?? "capture-failed"));
   const { readBmpBgr, bgrToGray } = await import("../src/adapters/bmp.js");
   const { rmSync } = await import("node:fs");
   const { perceiveUi } = await import("../src/core/uiPerception.js");
   const { resolvePhysicalClient } = await import("../src/core/screenLayout.js");
+  const { occupiedFromRgbScores, scoreGridCellsRgb } = await import("../src/core/cellOccupancy.js");
   const bgr = readBmpBgr(probeFile);
   rmSync(probeFile, { force: true });
   const client = resolvePhysicalClient(
@@ -178,8 +165,83 @@ async function sweepSourceIntoBag(): Promise<number> {
     Number(rect.monitorHeight) || Number(captured.height),
     { left: Number(rect.monitorLeft ?? 0), top: Number(rect.monitorTop ?? 0) },
   );
-  const facts = perceiveUi(bgrToGray(bgr), client, {}, loadProfile(templateDir), bgr);
-  return facts.occupiedBag.length;
+  const frame = bgrToGray(bgr);
+  const facts = perceiveUi(frame, client, {}, loadProfile(templateDir), bgr);
+  let rgbStash: Array<{ x: number; y: number }> = [];
+  if (facts.stashRegion && facts.stashGridSize) {
+    rgbStash = occupiedFromRgbScores(
+      scoreGridCellsRgb(bgr, client, facts.stashRegion, facts.stashGridSize.cols, facts.stashGridSize.rows),
+    );
+  }
+  let unionBag = facts.occupiedBag.length;
+  if (facts.inventoryPanelOpen && facts.inventoryRegion) {
+    const { occupiedFromScores, scoreGridCells } = await import("../src/core/itemSprites.js");
+    const gray = occupiedFromScores(scoreGridCells(frame, client, facts.inventoryRegion, 12, 5));
+    const keys = new Set(facts.occupiedBag.map((cell) => `${cell.row},${cell.col}`));
+    for (const cell of gray) keys.add(`${cell.row},${cell.col}`);
+    unionBag = keys.size;
+  }
+  return { facts, client, rgbStash, unionBag };
+}
+
+/** A bag report taken while the panel is closed says nothing — reopen and recount. */
+async function verifiedBagCount(): Promise<number> {
+  let snap = await snapshotFacts();
+  if (!snap.facts.inventoryPanelOpen) {
+    await nav.send({ op: "focus" });
+    await sleep(300);
+    await nav.send({ op: "hotkey", keys: "i" });
+    await sleep(700);
+    snap = await snapshotFacts();
+    if (!snap.facts.inventoryPanelOpen) throw new Error("bag-not-visible");
+  }
+  return snap.unionBag;
+}
+
+async function burstWithRetry(points: Array<{ x: number; y: number }>): Promise<void> {
+  for (let i = 0; i < points.length; i += 40) {
+    const slice = points.slice(i, i + 40);
+    let burst = await nav.send({ op: "ctrlburst", points: slice });
+    if (!burst.ok && /focus/i.test(String(burst.error ?? ""))) {
+      await nav.send({ op: "focus" });
+      await sleep(400);
+      burst = await nav.send({ op: "ctrlburst", points: slice });
+    }
+    if (!burst.ok) throw new Error(`sweep-burst-failed:${burst.error}`);
+    await sleep(110);
+  }
+}
+
+/**
+ * Targeted first: ctrl-click only cells the classifiers flag as occupied
+ * (union of gray and RGB — phantom-tolerant but far smaller than a blind
+ * lattice). When a targeted pass stops producing, fall back to staggered
+ * lattice passes that also catch anything perception misses entirely.
+ */
+async function sweepSourceIntoBag(targeted: boolean, latticePhase: number): Promise<number> {
+  const before = await snapshotFacts();
+  let points: Array<{ x: number; y: number }>;
+  const candidates = new Map<string, { x: number; y: number }>();
+  for (const cell of before.facts.occupiedStash) candidates.set(`${cell.x},${cell.y}`, { x: cell.x, y: cell.y });
+  for (const cell of before.rgbStash) candidates.set(`${cell.x},${cell.y}`, { x: cell.x, y: cell.y });
+  if (targeted && candidates.size > 0) {
+    points = [...candidates.values()];
+  } else {
+    const offset = latticePhase % 2 === 0 ? 0 : Math.floor(SWEEP_STEP / 2);
+    const left = before.client.left;
+    const top = before.client.top;
+    points = [];
+    for (let y = SWEEP_BOX.y + offset; y < SWEEP_BOX.y + SWEEP_BOX.h; y += SWEEP_STEP) {
+      for (let x = SWEEP_BOX.x + offset; x < SWEEP_BOX.x + SWEEP_BOX.w; x += SWEEP_STEP) {
+        points.push({ x: left + x, y: top + y });
+      }
+    }
+  }
+  await nav.send({ op: "focus" });
+  await sleep(250);
+  await burstWithRetry(points);
+  await sleep(350);
+  return verifiedBagCount();
 }
 
 try {
@@ -187,17 +249,21 @@ try {
   if (!rect.ok) throw new Error("PoE window not found");
 
   let totalTrips = 0;
+  let stopAll = false;
   const stats = new Map<string, DrainStats>();
   const overflowQueue = [...overflow];
 
   for (const pair of pairs) {
+    if (stopAll) break;
     let dest = pair.dest;
     const key = `${pair.source}->${dest}`;
     const stat: DrainStats = { trips: 0, cellsMoved: 0 };
     stats.set(key, stat);
     console.log(`\n=== drain #${pair.source} "${canonical[pair.source]}" -> #${dest} "${canonical[dest]}" ===`);
     let bagAfterDeposit = 0;
-    let noGainPasses = 0;
+    let latticeNoGain = 0;
+    let latticePhase = 0;
+    let targetedNext = true;
     for (;;) {
       if (totalTrips >= maxTrips) {
         console.log("trip budget exhausted");
@@ -207,21 +273,29 @@ try {
       let bagCells: number;
       let fillReason = "sweep";
       if (sweepMode) {
-        bagCells = await sweepSourceIntoBag();
-        if (bagCells < 0) {
-          console.log("sweep probe capture failed");
+        const arrival = await snapshotFacts();
+        if (arrival.facts.occupiedStash.length === 0 && arrival.rgbStash.length === 0) {
+          console.log("source visibly empty — skipping");
           break;
         }
+        const wasTargeted = targetedNext;
+        bagCells = await sweepSourceIntoBag(targetedNext, latticePhase);
         if (bagCells - bagAfterDeposit <= 0) {
-          noGainPasses += 1;
-          // Two consecutive empty passes (both lattice phases) means done.
-          if (noGainPasses >= 2) {
-            console.log(`sweep gained nothing twice (bag ${bagCells}) — source drained or remaining items cannot move`);
+          if (wasTargeted) {
+            // Classifier candidates exhausted — mop up with the blind lattice.
+            targetedNext = false;
+            continue;
+          }
+          latticePhase += 1;
+          latticeNoGain += 1;
+          if (latticeNoGain >= 2) {
+            console.log(`sweep exhausted (bag ${bagCells}) — source drained or remaining items cannot move`);
             break;
           }
           continue;
         }
-        noGainPasses = 0;
+        targetedNext = true;
+        latticeNoGain = 0;
       } else {
         const fill = await run("fill");
         if (!fill.ok && fill.reason !== "no-more-auto-fit" && fill.reason !== "bag-full") {
@@ -235,29 +309,44 @@ try {
         console.log(`source empty (${fillReason})`);
         break;
       }
-      await gotoTab(dest);
-      const empty = await run("empty");
       totalTrips += 1;
       stat.trips += 1;
-      const leftover = empty.bagCells ?? 0;
-      bagAfterDeposit = leftover;
-      stat.cellsMoved += bagCells - leftover;
-      console.log(`trip ${stat.trips}: moved ~${bagCells - leftover} cells (leftover ${leftover})`);
-      if (leftover > 0) {
+      // Hard invariant: the bag must reach zero before any new sweep. Deposit
+      // into the destination, verify with independent perception, retry, and
+      // escalate through overflow tabs; if nothing accepts the rest, stop the
+      // whole run rather than churn with a partially full bag.
+      const emptyInto = async (tabIndex: number): Promise<number> => {
+        await gotoTab(tabIndex);
+        await run("empty");
+        let count = await verifiedBagCount();
+        for (let retry = 0; retry < 2 && count > 0; retry += 1) {
+          console.log(`  bag still holds ${count} cells at #${tabIndex} — re-running empty`);
+          await run("empty");
+          count = await verifiedBagCount();
+        }
+        return count;
+      };
+      let leftover = await emptyInto(dest);
+      while (leftover > 0) {
         const next = overflowQueue.shift();
         if (next === undefined) {
-          console.log("destination full and no overflow tabs left — stopping this pair");
+          console.log(`bag cannot be fully emptied (${leftover} cells stuck) — stopping the run`);
+          stopAll = true;
           break;
         }
-        console.log(`destination full — switching to overflow tab #${next} "${canonical[next]}"`);
-        dest = next;
-        await gotoTab(dest);
-        const spill = await run("empty");
-        if ((spill.bagCells ?? 0) > 0) {
-          console.log("overflow tab also refused items — stopping");
-          break;
+        console.log(`destination full — overflowing to #${next} "${canonical[next]}"`);
+        leftover = await emptyInto(next);
+        if (leftover === 0) {
+          // This tab absorbed everything: future trips go straight here, and
+          // it stays available as overflow for later pairs.
+          dest = next;
+          overflowQueue.unshift(next);
         }
       }
+      stat.cellsMoved += bagCells - leftover;
+      console.log(`trip ${stat.trips}: moved ~${bagCells - leftover} cells (bag now ${leftover})`);
+      if (stopAll) break;
+      bagAfterDeposit = 0;
       if (fillReason === "source-empty") {
         console.log("source empty");
         break;

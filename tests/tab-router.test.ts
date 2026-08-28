@@ -6,6 +6,7 @@ import { emptyProfile } from "../src/core/calibrationProfile.js";
 import { createGray, fillRect } from "../src/core/grayImage.js";
 import {
   groupItemsByRoute,
+  routeForItem,
   loadTabRoutes,
   routeForClass,
   saveTabRoutes,
@@ -77,6 +78,22 @@ describe("tabRouter", () => {
     expect(
       validateTransferInput([{ kind: "click", x: 800, y: 60 }], profile, client, tabGuardBoxes(CONFIG)).ok,
     ).toBe(false);
+  });
+
+  it("routes by name pattern ahead of class, and pattern-only routes never match by class", () => {
+    const config: TabRoutesConfig = {
+      version: 1,
+      client: { width: 3840, height: 2160 },
+      source: { label: "dump", index: 1 },
+      routes: [
+        { tab: { label: "ess", index: 23 }, classes: [], namePatterns: ["Essence"] },
+        { tab: { label: "cur", index: 6 }, classes: ["Stackable Currency"] },
+      ],
+    };
+    expect(routeForItem(config, "Stackable Currency", "Greater Essence of Haste")?.tab.label).toBe("ess");
+    expect(routeForItem(config, "Stackable Currency", "Exalted Orb")?.tab.label).toBe("cur");
+    expect(routeForItem(config, "Body Armours", "Mind Suit")).toBeUndefined();
+    expect(routeForItem(config, undefined, undefined)).toBeUndefined();
   });
 
   it("signature distance separates a tab change from an unchanged tab", () => {
