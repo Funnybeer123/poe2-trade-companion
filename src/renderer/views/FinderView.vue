@@ -5,7 +5,6 @@ import type {
   SearchRegexResult,
   SearchRegexSelection,
 } from "@core/searchRegex";
-import type { ScanHistoryItem } from "@core/scanRules";
 import { useIntelligenceStore } from "../composables/useIntelligenceStore";
 import { rendererApi } from "../services/rendererApi";
 import { explainRuleMatch } from "../utils/intelligence";
@@ -26,6 +25,7 @@ const modifierChoices = ref<ModifierChoice[]>([]);
 const customTerms = ref("");
 const maxLength = ref(50);
 const allowBroadMatches = ref(false);
+const combineMode = ref<"or" | "and">("or");
 const generating = ref(false);
 const result = ref<SearchRegexResult | null>(null);
 const generationError = ref("");
@@ -33,9 +33,6 @@ const copiedQuery = ref("");
 
 const selectedRuleSetId = ref("");
 const selectedRuleIndex = ref(0);
-const editRuleName = ref("");
-const editRuleRegex = ref("");
-const ruleSaved = ref("");
 
 const selectedRuleSet = computed(() =>
   store.ruleSets.value.find((entry) => entry.id === selectedRuleSetId.value),
@@ -73,17 +70,6 @@ watch(
       selectedRuleSetId.value =
         sets.find((entry) => entry.active)?.id ?? sets[0]?.id ?? "";
     }
-  },
-  { immediate: true },
-);
-
-watch(
-  [selectedRuleSetId, selectedRuleIndex],
-  () => {
-    const rule = selectedRule.value;
-    editRuleName.value = rule?.name ?? "";
-    editRuleRegex.value = rule?.regex ?? "";
-    ruleSaved.value = "";
   },
   { immediate: true },
 );
@@ -162,6 +148,7 @@ async function generateQueries(): Promise<void> {
         quoteForStash: true,
         caseInsensitive: true,
         allowBroadMatches: allowBroadMatches.value,
+        combine: combineMode.value,
         label: currentItem.value
           ? `${currentItem.value.baseType} search`
           : "Stash search",
@@ -188,31 +175,6 @@ async function copyQuery(value: string, id: string): Promise<void> {
   }
 }
 
-async function saveQuickRule(): Promise<void> {
-  const set = selectedRuleSet.value;
-  const current = selectedRule.value;
-  if (!set || !current) return;
-  const rules = set.rules.map((rule, index): ScanHistoryItem =>
-    index === selectedRuleIndex.value
-      ? {
-          ...rule,
-          name: editRuleName.value.trim() || "Unnamed rule",
-          regex: editRuleRegex.value,
-        }
-      : { ...rule },
-  );
-  try {
-    await store.saveRuleSet({
-      id: set.id,
-      name: set.name,
-      active: set.active,
-      rules,
-    });
-    ruleSaved.value = "Rule saved.";
-  } catch {
-    ruleSaved.value = "";
-  }
-}
 </script>
 
 <template>
@@ -311,17 +273,33 @@ async function saveQuickRule(): Promise<void> {
       </label>
       <div class="form-grid compact-grid">
         <label>
-          Maximum stash query length
-          <input v-model.number="maxLength" type="number" min="8" max="512" />
-        </label>
-        <label class="toggle-field">
-          <input v-model="allowBroadMatches" type="checkbox" />
-          <span>Allow broader fragment fallback</span>
+          Combine selections
+          <select v-model="combineMode">
+            <option value="or">Any may match (OR)</option>
+            <option value="and">All must match (AND)</option>
+          </select>
         </label>
       </div>
       <p class="muted">
-        Over-limit alternatives are split into multiple labeled queries. Expressions are never silently truncated.
+        {{
+          combineMode === "and"
+            ? "AND emits one query of quoted terms — the in-game search requires every term. An over-limit AND set is a conflict, never split."
+            : "Over-limit alternatives are split into multiple labeled queries. Expressions are never silently truncated."
+        }}
       </p>
+      <details class="advanced-options">
+        <summary>Advanced query options</summary>
+        <div class="form-grid compact-grid">
+          <label>
+            Maximum stash query length
+            <input v-model.number="maxLength" type="number" min="8" max="512" />
+          </label>
+          <label class="toggle-field">
+            <input v-model="allowBroadMatches" type="checkbox" />
+            <span>Allow broader fragment fallback</span>
+          </label>
+        </div>
+      </details>
       <button
         type="button"
         class="button primary full-button"
@@ -393,7 +371,7 @@ async function saveQuickRule(): Promise<void> {
             <span class="eyebrow">Saved logic</span>
             <h2 id="rule-checker-title">Evaluate a saved rule</h2>
           </div>
-          <RouterLink class="text-link" to="/rules">Full rule studio</RouterLink>
+          <RouterLink class="text-link" to="/search#rules">Full rule studio</RouterLink>
         </div>
 
         <div v-if="!store.ruleSets.value.length" class="state-panel compact-state">
@@ -429,23 +407,12 @@ async function saveQuickRule(): Promise<void> {
             </label>
           </div>
 
-          <label class="field-stack">
-            Rule name
-            <input v-model="editRuleName" />
-          </label>
-          <label class="field-stack">
-            OR-of-AND expression
-            <textarea v-model="editRuleRegex" rows="4" spellcheck="false" />
-          </label>
-          <div class="button-row">
-            <button type="button" class="button secondary" @click="saveQuickRule">
-              Save rule
-            </button>
-            <span v-if="ruleSaved" class="success-text" role="status">{{ ruleSaved }}</span>
-            <span v-if="store.rulesError.value" class="danger-text" role="alert">
-              {{ store.rulesError.value }}
-            </span>
-          </div>
+          <p v-if="selectedRule" class="muted rule-expression-preview">
+            <code>{{ selectedRule.regex }}</code>
+          </p>
+          <p class="muted">
+            Edit rules in the <RouterLink class="text-link" to="/search#rules">Rule studio</RouterLink>.
+          </p>
 
           <div
             v-if="ruleExplanation"

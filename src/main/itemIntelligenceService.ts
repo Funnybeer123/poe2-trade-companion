@@ -12,6 +12,22 @@ import {
   type SearchRegexResult,
 } from "../core/searchRegex.js";
 import { importTradeQueries } from "../core/tradeQueryImport.js";
+import { DEFAULT_TRIAGE_ROUTING, type TriageRouting } from "../core/bagTriage.js";
+import {
+  starterPriceTable,
+  validatePriceTable,
+  type PriceTable,
+} from "../core/priceTable.js";
+import { evaluateWithAppraisal } from "../core/appraisal.js";
+import { DEFAULT_MIN_DETOUR_CONFIDENCE } from "../core/sortTriage.js";
+import {
+  DEFAULT_TIER_THRESHOLDS,
+  starterValueTierRules,
+  validateValueTierRules,
+  type TierVerdict,
+  type ValueTierRules,
+  type ValueTierThresholds,
+} from "../core/valueTiers.js";
 import type {
   DesirabilityResult,
   NormalizedItem,
@@ -31,8 +47,10 @@ import {
   type ParsedItemEvaluation,
   type RuleSetView,
   type SaveRuleSetRequest,
+  type SaveValueTierConfigRequest,
   type ScanSessionDetail,
   type ScanSessionView,
+  type ValueTierConfigView,
 } from "../shared/ipc.js";
 import {
   exportIntelligenceData,
@@ -458,6 +476,179 @@ export class ItemIntelligenceService {
       request,
       this.now(),
     );
+  }
+
+  private static readonly TIER_SETTING_KEY = "value-tiers";
+  private static readonly PRICE_TABLE_SETTING_KEY = "price-table";
+
+  private sanitizeTierRules(value: unknown): ValueTierRules | undefined {
+    if (!isRecord(value)) return undefined;
+    const buckets = ["keep", "sell", "dump"] as const;
+    const rules = {} as ValueTierRules;
+    for (const bucket of buckets) {
+      const raw = value[bucket];
+      if (!Array.isArray(raw)) return undefined;
+      const entries: ScanHistoryItem[] = [];
+      for (const entry of raw) {
+        if (
+          !isRecord(entry) ||
+          typeof entry.regex !== "string" ||
+          (entry.name !== undefined && typeof entry.name !== "string")
+        ) {
+          return undefined;
+        }
+        entries.push({
+          regex: entry.regex,
+          ...(typeof entry.name === "string" && entry.name.trim()
+            ? { name: entry.name.trim() }
+            : {}),
+          ...(typeof entry.id === "string" ? { id: entry.id } : {}),
+        });
+      }
+      rules[bucket] = entries;
+    }
+    return rules;
+  }
+
+  private sanitizeThresholds(value: unknown): ValueTierThresholds {
+    if (
+      isRecord(value) &&
+      typeof value.keepAtOrAbove === "number" &&
+      typeof value.sellAtOrAbove === "number" &&
+      Number.isFinite(value.keepAtOrAbove) &&
+      Number.isFinite(value.sellAtOrAbove) &&
+      value.keepAtOrAbove >= value.sellAtOrAbove
+    ) {
+      return {
+        keepAtOrAbove: value.keepAtOrAbove,
+        sellAtOrAbove: value.sellAtOrAbove,
+      };
+    }
+    return { ...DEFAULT_TIER_THRESHOLDS };
+  }
+
+  private sanitizeRouting(value: unknown): TriageRouting {
+    if (
+      isRecord(value) &&
+      typeof value.reviewTab === "string" &&
+      value.reviewTab.trim() &&
+      typeof value.dumpTab === "string" &&
+      value.dumpTab.trim()
+    ) {
+      return {
+        reviewTab: value.reviewTab.trim(),
+        dumpTab: value.dumpTab.trim(),
+        ...(typeof value.sellTab === "string" && value.sellTab.trim()
+          ? { sellTab: value.sellTab.trim() }
+          : {}),
+      };
+    }
+    return { ...DEFAULT_TRIAGE_ROUTING };
+  }
+
+  private sanitizeDetourConfidence(value: unknown): number {
+    if (typeof value === "number" && Number.isFinite(value)) {
+      return Math.max(0, Math.min(100, Math.round(value)));
+    }
+    return DEFAULT_MIN_DETOUR_CONFIDENCE;
+  }
+
+  getValueTierConfig(): ValueTierConfigView {
+    const stored = this.options.persistence.settings.get(
+      ItemIntelligenceService.TIER_SETTING_KEY,
+    );
+    const value = stored?.value;
+    const rules = isRecord(value) ? this.sanitizeTierRules(value.rules) : undefined;
+    if (!rules) {
+      const seeded: ValueTierConfigView = {
+        schemaVersion: 1,
+        rules: starterValueTierRules(),
+        thresholds: { ...DEFAULT_TIER_THRESHOLDS },
+        routing: { ...DEFAULT_TRIAGE_ROUTING },
+        minDetourConfidence: DEFAULT_MIN_DETOUR_CONFIDENCE,
+        updatedAt: this.now(),
+      };
+      this.options.persistence.settings.set({
+        key: ItemIntelligenceService.TIER_SETTING_KEY,
+        value: seeded,
+      });
+      return seeded;
+    }
+    const record = value as Record<string, unknown>;
+    return {
+      schemaVersion: 1,
+      rules,
+      thresholds: this.sanitizeThresholds(record.thresholds),
+      routing: this.sanitizeRouting(record.routing),
+      minDetourConfidence: this.sanitizeDetourConfidence(record.minDetourConfidence),
+      ...(typeof record.updatedAt === "string" ? { updatedAt: record.updatedAt } : {}),
+    };
+  }
+
+  saveValueTierConfig(request: SaveValueTierConfigRequest): ValueTierConfigView {
+    const rules = this.sanitizeTierRules(request.rules);
+    if (!rules) throw new Error("value-tier-rules-invalid-shape");
+    const issues = validateValueTierRules(rules);
+    if (issues.length > 0) {
+      const first = issues[0]!;
+      throw new Error(`invalid-tier-rule:${first.tier}:${first.index}:${first.message}`);
+    }
+    const config: ValueTierConfigView = {
+      schemaVersion: 1,
+      rules,
+      thresholds: this.sanitizeThresholds(request.thresholds),
+      routing: this.sanitizeRouting(request.routing),
+      minDetourConfidence: this.sanitizeDetourConfidence(request.minDetourConfidence),
+      updatedAt: this.now(),
+    };
+    this.options.persistence.settings.set({
+      key: ItemIntelligenceService.TIER_SETTING_KEY,
+      value: config,
+    });
+    this.options.publish?.("tiers:changed", config);
+    return config;
+  }
+
+  getPriceTable(): PriceTable {
+    const stored = this.options.persistence.settings.get(
+      ItemIntelligenceService.PRICE_TABLE_SETTING_KEY,
+    );
+    if (stored) {
+      const validation = validatePriceTable(stored.value);
+      if (validation.valid && validation.table) return validation.table;
+    }
+    const seeded: PriceTable = { ...starterPriceTable(), updatedAt: this.now() };
+    this.options.persistence.settings.set({
+      key: ItemIntelligenceService.PRICE_TABLE_SETTING_KEY,
+      value: seeded,
+    });
+    return seeded;
+  }
+
+  savePriceTable(table: PriceTable): PriceTable {
+    const validation = validatePriceTable(table);
+    if (!validation.valid || !validation.table) {
+      const first = validation.issues[0];
+      throw new Error(
+        `invalid-price-table:${first ? `${first.path}:${first.message}` : "unknown"}`,
+      );
+    }
+    const saved: PriceTable = { ...validation.table, updatedAt: this.now() };
+    this.options.persistence.settings.set({
+      key: ItemIntelligenceService.PRICE_TABLE_SETTING_KEY,
+      value: saved,
+    });
+    this.options.publish?.("prices:changed", saved);
+    return saved;
+  }
+
+  evaluateTier(itemText: string): TierVerdict {
+    const config = this.getValueTierConfig();
+    return evaluateWithAppraisal(typeof itemText === "string" ? itemText : "", {
+      rules: config.rules,
+      priceTable: this.getPriceTable(),
+      thresholds: config.thresholds,
+    });
   }
 
   listScans(): ScanSessionView[] {

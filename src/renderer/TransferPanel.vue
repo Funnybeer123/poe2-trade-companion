@@ -1,29 +1,19 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
+import { RouterLink } from "vue-router";
+import { overlaySelectionSummary } from "@core/dryRunOverlay";
 import { searchScenarioQuery } from "@core/itemClassFilter";
 import {
   DEFAULT_VOICE_TRANSFER_CONFIG,
   type VoiceTransferConfig,
-  type VoiceTransferState,
   type VoiceTransferStatus,
 } from "@core/voiceTransfer";
+import { useGameActions } from "./composables/useGameActions";
 import {
-  getAssistiveApi,
-  type AssistiveRunEvent,
-  type AssistiveRunKind,
-  type AssistiveRunResult,
-} from "./services/rendererApi";
-
-interface TransferStatus {
-  running: boolean;
-  killLatched: boolean;
-  mode: string;
-  qaOptIn: boolean;
-  stashTab: "normal" | "quad";
-  gridsCalibrated: boolean;
-  searchCalibrated: boolean;
-  last?: AssistiveRunResult;
-}
+  allowlistEntries,
+  useRendererPreferences,
+} from "./composables/useRendererPreferences";
+import { getAssistiveApi, type AssistiveRunKind } from "./services/rendererApi";
 
 interface MemoryStatus {
   scenarioKey: string;
@@ -33,26 +23,30 @@ interface MemoryStatus {
   updatedAt: string;
 }
 
-const status = ref<TransferStatus>({
-  running: false,
-  killLatched: false,
-  mode: "public-companion",
-  qaOptIn: false,
-  stashTab: "normal",
-  gridsCalibrated: false,
-  searchCalibrated: false,
-});
-const dryRun = ref(false);
-const qaAcknowledged = ref(true);
+const {
+  dryRun,
+  transferStatus: status,
+  lastTransferResult: lastResult,
+  transferEvents: events,
+  actionError: error,
+  canStop,
+  canStartEmpty,
+  canStartFillNow,
+  transferBlockReason,
+  initializeGameActions,
+  refreshGameActions,
+  startAssistive,
+  stopGameActions,
+  rearmKillSwitch,
+  labelOverlayCell,
+} = useGameActions();
+
+const { processAllowlist, transferActionsPerMinute } = useRendererPreferences();
+
 const uniqueAcrossCycles = ref(false);
 const classQuery = ref("");
-const allowlist = ref("PathOfExileSteam.exe, PathOfExile.exe, PathOfExile_x64Steam.exe");
-const actionsPerMinute = ref(240);
 const maxItems = ref(0);
-const events = ref<AssistiveRunEvent[]>([]);
-const lastResult = ref<AssistiveRunResult | null>(null);
 const memory = ref<MemoryStatus | null>(null);
-const error = ref("");
 const voiceState = ref<VoiceTransferStatus>({
   phase: "idle",
   updatedAt: new Date().toISOString(),
@@ -78,22 +72,7 @@ const wantedClasses = computed(() =>
 );
 const memoryQuery = computed(() => searchScenarioQuery(wantedClasses.value));
 const stashTab = computed(() => status.value.stashTab);
-const gridsReady = computed(() => status.value.gridsCalibrated);
-const searchReady = computed(
-  () =>
-    status.value.searchCalibrated ||
-    (wantedClasses.value.length === 0 && (dryRun.value || gridsReady.value)),
-);
-const canStartEmpty = computed(
-  () => !status.value.running && !status.value.killLatched && gridsReady.value,
-);
-const canStartFill = computed(
-  () =>
-    !status.value.running &&
-    !status.value.killLatched &&
-    gridsReady.value &&
-    searchReady.value,
-);
+const canStartFill = computed(() => canStartFillNow(wantedClasses.value));
 const voiceActive = computed(() =>
   ["listening", "recognized", "transferring"].includes(voiceState.value.phase),
 );
@@ -104,17 +83,11 @@ const canListen = computed(
     !status.value.running &&
     !status.value.killLatched,
 );
-const startBlockReason = computed(() => {
-  if (status.value.killLatched) {
-    return "Emergency stop is latched. Click Re-arm, then Empty.";
-  }
-  if (!gridsReady.value) {
-    return "Calibrate the stash grid and bag grid under Tools → Calibration, then Empty is available.";
-  }
-  if (!status.value.searchCalibrated && wantedClasses.value.length > 0) {
-    return "Class filters need the stash search box. Empty still works without it.";
-  }
-  return "";
+const startBlockReason = computed(() => transferBlockReason(wantedClasses.value));
+const overlaySelectionText = computed(() => {
+  const selected = status.value.overlaySelection ?? [];
+  if (!selected.length) return "";
+  return overlaySelectionSummary(selected);
 });
 
 const VOICE_ERROR_TEXT: Record<string, string> = {
@@ -152,10 +125,6 @@ function applyVoiceStatus(next: VoiceTransferStatus, loadConfig = false) {
   voiceLiteralFallback.value = config.allowLiteralFallback;
   voiceTimeoutMs.value = config.recognitionTimeoutMs;
   voiceMinimumConfidence.value = config.minimumConfidence;
-  dryRun.value = config.dryRun;
-  qaAcknowledged.value = config.qaAcknowledged;
-  allowlist.value = config.allowlist.join(", ");
-  actionsPerMinute.value = config.actionsPerMinute;
   maxItems.value = config.maxItems ?? 0;
   voiceSettingsLoaded = true;
 }
@@ -165,9 +134,9 @@ function voiceConfig(): VoiceTransferConfig {
     enabled: voiceEnabled.value,
     hotkey: voiceHotkey.value.trim(),
     dryRun: dryRun.value,
-    qaAcknowledged: qaAcknowledged.value,
-    allowlist: allowlist.value.split(",").map((entry) => entry.trim()).filter(Boolean),
-    actionsPerMinute: Math.max(1, Math.floor(actionsPerMinute.value)),
+    qaAcknowledged: true,
+    allowlist: allowlistEntries(processAllowlist.value),
+    actionsPerMinute: Math.max(1, Math.floor(transferActionsPerMinute.value)),
     maxItems: maxItems.value > 0 ? Math.floor(maxItems.value) : 0,
     allowLiteralFallback: voiceLiteralFallback.value,
     recognitionTimeoutMs: Math.floor(voiceTimeoutMs.value),
@@ -176,13 +145,12 @@ function voiceConfig(): VoiceTransferConfig {
 }
 
 async function refresh() {
+  await refreshGameActions();
   const api = runtime();
   if (!api) {
     error.value = "Open Transfers in the Electron app.";
     return;
   }
-  status.value = await api.status();
-  lastResult.value = status.value.last ?? lastResult.value;
   applyVoiceStatus(await api.voice.status(), true);
   await refreshMemory();
 }
@@ -194,40 +162,21 @@ async function refreshMemory() {
 }
 
 async function start(kind: AssistiveRunKind) {
-  const api = runtime();
-  const allowed = kind === "empty" ? canStartEmpty.value : canStartFill.value;
-  if (!api || !allowed) return;
-  error.value = "";
-  events.value = [];
-  try {
-    status.value = { ...status.value, running: true };
-    lastResult.value = await api.start({
-      kind,
-      dryRun: dryRun.value,
-      wantedClasses: wantedClasses.value,
-      uniqueAcrossCycles: uniqueAcrossCycles.value,
-      qaAcknowledged: qaAcknowledged.value,
-      allowlist: allowlist.value.split(",").map((entry) => entry.trim()).filter(Boolean),
-      actionsPerMinute: Math.max(1, actionsPerMinute.value),
-      maxItems: maxItems.value > 0 ? Math.floor(maxItems.value) : undefined,
-    });
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : String(reason);
-  } finally {
-    await refresh();
-  }
+  await startAssistive({
+    kind,
+    wantedClasses: wantedClasses.value,
+    uniqueAcrossCycles: uniqueAcrossCycles.value,
+    maxItems: maxItems.value > 0 ? Math.floor(maxItems.value) : undefined,
+  });
+  await refreshMemory();
 }
 
 async function stop() {
-  const api = runtime();
-  if (!api) return;
-  status.value = await api.stop();
+  await stopGameActions();
 }
 
 async function rearm() {
-  const api = runtime();
-  if (!api) return;
-  await api.rearm();
+  await rearmKillSwitch();
   await refresh();
 }
 
@@ -278,15 +227,12 @@ async function cancelVoice() {
 }
 
 onMounted(() => {
+  void initializeGameActions();
   const api = runtime();
   if (!api) {
     error.value = "Open Transfers in the Electron app.";
     return;
   }
-  removeEventListener = api.onEvent((event) => {
-    events.value = [...events.value.slice(-39), event];
-    if (event.phase === "complete" || event.phase === "stopped") void refresh();
-  });
   removeVoiceListener = api.voice.onState((state) => {
     applyVoiceStatus(state);
     if (state.error) voiceError.value = state.error;
@@ -295,16 +241,20 @@ onMounted(() => {
     }
   });
   void refresh();
-  refreshTimer = window.setInterval(() => void refresh(), 1500);
+  refreshTimer = window.setInterval(() => {
+    void refreshMemory().then(async () => {
+      const voice = runtime();
+      if (!voice) return;
+      applyVoiceStatus(await voice.voice.status());
+    });
+  }, 1500);
 });
 
 let refreshTimer: number | undefined;
-let removeEventListener: (() => void) | undefined;
 let removeVoiceListener: (() => void) | undefined;
 
 onUnmounted(() => {
   if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
-  removeEventListener?.();
   removeVoiceListener?.();
 });
 </script>
@@ -313,31 +263,18 @@ onUnmounted(() => {
   <section class="transfer-layout">
     <div class="card">
       <h2>Reliable stash transfers</h2>
-      <p>
+      <p class="muted">
         Calibrated stash tab: <strong>{{ stashTab === "quad" ? "Quad 24×24" : "Normal 12×12" }}</strong>
         · grids <strong>{{ status.gridsCalibrated ? "ready" : "missing" }}</strong>
+        · {{ dryRun ? "Dry-run / preview (zero input)" : "live input" }}
       </p>
       <p v-if="startBlockReason" class="warning">{{ startBlockReason }}</p>
       <p v-if="error" class="warning">{{ error }}</p>
 
       <div class="transfer-controls">
-        <label><input v-model="dryRun" type="checkbox" /> Dry-run / preview (zero input)</label>
-        <label><input v-model="uniqueAcrossCycles" type="checkbox" /> Unique anchors across cycles</label>
         <label>
           Item classes (optional, comma-separated)
           <input v-model="classQuery" placeholder="Belts, Body Armours" />
-        </label>
-        <label>
-          Actions per minute
-          <input v-model.number="actionsPerMinute" type="number" min="1" max="600" />
-        </label>
-        <label>
-          Fill item limit (0 = unlimited)
-          <input v-model.number="maxItems" type="number" min="0" max="60" />
-        </label>
-        <label>
-          Process allowlist
-          <input v-model="allowlist" />
         </label>
       </div>
 
@@ -345,77 +282,119 @@ onUnmounted(() => {
         <button type="button" class="primary" :disabled="!canStartFill" @click="start('fill')">Fill</button>
         <button type="button" class="primary" :disabled="!canStartEmpty" @click="start('empty')">Empty</button>
         <button type="button" class="primary" :disabled="!canStartFill" @click="start('two-cycle')">Two cycles</button>
-        <button type="button" class="danger" :disabled="!status.running" @click="stop">Stop</button>
+        <button type="button" class="danger" :disabled="!canStop" @click="stop">Stop</button>
         <button v-if="status.killLatched" type="button" @click="rearm">Re-arm kill switch</button>
       </div>
 
+      <details class="advanced-options">
+        <summary>Advanced run options</summary>
+        <div class="transfer-controls">
+          <label><input v-model="uniqueAcrossCycles" type="checkbox" /> Unique anchors across cycles</label>
+          <label>
+            Fill item limit (0 = unlimited)
+            <input v-model.number="maxItems" type="number" min="0" max="60" />
+          </label>
+          <p class="muted">
+            Allowlist and rate come from
+            <RouterLink to="/tools/settings">Tools → Settings</RouterLink>.
+          </p>
+        </div>
+      </details>
+
+      <p v-if="status.overlayVisible" class="memory-status">
+        Each outline on the overlay is one complete item. Click to select it, Shift-click to add
+        more, then label Right or Wrong below. Overlay clicks never send game input.
+      </p>
+      <p v-if="status.overlayVisible" class="memory-status">
+        Selected:
+        <strong>{{ overlaySelectionText || "click a stash or bag item on the overlay" }}</strong>
+      </p>
+      <div v-if="status.overlayVisible" class="btn-row transfer-actions">
+        <button
+          type="button"
+          class="primary"
+          :disabled="!status.overlaySelection?.length"
+          @click="labelOverlayCell('right')"
+        >
+          Right — detection is correct
+        </button>
+        <button
+          type="button"
+          class="danger"
+          :disabled="!status.overlaySelection?.length"
+          @click="labelOverlayCell('wrong')"
+        >
+          Wrong — detection is incorrect
+        </button>
+      </div>
+      <p v-if="status.overlayVisible && status.overlayLabelFile" class="memory-status">
+        Labels are stored locally at <code>{{ status.overlayLabelFile }}</code>
+      </p>
       <p>
         Running: <strong>{{ status.running }}</strong> · Kill switch:
         <strong>{{ status.killLatched ? "latched" : "armed" }}</strong>
+        <span v-if="status.overlayVisible"> · Overlay: <strong>visible</strong></span>
       </p>
       <p v-if="memory" class="memory-status">
         {{ memory.scenarioKey }} · remembered {{ memory.confirmed }} · blocked returns {{ memory.blockedReturns }}
         <button type="button" @click="resetMemory">Reset scope</button>
       </p>
-    </div>
 
-    <div class="card">
-      <h2>Voice stash fill</h2>
-      <p>
-        One local Windows speech command applies an exact class regex, highlights matches, then runs the
-        audited Fill transfer until the bag cannot fit more.
-      </p>
-      <p v-if="voiceError || voiceState.hotkeyError" class="warning">
-        {{ friendlyVoiceError(voiceError || voiceState.hotkeyError || "") }}
-      </p>
-      <p v-if="voiceSaved" class="ok">{{ voiceSaved }}</p>
-      <div class="transfer-controls">
-        <label><input v-model="voiceEnabled" type="checkbox" /> Enable authorized-QA voice hotkey</label>
-        <label>
-          Global voice hotkey
-          <input v-model="voiceHotkey" placeholder="CommandOrControl+Alt+V" />
-        </label>
-        <label>
-          Recognition timeout (milliseconds)
-          <input v-model.number="voiceTimeoutMs" type="number" min="1500" max="15000" step="500" />
-        </label>
-        <label>
-          Minimum recognition confidence
-          <input v-model.number="voiceMinimumConfidence" type="number" min="0" max="1" step="0.05" />
-        </label>
-        <label>
-          <input v-model="voiceLiteralFallback" type="checkbox" />
-          Allow explicit exact literal commands such as “search for Exalted Orb”
-        </label>
-      </div>
-      <p class="memory-status">
-        Uses the dry-run, QA acknowledgement, allowlist, rate, and item-limit controls above. Literal fallback is
-        off by default and escapes regex syntax.
-      </p>
-      <div class="btn-row transfer-actions">
-        <button
-          type="button"
-          @click="saveVoiceSettings"
-        >
-          Save voice settings
-        </button>
-        <button type="button" class="primary" :disabled="!canListen || voiceActive" @click="listenOnce">
-          Listen once now
-        </button>
-        <button type="button" class="danger" :disabled="!voiceActive" @click="cancelVoice">
-          Cancel
-        </button>
-      </div>
-      <p>
-        Voice state: <strong>{{ voiceState.phase }}</strong> · Hotkey:
-        <strong>{{ voiceState.hotkeyRegistered ? "registered" : "not registered" }}</strong>
-      </p>
-      <p v-if="voiceState.transcript">Heard: <strong>{{ voiceState.transcript }}</strong></p>
-      <p v-if="voiceState.searchQuery">
-        Stash query: <code>{{ voiceState.searchQuery }}</code>
-        <span v-if="voiceState.wantedClasses?.length"> · {{ voiceState.wantedClasses.join(", ") }}</span>
-      </p>
-      <p v-if="voiceState.transferReason">Result: <strong>{{ voiceState.transferReason }}</strong></p>
+      <details class="advanced-options">
+        <summary>Voice stash fill</summary>
+        <p class="muted">
+          One local Windows speech command applies an exact class regex, highlights matches,
+          then runs the audited Fill transfer until the bag cannot fit more. Uses the shared
+          dry-run switch and the saved allowlist and rate.
+        </p>
+        <p v-if="voiceError || voiceState.hotkeyError" class="warning">
+          {{ friendlyVoiceError(voiceError || voiceState.hotkeyError || "") }}
+        </p>
+        <p v-if="voiceSaved" class="ok">{{ voiceSaved }}</p>
+        <div class="transfer-controls">
+          <label><input v-model="voiceEnabled" type="checkbox" /> Enable voice hotkey</label>
+          <label>
+            Global voice hotkey
+            <input v-model="voiceHotkey" placeholder="CommandOrControl+Alt+V" />
+          </label>
+        </div>
+        <details class="advanced-options nested">
+          <summary>Recognition tuning</summary>
+          <div class="transfer-controls">
+            <label>
+              Recognition timeout (milliseconds)
+              <input v-model.number="voiceTimeoutMs" type="number" min="1500" max="15000" step="500" />
+            </label>
+            <label>
+              Minimum recognition confidence
+              <input v-model.number="voiceMinimumConfidence" type="number" min="0" max="1" step="0.05" />
+            </label>
+            <label>
+              <input v-model="voiceLiteralFallback" type="checkbox" />
+              Allow explicit exact literal commands such as “search for Exalted Orb”
+            </label>
+          </div>
+        </details>
+        <div class="btn-row transfer-actions">
+          <button type="button" @click="saveVoiceSettings">Save voice settings</button>
+          <button type="button" class="primary" :disabled="!canListen || voiceActive" @click="listenOnce">
+            Listen once now
+          </button>
+          <button type="button" class="danger" :disabled="!voiceActive" @click="cancelVoice">
+            Cancel
+          </button>
+        </div>
+        <p>
+          Voice state: <strong>{{ voiceState.phase }}</strong> · Hotkey:
+          <strong>{{ voiceState.hotkeyRegistered ? "registered" : "not registered" }}</strong>
+        </p>
+        <p v-if="voiceState.transcript">Heard: <strong>{{ voiceState.transcript }}</strong></p>
+        <p v-if="voiceState.searchQuery">
+          Stash query: <code>{{ voiceState.searchQuery }}</code>
+          <span v-if="voiceState.wantedClasses?.length"> · {{ voiceState.wantedClasses.join(", ") }}</span>
+        </p>
+        <p v-if="voiceState.transferReason">Result: <strong>{{ voiceState.transferReason }}</strong></p>
+      </details>
     </div>
 
     <div class="card">

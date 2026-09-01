@@ -32,6 +32,14 @@ import type {
   SortMoveSchedule,
   StashSortPlan,
 } from "@core/stashSort";
+import type {
+  StashTabAdminEvent,
+  StashTabAdminStatus,
+  StashTabApplyOutcome,
+  StashTabPlan,
+  StashTabSurveyResult,
+} from "@core/stashTabAdmin";
+import type { FindRecord } from "@core/sortTriage";
 import {
   importTradeQueries,
   type TradeQueryImportResult,
@@ -51,6 +59,20 @@ import type {
   VoiceTransferState,
   VoiceTransferStatus,
 } from "@core/voiceTransfer";
+import { DEFAULT_TRIAGE_ROUTING } from "@core/bagTriage";
+import {
+  starterPriceTable,
+  validatePriceTable,
+  type PriceTable,
+} from "@core/priceTable";
+import { evaluateWithAppraisal } from "@core/appraisal";
+import { DEFAULT_MIN_DETOUR_CONFIDENCE } from "@core/sortTriage";
+import {
+  DEFAULT_TIER_THRESHOLDS,
+  starterValueTierRules,
+  validateValueTierRules,
+  type TierVerdict,
+} from "@core/valueTiers";
 import quotes from "../../../fixtures/market/quotes.json";
 import {
   ITEM_INTELLIGENCE_IPC_VERSION,
@@ -64,14 +86,23 @@ import {
   type RuleSetView,
   type SaveBuildProfileRequest,
   type SaveRuleSetRequest,
+  type SaveValueTierConfigRequest,
+  type ValueTierConfigView,
   type ScannerRunSummary,
   type ScannerRuntimeEvent,
   type ScannerRuntimeStatus,
   type ScannerStartRequest,
+  type HotkeysStatePayload,
   type ScanSessionDetail,
   type ScanSessionView,
   type ScanSlotView,
 } from "../../shared/ipc.js";
+import {
+  defaultHotkeyBindings,
+  HOTKEY_ACTIONS,
+  normalizeHotkeyBindings,
+  RESERVED_CONTROL_KEYS,
+} from "../../shared/hotkeyActions.js";
 
 const PREVIEW_STORAGE_KEY = "poe2-item-intelligence-preview-v1";
 const previewMarket = new FixtureMarketProvider(quotes);
@@ -189,6 +220,12 @@ async function previewEvaluateText(text: string): Promise<ItemEvaluation> {
   });
   const valuation = valueItem(item, quote);
   const desirability = scoreDesirability(item, valuation);
+  const tierConfig = previewTierConfig();
+  const tier = evaluateWithAppraisal(text, {
+    rules: tierConfig.rules,
+    priceTable: previewPriceTable(),
+    thresholds: tierConfig.thresholds,
+  });
   const evaluation: ItemEvaluation = {
     schemaVersion: ITEM_INTELLIGENCE_IPC_VERSION,
     parsed: true,
@@ -196,6 +233,7 @@ async function previewEvaluateText(text: string): Promise<ItemEvaluation> {
     item,
     valuation,
     desirability,
+    tier,
   };
 
   const state = readPreviewState();
@@ -638,8 +676,128 @@ export const rendererApi = {
           null;
       },
     },
+    tiers: {
+      async get(): Promise<ValueTierConfigView> {
+        return nativeBridge()?.intelligence.tiers.get() ?? previewTierConfig();
+      },
+      async save(
+        request: SaveValueTierConfigRequest,
+      ): Promise<ValueTierConfigView> {
+        const bridge = nativeBridge();
+        if (bridge) return bridge.intelligence.tiers.save(request);
+        return previewSaveTierConfig(request);
+      },
+      async evaluate(itemText: string): Promise<TierVerdict> {
+        const bridge = nativeBridge();
+        if (bridge) return bridge.intelligence.tiers.evaluate(itemText);
+        const config = previewTierConfig();
+        return evaluateWithAppraisal(itemText, {
+          rules: config.rules,
+          priceTable: previewPriceTable(),
+          thresholds: config.thresholds,
+        });
+      },
+      onChanged(callback: (config: ValueTierConfigView) => void): () => void {
+        return nativeBridge()?.intelligence.tiers.onChanged(callback) ?? (() => undefined);
+      },
+    },
+    prices: {
+      async get(): Promise<PriceTable> {
+        return nativeBridge()?.intelligence.prices.get() ?? previewPriceTable();
+      },
+      async save(table: PriceTable): Promise<PriceTable> {
+        const bridge = nativeBridge();
+        if (bridge) return bridge.intelligence.prices.save(table);
+        return previewSavePriceTable(table);
+      },
+      onChanged(callback: (table: PriceTable) => void): () => void {
+        return nativeBridge()?.intelligence.prices.onChanged(callback) ?? (() => undefined);
+      },
+    },
   },
 };
+
+const PREVIEW_TIERS_KEY = "poe2-value-tiers-preview-v1";
+const PREVIEW_PRICES_KEY = "poe2-price-table-preview-v1";
+
+function previewTierConfig(): ValueTierConfigView {
+  try {
+    const raw = globalThis.localStorage?.getItem(PREVIEW_TIERS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as ValueTierConfigView;
+      if (parsed && parsed.rules) {
+        return {
+          ...parsed,
+          minDetourConfidence: parsed.minDetourConfidence ?? DEFAULT_MIN_DETOUR_CONFIDENCE,
+        };
+      }
+    }
+  } catch {
+    // Fall through to the starter config.
+  }
+  return {
+    schemaVersion: 1,
+    rules: starterValueTierRules(),
+    thresholds: { ...DEFAULT_TIER_THRESHOLDS },
+    routing: { ...DEFAULT_TRIAGE_ROUTING },
+    minDetourConfidence: DEFAULT_MIN_DETOUR_CONFIDENCE,
+  };
+}
+
+function previewSaveTierConfig(
+  request: SaveValueTierConfigRequest,
+): ValueTierConfigView {
+  const issues = validateValueTierRules(request.rules);
+  if (issues.length > 0) {
+    throw new Error(
+      `invalid-tier-rule:${issues[0]!.tier}:${issues[0]!.index}:${issues[0]!.message}`,
+    );
+  }
+  const config: ValueTierConfigView = {
+    schemaVersion: 1,
+    rules: request.rules,
+    thresholds: request.thresholds ?? { ...DEFAULT_TIER_THRESHOLDS },
+    routing: request.routing ?? { ...DEFAULT_TRIAGE_ROUTING },
+    minDetourConfidence: request.minDetourConfidence ?? DEFAULT_MIN_DETOUR_CONFIDENCE,
+    updatedAt: now(),
+  };
+  try {
+    globalThis.localStorage?.setItem(PREVIEW_TIERS_KEY, JSON.stringify(config));
+  } catch {
+    // Preview persistence is best-effort.
+  }
+  return config;
+}
+
+function previewPriceTable(): PriceTable {
+  try {
+    const raw = globalThis.localStorage?.getItem(PREVIEW_PRICES_KEY);
+    if (raw) {
+      const validation = validatePriceTable(JSON.parse(raw));
+      if (validation.valid && validation.table) return validation.table;
+    }
+  } catch {
+    // Fall through to the starter table.
+  }
+  return starterPriceTable();
+}
+
+function previewSavePriceTable(table: PriceTable): PriceTable {
+  const validation = validatePriceTable(table);
+  if (!validation.valid || !validation.table) {
+    const first = validation.issues[0];
+    throw new Error(
+      `invalid-price-table:${first ? `${first.path}:${first.message}` : "unknown"}`,
+    );
+  }
+  const saved: PriceTable = { ...validation.table, updatedAt: now() };
+  try {
+    globalThis.localStorage?.setItem(PREVIEW_PRICES_KEY, JSON.stringify(saved));
+  } catch {
+    // Preview persistence is best-effort.
+  }
+  return saved;
+}
 
 export interface PoeTarget {
   process: string;
@@ -718,6 +876,10 @@ export interface AssistiveRunResult {
   elapsedMs: number;
   bagCells: number;
   stashCells: number;
+  traces?: Array<{
+    result?: string;
+    input?: { kind?: string; x?: number; y?: number } | null;
+  }>;
 }
 
 export interface AssistiveApi {
@@ -729,6 +891,15 @@ export interface AssistiveApi {
     stashTab: "normal" | "quad";
     gridsCalibrated: boolean;
     searchCalibrated: boolean;
+    overlayVisible?: boolean;
+    overlaySelection?: Array<{
+      area: "stash" | "bag";
+      row: number;
+      col: number;
+      occupied: boolean;
+    }>;
+    overlayLabelFile?: string;
+    overlayWrongCount?: number;
     last?: AssistiveRunResult;
   }>;
   start: (request: {
@@ -749,7 +920,56 @@ export interface AssistiveApi {
     stashTab: "normal" | "quad";
     gridsCalibrated: boolean;
     searchCalibrated: boolean;
+    overlayVisible?: boolean;
+    overlaySelection?: Array<{
+      area: "stash" | "bag";
+      row: number;
+      col: number;
+      occupied: boolean;
+    }>;
+    overlayLabelFile?: string;
+    overlayWrongCount?: number;
     last?: AssistiveRunResult;
+  }>;
+  hideOverlay: () => Promise<{
+    running: boolean;
+    overlayVisible?: boolean;
+  }>;
+  selectOverlayCell: (
+    x: number,
+    y: number,
+    additive?: boolean,
+  ) => Promise<{
+    selected: Array<{
+      area: "stash" | "bag";
+      row: number;
+      col: number;
+      occupied: boolean;
+    }>;
+  }>;
+  labelOverlayCell: (
+    label: "right" | "wrong",
+  ) => Promise<
+    | {
+        ok: true;
+        selected: Array<{
+          area: "stash" | "bag";
+          row: number;
+          col: number;
+          occupied: boolean;
+        }>;
+      }
+    | { ok: false; reason: string }
+  >;
+  sendToCursor: () => Promise<{
+    ok: boolean;
+    opened: boolean;
+    copied: boolean;
+    truncated: boolean;
+    findings: boolean;
+    promptPath?: string;
+    method: "deeplink" | "clipboard" | "none";
+    message: string;
   }>;
   rearm: () => Promise<boolean>;
   memoryStatus: (payload: {
@@ -823,10 +1043,77 @@ export interface StashSortApi {
   ) => () => void;
 }
 
+export interface StashTabAdminApi {
+  status: () => Promise<StashTabAdminStatus>;
+  survey: (folderName?: string) => Promise<StashTabSurveyResult>;
+  /** Recent finds from the sorter's value triage (newest first). */
+  finds?: () => Promise<FindRecord[]>;
+  plan: (payload: {
+    tabs: StashTabSurveyResult["tabs"];
+    requireQuad?: boolean;
+    /** Opt in to rewriting priced tabs; removes their public price. */
+    allowPricedTabs?: boolean;
+  }) => Promise<{ plan: StashTabPlan; errors: string[] }>;
+  apply: (payload: {
+    plan: StashTabPlan;
+    dryRun?: boolean;
+    allowPricedTabs?: boolean;
+  }) => Promise<StashTabApplyOutcome[]>;
+  onEvent: (callback: (payload: StashTabAdminEvent) => void) => () => void;
+}
+
+export interface PriceFeedStatusView {
+  config: { league: string; autoRefreshDaily: boolean; poesessid: string };
+  resolvedLeague?: string;
+  lastRefreshAt?: string;
+  lastError?: string;
+  feedEntryCount: number;
+  feedAgeHours?: number;
+  refreshing: boolean;
+}
+
+export interface CompsSummaryView {
+  sampleSize: number;
+  candidateCount: number;
+  lowest?: number;
+  median?: number;
+  currency: "exalted";
+  basis: "unique-name" | "base-type";
+  comps: Array<{ price: number; similarity: number; name: string; baseType: string }>;
+  caution?: string;
+}
+
+export interface CompsResultView {
+  ok: boolean;
+  summary?: CompsSummaryView;
+  error?: string;
+  cached?: boolean;
+  league?: string;
+}
+
+export interface PriceFeedApi {
+  status: () => Promise<PriceFeedStatusView>;
+  refresh: () => Promise<PriceFeedStatusView>;
+  configure: (partial: {
+    league?: string;
+    autoRefreshDaily?: boolean;
+    poesessid?: string;
+  }) => Promise<PriceFeedStatusView>;
+  comps: (itemText: string) => Promise<CompsResultView>;
+}
+
 function compatibilityApi<T>(
-  section: "calibration" | "assistive" | "stashSort",
+  section: "calibration" | "assistive" | "stashSort" | "stashTabs" | "priceFeed",
 ): T | undefined {
   return nativeBridge()?.[section] as unknown as T | undefined;
+}
+
+export function getStashTabAdminApi(): StashTabAdminApi | undefined {
+  return compatibilityApi<StashTabAdminApi>("stashTabs");
+}
+
+export function getPriceFeedApi(): PriceFeedApi | undefined {
+  return compatibilityApi<PriceFeedApi>("priceFeed");
 }
 
 export function getCalibrationApi(): CalibrationApi | undefined {
@@ -846,3 +1133,35 @@ export function createEmptyBuildProfile(
 ): BuildProfile {
   return createBuildProfile(input);
 }
+
+/**
+ * Numpad hotkey bindings for the standalone action daemon. Without the
+ * native bridge (browser preview) the catalog renders with its defaults
+ * and saving only normalizes locally, clearly marked as a preview.
+ */
+export const hotkeysApi = {
+  async load(): Promise<HotkeysStatePayload & { preview: boolean }> {
+    const bridge = nativeBridge();
+    if (bridge?.hotkeys) return { ...(await bridge.hotkeys.get()), preview: false };
+    return {
+      actions: HOTKEY_ACTIONS,
+      reserved: RESERVED_CONTROL_KEYS,
+      bindings: defaultHotkeyBindings(),
+      issues: [],
+      source: "defaults",
+      preview: true,
+    };
+  },
+  async save(
+    bindings: Record<string, number | null>,
+  ): Promise<{ bindings: Record<string, number | null>; issues: string[]; preview: boolean }> {
+    const bridge = nativeBridge();
+    if (bridge?.hotkeys) return { ...(await bridge.hotkeys.save(bindings)), preview: false };
+    return { ...normalizeHotkeyBindings(bindings), preview: true };
+  },
+  async daemonStatus(): Promise<{ exists: boolean; lastEventAt?: string; lastLine?: string }> {
+    const bridge = nativeBridge();
+    if (bridge?.hotkeys) return bridge.hotkeys.daemonStatus();
+    return { exists: false };
+  },
+};

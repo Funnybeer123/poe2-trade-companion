@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   alignWindow,
   extendCanonical,
+  labelsEqualFolded,
   labelsSimilar,
   snapRows,
   type OcrLine,
@@ -33,6 +34,38 @@ describe("tabList", () => {
     expect(labelsSimilar("CUR (Remove-only)", "cUR (Remove-only)")).toBe(true);
     expect(labelsSimilar("-price 18 exalted (Remove-onl", "-price 18 exalted (Remove-only)")).toBe(true);
     expect(labelsSimilar("Runes", "Dist")).toBe(false);
+  });
+
+  it("clicks readable rows at their own OCR position — pitch error must not accumulate", () => {
+    // Noisy gaps (46/58 alternating) once skewed the measured pitch and a
+    // global top+slot*pitch click for slot 8 landed a full row low.
+    let y = 300;
+    const lines = Array.from({ length: 12 }, (_, i) => {
+      const line = { text: `Row${i}`, x: 1400, y, w: 100, h: 24 };
+      y += i % 2 === 0 ? 46 : 58;
+      return line;
+    });
+    const rows = snapRows(lines);
+    expect(rows).toHaveLength(12);
+    for (const [i, line] of lines.entries()) {
+      expect(rows[i]!.readable).toBe(true);
+      expect(rows[i]!.clickY).toBe(line.y + 12);
+    }
+  });
+
+  it("labelsEqualFolded: exact up to confusables, never containment", () => {
+    expect(labelsEqualFolded("1h Mace", "lh Mace")).toBe(true);
+    expect(labelsEqualFolded("Staff", "staff")).toBe(true);
+    expect(labelsEqualFolded("QuarterStaff", "Staff")).toBe(false);
+    expect(labelsEqualFolded("", "Staff")).toBe(false);
+  });
+
+  it("folds OCR-confusable characters so digit tabs match their garbles", () => {
+    expect(labelsSimilar("1h Mace", "lh Mace")).toBe(true);
+    expect(labelsSimilar("1h Mace", "Ih Mace")).toBe(true);
+    expect(labelsSimilar("Boots", "B00ts")).toBe(true);
+    expect(labelsSimilar("T10", "TIO")).toBe(true);
+    expect(labelsSimilar("1h Mace", "2h Mace")).toBe(false);
   });
 
   it("aligns a scrolled window against the canonical list and extends it", () => {

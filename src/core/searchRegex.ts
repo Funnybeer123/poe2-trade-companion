@@ -42,6 +42,14 @@ export interface SearchRegexOptions {
    * Disabled by default because a fragment broadens matching semantics.
    */
   allowBroadMatches?: boolean;
+  /**
+   * How multiple selections combine. "or" (default) packs alternatives into
+   * one regex per query. "and" emits one quoted term per selection — the
+   * in-game stash search ANDs multiple quoted terms — so every selection
+   * must match the same item. An over-budget AND set is a conflict, never
+   * split: AND semantics cannot span two queries.
+   */
+  combine?: "or" | "and";
 }
 
 export interface SearchRegexRequest {
@@ -445,6 +453,57 @@ function unique(messages: string[]): string[] {
   return [...new Set(messages)];
 }
 
+function buildAndResult(
+  alternatives: BuiltAlternative[],
+  options: {
+    maxLength: number;
+    quoteForStash: boolean;
+    flags: string;
+    baseLabel: string;
+    warnings: string[];
+    conflicts: string[];
+  },
+): SearchRegexResult {
+  const { maxLength, quoteForStash, flags, baseLabel, warnings, conflicts } = options;
+  const terms = alternatives.map((entry) => entry.pattern);
+  const stashQuery = quoteForStash
+    ? terms.map((term) => `"${term}"`).join(" ")
+    : terms.join(" ");
+  if (stashQuery.length > maxLength) {
+    conflicts.push(
+      `${baseLabel}: the combined AND query is ${stashQuery.length} characters, over the ${maxLength}-character limit. AND terms cannot be split across queries; remove a selection.`,
+    );
+    return { queries: [], warnings: unique(warnings), conflicts: unique(conflicts), maxLength };
+  }
+  // A JS-side equivalent for programmatic matching: every term must appear.
+  const query = terms.map((term) => `(?=[\\s\\S]*${term})`).join("");
+  const probe = new RegExp(query, flags);
+  const representativeText = alternatives
+    .flatMap((entry) => entry.representativeLines)
+    .join("\n");
+  if (!probe.test(representativeText)) {
+    conflicts.push(`${baseLabel}: the combined AND query failed representative-line validation.`);
+    return { queries: [], warnings: unique(warnings), conflicts: unique(conflicts), maxLength };
+  }
+  return {
+    queries: [
+      {
+        label: baseLabel,
+        query,
+        regex: query,
+        stashQuery,
+        flags,
+        length: stashQuery.length,
+        selectionIds: alternatives.flatMap((entry) => entry.selectionIds),
+        representativeLines: alternatives.flatMap((entry) => entry.representativeLines),
+      },
+    ],
+    warnings: unique(warnings),
+    conflicts: unique(conflicts),
+    maxLength,
+  };
+}
+
 export function buildSearchRegex(
   input: readonly SearchRegexInput[] | SearchRegexRequest,
   options: SearchRegexOptions = {},
@@ -494,13 +553,29 @@ export function buildSearchRegex(
       )
       .filter((entry): entry is BuiltAlternative => entry !== undefined),
   );
+  const baseLabelEarly = mergedOptions.label ?? "Stash search";
+  const flagsEarly = mergedOptions.caseInsensitive === false ? "" : "i";
+  if (mergedOptions.combine === "and") {
+    if (alternatives.length === 0) {
+      return { queries: [], warnings: unique(warnings), conflicts: unique(conflicts), maxLength };
+    }
+    return buildAndResult(alternatives, {
+      maxLength,
+      quoteForStash,
+      flags: flagsEarly,
+      baseLabel: baseLabelEarly,
+      warnings,
+      conflicts,
+    });
+  }
+
   const groups = packAlternatives(alternatives, budget);
   if (groups.length > 1) {
     warnings.push(`The selections require ${groups.length} labeled queries; no expression was truncated.`);
   }
 
-  const baseLabel = mergedOptions.label ?? "Stash search";
-  const flags = mergedOptions.caseInsensitive === false ? "" : "i";
+  const baseLabel = baseLabelEarly;
+  const flags = flagsEarly;
   const queries = groups.map<LabeledSearchQuery>((group, index) => {
     const query = group.map((entry) => entry.pattern).join("|");
     const stashQuery = quoteForStash ? `"${query}"` : query;

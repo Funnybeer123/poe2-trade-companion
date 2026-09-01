@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { emptyProfile } from "../src/core/calibrationProfile.js";
+import { emptyProfile, stashGridForKind } from "../src/core/calibrationProfile.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
 import {
   InMemoryScanSessionStorage,
@@ -32,6 +32,11 @@ function request() {
 }
 
 describe("scanner runtime integration", () => {
+  it("scans a quad grid from one stamped stash panel", () => {
+    const mark = stashGridForKind(profile(), "stash-quad");
+    expect(mark).toMatchObject({ x: 20, y: 40, w: 600, h: 600, cols: 24, rows: 24 });
+  });
+
   it("runs an authorized dry scan without touching clipboard or native input", async () => {
     const readText = vi.fn(async () => "keep");
     const writeText = vi.fn(async () => undefined);

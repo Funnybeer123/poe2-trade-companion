@@ -120,6 +120,65 @@ export function stashAndBagFrame(
   return image;
 }
 
+export function quadStashAndBagFrame(
+  occupied: Array<{ row: number; col: number }> = [],
+  stashOccupied: Array<{ row: number; col: number }> = [],
+): GrayImage {
+  const image = createGray(1600, 900, 10);
+  const stashX = 80;
+  const stashY = 144;
+  const stashW = 736;
+  const stashH = 630;
+  checker(image, stashX, stashY, stashW, stashH, 25, 110);
+  const stashCellW = stashW / 24;
+  const stashCellH = stashH / 24;
+  for (let row = 0; row < 24; row += 1) {
+    for (let col = 0; col < 24; col += 1) {
+      fillRect(
+        image,
+        stashX + col * stashCellW + 1,
+        stashY + row * stashCellH + 1,
+        stashCellW - 2,
+        stashCellH - 2,
+        16,
+      );
+    }
+  }
+  for (const cell of stashOccupied) {
+    fillRect(
+      image,
+      stashX + cell.col * stashCellW + 2,
+      stashY + cell.row * stashCellH + 2,
+      stashCellW - 4,
+      stashCellH - 4,
+      210,
+    );
+  }
+  const invX = 1048;
+  const invY = 324;
+  const invW = 480;
+  const invH = 450;
+  checker(image, invX, invY, invW, invH, 20, 70);
+  const cellW = invW / 12;
+  const cellH = invH / 5;
+  for (let row = 0; row < 5; row += 1) {
+    for (let col = 0; col < 12; col += 1) {
+      fillRect(image, invX + col * cellW + 4, invY + row * cellH + 4, cellW - 8, cellH - 8, 14);
+    }
+  }
+  for (const cell of occupied) {
+    fillRect(
+      image,
+      invX + cell.col * cellW + 6,
+      invY + cell.row * cellH + 6,
+      cellW - 12,
+      cellH - 12,
+      210,
+    );
+  }
+  return image;
+}
+
 export function paintGridSprite(
   image: GrayImage,
   box: { x: number; y: number; w: number; h: number },

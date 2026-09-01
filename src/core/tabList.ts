@@ -40,9 +40,31 @@ function isSubsequence(needle: string, haystack: string): boolean {
  * a subsequence of the other covering most of it ("Ma s" matches "Maps",
  * "O Rune" matches "Rune" via containment after normalization).
  */
+/**
+ * Fold characters OCR reliably confuses so both sides compare in the same
+ * alphabet: "lh Mace" is the 1h Mace tab, "B00ts" is Boots. Applied to both
+ * inputs, so real labels never drift — only their comparison form does.
+ */
+function foldOcrConfusables(s: string): string {
+  return s.replace(/[li]/g, "1").replace(/o/g, "0");
+}
+
+/**
+ * Strict equality up to OCR confusables and punctuation — "lh Mace" equals
+ * "1h Mace", but "QuarterStaff" never equals "Staff". Navigation must prefer
+ * this over labelsSimilar: containment matching once sent every "Staff"
+ * deposit into QuarterStaff (whose label CONTAINS "staff" and sits higher in
+ * the list), boomeranging the withdrawn staves straight back.
+ */
+export function labelsEqualFolded(a: string, b: string): boolean {
+  const na = foldOcrConfusables(normalizeTabLabel(a));
+  const nb = foldOcrConfusables(normalizeTabLabel(b));
+  return na.length > 0 && na === nb;
+}
+
 export function labelsSimilar(a: string, b: string): boolean {
-  const na = normalizeTabLabel(a);
-  const nb = normalizeTabLabel(b);
+  const na = foldOcrConfusables(normalizeTabLabel(a));
+  const nb = foldOcrConfusables(normalizeTabLabel(b));
   if (!na || !nb) return false;
   if (na === nb) return true;
   if (na.length >= 4 && nb.includes(na)) return true;
@@ -56,21 +78,43 @@ export function snapRows(lines: OcrLine[], pitch = DEFAULT_ROW_PITCH): ListRow[]
   if (sorted.length === 0) return [];
   const gaps = sorted.slice(1).map((line, i) => line.y - sorted[i]!.y).filter((gap) => gap > pitch * 0.6 && gap < pitch * 1.5);
   const measured = gaps.length >= 3 ? gaps.sort((a, b) => a - b)[Math.floor(gaps.length / 2)]! : pitch;
-  const top = sorted[0]!.y;
+  // Slots step per-gap so pitch error never ACCUMULATES: a globally applied
+  // `top + slot * measured` once drifted slot 8+ of a 20-row list a full row
+  // down, and a click meant for Weapons landed on Rings (one-row-low
+  // misdeposits, watched live). Each gap rounds independently instead.
   const bySlot = new Map<number, OcrLine>();
-  for (const line of sorted) {
-    const slot = Math.round((line.y - top) / measured);
-    if (!bySlot.has(slot)) bySlot.set(slot, line);
+  let cursor = 0;
+  bySlot.set(0, sorted[0]!);
+  for (let i = 1; i < sorted.length; i += 1) {
+    const gap = sorted[i]!.y - sorted[i - 1]!.y;
+    const step = Math.round(gap / measured);
+    if (step <= 0) continue; // same visual row (icon fragment) — first line wins
+    cursor += step;
+    if (!bySlot.has(cursor)) bySlot.set(cursor, sorted[i]!);
   }
   const maxSlot = Math.max(...bySlot.keys());
   const rows: ListRow[] = [];
   for (let slot = 0; slot <= maxSlot; slot += 1) {
     const line = bySlot.get(slot);
+    // A readable row is clicked at ITS OWN OCR position; only invisible
+    // slots are interpolated, and from the nearest readable row above them,
+    // never from a global anchor.
+    let clickY: number;
+    if (line) {
+      clickY = Math.round(line.y + line.h / 2);
+    } else {
+      let ref = slot - 1;
+      while (ref >= 0 && !bySlot.has(ref)) ref -= 1;
+      const refLine = ref >= 0 ? bySlot.get(ref) : undefined;
+      clickY = refLine
+        ? Math.round(refLine.y + (slot - ref) * measured + 16)
+        : Math.round(sorted[0]!.y + slot * measured + 16);
+    }
     rows.push({
       slot,
       label: line ? line.text.trim() : "(unreadable)",
       readable: Boolean(line),
-      clickY: Math.round(top + slot * measured + (line ? line.h / 2 : 16)),
+      clickY,
     });
   }
   return rows;

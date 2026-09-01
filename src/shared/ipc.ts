@@ -27,6 +27,13 @@ import type {
   RuntimeMode,
   ValuationResult,
 } from "../core/types.js";
+import type { TriageRouting } from "../core/bagTriage.js";
+import type { PriceTable } from "../core/priceTable.js";
+import type {
+  TierVerdict,
+  ValueTierRules,
+  ValueTierThresholds,
+} from "../core/valueTiers.js";
 
 export const ITEM_INTELLIGENCE_IPC_VERSION = 1 as const;
 export const SCANNER_IPC_VERSION = 1 as const;
@@ -38,6 +45,25 @@ export interface ParsedItemEvaluation {
   item: NormalizedItem;
   valuation: ValuationResult;
   desirability: DesirabilityResult;
+  /** Value-tier verdict from the user's tier rules and price table. */
+  tier?: TierVerdict;
+}
+
+export interface ValueTierConfigView {
+  schemaVersion: 1;
+  rules: ValueTierRules;
+  thresholds: ValueTierThresholds;
+  routing: TriageRouting;
+  /** Appraisal confidence an item needs before the sorter detours it. */
+  minDetourConfidence: number;
+  updatedAt?: string;
+}
+
+export interface SaveValueTierConfigRequest {
+  rules: ValueTierRules;
+  thresholds?: ValueTierThresholds;
+  routing?: TriageRouting;
+  minDetourConfidence?: number;
 }
 
 export interface RejectedItemEvaluation {
@@ -205,6 +231,11 @@ export interface ItemIntelligenceIpcContract {
   >;
   "scans:list": IpcCall<[], ScanSessionView[]>;
   "scans:get": IpcCall<[id: string], ScanSessionDetail | null>;
+  "tiers:get": IpcCall<[], ValueTierConfigView>;
+  "tiers:save": IpcCall<[request: SaveValueTierConfigRequest], ValueTierConfigView>;
+  "tiers:evaluate": IpcCall<[itemText: string], TierVerdict>;
+  "prices:get": IpcCall<[], PriceTable>;
+  "prices:save": IpcCall<[table: PriceTable], PriceTable>;
 }
 
 export interface ItemIntelligenceEventContract {
@@ -212,6 +243,8 @@ export interface ItemIntelligenceEventContract {
   "catalog:changed": CatalogItemView[];
   "builds:changed": BuildProfile[];
   "rules:changed": RuleSetView[];
+  "tiers:changed": ValueTierConfigView;
+  "prices:changed": PriceTable;
 }
 
 export const ITEM_INTELLIGENCE_CHANNELS = [
@@ -234,6 +267,11 @@ export const ITEM_INTELLIGENCE_CHANNELS = [
   "exports:data",
   "scans:list",
   "scans:get",
+  "tiers:get",
+  "tiers:save",
+  "tiers:evaluate",
+  "prices:get",
+  "prices:save",
 ] as const satisfies readonly (keyof ItemIntelligenceIpcContract)[];
 
 export const ITEM_INTELLIGENCE_EVENT_CHANNELS = [
@@ -241,6 +279,8 @@ export const ITEM_INTELLIGENCE_EVENT_CHANNELS = [
   "catalog:changed",
   "builds:changed",
   "rules:changed",
+  "tiers:changed",
+  "prices:changed",
 ] as const satisfies readonly (keyof ItemIntelligenceEventContract)[];
 
 export type IpcChannel = keyof ItemIntelligenceIpcContract;
@@ -301,6 +341,19 @@ export interface ItemIntelligenceBridge {
   scans: {
     list: () => Promise<ScanSessionView[]>;
     get: (id: string) => Promise<ScanSessionDetail | null>;
+  };
+  tiers: {
+    get: () => Promise<ValueTierConfigView>;
+    save: (request: SaveValueTierConfigRequest) => Promise<ValueTierConfigView>;
+    evaluate: (itemText: string) => Promise<TierVerdict>;
+    onChanged: (
+      callback: (config: ValueTierConfigView) => void,
+    ) => () => void;
+  };
+  prices: {
+    get: () => Promise<PriceTable>;
+    save: (table: PriceTable) => Promise<PriceTable>;
+    onChanged: (callback: (table: PriceTable) => void) => () => void;
   };
 }
 
@@ -375,6 +428,28 @@ export interface ScannerBridge {
   ) => () => void;
 }
 
+export interface HotkeysStatePayload {
+  actions: ReadonlyArray<{
+    id: string;
+    label: string;
+    detail: string;
+    context: "hideout" | "map";
+    defaultKey: number | null;
+  }>;
+  reserved: ReadonlyArray<{ key: number; label: string }>;
+  bindings: Record<string, number | null>;
+  issues: string[];
+  source: "file" | "defaults";
+}
+
+export interface HotkeysBridge {
+  get: () => Promise<HotkeysStatePayload>;
+  save: (
+    bindings: Record<string, number | null>,
+  ) => Promise<{ bindings: Record<string, number | null>; issues: string[] }>;
+  daemonStatus: () => Promise<{ exists: boolean; lastEventAt?: string; lastLine?: string }>;
+}
+
 export interface Poe2Bridge {
   mode: () => Promise<RuntimeMode>;
   fromClipboard: () => Promise<ItemEvaluation | null>;
@@ -393,8 +468,11 @@ export interface Poe2Bridge {
   intelligence: ItemIntelligenceBridge;
   scanner: ScannerBridge;
   stashSort: Record<string, (...args: never[]) => unknown>;
+  stashTabs: Record<string, (...args: never[]) => unknown>;
+  priceFeed: Record<string, (...args: never[]) => unknown>;
   assistive: Record<string, unknown>;
   calibration: Record<string, (...args: never[]) => unknown>;
+  hotkeys?: HotkeysBridge;
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {

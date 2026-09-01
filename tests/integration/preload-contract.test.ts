@@ -48,14 +48,25 @@ describe("preload API exposure", () => {
         "killLatched",
         "mode",
         "onItem",
+        "priceFeed",
         "rearm",
         "scanner",
         "stashSort",
+        "stashTabs",
         "windows",
       ].sort(),
     );
     expect(Object.keys(bridge.intelligence).sort()).toEqual(
-      ["builds", "catalog", "exports", "imports", "rules", "scans"].sort(),
+      [
+        "builds",
+        "catalog",
+        "exports",
+        "imports",
+        "prices",
+        "rules",
+        "scans",
+        "tiers",
+      ].sort(),
     );
 
     await bridge.mode();
@@ -64,6 +75,9 @@ describe("preload API exposure", () => {
     await bridge.intelligence.catalog.remove("item-1");
     await bridge.intelligence.rules.validate("maximum Life");
     await bridge.intelligence.scans.get("scan-1");
+    await bridge.intelligence.tiers.get();
+    await bridge.intelligence.tiers.evaluate("Item Class: Rings");
+    await bridge.intelligence.prices.get();
     await bridge.scanner.status();
 
     expect(electron.invoke.mock.calls).toEqual([
@@ -73,6 +87,9 @@ describe("preload API exposure", () => {
       ["catalog:remove", "item-1"],
       ["rules:validate", "maximum Life"],
       ["scans:get", "scan-1"],
+      ["tiers:get"],
+      ["tiers:evaluate", "Item Class: Rings"],
+      ["prices:get"],
       ["scanner:status"],
     ]);
   });

@@ -19,13 +19,20 @@
     "imports:legacy",
     "exports:data",
     "scans:list",
-    "scans:get"
+    "scans:get",
+    "tiers:get",
+    "tiers:save",
+    "tiers:evaluate",
+    "prices:get",
+    "prices:save"
   ],
   "eventChannels": [
     "item:evaluated",
     "catalog:changed",
     "builds:changed",
-    "rules:changed"
+    "rules:changed",
+    "tiers:changed",
+    "prices:changed"
   ],
   "contracts": {
     "item": {

@@ -2,7 +2,7 @@ import { readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { bmpToGray, readBmpBgr } from "../src/adapters/bmp.js";
-import { toScreenBox } from "../src/core/calibrationProfile.js";
+import { activeStashGrid, toScreenBox } from "../src/core/calibrationProfile.js";
 import { loadProfile } from "../src/core/calibrationStore.js";
 import { occupiedFromRgbScores, scoreGridCellsRgb } from "../src/core/cellOccupancy.js";
 import { perceiveUi } from "../src/core/uiPerception.js";
@@ -32,7 +32,7 @@ function occupancyFor(file: string) {
   const gray = bmpToGray(bmpPath);
   const facts = perceiveUi(gray, client, {}, profile);
   const bagRegion = profile.bagGrid ? toScreenBox(client, profile.bagGrid) : undefined;
-  const stashGrid = profile.activeStashTab === "quad" ? profile.quadStashGrid : profile.stashGrid;
+  const stashGrid = activeStashGrid(profile, facts.stashGridSize);
   const stashRegion = stashGrid ? toScreenBox(client, stashGrid) : undefined;
   const grayBag = facts.occupiedBag;
   const grayStash = facts.occupiedStash;

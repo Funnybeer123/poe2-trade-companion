@@ -9,9 +9,11 @@ import type {
   LegacyImportRequest,
   SaveBuildProfileRequest,
   SaveRuleSetRequest,
+  SaveValueTierConfigRequest,
   ScannerRuntimeEvent,
   ScannerStartRequest,
 } from "../shared/ipc.js";
+import type { PriceTable } from "../core/priceTable.js";
 import type { SearchRegexRequest } from "../core/searchRegex.js";
 
 const invoke = ((channel: string, ...args: unknown[]) =>
@@ -36,6 +38,11 @@ contextBridge.exposeInMainWorld("poe2", {
   windows: () => ipcRenderer.invoke("poe:windows"),
   killLatched: () => ipcRenderer.invoke("qa:kill-latched"),
   rearm: () => ipcRenderer.invoke("qa:rearm"),
+  hotkeys: {
+    get: () => ipcRenderer.invoke("hotkeys:get"),
+    save: (bindings: Record<string, number | null>) => ipcRenderer.invoke("hotkeys:save", bindings),
+    daemonStatus: () => ipcRenderer.invoke("hotkeys:daemon-status"),
+  },
   generateFilter: (options: { hideBelowScore: number; highlightUniques: boolean; name: string }) =>
     ipcRenderer.invoke("filter:generate", options),
   onItem: (callback: (payload: ItemIntelligenceEventContract["item:evaluated"]) => void) =>
@@ -79,6 +86,19 @@ contextBridge.exposeInMainWorld("poe2", {
       list: () => invoke("scans:list"),
       get: (id: string) => invoke("scans:get", id),
     },
+    tiers: {
+      get: () => invoke("tiers:get"),
+      save: (request: SaveValueTierConfigRequest) => invoke("tiers:save", request),
+      evaluate: (itemText: string) => invoke("tiers:evaluate", itemText),
+      onChanged: (callback: (payload: ItemIntelligenceEventContract["tiers:changed"]) => void) =>
+        subscribe("tiers:changed", callback),
+    },
+    prices: {
+      get: () => invoke("prices:get"),
+      save: (table: PriceTable) => invoke("prices:save", table),
+      onChanged: (callback: (payload: ItemIntelligenceEventContract["prices:changed"]) => void) =>
+        subscribe("prices:changed", callback),
+    },
   },
   scanner: {
     status: () => ipcRenderer.invoke("scanner:status"),
@@ -92,6 +112,26 @@ contextBridge.exposeInMainWorld("poe2", {
       ) => callback(payload);
       ipcRenderer.on("scanner:event", listener);
       return () => ipcRenderer.removeListener("scanner:event", listener);
+    },
+  },
+  priceFeed: {
+    status: () => ipcRenderer.invoke("price-feed:status"),
+    refresh: () => ipcRenderer.invoke("price-feed:refresh"),
+    configure: (partial: unknown) => ipcRenderer.invoke("price-feed:configure", partial),
+    comps: (itemText: string) => ipcRenderer.invoke("price-feed:comps", itemText),
+  },
+  stashTabs: {
+    status: () => ipcRenderer.invoke("stash-tabs:status"),
+    survey: (folderName?: string) => ipcRenderer.invoke("stash-tabs:survey", folderName),
+    finds: () => ipcRenderer.invoke("stash-tabs:finds"),
+    plan: (payload: unknown) => ipcRenderer.invoke("stash-tabs:plan", payload),
+    apply: (payload: unknown) => ipcRenderer.invoke("stash-tabs:apply", payload),
+    runScript: (kind: string) => ipcRenderer.invoke("stash-tabs:run-script", kind),
+    stopScript: () => ipcRenderer.invoke("stash-tabs:stop-script"),
+    onEvent: (callback: (payload: unknown) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+      ipcRenderer.on("stash-tabs:event", listener);
+      return () => ipcRenderer.removeListener("stash-tabs:event", listener);
     },
   },
   stashSort: {
@@ -109,6 +149,11 @@ contextBridge.exposeInMainWorld("poe2", {
     status: () => ipcRenderer.invoke("assistive:status"),
     start: (request: unknown) => ipcRenderer.invoke("assistive:start", request),
     stop: () => ipcRenderer.invoke("assistive:stop"),
+    selectOverlayCell: (x: number, y: number, additive?: boolean) =>
+      ipcRenderer.invoke("assistive:overlay-select", x, y, Boolean(additive)),
+    labelOverlayCell: (label: "right" | "wrong") =>
+      ipcRenderer.invoke("assistive:overlay-label", label),
+    sendToCursor: () => ipcRenderer.invoke("assistive:send-to-cursor"),
     rearm: () => ipcRenderer.invoke("qa:rearm"),
     memoryStatus: (payload: unknown) => ipcRenderer.invoke("assistive:memory-status", payload),
     resetMemory: (payload: unknown) => ipcRenderer.invoke("assistive:memory-reset", payload),

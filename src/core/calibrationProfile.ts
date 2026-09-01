@@ -77,6 +77,114 @@ export function emptyProfile(width = 3840, height = 2160): CalibrationProfile {
   };
 }
 
+export function clientBoxesMatch(a?: ClientBox, b?: ClientBox, slop = 8): boolean {
+  if (!a || !b) return false;
+  return (
+    Math.abs(a.x - b.x) <= slop &&
+    Math.abs(a.y - b.y) <= slop &&
+    Math.abs(a.w - b.w) <= slop &&
+    Math.abs(a.h - b.h) <= slop
+  );
+}
+
+export function applyStashPanel(box: ClientBox, patch?: PackedPatch): {
+  stashGrid: GridMark;
+  quadStashGrid: GridMark;
+} {
+  const area = { x: box.x, y: box.y, w: box.w, h: box.h, ...(patch ? { patch } : {}) };
+  return {
+    stashGrid: { ...area, ...NORMAL_STASH_CELLS },
+    quadStashGrid: { ...area, ...QUAD_STASH_CELLS },
+  };
+}
+
+export function stampStashPanel(
+  profile: CalibrationProfile,
+  box: ClientBox,
+  patch?: PackedPatch,
+): CalibrationProfile {
+  const grids = applyStashPanel(box, patch);
+  return {
+    ...profile,
+    stashGrid: grids.stashGrid,
+    quadStashGrid: grids.quadStashGrid,
+  };
+}
+
+export interface ResolvedStashGrids {
+  normal?: GridMark;
+  quad?: GridMark;
+  shared: boolean;
+}
+
+/** One on-screen stash panel serves both 12×12 and 24×24. Divergent old marks stay independent. */
+export function resolveStashGrids(profile?: CalibrationProfile): ResolvedStashGrids {
+  if (!profile) return { shared: false };
+  const { stashGrid, quadStashGrid } = profile;
+  if (stashGrid && quadStashGrid) {
+    if (clientBoxesMatch(stashGrid, quadStashGrid)) {
+      return {
+        normal: { ...stashGrid, ...NORMAL_STASH_CELLS },
+        quad: {
+          ...stashGrid,
+          ...QUAD_STASH_CELLS,
+          patch: quadStashGrid.patch ?? stashGrid.patch,
+        },
+        shared: true,
+      };
+    }
+    return { normal: stashGrid, quad: quadStashGrid, shared: false };
+  }
+  if (stashGrid) {
+    return {
+      normal: { ...stashGrid, ...NORMAL_STASH_CELLS },
+      quad: { ...stashGrid, ...QUAD_STASH_CELLS },
+      shared: true,
+    };
+  }
+  if (quadStashGrid) {
+    return {
+      normal: { ...quadStashGrid, ...NORMAL_STASH_CELLS },
+      quad: { ...quadStashGrid, ...QUAD_STASH_CELLS },
+      shared: true,
+    };
+  }
+  return { shared: false };
+}
+
+export function stashAreasDiverge(profile?: CalibrationProfile): boolean {
+  return Boolean(
+    profile?.stashGrid && profile.quadStashGrid && !clientBoxesMatch(profile.stashGrid, profile.quadStashGrid),
+  );
+}
+
+export function stashTabFromGridSize(
+  size?: { cols?: number; rows?: number } | StashTabKind,
+): StashTabKind | undefined {
+  if (size === "quad" || size === "normal") return size;
+  if (size && typeof size === "object") {
+    if (size.cols === 24) return "quad";
+    if (size.cols === 12) return "normal";
+  }
+  return undefined;
+}
+
+export function withDetectedStashTab(
+  profile: CalibrationProfile,
+  detected?: { cols?: number; rows?: number } | StashTabKind,
+): CalibrationProfile {
+  const tab = stashTabFromGridSize(detected);
+  return tab ? { ...profile, activeStashTab: tab } : profile;
+}
+
+export function stashGridForKind(
+  profile: CalibrationProfile | undefined,
+  kind: "stash-normal" | "stash-quad",
+): GridMark | undefined {
+  const grids = resolveStashGrids(profile);
+  return kind === "stash-quad" ? grids.quad : grids.normal;
+}
+
 export function profileHasGrids(profile?: CalibrationProfile): boolean {
   return Boolean(profile?.bagGrid || profile?.ventorBagGrid || profile?.stashGrid || profile?.quadStashGrid);
 }
@@ -95,12 +203,15 @@ export function profileReadyForWalk(profile?: CalibrationProfile): boolean {
   return Boolean(profile?.npcs.length);
 }
 
-export function activeStashGrid(profile?: CalibrationProfile): GridMark | undefined {
+export function activeStashGrid(
+  profile?: CalibrationProfile,
+  detected?: { cols?: number; rows?: number } | StashTabKind,
+): GridMark | undefined {
   if (!profile) return undefined;
-  if (profile.activeStashTab === "quad") {
-    return profile.quadStashGrid ?? profile.stashGrid;
-  }
-  return profile.stashGrid ?? profile.quadStashGrid;
+  const grids = resolveStashGrids(profile);
+  const tab = stashTabFromGridSize(detected) ?? profile.activeStashTab;
+  if (tab === "quad") return grids.quad ?? grids.normal;
+  return grids.normal ?? grids.quad;
 }
 
 export function cropClientBox(frame: GrayImage, client: ScreenRect, box: ClientBox): GrayImage {

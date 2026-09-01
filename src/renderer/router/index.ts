@@ -15,28 +15,39 @@ declare module "vue-router" {
 const routes: RouteRecordRaw[] = [
   {
     path: "/",
-    redirect: "/items",
+    redirect: "/sort",
+  },
+  {
+    path: "/sort",
+    name: "sort",
+    component: () => import("../views/SortView.vue"),
+    meta: {
+      title: "Sort & triage",
+      eyebrow: "Operate",
+      description:
+        "Run the gear sorter, tune the value tiers that pull winners aside, and keep the local price table current.",
+    },
   },
   {
     path: "/items",
     name: "items",
-    component: () => import("../views/ItemsView.vue"),
+    component: () => import("../views/ItemLogView.vue"),
     meta: {
-      title: "Item intelligence",
+      title: "Item log",
       eyebrow: "Inspect",
       description:
-        "Parse copied items, review explainable estimates, and manage the durable local catalog.",
+        "Everything the app has seen: evaluated items, the durable catalog, and scan session evidence.",
     },
   },
   {
-    path: "/finder",
-    name: "finder",
-    component: () => import("../views/FinderView.vue"),
+    path: "/search",
+    name: "search",
+    component: () => import("../views/SearchView.vue"),
     meta: {
-      title: "Stash query finder",
-      eyebrow: "Search",
+      title: "Search & rules",
+      eyebrow: "Define",
       description:
-        "Turn item fields and modifiers into validated, non-truncated stash queries.",
+        "Build validated stash queries from an item and author the OR-of-AND rules scans and tiers reuse.",
     },
   },
   {
@@ -50,28 +61,14 @@ const routes: RouteRecordRaw[] = [
         "Import local trade targets, edit upgrade rules, and measure catalog coverage.",
     },
   },
-  {
-    path: "/rules",
-    name: "rules",
-    component: () => import("../views/RulesView.vue"),
-    meta: {
-      title: "Rule studio",
-      eyebrow: "Define",
-      description:
-        "Author safe OR-of-AND match rules with inline validation and AST feedback.",
-    },
-  },
-  {
-    path: "/scans",
-    name: "scans",
-    component: () => import("../views/ScansView.vue"),
-    meta: {
-      title: "Scan sessions",
-      eyebrow: "Review",
-      description:
-        "Inspect offline session outcomes, slot evidence, and timeout or miss states.",
-    },
-  },
+  // Old bookmarks keep working after the navigation merges.
+  { path: "/finder", redirect: "/search#finder" },
+  { path: "/rules", redirect: "/search#rules" },
+  { path: "/scans", redirect: "/items#scans" },
+  { path: "/tools/overview", redirect: "/tools" },
+  { path: "/tools/opportunity", redirect: "/items" },
+  { path: "/tools/qa", redirect: "/tools/diagnostics" },
+  { path: "/tools/replay", redirect: "/tools/diagnostics" },
   {
     path: "/tools/:tool?",
     name: "tools",
@@ -80,12 +77,12 @@ const routes: RouteRecordRaw[] = [
       title: "Tools & QA",
       eyebrow: "Operate",
       description:
-        "Calibration, audited transfers, replay, filters, diagnostics, and settings.",
+        "Calibration, audited transfers, stash tabs, diagnostics, filters, and settings.",
     },
   },
   {
     path: "/:pathMatch(.*)*",
-    redirect: "/items",
+    redirect: "/sort",
   },
 ];
 

@@ -14,8 +14,11 @@ import {
   type SelectedMonitor,
 } from "../core/screenLayout.js";
 import {
+  applyStashPanel,
+  clientBoxesMatch,
   packNpcPatch,
   packPatch,
+  QUAD_STASH_CELLS,
   type CalibrationProfile,
   type ClientBox,
   type GridMark,
@@ -380,6 +383,7 @@ export function registerCalibrationIpc(): void {
         bmpPath: string;
         screen: ScreenRect;
         profile: CalibrationProfile;
+        stashPanel?: ClientBox;
         stashGrid?: GridMark;
         quadStashGrid?: GridMark;
         activeStashTab?: "normal" | "quad";
@@ -395,8 +399,22 @@ export function registerCalibrationIpc(): void {
         client: { width: payload.screen.width, height: payload.screen.height },
         npcs: [...payload.profile.npcs],
       };
-      if (payload.stashGrid) next.stashGrid = withGridPatch(gray, payload.screen, payload.stashGrid);
-      if (payload.quadStashGrid) next.quadStashGrid = withGridPatch(gray, payload.screen, payload.quadStashGrid);
+      const stashBox = payload.stashPanel ?? payload.stashGrid ?? payload.quadStashGrid;
+      if (stashBox) {
+        if (
+          payload.stashGrid &&
+          payload.quadStashGrid &&
+          !clientBoxesMatch(payload.stashGrid, payload.quadStashGrid)
+        ) {
+          next.stashGrid = withGridPatch(gray, payload.screen, payload.stashGrid);
+          next.quadStashGrid = withGridPatch(gray, payload.screen, payload.quadStashGrid);
+        } else {
+          const stamped = applyStashPanel(stashBox);
+          const patched = withGridPatch(gray, payload.screen, stamped.stashGrid);
+          next.stashGrid = patched;
+          next.quadStashGrid = { ...patched, ...QUAD_STASH_CELLS };
+        }
+      }
       if (payload.activeStashTab) next.activeStashTab = payload.activeStashTab;
       if (payload.bagGrid) next.bagGrid = withGridPatch(gray, payload.screen, payload.bagGrid);
       if (payload.ventorBagGrid) next.ventorBagGrid = withGridPatch(gray, payload.screen, payload.ventorBagGrid);

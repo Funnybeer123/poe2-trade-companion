@@ -165,7 +165,7 @@ function diagnosticFootprints(
 }
 
 export function buildTransferDiagnostic(args: BuildDiagnosticArgs): TransferDiagnosticReport {
-  const stashGrid = activeStashGrid(args.profile);
+  const stashGrid = activeStashGrid(args.profile, args.facts.stashGridSize);
   const bagGrid = args.profile.bagGrid;
   const correctedFacts = applyDiagnosticCorrections(
     args.facts,
@@ -244,7 +244,7 @@ export function applyDiagnosticCorrections(
   client: ScreenRect,
 ): UiFacts {
   if (corrections.length === 0) return facts;
-  const stashGrid = activeStashGrid(profile);
+  const stashGrid = activeStashGrid(profile, facts.stashGridSize);
   const occupiedStash = correctedCells(
     facts.occupiedStash,
     corrections,

@@ -1,13 +1,39 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import ItemDetail from "../components/ItemDetail.vue";
+import OpportunityTool from "../components/tools/OpportunityTool.vue";
 import { useIntelligenceStore } from "../composables/useIntelligenceStore";
+import { getPriceFeedApi, type CompsResultView } from "../services/rendererApi";
 import { formatAmount, formatDate } from "../utils/intelligence";
 
 const store = useIntelligenceStore();
 const sourceText = ref(store.currentEvaluation.value?.raw ?? "");
 const catalogQuery = ref("");
 const pendingDeleteId = ref("");
+
+const priceFeed = getPriceFeedApi();
+const comps = ref<CompsResultView | null>(null);
+const compsBusy = ref(false);
+
+async function fetchComps(): Promise<void> {
+  const raw = store.currentEvaluation.value?.raw;
+  if (!priceFeed || !raw || compsBusy.value) return;
+  compsBusy.value = true;
+  try {
+    comps.value = await priceFeed.comps(raw);
+  } catch (reason) {
+    comps.value = {
+      ok: false,
+      error: reason instanceof Error ? reason.message : String(reason),
+    };
+  } finally {
+    compsBusy.value = false;
+  }
+}
+
+watch(store.currentEvaluation, () => {
+  comps.value = null;
+});
 
 const filteredCatalog = computed(() => {
   const query = catalogQuery.value.trim().toLowerCase();
@@ -201,8 +227,60 @@ async function removeCatalogEntry(
         :item="store.currentItem.value"
         :valuation="store.currentEvaluation.value?.valuation"
         :desirability="store.currentEvaluation.value?.desirability"
+        :tier="store.currentEvaluation.value?.tier"
       />
-      <section v-else class="card state-panel item-empty">
+      <details v-if="store.currentEvaluation.value && priceFeed" class="advanced-options market-comps">
+        <summary>Market comps — real trade listings for this item</summary>
+        <p class="muted">
+          Searches the official trade site for listings like this one
+          ({{ store.currentItem.value?.baseType }}), converts asks to exalted,
+          and keeps only listings sharing this item's notable mod families.
+          One polite request pair per lookup, cached ten minutes.
+        </p>
+        <div class="button-row">
+          <button
+            type="button"
+            class="button secondary compact"
+            :disabled="compsBusy"
+            @click="fetchComps"
+          >
+            {{ compsBusy ? "Fetching comps…" : comps ? "Refresh comps" : "Get market comps" }}
+          </button>
+          <span v-if="comps?.cached" class="muted">cached</span>
+          <span v-if="comps?.league" class="muted">{{ comps.league }}</span>
+        </div>
+        <p v-if="comps && !comps.ok" class="inline-notice danger" role="alert">{{ comps.error }}</p>
+        <template v-if="comps?.ok && comps.summary">
+          <p v-if="comps.summary.sampleSize === 0" class="muted">
+            No sufficiently similar listings found ({{ comps.summary.candidateCount }} candidates
+            checked) — the item may be niche, or the market thin.
+          </p>
+          <template v-else>
+            <p class="comps-band">
+              Lowest comparable ask
+              <strong>{{ formatAmount(comps.summary.lowest ?? 0) }} ex</strong>
+              · median <strong>{{ formatAmount(comps.summary.median ?? 0) }} ex</strong>
+              · {{ comps.summary.sampleSize }} of {{ comps.summary.candidateCount }} listings comparable
+            </p>
+            <p v-if="comps.summary.caution" class="inline-notice warning">
+              {{ comps.summary.caution }}
+            </p>
+            <ul class="comps-list">
+              <li v-for="(comp, index) in comps.summary.comps" :key="index">
+                {{ formatAmount(comp.price) }} ex —
+                {{ comp.name || comp.baseType }}
+                <span class="muted">({{ Math.round(comp.similarity * 100) }}% mod overlap)</span>
+              </li>
+            </ul>
+          </template>
+        </template>
+      </details>
+
+      <details v-if="store.currentEvaluation.value" class="advanced-options deal-analysis">
+        <summary>Deal analysis — compare a seller's asking price</summary>
+        <OpportunityTool />
+      </details>
+      <section v-if="!store.currentItem.value" class="card state-panel item-empty">
         <span class="state-icon large" aria-hidden="true">◇</span>
         <span class="eyebrow">Awaiting source</span>
         <h2>Item intelligence starts here</h2>

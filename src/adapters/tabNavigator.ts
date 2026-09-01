@@ -1,5 +1,6 @@
 import type { WinReply } from "./winHost.js";
-import { alignWindow, snapRows, type ListRow, type OcrLine } from "../core/tabList.js";
+import { alignWindow, labelsSimilar, snapRows, type ListRow, type OcrLine } from "../core/tabList.js";
+import { isProtectedTabLabel } from "../core/stashTabAdmin.js";
 
 export interface TabNavHost {
   send(payload: Record<string, unknown>): Promise<WinReply>;
@@ -68,7 +69,19 @@ export class TabNavigator {
     await sleep(600);
   }
 
+  /**
+   * Select a tab by canonical index.
+   *
+   * The user reorders and folders tabs while the app is running, so the index
+   * is only a hint: the row we are about to click is checked by label before
+   * the click lands, and a protected tab is refused outright rather than
+   * selected. Callers that know the label should prefer {@link gotoLabel}.
+   */
   async goto(index: number): Promise<void> {
+    const expected = this.canonical[index];
+    if (expected !== undefined && isProtectedTabLabel(expected)) {
+      throw new Error(`refusing-protected-tab:${expected}`);
+    }
     for (let attempt = 0; attempt < 3; attempt += 1) {
       for (const toTop of [index <= 25, index > 25]) {
         await this.scrollList(toTop);
@@ -83,6 +96,15 @@ export class TabNavigator {
         if (shift === undefined) continue;
         const row = window[index - shift];
         if (!row) continue;
+        // The list may have been re-ordered since the canonical list was
+        // captured; never click a row that now reads as protected.
+        if (isProtectedTabLabel(row.label)) {
+          throw new Error(`refusing-protected-tab:${row.label}`);
+        }
+        if (expected !== undefined && row.readable && !labelsSimilar(row.label, expected)) {
+          // Index no longer addresses the tab we meant — re-align next attempt.
+          continue;
+        }
         const clicked = await this.host.send({ op: "click", x: this.options.rowClickX, y: row.clickY });
         if (!clicked.ok) continue;
         await sleep(650);
@@ -90,5 +112,35 @@ export class TabNavigator {
       }
     }
     throw new Error(`goto-tab-${index}-failed`);
+  }
+
+  /**
+   * Select the first tab whose label matches, scanning the list from both ends.
+   * Protected tabs — priced (`~price ...`) and Remove-only — are skipped, never
+   * selected: their names are public listings and their contents are the
+   * user's priced stock.
+   */
+  async gotoLabel(label: string): Promise<string> {
+    if (isProtectedTabLabel(label)) throw new Error(`refusing-protected-tab:${label}`);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      for (const toTop of [true, false]) {
+        await this.scrollList(toTop);
+        let window = await this.readWindow();
+        if (window.length < 5) {
+          await this.host.send({ op: "click", x: this.options.listToggle.x, y: this.options.listToggle.y });
+          await sleep(700);
+          window = await this.readWindow();
+        }
+        for (const row of window) {
+          if (!row.readable || isProtectedTabLabel(row.label)) continue;
+          if (!labelsSimilar(row.label, label)) continue;
+          const clicked = await this.host.send({ op: "click", x: this.options.rowClickX, y: row.clickY });
+          if (!clicked.ok) continue;
+          await sleep(650);
+          return row.label;
+        }
+      }
+    }
+    throw new Error(`goto-tab-label-${label}-failed`);
   }
 }

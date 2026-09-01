@@ -7,6 +7,8 @@ export default tseslint.config(
   {
     ignores: [
       "node_modules/**",
+      ".vite/**",
+      ".claude/worktrees/**",
       "dist/**",
       "dist-electron/**",
       "release/**",

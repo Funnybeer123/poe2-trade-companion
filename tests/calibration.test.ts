@@ -1,12 +1,17 @@
 import { describe, expect, it } from "vitest";
 import {
   activeStashGrid,
+  applyStashPanel,
   emptyProfile,
   packNpcPatch,
   packPatch,
   profileReadyForDeposit,
   profileReadyForWalk,
+  resolveStashGrids,
+  stashAreasDiverge,
+  stashGridForKind,
   stashSearchBox,
+  stampStashPanel,
   toPlain,
 } from "../src/core/calibrationProfile.js";
 import { mkdtempSync, readFileSync } from "node:fs";
@@ -15,7 +20,7 @@ import path from "node:path";
 import { perceiveUi } from "../src/core/uiPerception.js";
 import { loadProfile, resetProfile, saveProfile } from "../src/core/calibrationStore.js";
 import { fillRect } from "../src/core/grayImage.js";
-import { busyWorldFrame, stashAndBagFrame, TEST_CLIENT } from "./perceptionFixtures.js";
+import { busyWorldFrame, paintGridSprite, quadStashAndBagFrame, stashAndBagFrame, TEST_CLIENT } from "./perceptionFixtures.js";
 
 function hudProfile() {
   const frame = stashAndBagFrame([{ row: 0, col: 1 }]);
@@ -154,34 +159,87 @@ describe("in-app calibration profile", () => {
     expect(facts.reason).not.toBe("stash-and-bag-open");
   });
 
-  it("keeps a quad stash grid and uses the last marked tab when both look open", () => {
-    const frame = stashAndBagFrame([{ row: 0, col: 1 }]);
+  it("writes both 12×12 and 24×24 grids from one stamped stash panel", () => {
+    const box = { x: 80, y: 144, w: 736, h: 630 };
+    const profile = stampStashPanel(emptyProfile(TEST_CLIENT.width, TEST_CLIENT.height), box);
+    expect(profile.stashGrid).toMatchObject({ ...box, cols: 12, rows: 12 });
+    expect(profile.quadStashGrid).toMatchObject({ ...box, cols: 24, rows: 24 });
+    expect(resolveStashGrids(profile).shared).toBe(true);
+    expect(stashAreasDiverge(profile)).toBe(false);
+    expect(activeStashGrid(profile)?.cols).toBe(12);
+    expect(activeStashGrid(profile, "quad")?.cols).toBe(24);
+    expect(stashGridForKind(profile, "stash-quad")).toMatchObject({ ...box, cols: 24, rows: 24 });
+  });
+
+  it("derives the missing stash grid from a single stored panel", () => {
+    const box = { x: 80, y: 144, w: 736, h: 630 };
+    const profile = {
+      ...emptyProfile(TEST_CLIENT.width, TEST_CLIENT.height),
+      stashGrid: { ...box, cols: 12, rows: 12 },
+    };
+    const grids = resolveStashGrids(profile);
+    expect(grids.shared).toBe(true);
+    expect(grids.quad).toMatchObject({ ...box, cols: 24, rows: 24 });
+    expect(stashGridForKind(profile, "stash-quad")?.cols).toBe(24);
+  });
+
+  it("treats near-identical old stash and quad marks as one shared panel", () => {
+    const profile = {
+      ...emptyProfile(TEST_CLIENT.width, TEST_CLIENT.height),
+      stashGrid: { x: 80, y: 144, w: 736, h: 630, cols: 12, rows: 12 },
+      quadStashGrid: { x: 82, y: 140, w: 740, h: 634, cols: 24, rows: 24 },
+    };
+    const grids = resolveStashGrids(profile);
+    expect(grids.shared).toBe(true);
+    expect(grids.normal).toMatchObject({ x: 80, y: 144, w: 736, h: 630, cols: 12, rows: 12 });
+    expect(grids.quad).toMatchObject({ x: 80, y: 144, w: 736, h: 630, cols: 24, rows: 24 });
+  });
+
+  it("keeps divergent old stash and quad boxes until the panel is re-stamped", () => {
+    const profile = {
+      ...emptyProfile(TEST_CLIENT.width, TEST_CLIENT.height),
+      stashGrid: { x: 20, y: 100, w: 720, h: 720, cols: 12, rows: 12 },
+      quadStashGrid: { x: 40, y: 120, w: 600, h: 600, cols: 24, rows: 24 },
+    };
+    expect(stashAreasDiverge(profile)).toBe(true);
+    expect(resolveStashGrids(profile).shared).toBe(false);
+    expect(activeStashGrid(profile, "normal")).toMatchObject({ x: 20, y: 100, w: 720, h: 720, cols: 12 });
+    expect(activeStashGrid(profile, "quad")).toMatchObject({ x: 40, y: 120, w: 600, h: 600, cols: 24 });
+    const combined = stampStashPanel(profile, { x: 80, y: 144, w: 736, h: 630 });
+    expect(stashAreasDiverge(combined)).toBe(false);
+    expect(combined.stashGrid).toMatchObject({ x: 80, y: 144, w: 736, h: 630, cols: 12, rows: 12 });
+    expect(combined.quadStashGrid).toMatchObject({ x: 80, y: 144, w: 736, h: 630, cols: 24, rows: 24 });
+  });
+
+  it("detects a 12×12 tab from one shared panel even when the last hint was quad", () => {
+    const frame = stashAndBagFrame([{ row: 0, col: 1 }], [{ row: 2, col: 3 }]);
+    const box = { x: 80, y: 144, w: 736, h: 630 };
+    const patch = packPatch(frame, TEST_CLIENT, box);
     const profile = {
       ...hudProfile(),
-      stashGrid: {
-        x: 80,
-        y: 144,
-        w: 736,
-        h: 630,
-        cols: 12,
-        rows: 12,
-        patch: packPatch(frame, TEST_CLIENT, { x: 80, y: 144, w: 736, h: 630 }),
-      },
-      quadStashGrid: {
-        x: 80,
-        y: 144,
-        w: 736,
-        h: 630,
-        cols: 24,
-        rows: 24,
-        patch: packPatch(frame, TEST_CLIENT, { x: 80, y: 144, w: 736, h: 630 }),
-      },
+      ...applyStashPanel(box, patch),
       activeStashTab: "quad" as const,
     };
     expect(activeStashGrid(profile)?.cols).toBe(24);
     const facts = perceiveUi(frame, TEST_CLIENT, {}, profile);
-    expect(facts.stashRegion).toEqual({ x: 80, y: 144, w: 736, h: 630 });
-    expect(activeStashGrid({ ...profile, activeStashTab: "normal" })?.cols).toBe(12);
+    expect(facts.stashRegion).toEqual(box);
+    expect(facts.stashGridSize).toEqual({ cols: 12, rows: 12 });
+    expect(activeStashGrid(profile, facts.stashGridSize)?.cols).toBe(12);
+  });
+
+  it("detects a 24×24 tab from the same stamped panel", () => {
+    const frame = quadStashAndBagFrame([{ row: 0, col: 1 }], [{ row: 0, col: 0 }, { row: 0, col: 3 }]);
+    paintGridSprite(frame, { x: 80, y: 144, w: 736, h: 630 }, 24, 24, 2, 3, 1, 1);
+    const box = { x: 80, y: 144, w: 736, h: 630 };
+    const patch = packPatch(frame, TEST_CLIENT, box);
+    const profile = {
+      ...hudProfile(),
+      ...applyStashPanel(box, patch),
+      activeStashTab: "normal" as const,
+    };
+    const facts = perceiveUi(frame, TEST_CLIENT, {}, profile);
+    expect(facts.stashRegion).toEqual(box);
+    expect(facts.stashGridSize).toEqual({ cols: 24, rows: 24 });
   });
 
   it("keeps a marked stash search box on the profile", () => {

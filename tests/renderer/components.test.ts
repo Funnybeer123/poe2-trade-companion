@@ -103,7 +103,9 @@ describe("renderer item intelligence components", () => {
 
     expect(wrapper.text()).toContain("Estimated value");
     expect(wrapper.text()).toContain("9 usable comparables from 12 candidates");
-    expect(wrapper.text()).toContain("not a guaranteed sale price");
+    // Fixture-provider valuations must announce themselves as demo data.
+    expect(wrapper.text()).toContain("demo prices");
+    expect(wrapper.text()).toContain("not market data");
     expect(wrapper.text()).toContain("Requires Level");
     expect(
       wrapper.findAll(".affix-list strong").map((entry) => entry.text()),

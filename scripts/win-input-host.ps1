@@ -302,10 +302,64 @@ function Show-ClickMark([int]$x, [int]$y) {
     $e.Graphics.DrawEllipse($pen, 16, 16, 16, 16)
     $pen.Dispose()
   })
-  $form.Show()
+  # Apply layered/click-through/NO-ACTIVATE styles BEFORE showing: showing an
+  # activatable window steals focus from the fullscreen game for a moment,
+  # which closes its panels and makes follow-up clicks land outside the game.
+  $null = $form.Handle
   $ex = [AssistiveWin]::GetWindowLong($form.Handle, -20)
   [void][AssistiveWin]::SetWindowLong($form.Handle, -20, $ex -bor 0x80000 -bor 0x20 -bor 0x08000000 -bor 0x8)
+  $form.Show()
   [void][AssistiveWin]::SetWindowPos($form.Handle, [IntPtr](-1), $form.Left, $form.Top, $form.Width, $form.Height, 0x0010)
+  $script:MarkForm = $form
+}
+
+function Show-Marks($rects) {
+  Hide-ClickMark
+  Add-Type -AssemblyName System.Windows.Forms
+  Add-Type -AssemblyName System.Drawing
+  $screen = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
+  $form = New-Object System.Windows.Forms.Form
+  $form.FormBorderStyle = [System.Windows.Forms.FormBorderStyle]::None
+  $form.ShowInTaskbar = $false
+  $form.TopMost = $true
+  $form.StartPosition = [System.Windows.Forms.FormStartPosition]::Manual
+  $form.Location = New-Object System.Drawing.Point $screen.X, $screen.Y
+  $form.Size = New-Object System.Drawing.Size $screen.Width, $screen.Height
+  $form.BackColor = [System.Drawing.Color]::Magenta
+  $form.TransparencyKey = [System.Drawing.Color]::Magenta
+  $local = @($rects)
+  $form.Add_Paint({
+    param($sender, $e)
+    $pen = New-Object System.Drawing.Pen ([System.Drawing.Color]::Lime), 3
+    $redPen = New-Object System.Drawing.Pen ([System.Drawing.Color]::Red), 3
+    $font = New-Object System.Drawing.Font "Consolas", 14, ([System.Drawing.FontStyle]::Bold)
+    $brush = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::Yellow)
+    $back = New-Object System.Drawing.SolidBrush ([System.Drawing.Color]::FromArgb(230, 10, 10, 10))
+    $li = 0
+    foreach ($r in $local) {
+      $p = if ([string]$r.kind -eq "click") { $redPen } else { $pen }
+      $e.Graphics.DrawRectangle($p, [int]$r.x, [int]$r.y, [int]$r.w, [int]$r.h)
+      if ($r.label) {
+        # Solid backing plate + per-label vertical offset so text never stacks.
+        $tx = [int]$r.x
+        $ty = [int]$r.y - 30 - ($li * 30)
+        if ($ty -lt 4) { $ty = [int]$r.y + [int]$r.h + 6 + ($li * 30) }
+        $size = $e.Graphics.MeasureString([string]$r.label, $font)
+        $e.Graphics.FillRectangle($back, $tx - 4, $ty - 2, $size.Width + 8, $size.Height + 4)
+        $e.Graphics.DrawString([string]$r.label, $font, $brush, $tx, $ty)
+        $li += 1
+      }
+    }
+    $pen.Dispose(); $redPen.Dispose(); $font.Dispose(); $brush.Dispose(); $back.Dispose()
+  })
+  # Styles BEFORE Show() — see Show-ClickMark: an activatable overlay steals
+  # focus from the game and closes its panels.
+  $null = $form.Handle
+  $ex = [AssistiveWin]::GetWindowLong($form.Handle, -20)
+  [void][AssistiveWin]::SetWindowLong($form.Handle, -20, $ex -bor 0x80000 -bor 0x20 -bor 0x08000000 -bor 0x8)
+  $form.Show()
+  [void][AssistiveWin]::SetWindowPos($form.Handle, [IntPtr](-1), $form.Left, $form.Top, $form.Width, $form.Height, 0x0010)
+  [System.Windows.Forms.Application]::DoEvents()
   $script:MarkForm = $form
 }
 
@@ -314,6 +368,46 @@ function Show-ClickMark([int]$x, [int]$y) {
 try { [void][AssistiveWin]::SetProcessDpiAwareness(2) } catch {}
 $script:PinnedPoePid = 0
 $script:PinnedPoeHwnd = [int64]0
+
+# Unshifted OEM virtual-key codes (US layout) so `type` can send the punctuation
+# that appears in stash tab names instead of silently dropping it.
+$OemKeys = @{
+  ([char]'-') = [byte]0xBD
+  ([char]'=') = [byte]0xBB
+  ([char]'[') = [byte]0xDB
+  ([char]']') = [byte]0xDD
+  ([char]';') = [byte]0xBA
+  ([char]"'") = [byte]0xDE
+  ([char]',') = [byte]0xBC
+  ([char]'.') = [byte]0xBE
+  ([char]'/') = [byte]0xBF
+  ([char]'\') = [byte]0xDC
+  ([char]'`') = [byte]0xC0
+}
+
+# Shifted characters (US layout): shift is held around the base virtual key.
+# Stash search queries need ", :, (, ), | at minimum.
+$ShiftKeys = @{
+  ([char]'"') = [byte]0xDE
+  ([char]':') = [byte]0xBA
+  ([char]'(') = [byte]0x39
+  ([char]')') = [byte]0x30
+  ([char]'|') = [byte]0xDC
+  ([char]'?') = [byte]0xBF
+  ([char]'~') = [byte]0xC0
+  ([char]'_') = [byte]0xBD
+  ([char]'+') = [byte]0xBB
+  ([char]'!') = [byte]0x31
+  ([char]'#') = [byte]0x33
+  ([char]'$') = [byte]0x34
+  ([char]'%') = [byte]0x35
+  ([char]'&') = [byte]0x37
+  ([char]'*') = [byte]0x38
+  ([char]'<') = [byte]0xBC
+  ([char]'>') = [byte]0xBE
+  ([char]'{') = [byte]0xDB
+  ([char]'}') = [byte]0xDD
+}
 
 while ($true) {
   $line = [Console]::In.ReadLine()
@@ -369,6 +463,15 @@ while ($true) {
     }
     continue
   }
+  if ($op -eq "cursor") {
+    # Report the current mouse position without touching anything. Used by
+    # calibration tools that treat the user's own pointer as the measuring
+    # instrument ("hover the corner, press a key").
+    $pt = New-Object AssistPoint
+    [void][AssistiveWin]::GetCursorPos([ref]$pt)
+    Emit @{ ok = $true; x = $pt.X; y = $pt.Y }
+    continue
+  }
   if ($op -eq "waitkey") {
     # Block until a numpad key (0-9) is pressed while PoE is foreground, or
     # until timeoutMs elapses. Edge-triggered: the key must be seen released
@@ -376,15 +479,20 @@ while ($true) {
     $timeoutMs = [int]$cmd.timeoutMs
     if ($timeoutMs -le 0) { $timeoutMs = 30000 }
     $deadline = [DateTime]::UtcNow.AddMilliseconds($timeoutMs)
+    # Numpad 0-9 report as 0-9; Numpad + (0x6B) as 10; Numpad - (0x6D) as 11.
+    $keys = @(0x60,0x61,0x62,0x63,0x64,0x65,0x66,0x67,0x68,0x69,0x6B,0x6D)
     $armed = @{}
-    for ($vk = 0x60; $vk -le 0x69; $vk++) { $armed[$vk] = $false }
+    foreach ($vk in $keys) { $armed[$vk] = $false }
     $hit = -1
     while ([DateTime]::UtcNow -lt $deadline) {
       $fg = ([AssistiveWin]::GetForegroundWindow() -eq $hwnd)
-      for ($vk = 0x60; $vk -le 0x69; $vk++) {
+      foreach ($vk in $keys) {
         $down = ([AssistiveWin]::GetAsyncKeyState($vk) -band 0x8000) -ne 0
         if (-not $down) { $armed[$vk] = $true }
-        elseif ($armed[$vk] -and $fg) { $hit = $vk - 0x60; break }
+        elseif ($armed[$vk] -and $fg) {
+          if ($vk -eq 0x6B) { $hit = 10 } elseif ($vk -eq 0x6D) { $hit = 11 } else { $hit = $vk - 0x60 }
+          break
+        }
       }
       if ($hit -ge 0) { break }
       Start-Sleep -Milliseconds 35
@@ -425,11 +533,23 @@ while ($true) {
       Emit @{ ok = $false; error = "ocr-region-too-small" }
       continue
     }
+    # holdAlt: the game only renders interactable nameplates while the
+    # highlight key is held — hold Alt across the capture so world labels
+    # (Stash, NPCs, portals) exist for the OCR to read.
+    $holdAlt = [bool]$cmd.holdAlt
+    if ($holdAlt) {
+      [AssistiveWin]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 180
+    }
     try {
       $ocr = Invoke-OcrRegion $ox $oy $ow $oh
       Emit @{ ok = $true; text = $ocr.text; lines = @($ocr.lines) }
     } catch {
       Emit @{ ok = $false; error = "ocr-failed"; detail = [string]$_.Exception.Message }
+    } finally {
+      if ($holdAlt) {
+        [AssistiveWin]::keybd_event(0x12, 0, 2, [UIntPtr]::Zero)
+      }
     }
     continue
   }
@@ -481,6 +601,166 @@ while ($true) {
   }
   $meta = Window-Meta $hwnd $cmd
   $r = @{ left = $meta.left; top = $meta.top; width = $meta.width; height = $meta.height }
+  if ($op -eq "pixwait") {
+    # Pixel change-detection over a screen region: optionally wait for the
+    # region to CHANGE from its baseline (waitChangeMs), then for it to hold
+    # STABLE (stableMs of consecutive identical hashes). Replaces fixed
+    # navigation sleeps — a tab switch repaints the grid strip in ~200-400ms,
+    # so callers return as soon as the game has actually acted instead of
+    # sleeping a worst-case 1000ms every time.
+    $px = [int]$cmd.left; $py = [int]$cmd.top
+    $pw = [int]$cmd.width; $ph = [int]$cmd.height
+    if ($pw -lt 4 -or $ph -lt 4) {
+      Emit @{ ok = $false; error = "pixwait-region-too-small" }
+      continue
+    }
+    $waitChangeMs = [int]$cmd.waitChangeMs
+    $stableMs = [int]$cmd.stableMs
+    $intervalMs = if ($cmd.intervalMs) { [int]$cmd.intervalMs } else { 70 }
+    Add-Type -AssemblyName System.Drawing
+    $pbmp = New-Object System.Drawing.Bitmap $pw, $ph
+    $pg = [System.Drawing.Graphics]::FromImage($pbmp)
+    $md5 = [System.Security.Cryptography.MD5]::Create()
+    $grab = {
+      $pg.CopyFromScreen($px, $py, 0, 0, $pbmp.Size)
+      $rect = New-Object System.Drawing.Rectangle 0, 0, $pw, $ph
+      $data = $pbmp.LockBits($rect, [System.Drawing.Imaging.ImageLockMode]::ReadOnly, $pbmp.PixelFormat)
+      try {
+        $bytes = New-Object byte[] ([Math]::Abs($data.Stride) * $ph)
+        [System.Runtime.InteropServices.Marshal]::Copy($data.Scan0, $bytes, 0, $bytes.Length)
+        return [Convert]::ToBase64String($md5.ComputeHash($bytes))
+      } finally {
+        $pbmp.UnlockBits($data)
+      }
+    }
+    $started = [DateTime]::UtcNow
+    $baseline = & $grab
+    $changed = $false
+    if ($waitChangeMs -gt 0) {
+      $deadline = $started.AddMilliseconds($waitChangeMs)
+      while ([DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds $intervalMs
+        if ((& $grab) -ne $baseline) { $changed = $true; break }
+      }
+    }
+    if ($stableMs -gt 0) {
+      # Total stability budget: don't spin forever on an animating region.
+      $stableDeadline = [DateTime]::UtcNow.AddMilliseconds([Math]::Max(1500, $stableMs * 4))
+      $last = & $grab
+      $stableSince = [DateTime]::UtcNow
+      while ([DateTime]::UtcNow -lt $stableDeadline) {
+        Start-Sleep -Milliseconds $intervalMs
+        $now = & $grab
+        if ($now -ne $last) {
+          $last = $now
+          $stableSince = [DateTime]::UtcNow
+        } elseif (([DateTime]::UtcNow - $stableSince).TotalMilliseconds -ge $stableMs) {
+          break
+        }
+      }
+    }
+    $pg.Dispose(); $pbmp.Dispose(); $md5.Dispose()
+    Emit @{ ok = $true; changed = $changed; ms = [int](([DateTime]::UtcNow - $started).TotalMilliseconds) }
+    continue
+  }
+  if ($op -eq "copysweep") {
+    # Batched hover + Ctrl+C item reads: one request sweeps many cells with a
+    # single clipboard save/restore and adaptive polling (returns as soon as
+    # the copy lands). This is the sorter's identification hot path — per-op
+    # IPC round trips per cell made scans 3-4x slower.
+    $points = @($cmd.points)
+    if ($points.Count -lt 1) {
+      Emit @{ ok = $false; error = "missing-points" }
+      continue
+    }
+    $hover = if ($cmd.hoverMs) { [int]$cmd.hoverMs } else { 120 }
+    $sentinel = [string]$cmd.sentinel
+    if (-not $sentinel) { $sentinel = "poe2-copysweep-sentinel" }
+    $orig = ""
+    try { $orig = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch { $orig = "" }
+    if ($null -eq $orig) { $orig = "" }
+    $texts = New-Object System.Collections.ArrayList
+    foreach ($p in $points) {
+      [void][AssistiveWin]::SetCursorPos([int]$p.x, [int]$p.y)
+      Start-Sleep -Milliseconds $hover
+      try { Set-Clipboard -Value $sentinel -ErrorAction SilentlyContinue } catch {}
+      [AssistiveWin]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 15
+      [AssistiveWin]::keybd_event(0x43, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 15
+      [AssistiveWin]::keybd_event(0x43, 0, 2, [UIntPtr]::Zero)
+      [AssistiveWin]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
+      $text = $sentinel
+      $deadline = [DateTime]::UtcNow.AddMilliseconds(220)
+      while ([DateTime]::UtcNow -lt $deadline) {
+        Start-Sleep -Milliseconds 15
+        try { $text = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch { $text = $sentinel }
+        if ($null -eq $text) { $text = "" }
+        if ($text -ne $sentinel) { break }
+      }
+      if ($text -eq $sentinel) { $text = "" }
+      [void]$texts.Add([string]$text)
+    }
+    try { Set-Clipboard -Value $orig -ErrorAction SilentlyContinue } catch {}
+    Emit @{ ok = $true; texts = @($texts); count = $texts.Count }
+    continue
+  }
+  if ($op -eq "clickburst") {
+    # Plain left-click burst with an OPTIONAL shift hold across the whole
+    # burst (identify chains need shift HELD, not tapped per click — a
+    # per-click shift press/release cancels the game's repeat-use mode).
+    # gapMs paces the clicks for actions the game must process in between.
+    $points = @($cmd.points)
+    if ($points.Count -lt 1) {
+      Emit @{ ok = $false; error = "missing-points" }
+      continue
+    }
+    $gap = if ($cmd.gapMs) { [int]$cmd.gapMs } else { 25 }
+    $pad = 8
+    $valid = @()
+    $rejected = $false
+    foreach ($p in $points) {
+      $x = [int]$p.x
+      $y = [int]$p.y
+      if ($x -lt ($r.left + $pad) -or $x -gt ($r.left + $r.width - $pad) -or $y -lt ($r.top + $pad) -or $y -gt ($r.top + $r.height - $pad)) {
+        Emit @{ ok = $false; error = "click-outside-client"; x = $x; y = $y; left = $r.left; top = $r.top; width = $r.width; height = $r.height; focused = $focused }
+        $rejected = $true
+        break
+      }
+      $valid += @{ x = $x; y = $y }
+    }
+    if ($rejected) { continue }
+    $shift = [bool]$cmd.shift
+    if ($shift) {
+      [AssistiveWin]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 20
+    }
+    $focusLost = $false
+    $emitted = 0
+    foreach ($p in $valid) {
+      if ($requireForeground -and [AssistiveWin]::GetForegroundWindow() -ne $hwnd) {
+        $focusLost = $true
+        break
+      }
+      [void][AssistiveWin]::SetCursorPos([int]$p.x, [int]$p.y)
+      Start-Sleep -Milliseconds 14
+      [AssistiveWin]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 8
+      [AssistiveWin]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+      $emitted += 1
+      Start-Sleep -Milliseconds $gap
+    }
+    if ($shift) {
+      Start-Sleep -Milliseconds 30
+      [AssistiveWin]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero)
+    }
+    if ($focusLost) {
+      Emit @{ ok = $false; error = "focus-lost"; focused = $false; count = $emitted }
+    } else {
+      Emit @{ ok = $true; focused = $focused; count = $emitted }
+    }
+    continue
+  }
   if ($op -eq "ctrlburst") {
     $points = @($cmd.points)
     if ($points.Count -lt 1) {
@@ -648,6 +928,57 @@ while ($true) {
     Emit @{ ok = $true }
     continue
   }
+  if ($op -eq "record") {
+    # Observe the USER for a short window: emit button-edge events (with cursor
+    # position and ctrl/shift state) plus coarse cursor movement samples.
+    # Sends no input of its own — pure teaching-by-demonstration capture.
+    $ms = [int]$cmd.ms
+    if ($ms -le 0) { $ms = 1000 }
+    $start = [DateTime]::UtcNow
+    $deadline = $start.AddMilliseconds($ms)
+    $events = New-Object System.Collections.ArrayList
+    $pt = New-Object AssistPoint
+    $prevL = ([AssistiveWin]::GetAsyncKeyState(1) -band 0x8000) -ne 0
+    $prevR = ([AssistiveWin]::GetAsyncKeyState(2) -band 0x8000) -ne 0
+    $lastMoveX = -9999; $lastMoveY = -9999; $lastMoveAt = $start
+    while ([DateTime]::UtcNow -le $deadline) {
+      $l = ([AssistiveWin]::GetAsyncKeyState(1) -band 0x8000) -ne 0
+      $r = ([AssistiveWin]::GetAsyncKeyState(2) -band 0x8000) -ne 0
+      $now = [DateTime]::UtcNow
+      if ($l -ne $prevL -or $r -ne $prevR) {
+        [void][AssistiveWin]::GetCursorPos([ref]$pt)
+        $ctrl = ([AssistiveWin]::GetAsyncKeyState(0x11) -band 0x8000) -ne 0
+        $shift = ([AssistiveWin]::GetAsyncKeyState(0x10) -band 0x8000) -ne 0
+        [void]$events.Add(@{
+          t = [int]($now - $start).TotalMilliseconds
+          kind = $(if ($l -ne $prevL) { if ($l) { "ldown" } else { "lup" } } else { if ($r) { "rdown" } else { "rup" } })
+          x = $pt.X; y = $pt.Y; ctrl = $ctrl; shift = $shift
+        })
+        $prevL = $l; $prevR = $r
+      } elseif (($now - $lastMoveAt).TotalMilliseconds -ge 150) {
+        [void][AssistiveWin]::GetCursorPos([ref]$pt)
+        if ([math]::Abs($pt.X - $lastMoveX) -gt 30 -or [math]::Abs($pt.Y - $lastMoveY) -gt 30) {
+          [void]$events.Add(@{ t = [int]($now - $start).TotalMilliseconds; kind = "move"; x = $pt.X; y = $pt.Y })
+          $lastMoveX = $pt.X; $lastMoveY = $pt.Y
+        }
+        $lastMoveAt = $now
+      }
+      Start-Sleep -Milliseconds 8
+    }
+    Emit @{ ok = $true; events = @($events) }
+    continue
+  }
+  if ($op -eq "marks") {
+    # Debug overlay: draw labelled rectangles (lime = found, red = click
+    # targets) on a click-through topmost layer until the next hidemark.
+    try {
+      Show-Marks @($cmd.rects)
+      Emit @{ ok = $true; count = @($cmd.rects).Count }
+    } catch {
+      Emit @{ ok = $false; error = "marks:$($_.Exception.Message)" }
+    }
+    continue
+  }
   if ($op -eq "waitclick") {
     $timeout = 25000
     if ($cmd.timeoutMs) { $timeout = [int]$cmd.timeoutMs }
@@ -744,6 +1075,20 @@ while ($true) {
         [AssistiveWin]::keybd_event([byte][char]$ch, 0, 0, [UIntPtr]::Zero)
         Start-Sleep -Milliseconds 8
         [AssistiveWin]::keybd_event([byte][char]$ch, 0, 2, [UIntPtr]::Zero)
+      } elseif ($OemKeys.ContainsKey($ch)) {
+        # Punctuation the game accepts in tab names; unshifted OEM keys on a US layout.
+        $vk = $OemKeys[$ch]
+        [AssistiveWin]::keybd_event($vk, 0, 0, [UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 8
+        [AssistiveWin]::keybd_event($vk, 0, 2, [UIntPtr]::Zero)
+      } elseif ($ShiftKeys.ContainsKey($ch)) {
+        # Shifted punctuation — needed for stash search queries ("class: ...").
+        $vk = $ShiftKeys[$ch]
+        [AssistiveWin]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero)
+        [AssistiveWin]::keybd_event($vk, 0, 0, [UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 8
+        [AssistiveWin]::keybd_event($vk, 0, 2, [UIntPtr]::Zero)
+        [AssistiveWin]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero)
       } else {
         continue
       }

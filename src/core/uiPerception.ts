@@ -1,4 +1,4 @@
-import { crop, downsample, meanVariance, ncc, type GrayImage } from "./grayImage.js";
+import { crop, downsample, meanVariance, ncc, regionStats, type GrayImage } from "./grayImage.js";
 import type { ScreenRect } from "./screenLayout.js";
 import {
   GRID_LAYOUT_NCC,
@@ -477,10 +477,8 @@ function cellGridSignals(
     for (let col = 0; col < cols; col += 1) {
       const x = originX + col * cellW;
       const y = originY + row * cellH;
-      const full = crop(frame, x, y, cellW, cellH);
-      const inset = crop(frame, x + cellW * 0.2, y + cellH * 0.2, cellW * 0.6, cellH * 0.6);
-      const fullStats = meanVariance(full);
-      const insetStats = meanVariance(inset);
+      const fullStats = regionStats(frame, x, y, cellW, cellH);
+      const insetStats = regionStats(frame, x + cellW * 0.2, y + cellH * 0.2, cellW * 0.6, cellH * 0.6);
       means.push(insetStats.mean);
       borderSignals.push(Math.abs(fullStats.mean - insetStats.mean) + Math.abs(fullStats.variance - insetStats.variance) * 0.05);
     }

@@ -1,61 +1,26 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import type {
-  SortMoveSchedule,
-  SortPlacement,
-  StashSortPlan,
-} from "@core/stashSort";
-import { getStashSortApi } from "./services/rendererApi";
+import { computed, onMounted, ref } from "vue";
+import type { SortPlacement } from "@core/stashSort";
+import { useGameActions } from "./composables/useGameActions";
 
-interface SortStatus {
-  running: boolean;
-  mode: string;
-  qaOptIn: boolean;
-  killLatched: boolean;
-  stashTab: "normal" | "quad";
-  calibrated: boolean;
-  previewPlanId?: string;
-}
+const {
+  sortStatus: status,
+  lastSortResult: result,
+  sortEvents: events,
+  actionError: error,
+  busy,
+  initializeGameActions,
+  refreshGameActions,
+  startSort,
+  stopGameActions,
+  rearmKillSwitch,
+} = useGameActions();
 
-interface SortEvent {
-  at: string;
-  phase: string;
-  message: string;
-  itemCount?: number;
-  completedMoves?: number;
-  totalMoves?: number;
-}
-
-interface SortResult {
-  ok: boolean;
-  reason: string;
-  action: "preview" | "execute";
-  dryRun: boolean;
-  plan: StashSortPlan;
-  schedule: SortMoveSchedule;
-}
-
-const status = ref<SortStatus>({
-  running: false,
-  mode: "public-companion",
-  qaOptIn: false,
-  killLatched: false,
-  stashTab: "normal",
-  calibrated: false,
-});
-const qaAcknowledged = ref(true);
 const writableConfirmed = ref(true);
-const allowlist = ref("PathOfExileSteam.exe, PathOfExile.exe, PathOfExile_x64Steam.exe");
-const actionsPerMinute = ref(600);
-const result = ref<SortResult | null>(null);
-const events = ref<SortEvent[]>([]);
-const error = ref("");
-
-const api = getStashSortApi;
 
 const canPreview = computed(
   () =>
-    !status.value.running &&
+    !busy.value &&
     status.value.calibrated &&
     !status.value.killLatched &&
     writableConfirmed.value,
@@ -91,91 +56,40 @@ function placementStyle(item: SortPlacement, planned: boolean) {
 
 function requestBase() {
   return {
-    qaAcknowledged: qaAcknowledged.value,
-    allowlist: allowlist.value.split(",").map((entry) => entry.trim()).filter(Boolean),
-    actionsPerMinute: Math.max(1, Math.min(1_200, Math.floor(actionsPerMinute.value))),
     tabSafety: writableConfirmed.value ? "writable-grid" as const : "unknown" as const,
   };
 }
 
 async function refresh() {
-  const runtime = api();
-  if (!runtime) {
-    error.value = "Open Sort Stash in the Electron app.";
-    return;
-  }
-  status.value = await runtime.status();
+  await refreshGameActions();
 }
 
 async function preview() {
-  const runtime = api();
-  if (!runtime || !canPreview.value) return;
-  error.value = "";
-  events.value = [];
-  status.value = { ...status.value, running: true };
-  try {
-    result.value = await runtime.start({ ...requestBase(), action: "preview" });
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : String(reason);
-  } finally {
-    await refresh();
-  }
+  if (!canPreview.value) return;
+  await startSort({ ...requestBase(), action: "preview" });
 }
 
 async function execute() {
-  const runtime = api();
   const previewPlan = result.value?.plan;
-  if (!runtime || !canExecute.value || !previewPlan) return;
-  error.value = "";
-  status.value = { ...status.value, running: true };
-  try {
-    result.value = await runtime.start({
-      ...requestBase(),
-      action: "execute",
-      planId: previewPlan.id,
-    });
-  } catch (reason) {
-    error.value = reason instanceof Error ? reason.message : String(reason);
-  } finally {
-    await refresh();
-  }
+  if (!canExecute.value || !previewPlan) return;
+  await startSort({
+    ...requestBase(),
+    action: "execute",
+    planId: previewPlan.id,
+  });
 }
 
 async function stop() {
-  const runtime = api();
-  if (!runtime) return;
-  status.value = await runtime.stop();
+  await stopGameActions();
 }
 
 async function rearm() {
-  const runtime = api();
-  if (!runtime) return;
-  await runtime.rearm();
-  await refresh();
+  await rearmKillSwitch();
 }
 
-let refreshTimer: number | undefined;
-let removeEventListener: (() => void) | undefined;
-
 onMounted(() => {
-  const runtime = api();
-  if (!runtime) {
-    error.value = "Open Sort Stash in the Electron app.";
-    return;
-  }
-  removeEventListener = runtime.onEvent((event) => {
-    events.value = [...events.value.slice(-59), event];
-    if (event.phase === "complete" || event.phase === "aborted" || event.phase === "stopped") {
-      void refresh();
-    }
-  });
+  void initializeGameActions();
   void refresh();
-  refreshTimer = window.setInterval(() => void refresh(), 1_500);
-});
-
-onUnmounted(() => {
-  if (refreshTimer !== undefined) window.clearInterval(refreshTimer);
-  removeEventListener?.();
 });
 </script>
 
@@ -196,14 +110,6 @@ onUnmounted(() => {
       <label>
         <input v-model="writableConfirmed" type="checkbox" />
         The currently open tab is an ordinary writable grid tab (not special or remove-only)
-      </label>
-      <label>
-        Actions per minute
-        <input v-model.number="actionsPerMinute" type="number" min="1" max="1200" />
-      </label>
-      <label>
-        Process allowlist
-        <input v-model="allowlist" />
       </label>
       <div class="btn-row sort-actions">
         <button type="button" class="primary" :disabled="!canPreview" @click="preview">

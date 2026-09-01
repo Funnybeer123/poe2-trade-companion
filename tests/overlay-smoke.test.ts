@@ -4,11 +4,20 @@ import { describe, expect, it } from "vitest";
 describe("overlay smoke", () => {
   it("public UI copy cannot imply arming always works", () => {
     const vue = readFileSync("src/renderer/App.vue", "utf8");
-    expect(vue).toContain("Automation on");
+    expect(vue).toContain("dry-run-switch");
     expect(vue).toContain("E-stop ready · Ctrl+Shift+Esc");
     expect(vue).toContain("runtime.isNative.value");
     expect(vue).toContain("<RouterView");
     expect(vue).toContain("Tools &amp; QA");
+    expect(vue).toContain("GameActionRail");
+    const rail = readFileSync("src/renderer/components/GameActionRail.vue", "utf8");
+    expect(rail).toContain("Empty");
+    expect(rail).toContain("Fill");
+    expect(rail).toContain("2-cycle");
+    expect(rail).toContain("Sort");
+    expect(rail).toContain("Dry-run");
+    expect(rail).toContain("Fix in Cursor");
+    expect(rail).not.toContain("Listen once");
     const cal = readFileSync("src/renderer/CalibrationPanel.vue", "utf8");
     expect(cal).toContain("Screenshot");
     expect(cal).toContain("Look");
@@ -20,5 +29,15 @@ describe("overlay smoke", () => {
     expect(cal).not.toContain("Find STASH nameplates");
     expect(cal).not.toContain("Walk to");
     expect(cal).not.toContain("New screenshot for quad stash");
+    const transfers = readFileSync("src/renderer/TransferPanel.vue", "utf8");
+    expect(transfers).toContain("Dry-run / preview (zero input)");
+    expect(transfers).toContain("Right — detection is correct");
+    expect(transfers).toContain("Wrong — detection is incorrect");
+    const overlay = readFileSync("src/main/dryRunOverlayWindow.ts", "utf8");
+    expect(overlay).toContain("Each outline is one detected item");
+    expect(overlay).toContain("Shift-click adds more");
+    expect(overlay).toContain("Right — detection is correct");
+    expect(overlay).toContain("Fix in Cursor");
+    expect(overlay).not.toContain("click-through overlay");
   });
 });

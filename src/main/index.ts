@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "e
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { WindowsSpeechRecognizer } from "../adapters/windowsSpeechRecognizer.js";
 import { KillSwitch } from "../core/killSwitch.js";
@@ -13,6 +13,9 @@ import { valueItem } from "../core/valuation.js";
 import { scoreBuildAwareDesirability } from "../core/gearTargetMatcher.js";
 import { compileRules, type ScanHistoryItem } from "../core/scanRules.js";
 import { resolveBuildMode } from "../core/capabilities.js";
+import { loadHotkeyBindings, saveHotkeyBindings } from "../core/hotkeyBindings.js";
+import { HOTKEY_ACTIONS, RESERVED_CONTROL_KEYS } from "../shared/hotkeyActions.js";
+import { parseFindRecords } from "../core/sortTriage.js";
 import { generateLootFilter } from "../core/lootFilter.js";
 import {
   normalizeVoiceTransferConfig,
@@ -38,8 +41,11 @@ import {
 import { ITEM_INTELLIGENCE_IPC_VERSION, type ParsedItemEvaluation } from "../shared/ipc.js";
 import { openLocalPersistence, type LocalPersistenceDatabase } from "./persistence/index.js";
 import { ItemIntelligenceService } from "./itemIntelligenceService.js";
+import { PriceFeedService, type PriceFeedConfig } from "./priceFeedService.js";
 import { registerItemIntelligenceIpc } from "./itemIntelligenceIpc.js";
 import { registerScanIpc } from "./scanIpc.js";
+import { StashTabAdminService } from "./stashTabAdminService.js";
+import type { StashTabPlan, SurveyedStashTab } from "../core/stashTabAdmin.js";
 import {
   JsonlScanSessionStorage,
   ScanSessionStore,
@@ -57,6 +63,7 @@ let mainWindow: BrowserWindow | undefined;
 let assistiveService: AssistiveRunService | undefined;
 let dryRunOverlay: DryRunOverlayWindow | undefined;
 let stashSortService: StashSortService | undefined;
+let stashTabAdminService: StashTabAdminService | undefined;
 let voiceService: VoiceTransferService | undefined;
 let voiceConfig = normalizeVoiceTransferConfig(undefined);
 let registeredVoiceHotkey: string | undefined;
@@ -64,6 +71,7 @@ let voiceHotkeyError = "";
 let lastClipboard = "";
 let localPersistence: LocalPersistenceDatabase | undefined;
 let itemIntelligenceService: ItemIntelligenceService | undefined;
+let priceFeedService: PriceFeedService | undefined;
 let scannerService: ScannerRuntimeService | undefined;
 
 function quotesFile(): string {
@@ -115,6 +123,12 @@ async function evaluateItemText(
     valuation,
     localPersistence?.buildProfiles.list() ?? [],
   );
+  let tier: ParsedItemEvaluation["tier"];
+  try {
+    tier = itemIntelligenceService?.evaluateTier(text);
+  } catch {
+    // Tier config problems must never block a plain evaluation.
+  }
   const payload: ParsedItemEvaluation = {
     schemaVersion: ITEM_INTELLIGENCE_IPC_VERSION,
     raw: text,
@@ -122,6 +136,7 @@ async function evaluateItemText(
     item,
     valuation,
     desirability,
+    ...(tier ? { tier } : {}),
   };
   itemIntelligenceService?.recordEvaluation(payload, source);
   if (publishEvaluation) {
@@ -167,6 +182,32 @@ function syncRuntimeScanSession(session: ScanSession): void {
       });
     }
   });
+}
+
+/**
+ * The sort-gear script runs out of process and cannot read the app database,
+ * so the user's tiers + price table are mirrored to a JSON file the script
+ * loads at startup (artifacts/tab-admin/triage.json).
+ */
+function exportTriageSnapshot(): void {
+  if (!itemIntelligenceService) return;
+  try {
+    const dir = path.join(process.cwd(), "artifacts", "tab-admin");
+    mkdirSync(dir, { recursive: true });
+    const config = itemIntelligenceService.getValueTierConfig();
+    const snapshot = {
+      exportedAt: new Date().toISOString(),
+      rules: config.rules,
+      thresholds: config.thresholds,
+      routing: config.routing,
+      minDetourConfidence: config.minDetourConfidence,
+      priceTable: itemIntelligenceService.getPriceTable(),
+    };
+    writeFileSync(path.join(dir, "triage.json"), JSON.stringify(snapshot, null, 2));
+  } catch {
+    // The snapshot is a convenience mirror; failing to write it must not
+    // break the app. The script falls back to starter tiers.
+  }
 }
 
 async function evaluateClipboard() {
@@ -299,10 +340,20 @@ app.whenReady().then(() => {
   );
   itemIntelligenceService = new ItemIntelligenceService({
     persistence: localPersistence,
-    publish: (channel, payload) =>
-      mainWindow?.webContents.send(channel, payload),
+    publish: (channel, payload) => {
+      mainWindow?.webContents.send(channel, payload);
+      if (channel === "tiers:changed" || channel === "prices:changed") {
+        exportTriageSnapshot();
+      }
+    },
+  });
+  priceFeedService = new PriceFeedService({
+    configDir: memoryRoot,
+    getPriceTable: () => itemIntelligenceService!.getPriceTable(),
+    savePriceTable: (table) => itemIntelligenceService!.savePriceTable(table),
   });
   registerItemIntelligenceIpc(ipcMain, itemIntelligenceService);
+  exportTriageSnapshot();
   scannerService = new ScannerRuntimeService({
     mode: buildMode,
     qaOptIn: true,
@@ -375,6 +426,11 @@ app.whenReady().then(() => {
     sizeDatabase: () => loadItemSizeDatabase(sizeDatabaseFile()),
     onEvent: (event) => mainWindow?.webContents.send("stash-sort:event", event),
   });
+  stashTabAdminService = new StashTabAdminService({
+    root: process.cwd(),
+    emit: (event) => mainWindow?.webContents.send("stash-tabs:event", event),
+    canRun: () => !killSwitch.isLatched(),
+  });
   voiceService = new VoiceTransferService({
     mode: buildMode,
     recognizer: new WindowsSpeechRecognizer(),
@@ -415,6 +471,37 @@ app.whenReady().then(() => {
   ipcMain.handle("qa:rearm", () => {
     killSwitch.rearm();
     return killSwitch.isLatched();
+  });
+  // Numpad hotkey bindings shared with the standalone action daemon
+  // (scripts/action-daemon.ts): the daemon re-reads the file on every
+  // keypress, so a save here applies live.
+  ipcMain.handle("hotkeys:get", () => {
+    const loaded = loadHotkeyBindings(process.cwd());
+    return {
+      actions: HOTKEY_ACTIONS,
+      reserved: RESERVED_CONTROL_KEYS,
+      bindings: loaded.bindings,
+      issues: loaded.issues,
+      source: loaded.source,
+    };
+  });
+  ipcMain.handle("hotkeys:save", (_event, raw: unknown) =>
+    saveHotkeyBindings(process.cwd(), raw),
+  );
+  ipcMain.handle("hotkeys:daemon-status", () => {
+    const logFile = path.join(process.cwd(), "artifacts", "action-daemon.log");
+    try {
+      if (!existsSync(logFile)) return { exists: false };
+      const stat = statSync(logFile);
+      const lines = readFileSync(logFile, "utf8").trimEnd().split(/\r?\n/);
+      return {
+        exists: true,
+        lastEventAt: stat.mtime.toISOString(),
+        lastLine: lines[lines.length - 1] ?? "",
+      };
+    } catch {
+      return { exists: false };
+    }
   });
   ipcMain.handle("assistive:status", () => ({
     ...assistiveService?.status,
@@ -486,6 +573,44 @@ app.whenReady().then(() => {
     stashSortService?.stop("operator-stop");
     return stashSortService?.status;
   });
+  ipcMain.handle("price-feed:status", () => priceFeedService?.status());
+  ipcMain.handle("price-feed:refresh", () => priceFeedService?.refresh());
+  ipcMain.handle("price-feed:configure", (_event, partial: Partial<PriceFeedConfig>) =>
+    priceFeedService?.configure(partial ?? {}),
+  );
+  ipcMain.handle("price-feed:comps", (_event, itemText: string) =>
+    priceFeedService?.fetchComps(String(itemText ?? "")),
+  );
+  ipcMain.handle("stash-tabs:status", () => stashTabAdminService?.status);
+  ipcMain.handle("stash-tabs:survey", (_event, folderName?: string) =>
+    stashTabAdminService?.survey(folderName),
+  );
+  ipcMain.handle(
+    "stash-tabs:plan",
+    (_event, payload: { tabs: SurveyedStashTab[]; requireQuad?: boolean; allowPricedTabs?: boolean }) =>
+      stashTabAdminService?.plan(payload.tabs, payload.requireQuad, payload.allowPricedTabs),
+  );
+  ipcMain.handle(
+    "stash-tabs:apply",
+    (_event, payload: { plan: StashTabPlan; dryRun?: boolean; allowPricedTabs?: boolean }) =>
+      stashTabAdminService?.apply(payload.plan, {
+      dryRun: payload.dryRun,
+      allowPricedTabs: payload.allowPricedTabs,
+    }),
+  );
+  ipcMain.handle("stash-tabs:run-script", (_event, kind: string) =>
+    stashTabAdminService?.runScript(kind as never),
+  );
+  ipcMain.handle("stash-tabs:stop-script", () => stashTabAdminService?.stopScript());
+  ipcMain.handle("stash-tabs:finds", () => {
+    try {
+      const file = path.join(process.cwd(), "artifacts", "tab-admin", "finds.jsonl");
+      if (!existsSync(file)) return [];
+      return parseFindRecords(readFileSync(file, "utf8")).reverse().slice(0, 100);
+    } catch {
+      return [];
+    }
+  });
   ipcMain.handle("voice:status", () => voiceStatus());
   ipcMain.handle("voice:trigger", () => voiceService?.trigger("ui"));
   ipcMain.handle("voice:cancel", () => voiceService?.cancel("voice-operator-cancel"));
@@ -533,6 +658,8 @@ app.on("window-all-closed", () => {
   assistiveService?.stop("app-closed");
   stashSortService?.stop("app-closed");
   scannerService?.stop("app-closed");
+  priceFeedService?.dispose();
+  priceFeedService = undefined;
   dryRunOverlay?.dispose();
   dryRunOverlay = undefined;
   localPersistence?.close();

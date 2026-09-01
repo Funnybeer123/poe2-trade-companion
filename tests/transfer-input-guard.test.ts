@@ -37,6 +37,18 @@ describe("calibrated transfer input guard", () => {
     ).toEqual({ ok: false, reason: "click-outside-calibrated-transfer-regions" });
   });
 
+  it("allows the shared stash panel for either tab when boxes match", () => {
+    const shared = {
+      ...profile(),
+      stashGrid: { x: 20, y: 100, w: 720, h: 720, cols: 12, rows: 12 },
+      quadStashGrid: { x: 20, y: 100, w: 720, h: 720, cols: 24, rows: 24 },
+      activeStashTab: "quad" as const,
+    };
+    expect(
+      validateTransferInput([{ kind: "click", x: 525, y: 205 }], shared, client),
+    ).toEqual({ ok: true });
+  });
+
   it("allows only the calibrated active stash grid", () => {
     const quad = { ...profile(), activeStashTab: "quad" as const };
     expect(

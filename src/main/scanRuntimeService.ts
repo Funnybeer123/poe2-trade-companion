@@ -5,7 +5,7 @@ import {
   type BuildProfile,
 } from "../core/buildProfiles.js";
 import {
-  activeStashGrid,
+  stashGridForKind,
   type CalibrationProfile,
   type GridMark,
 } from "../core/calibrationProfile.js";
@@ -113,8 +113,8 @@ function markForGrid(
   kind: ScanGridKind,
 ): GridMark | undefined {
   if (kind === "inventory") return profile.bagGrid;
-  if (kind === "stash-quad") return profile.quadStashGrid;
-  return profile.stashGrid ?? activeStashGrid(profile);
+  if (kind === "stash-quad") return stashGridForKind(profile, "stash-quad");
+  return stashGridForKind(profile, "stash-normal");
 }
 
 function clientPointForCell(

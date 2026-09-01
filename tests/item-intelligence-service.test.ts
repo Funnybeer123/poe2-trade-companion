@@ -179,4 +179,52 @@ describe("item intelligence application service", () => {
     });
     persistence.close();
   });
+
+  it("seeds, persists, and republishes value tiers and the price table", () => {
+    const persistence = openLocalPersistence(":memory:", { clock: () => NOW });
+    const events: string[] = [];
+    const service = new ItemIntelligenceService({
+      persistence,
+      now: () => NOW,
+      publish: (channel) => events.push(channel),
+    });
+
+    const seeded = service.getValueTierConfig();
+    expect(seeded.rules.keep.length).toBeGreaterThan(0);
+    expect(seeded.routing.reviewTab).toBe("Review");
+
+    const saved = service.saveValueTierConfig({
+      rules: {
+        keep: [{ name: "life rings", regex: '"maximum Life"' }],
+        sell: [],
+        dump: [{ name: "normals", regex: '"Rarity: Normal"' }],
+      },
+      routing: { reviewTab: "Winners", dumpTab: "Trash" },
+      thresholds: { keepAtOrAbove: 3, sellAtOrAbove: 1 },
+    });
+    expect(saved.routing.dumpTab).toBe("Trash");
+    expect(events).toContain("tiers:changed");
+    expect(service.getValueTierConfig().rules.keep[0]?.name).toBe("life rings");
+
+    expect(() =>
+      service.saveValueTierConfig({
+        rules: { keep: [{ name: "bad", regex: "(" }], sell: [], dump: [] },
+      }),
+    ).toThrow(/invalid-tier-rule:keep:0/);
+
+    const table = service.getPriceTable();
+    expect(table.entries.length).toBeGreaterThan(0);
+    const savedTable = service.savePriceTable({
+      ...table,
+      entries: [{ id: "custom", match: { name: "Divine Orb" }, value: 55 }],
+    });
+    expect(savedTable.entries).toHaveLength(1);
+    expect(events).toContain("prices:changed");
+    expect(service.getPriceTable().entries[0]?.value).toBe(55);
+
+    const verdict = service.evaluateTier(ITEM_TEXT);
+    expect(verdict.tier).toBe("keep");
+    expect(verdict.matchedRules).toContain("life rings");
+    persistence.close();
+  });
 });

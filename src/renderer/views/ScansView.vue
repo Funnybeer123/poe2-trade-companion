@@ -9,6 +9,11 @@ import type {
   ScanSessionDetail,
   ScanSessionView,
 } from "../../shared/ipc.js";
+import { useGameActions } from "../composables/useGameActions";
+import {
+  allowlistEntries,
+  useRendererPreferences,
+} from "../composables/useRendererPreferences";
 import { rendererApi } from "../services/rendererApi";
 import {
   formatDate,
@@ -33,10 +38,8 @@ const scannerStatus = ref<ScannerRuntimeStatus | null>(null);
 const scannerGrid = ref<"stash-normal" | "stash-quad" | "inventory">(
   "stash-normal",
 );
-const scannerDryRun = ref(false);
-const scannerAcknowledged = ref(true);
-const scannerAllowlist = ref("PathOfExile.exe");
-const scannerActionsPerMinute = ref(240);
+const { dryRun: scannerDryRun } = useGameActions();
+const { processAllowlist, transferActionsPerMinute } = useRendererPreferences();
 const scannerError = ref("");
 const scannerResult = ref<ScannerRunSummary | null>(null);
 const scannerEvents = ref<ScannerRuntimeEvent[]>([]);
@@ -171,14 +174,11 @@ async function startScanner(): Promise<void> {
     scannerResult.value = await rendererApi.scanner.start({
       gridKind: scannerGrid.value,
       dryRun: scannerDryRun.value,
-      qaAcknowledged: scannerAcknowledged.value,
-      allowlist: scannerAllowlist.value
-        .split(",")
-        .map((entry) => entry.trim())
-        .filter(Boolean),
+      qaAcknowledged: true,
+      allowlist: allowlistEntries(processAllowlist.value),
       actionsPerMinute: Math.max(
         1,
-        Math.floor(scannerActionsPerMinute.value),
+        Math.floor(transferActionsPerMinute.value),
       ),
     });
     await refreshScannerStatus();
@@ -291,26 +291,9 @@ onUnmounted(() => unsubscribeScanner?.());
             <option value="inventory">Inventory · 12×5</option>
           </select>
         </label>
-        <label class="field-stack">
-          Process allowlist
-          <input
-            v-model="scannerAllowlist"
-            placeholder="PathOfExile.exe"
-          />
-        </label>
-        <label class="field-stack">
-          Actions per minute
-          <input
-            v-model.number="scannerActionsPerMinute"
-            type="number"
-            min="1"
-            max="1200"
-          />
-        </label>
-        <label class="inline-toggle">
-          <input v-model="scannerDryRun" type="checkbox" />
-          Dry run · no generated input
-        </label>
+        <p class="muted">
+          {{ scannerDryRun ? "Dry-run is on (top bar): journal records only, no input." : "Live: the scan hovers and copies in the game window." }}
+        </p>
         <div class="button-row">
           <button
             type="button"

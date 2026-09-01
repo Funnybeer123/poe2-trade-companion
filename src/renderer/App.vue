@@ -1,6 +1,8 @@
 <script setup lang="ts">
 import { onMounted, watch } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
+import GameActionRail from "./components/GameActionRail.vue";
+import { useGameActions } from "./composables/useGameActions";
 import { useIntelligenceStore } from "./composables/useIntelligenceStore";
 import { useRuntimeState } from "./composables/useRuntimeState";
 
@@ -8,18 +10,19 @@ const route = useRoute();
 const router = useRouter();
 const runtime = useRuntimeState();
 const intelligence = useIntelligenceStore();
+const gameActions = useGameActions();
 
 const navigation = [
-  { to: "/items", label: "Items", short: "IT", detail: "Parse & value" },
-  { to: "/finder", label: "Finder", short: "FD", detail: "Stash queries" },
+  { to: "/sort", label: "Sort", short: "SO", detail: "Run & triage" },
+  { to: "/items", label: "Item log", short: "IT", detail: "Parse & review" },
+  { to: "/search", label: "Search", short: "SR", detail: "Queries & rules" },
   { to: "/builds", label: "Builds", short: "BL", detail: "Target coverage" },
-  { to: "/rules", label: "Rules", short: "RL", detail: "Match logic" },
-  { to: "/scans", label: "Scans", short: "SC", detail: "Session review" },
 ] as const;
 
 onMounted(() => {
   void runtime.initializeRuntime();
   void intelligence.initializeIntelligence();
+  void gameActions.initializeGameActions();
 });
 
 watch(intelligence.externalEvaluationVersion, () => {
@@ -29,21 +32,9 @@ watch(intelligence.externalEvaluationVersion, () => {
 
 <template>
   <a class="skip-link" href="#workspace">Skip to workspace</a>
-  <div
-    v-if="runtime.isNative.value"
-    class="qa-banner"
-    role="status"
-    aria-live="polite"
-  >
-    <span>Automation on</span>
-    <span>Stash transfers and scans can send input to Path of Exile</span>
-    <kbd>Ctrl</kbd><span>+</span><kbd>Shift</kbd><span>+</span><kbd>Esc</kbd>
-    <span>emergency stop</span>
-  </div>
-
-  <div class="app-shell" :class="{ 'has-qa-banner': runtime.isNative.value }">
+  <div class="app-shell">
     <aside class="side-rail" aria-label="Primary">
-      <RouterLink class="brand" to="/items" aria-label="PoE2 Intelligence home">
+      <RouterLink class="brand" to="/sort" aria-label="PoE2 Intelligence home">
         <span class="brand-mark" aria-hidden="true">II</span>
         <span class="brand-copy">
           <strong>Item Intelligence</strong>
@@ -69,7 +60,7 @@ watch(intelligence.externalEvaluationVersion, () => {
       <div class="rail-spacer" />
 
       <RouterLink
-        to="/tools/overview"
+        to="/tools"
         class="nav-link tools-link"
         :class="{ 'section-active': route.path.startsWith('/tools') }"
       >
@@ -99,6 +90,8 @@ watch(intelligence.externalEvaluationVersion, () => {
           }}</small>
         </span>
       </div>
+
+      <GameActionRail />
     </aside>
 
     <section class="app-stage">
@@ -110,6 +103,14 @@ watch(intelligence.externalEvaluationVersion, () => {
         </div>
 
         <div class="safety-cluster" aria-label="Runtime safety status">
+          <label
+            class="dry-run-switch"
+            title="One switch for every game action: on means plan, overlay, and trace only — no input is ever sent."
+          >
+            <input v-model="gameActions.dryRun.value" type="checkbox" role="switch" />
+            <span class="switch-track" aria-hidden="true"><span class="switch-thumb" /></span>
+            <span class="switch-copy">Dry-run</span>
+          </label>
           <span
             v-if="!runtime.isNative.value"
             class="status-chip neutral"
@@ -140,17 +141,12 @@ watch(intelligence.externalEvaluationVersion, () => {
       </p>
 
       <main id="workspace" class="workspace" tabindex="-1">
+        <!-- No Vue Transition here: out-in mode strands the outgoing view when
+             a second navigation interrupts an in-flight fade (leave never
+             completes). The route-enter CSS animation on the keyed child gives
+             the same polish with no JS-managed phases to get stuck. -->
         <RouterView v-slot="{ Component }">
-          <Transition name="route-fade" mode="out-in">
-            <Suspense>
-              <component :is="Component" :key="route.fullPath" />
-              <template #fallback>
-                <div class="card loading-card" aria-live="polite">
-                  Loading workspace…
-                </div>
-              </template>
-            </Suspense>
-          </Transition>
+          <component :is="Component" :key="route.path" class="route-enter" />
         </RouterView>
       </main>
     </section>

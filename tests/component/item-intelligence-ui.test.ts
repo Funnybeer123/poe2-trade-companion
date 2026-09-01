@@ -218,7 +218,9 @@ describe("item intelligence renderer", () => {
       "+35% to Cold Resistance",
     ]);
     expect(wrapper.text()).toContain("4 usable comparables from 7 candidates");
-    expect(wrapper.text()).toContain("estimate, not a guaranteed sale price");
+    // Fixture-provider valuations must announce themselves as demo data.
+    expect(wrapper.text()).toContain("demo prices");
+    expect(wrapper.text()).toContain("not market data");
     expect(wrapper.get('[role="meter"]').attributes("aria-valuenow")).toBe("72");
     wrapper.unmount();
   });

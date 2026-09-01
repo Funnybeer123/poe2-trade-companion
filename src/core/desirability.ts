@@ -47,8 +47,12 @@ export function scoreDesirability(
   let category: RecommendationCategory = "dump";
   if (score >= 80) category = "keep";
   else if (score >= prefs.minScoreToKeep) category = "sell";
-  else if (score >= 40) category = "vendor";
+  // Craft outranks vendor: a 4-mod rare that misses the sell bar is crafting
+  // stock, not vendor trash. (Checked before the score-40 vendor floor —
+  // rarity bonuses used to push every multi-mod rare past it, making the
+  // craft category unreachable.)
   else if (item.mods.length >= 4) category = "craft";
+  else if (score >= 40) category = "vendor";
   else if (item.rarity === "Currency") category = "bulk";
 
   return { score, category, reasons };

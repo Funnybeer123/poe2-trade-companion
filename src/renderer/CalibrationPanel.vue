@@ -3,11 +3,11 @@ import { computed, onMounted, ref } from "vue";
 import {
   BAG_CELLS,
   activeStashGrid,
+  applyStashPanel,
   emptyProfile,
   VENTOR_BAG_CELLS,
-  NORMAL_STASH_CELLS,
   profileReadyForDeposit,
-  QUAD_STASH_CELLS,
+  stashAreasDiverge,
   toPlain,
   type CalibrationProfile,
   type ClientBox,
@@ -27,7 +27,6 @@ import {
 
 type Tool =
   | "stash-grid"
-  | "quad-stash-grid"
   | "bag-grid"
   | "ventor-bag-grid"
   | "stash-search"
@@ -59,10 +58,17 @@ const troubleshooting = computed(() =>
   tool.value === "missed-item" || tool.value === "false-occupied" || tool.value === "wrong-footprint",
 );
 const disagreementCount = computed(() => diagnostic.value?.cells.filter((cell) => cell.disagreement).length ?? 0);
+const stashPanelSaved = computed(() => Boolean(profile.value.stashGrid || profile.value.quadStashGrid));
+const stashMarksDiverge = computed(() => stashAreasDiverge(profile.value));
+const sharedStashBox = computed(() => {
+  if (stashMarksDiverge.value) return null;
+  const box = profile.value.stashGrid ?? profile.value.quadStashGrid;
+  if (!box) return null;
+  return { x: box.x, y: box.y, w: box.w, h: box.h };
+});
 const needsGridResnap = computed(
   () =>
-    Boolean(profile.value.stashGrid && !profile.value.stashGrid.patch) ||
-    Boolean(profile.value.quadStashGrid && !profile.value.quadStashGrid.patch) ||
+    Boolean(stashPanelSaved.value && !profile.value.stashGrid?.patch && !profile.value.quadStashGrid?.patch) ||
     Boolean(profile.value.bagGrid && !profile.value.bagGrid.patch) ||
     Boolean(profile.value.ventorBagGrid && !profile.value.ventorBagGrid.patch),
 );
@@ -95,7 +101,7 @@ function pointStyle(point: { x: number; y: number }) {
 }
 
 function correctionCell(point: { x: number; y: number }): { grid: DiagnosticGrid; row: number; col: number } | null {
-  const stash = activeStashGrid(profile.value);
+  const stash = activeStashGrid(profile.value, facts.value?.stashGridSize);
   const candidates: Array<{ grid: DiagnosticGrid; mark: typeof stash }> = [
     { grid: "stash", mark: stash },
     { grid: "bag", mark: profile.value.bagGrid },
@@ -233,11 +239,8 @@ async function onUp() {
     return;
   }
   if (tool.value === "stash-grid") {
-    await stamp({ stashGrid: { ...box, ...NORMAL_STASH_CELLS }, activeStashTab: "normal" });
-    status.value = "Saved normal stash grid (12×12). Open a quad tab, take a new screenshot, then draw the 24×24 item area.";
-  } else if (tool.value === "quad-stash-grid") {
-    await stamp({ quadStashGrid: { ...box, ...QUAD_STASH_CELLS }, activeStashTab: "quad" });
-    status.value = "Saved quad stash grid (24×24). Looks and deposits will use this tab until you redraw the normal grid.";
+    await stamp({ stashPanel: box, ...applyStashPanel(box) });
+    status.value = "Saved stash panel. Normal 12×12 and quad 24×24 use this same area; Look reports which tab is open.";
   } else if (tool.value === "bag-grid") {
     await stamp({ bagGrid: { ...box, ...BAG_CELLS } });
     status.value = "Saved player bag grid. Screenshot a vendor window and draw Vendor separately.";
@@ -374,8 +377,8 @@ function clearCorrections() {
     <div class="card">
       <h2>Calibration</h2>
       <p class="lede">
-        Draw each grid on a screenshot. A closed stash is opened by clicking the live
-        <strong>STASH</strong> nameplate.
+        Draw the stash panel once (same area for 12×12 and 24×24), then bag and search.
+        A closed stash is opened by clicking the live <strong>STASH</strong> nameplate.
       </p>
       <p class="status">{{ status }}</p>
       <p class="target">
@@ -395,8 +398,7 @@ function clearCorrections() {
       <div class="cal-group">
         <span class="cal-label">Draw</span>
         <div class="btn-row">
-          <button type="button" :class="{ active: tool === 'stash-grid', saved: profile.stashGrid }" @click="tool = 'stash-grid'">Stash</button>
-          <button type="button" :class="{ active: tool === 'quad-stash-grid', saved: profile.quadStashGrid }" @click="tool = 'quad-stash-grid'">Quad</button>
+          <button type="button" :class="{ active: tool === 'stash-grid', saved: stashPanelSaved }" @click="tool = 'stash-grid'">Stash</button>
           <button type="button" :class="{ active: tool === 'bag-grid', saved: profile.bagGrid }" @click="tool = 'bag-grid'">Bag</button>
           <button type="button" :class="{ active: tool === 'ventor-bag-grid', saved: profile.ventorBagGrid }" @click="tool = 'ventor-bag-grid'">Vendor</button>
           <button type="button" :class="{ active: tool === 'stash-search', saved: profile.stashSearch }" @click="tool = 'stash-search'">Search</button>
@@ -420,16 +422,18 @@ function clearCorrections() {
         </div>
       </div>
       <ul class="marks">
-        <li><span :class="profile.stashGrid ? 'ok' : 'no'">Stash</span></li>
-        <li><span :class="profile.quadStashGrid ? 'ok' : 'no'">Quad</span></li>
+        <li><span :class="stashPanelSaved ? 'ok' : 'no'">Stash</span></li>
         <li><span :class="profile.bagGrid ? 'ok' : 'no'">Bag</span></li>
         <li><span :class="profile.ventorBagGrid ? 'ok' : 'no'">Vendor</span></li>
         <li><span :class="profile.stashSearch ? 'ok' : 'no'">Search</span></li>
-        <li v-if="profile.stashGrid || profile.quadStashGrid">
-          Active {{ profile.activeStashTab === "quad" ? "quad" : "stash" }}
+        <li v-if="facts?.stashGridSize">
+          Detected {{ facts.stashGridSize.cols === 24 ? "quad 24×24" : "stash 12×12" }}
         </li>
         <li :class="readyDeposit ? 'ok' : 'no'">{{ readyDeposit ? "Ready" : "Not ready" }}</li>
       </ul>
+      <p v-if="stashMarksDiverge" class="hint">
+        Stash and quad marks differ. Draw the stash panel once — normal and quad tabs share that rectangle.
+      </p>
       <p v-if="needsGridResnap" class="hint">Redraw a grid on a new screenshot if Look cannot tell it from the hideout.</p>
       <p v-if="!profile.stashSearch" class="hint">Class-filtered fills are blocked until Search is marked.</p>
       <p v-if="diagnostic" class="look">
@@ -452,8 +456,11 @@ function clearCorrections() {
       >
         <img v-if="preview" ref="img" :src="preview" alt="Last Path of Exile capture" draggable="false" />
         <p v-else class="placeholder">Capture to mark stash and bag grids on the real screen.</p>
-        <div v-if="profile.stashGrid" class="box grid" :style="boxStyle(profile.stashGrid)">stash 12×12</div>
-        <div v-if="profile.quadStashGrid" class="box grid" :style="boxStyle(profile.quadStashGrid)">quad 24×24</div>
+        <div v-if="sharedStashBox" class="box grid" :style="boxStyle(sharedStashBox)">stash panel</div>
+        <template v-else>
+          <div v-if="profile.stashGrid" class="box grid" :style="boxStyle(profile.stashGrid)">stash 12×12</div>
+          <div v-if="profile.quadStashGrid" class="box grid" :style="boxStyle(profile.quadStashGrid)">quad 24×24</div>
+        </template>
         <div v-if="profile.bagGrid" class="box grid" :style="boxStyle(profile.bagGrid)">bag grid</div>
         <div v-if="profile.ventorBagGrid" class="box grid" :style="boxStyle(profile.ventorBagGrid)">vendor</div>
         <div v-if="profile.stashSearch" class="box search" :style="boxStyle(profile.stashSearch)">search</div>

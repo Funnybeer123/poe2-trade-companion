@@ -1,0 +1,80 @@
+{
+  "version": 1,
+  "client": { "width": 3840, "height": 2160 },
+  "source": { "label": "-price 5 exalted", "index": 1 },
+  "routes": [
+    {
+      "tab": { "label": "Dist", "index": 26 },
+      "classes": [],
+      "namePatterns": ["^Distilled ", "Simulacrum"]
+    },
+    {
+      "tab": { "label": "ESS", "index": 23 },
+      "classes": [],
+      "namePatterns": ["Essence of", "^Essence"]
+    },
+    {
+      "tab": { "label": "Runes", "index": 28 },
+      "classes": ["Socketable"],
+      "namePatterns": [" Rune$", "Soul Core", "Talisman"]
+    },
+    {
+      "tab": { "label": "cUR", "index": 6 },
+      "classes": ["Stackable Currency", "Currency", "Omen"],
+      "namePatterns": ["Catalyst", "Splinter", "Breachstone"]
+    },
+    {
+      "tab": { "label": "-price 55 exalted", "index": 12 },
+      "classes": [
+        "Waystones",
+        "Map Fragments",
+        "Tablet",
+        "Inscribed Ultimatum",
+        "Trial Coins",
+        "Skill Gems",
+        "Support Gems",
+        "Uncut Skill Gems",
+        "Uncut Support Gems",
+        "Uncut Spirit Gems",
+        "Jewels",
+        "Flasks",
+        "Life Flasks",
+        "Mana Flasks",
+        "Charms",
+        "Relics"
+      ]
+    },
+    {
+      "tab": { "label": "-price 1 divine", "index": 0 },
+      "classes": [
+        "Body Armours",
+        "Boots",
+        "Gloves",
+        "Helmets",
+        "Shields",
+        "Foci",
+        "Bucklers",
+        "Quivers",
+        "Belts",
+        "Rings",
+        "Amulets",
+        "Wands",
+        "Sceptres",
+        "Staves",
+        "Quarterstaves",
+        "Bows",
+        "Crossbows",
+        "One Hand Maces",
+        "Two Hand Maces",
+        "Spears",
+        "Daggers",
+        "Claws",
+        "Flails",
+        "One Hand Axes",
+        "Two Hand Axes",
+        "One Hand Swords",
+        "Two Hand Swords"
+      ]
+    }
+  ]
+}

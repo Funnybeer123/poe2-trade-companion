@@ -14,13 +14,15 @@ assistive-session.jsonl
 assistive-summary.json
 fixtures/benchmarks/assistive-used-cells.json
 fixtures/benchmarks/assistive-memory.json
+fixtures/benchmarks/occupancy-labels.jsonl
 fixtures/perception/live/*
 !fixtures/perception/live/deposit-1787705758242.bmp
 fixtures/perception/templates/calibration.json
 .DS_Store
 Thumbs.db
 .cursor/plans/
-artifacts/diagnostics/
-artifacts/assistive-cli/
-artifacts/playwright/
-artifacts/demo/
+# Runtime output: captures, journals, benchmarks, exported configs (11GB+ of BMPs).
+artifacts/
+# Machine-local Claude Code state; launch.json is shared project config.
+.claude/*
+!.claude/launch.json

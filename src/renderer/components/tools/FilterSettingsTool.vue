@@ -1,21 +1,56 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRendererPreferences } from "../../composables/useRendererPreferences";
 import { useRuntimeState } from "../../composables/useRuntimeState";
-import { rendererApi } from "../../services/rendererApi";
+import {
+  getPriceFeedApi,
+  rendererApi,
+  type PriceFeedStatusView,
+} from "../../services/rendererApi";
 
 defineProps<{
   panel: "filter" | "settings";
 }>();
 
 const runtime = useRuntimeState();
-const { defaultDryRun } = useRendererPreferences();
+const {
+  processAllowlist,
+  transferActionsPerMinute,
+  sortActionsPerMinute,
+} = useRendererPreferences();
 const filterName = ref("local-intelligence");
 const hideBelow = ref(40);
 const highlightUniques = ref(true);
 const filterText = ref("");
 const filterError = ref("");
 const copied = ref(false);
+
+const feedApi = getPriceFeedApi();
+const feedStatus = ref<PriceFeedStatusView | null>(null);
+const feedLeague = ref("auto");
+const feedAutoRefresh = ref(false);
+const feedSessid = ref("");
+const feedSaved = ref("");
+
+onMounted(async () => {
+  if (!feedApi) return;
+  feedStatus.value = await feedApi.status();
+  feedLeague.value = feedStatus.value.config.league;
+  feedAutoRefresh.value = feedStatus.value.config.autoRefreshDaily;
+});
+
+async function saveFeedConfig(): Promise<void> {
+  if (!feedApi) return;
+  feedSaved.value = "";
+  feedStatus.value = await feedApi.configure({
+    league: feedLeague.value.trim() || "auto",
+    autoRefreshDaily: feedAutoRefresh.value,
+    // Only send the cookie when the user typed one; blank leaves it as-is.
+    ...(feedSessid.value.trim() ? { poesessid: feedSessid.value.trim() } : {}),
+  });
+  feedSessid.value = "";
+  feedSaved.value = "Market data settings saved.";
+}
 
 async function buildFilter(): Promise<void> {
   filterError.value = "";
@@ -98,16 +133,72 @@ async function copyFilter(): Promise<void> {
       <div class="section-heading">
         <div>
           <span class="eyebrow">Safe defaults</span>
-          <h2 id="settings-title">Renderer settings</h2>
+          <h2 id="settings-title">Automation defaults</h2>
         </div>
       </div>
-      <label class="toggle-card">
-        <input v-model="defaultDryRun" type="checkbox" />
-        <span>
-          <strong>Default scenarios to dry-run</strong>
-          <small>Stored locally and shared with the QA/replay workspace.</small>
-        </span>
-      </label>
+      <p class="muted">
+        Every transfer, sort, and scan uses these defaults. The Dry-run switch
+        lives in the top bar and applies everywhere at once.
+      </p>
+      <div class="form-grid">
+        <label>
+          Process allowlist
+          <input v-model="processAllowlist" placeholder="PathOfExileSteam.exe, PathOfExile.exe" />
+        </label>
+        <label>
+          Transfer actions per minute
+          <input v-model.number="transferActionsPerMinute" type="number" min="1" max="600" />
+        </label>
+        <label>
+          Sort actions per minute
+          <input v-model.number="sortActionsPerMinute" type="number" min="1" max="1200" />
+        </label>
+      </div>
+
+      <template v-if="feedApi">
+        <div class="section-heading">
+          <div>
+            <span class="eyebrow">Market data</span>
+            <h3>Live prices</h3>
+          </div>
+        </div>
+        <p class="muted">
+          The price feed pulls poe2scout prices into the price table on demand
+          (Prices tab) or daily. Market comps for one item use the official
+          trade2 API and work without a session cookie; adding your
+          <code>POESESSID</code> is optional and only ever sent to
+          pathofexile.com.
+        </p>
+        <div class="form-grid">
+          <label>
+            League <span class="optional">("auto" tracks the current league)</span>
+            <input v-model="feedLeague" placeholder="auto" />
+          </label>
+          <label>
+            POESESSID <span class="optional">(optional{{ feedStatus?.config.poesessid ? " · saved" : "" }})</span>
+            <input v-model="feedSessid" type="password" autocomplete="off" placeholder="leave blank to keep current" />
+          </label>
+        </div>
+        <label class="toggle-field">
+          <input v-model="feedAutoRefresh" type="checkbox" />
+        <span>Refresh market prices daily while the app is open</span>
+        </label>
+        <div class="button-row">
+          <button type="button" class="button secondary" @click="saveFeedConfig">
+            Save market settings
+          </button>
+          <button
+            v-if="feedStatus?.config.poesessid"
+            type="button"
+            class="button ghost compact"
+            @click="feedApi?.configure({ poesessid: '' }).then((status) => { feedStatus = status; feedSaved = 'Saved cookie cleared.'; })"
+          >
+            Clear saved cookie
+          </button>
+          <span v-if="feedSaved" class="success-text" role="status">{{ feedSaved }}</span>
+        </div>
+      </template>
+
       <div class="settings-facts">
         <article>
           <span class="nav-glyph" aria-hidden="true">PC</span>
