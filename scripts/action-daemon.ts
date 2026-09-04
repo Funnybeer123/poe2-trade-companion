@@ -6,6 +6,8 @@
  *
  * Key mapping (decided 2026-08-28): Num1=Stash, Num2=Sort, Num3=Fill, Num4=Vendor.
  * Num6=Identify (in-map identify & drop via scripts/map-triage.ts; added 2026-08-31).
+ * Num4=Shop since 2026-09-03 (the vendor stub is unbound by default): price the
+ * bag and list it into the price-bucket merchant tabs via scripts/shop-buckets.ts.
  *
  * Usage: npx tsx scripts/action-daemon.ts
  * Stop with Ctrl+C (trips the kill switch; the daemon exits after the
@@ -236,10 +238,22 @@ process.on("SIGINT", () => {
   killSwitch.trip();
 });
 
+/**
+ * Num4 (default): shop-buckets --live — refresh the price feed for the
+ * configured league, appraise the bag (feed + trade2 comps), and list each
+ * item in its bucket tab. Overlays show every click; no step gating, Numpad
+ * 0 still stops. See docs/HANDOFF-shop-listings.md.
+ */
+async function actionShop(): Promise<void> {
+  const code = await spawnScript(["scripts/shop-buckets.ts", "--live"], "shop");
+  log({ action: "shop", phase: "result", message: `shop-buckets --live exited ${code}` });
+}
+
 async function runAction(name: string, key: number): Promise<void> {
   log({ action: name, phase: "start", message: `Num${key} pressed` });
   try {
     if (name === "stash") await actionStash();
+    else if (name === "shop") await actionShop();
     else if (name === "sort") await actionSort();
     else if (name === "fill") await actionFill();
     else if (name === "vendor") await actionVendor();

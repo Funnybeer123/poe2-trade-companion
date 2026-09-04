@@ -12,6 +12,7 @@
  * code still cost compile time, test time, and mental upkeep.
  */
 import type { CellScore } from "./itemSprites.js";
+import { BAG_COLS, BAG_ROWS, emptyBagMask, findPlacement } from "./bagPack.js";
 
 /** The bag grid holds 12x5 = 60 cells. */
 export const BAG_CELL_CAPACITY = 60;
@@ -48,6 +49,24 @@ export const STASH_AREA: ClickArea = { minX: 27, maxX: 1320, minY: 325, maxY: 17
 
 /** The bag grid area. Deposit clicks may only land here. */
 export const BAG_AREA: ClickArea = { minX: 2450, maxX: 3800, minY: 1150, maxY: 1760 };
+
+/**
+ * TOP-LEVEL tabs draw the stash grid ONE STRIP ROW HIGHER than folder tabs:
+ * with a top-level tab active there is no second tab row, so the panel
+ * content starts ~67px up. User-diagnosed from the perception overlay and
+ * lattice-measured live (2026-09-01): top-level grid 253..1518 vs folder
+ * grid 320..1583. This 1.28-cell offset made reads and clicks agree one row
+ * low (sorting "worked"), hid the true top row entirely, and produced the
+ * footer "phantom band". Calibrations are stored per state
+ * (__default_24x24_toplevel); this delta is the fallback when only the
+ * folder-state calibration exists.
+ */
+export const TOP_LEVEL_GRID_DY = -67;
+
+/** Click floor for top-level sweeps: the top-level grid's row 0 centres sit
+ * at ~279, above the folder-state floor (325) but safely below the single
+ * strip row (max ~245). */
+export const STASH_AREA_TOP_LEVEL: ClickArea = { ...STASH_AREA, minY: 272 };
 
 export interface Cell {
   x: number;
@@ -349,6 +368,308 @@ export function emptyCellKeysByBaseline(scores: readonly CellScore[]): Set<strin
     }
   }
   return empty;
+}
+
+/* ---------------- dropdown visibility (one click, verified) ---------------- */
+
+/**
+ * What one dropdown read shows. ≥4 rows is the proven "a real list is open"
+ * threshold; below it, zero rows means closed and a stray row or two means an
+ * unreadable frame (mid-animation, or world debris past the filters) that
+ * must be re-read, never acted on. The context tells the folder's children
+ * apart from a scrolled combined-list window showing top-level rows.
+ */
+export type ListVisibility = "folder" | "top-level" | "ambiguous-open" | "closed" | "unreadable";
+
+export function classifyListRead(
+  rowCount: number,
+  context: "folder" | "top-level" | "ambiguous",
+): ListVisibility {
+  if (rowCount >= 4) {
+    if (context === "folder") return "folder";
+    if (context === "top-level") return "top-level";
+    return "ambiguous-open";
+  }
+  return rowCount === 0 ? "closed" : "unreadable";
+}
+
+/**
+ * The one decision that prevents toggle fights (three separate livelocks came
+ * from list-state confusion): click a toggle ONLY when the observed state
+ * must change, re-read when the frame proved nothing. "toggle" always means a
+ * single click whose effect the caller verifies on the next read — an
+ * unchanged state after the click gets ONE retry, then recovery, never an
+ * alternating blind toggle. Wanting "folder" while a scrolled/top window is
+ * open still returns "toggle": the close resets the scroll, and the next
+ * read decides the (verified) reopen.
+ */
+export function decideListToggle(
+  visibility: ListVisibility,
+  want: "folder" | "top-level" | "closed",
+): "none" | "toggle" | "reread" {
+  if (visibility === "unreadable") return "reread";
+  if (visibility === want) return "none";
+  return "toggle";
+}
+
+/* ---------------- click surfaces ---------------- */
+
+/**
+ * Every surface automation may click, as an explicit area. A click whose
+ * coordinates fall outside its declared surface is refused BEFORE sending —
+ * the clampToArea idea extended beyond the two grids. A strip-scroll click
+ * computed while the strip was not on screen once sprayed the top-left of
+ * the bare world ("clicking top-left of my screen"), and a drifted cached
+ * row Y would click into the game world past the dropdown's bottom edge.
+ */
+export const CLICK_SURFACES = {
+  /** Top strip row: tab headers + scroll arrows (y 180-245). */
+  stripTop: { minX: 30, maxX: 1335, minY: 178, maxY: 248 },
+  /** Folder strip row (the open folder's tabs), y 250-320. */
+  stripFolder: { minX: 30, maxX: 1335, minY: 249, maxY: 322 },
+  /** The right-hand dropdown: chevron toggles + row labels (~330px wide). */
+  tabList: { minX: 1270, maxX: 1680, minY: 178, maxY: 1615 },
+  stash: STASH_AREA,
+  bag: BAG_AREA,
+} as const satisfies Record<string, ClickArea>;
+
+/** Why a click must be refused, or undefined when it may be sent. */
+export function clickRefusal(
+  point: Cell,
+  surface: ClickArea,
+  client?: { left: number; top: number; width: number; height: number },
+): string | undefined {
+  if (
+    client &&
+    (point.x < client.left ||
+      point.x > client.left + client.width ||
+      point.y < client.top ||
+      point.y > client.top + client.height)
+  ) {
+    return "outside the game's client rect";
+  }
+  if (
+    point.x < surface.minX ||
+    point.x > surface.maxX ||
+    point.y < surface.minY ||
+    point.y > surface.maxY
+  ) {
+    return `outside its surface (x ${surface.minX}-${surface.maxX}, y ${surface.minY}-${surface.maxY})`;
+  }
+  return undefined;
+}
+
+/* ---------------- trip packing ---------------- */
+
+/**
+ * Pack ONE withdraw trip so the bag fills with as few DESTINATION groups as
+ * possible: navigation is the expensive part of a trip, so a bag of 25 items
+ * bound for 12 tabs costs 12 hops while the same bag of rings costs one.
+ *
+ * Groups are taken largest-first. The group during which the bag first runs
+ * out straddles trips (its remainder leads the next trip — one unavoidable
+ * extra visit). After that, a NEW destination joins only when its ENTIRE
+ * remaining group still places: that replaces a whole future visit for free
+ * (big-footprint groups overflow with lots of oddly-shaped space left — six
+ * 2x3 armours fill rows 0-2 and leave 24 cells that fit every ring), while
+ * a partial split would buy an extra hop for nothing.
+ *
+ * The budget is a PLACEMENT SIMULATION of the 12x5 bag, not a cell count: a
+ * cell count said fifteen 2x2 helmets (57 cells) fit a 58-cell bag, but the
+ * bag places only twelve — the leftover strip is one row tall — and the
+ * game refused the other three ("not enough space", live 2026-09-01). Each
+ * item's rectangular bounding box is placed first-fit into the same mask
+ * the game fills; what cannot place does not get withdrawn.
+ */
+export function packTripByDest(
+  leaving: readonly IdentifiedItem[],
+  occupiedBag: ReadonlyArray<{ row: number; col: number }>,
+): IdentifiedItem[] {
+  const groups = new Map<string, IdentifiedItem[]>();
+  for (const item of leaving) {
+    groups.set(item.dest, [...(groups.get(item.dest) ?? []), item]);
+  }
+  const cellsOf = (items: readonly IdentifiedItem[]): number =>
+    items.reduce((sum, item) => sum + item.cells.length, 0);
+  const ordered = [...groups.entries()].sort(
+    (a, b) => cellsOf(b[1]) - cellsOf(a[1]) || a[0].localeCompare(b[0]),
+  );
+  const empty = emptyBagMask(
+    occupiedBag.map((cell) => ({ row: cell.row, col: cell.col, x: 0, y: 0 })),
+    BAG_COLS,
+    BAG_ROWS,
+  );
+  const itemShape = (item: IdentifiedItem): Array<{ row: number; col: number }> => {
+    const minR = Math.min(...item.cells.map((cell) => cell.row));
+    const maxR = Math.max(...item.cells.map((cell) => cell.row));
+    const minC = Math.min(...item.cells.map((cell) => cell.col));
+    const maxC = Math.max(...item.cells.map((cell) => cell.col));
+    const shape: Array<{ row: number; col: number }> = [];
+    for (let r = 0; r <= maxR - minR; r += 1) {
+      for (let c = 0; c <= maxC - minC; c += 1) shape.push({ row: r, col: c });
+    }
+    return shape;
+  };
+  const place = (
+    item: IdentifiedItem,
+    mask: boolean[][],
+  ): boolean => {
+    const shape = itemShape(item);
+    const pos = findPlacement(shape, mask);
+    if (!pos) return false;
+    for (const cell of shape) mask[pos.row + cell.row]![pos.col + cell.col] = false;
+    return true;
+  };
+  const batch: IdentifiedItem[] = [];
+  let overflowed = false;
+  for (const [, groupItems] of ordered) {
+    if (!overflowed) {
+      // Leading groups pack item by item; the group during which the bag
+      // first runs out simply straddles trips (its remainder leads the
+      // next trip — one unavoidable extra visit).
+      for (const item of groupItems) {
+        if (place(item, empty)) batch.push(item);
+        else overflowed = true;
+      }
+      continue;
+    }
+    // After an overflow, a NEW destination joins only when its ENTIRE
+    // remaining group places — that replaces a whole future visit and
+    // wastes nothing; a partial split would buy an extra hop instead.
+    const trial = empty.map((row) => [...row]);
+    const placed: IdentifiedItem[] = [];
+    for (const item of groupItems) {
+      if (!place(item, trial)) break;
+      placed.push(item);
+    }
+    if (placed.length === groupItems.length) {
+      for (let r = 0; r < empty.length; r += 1) empty[r] = trial[r]!;
+      batch.push(...placed);
+    }
+  }
+  return batch;
+}
+
+/* ---------------- withdraw postcondition ---------------- */
+
+/**
+ * After a withdraw burst the bag must GROW. "shrank" means the clicks landed
+ * on the wrong side and DEPOSITED (stale model / wrong panel); "flat" means
+ * nothing came out (missed clicks, covered panel). Either way the caller
+ * stops the trip and re-identifies — never re-bursts on a stale model.
+ */
+export function withdrawObservation(before: number, after: number): "grew" | "flat" | "shrank" {
+  if (after > before) return "grew";
+  return after === before ? "flat" : "shrank";
+}
+
+/* ---------------- empty-bag guarantee ---------------- */
+
+/**
+ * The run-end completion decision: the run may not end while depositable
+ * identified items remain in the bag. "empty" still needs a second agreeing
+ * pixel read (the bounce animation fakes empty frames); "only-undepositable"
+ * means everything left is blacklisted and must be REPORTED, cell by cell.
+ */
+export type BagCompletion = "empty" | "only-undepositable" | "keep-filing";
+
+export function bagCompletionVerdict(
+  occupied: ReadonlyArray<{ row: number; col: number }>,
+  undepositable: ReadonlySet<string>,
+): BagCompletion {
+  if (occupied.length === 0) return "empty";
+  return occupied.every((cell) => undepositable.has(`${cell.row},${cell.col}`))
+    ? "only-undepositable"
+    : "keep-filing";
+}
+
+export interface BagLeftover {
+  /** "row,col" of the item's grab cell. */
+  cell: string;
+  itemClass?: string;
+  dest?: string;
+  why: string;
+}
+
+/**
+ * Name every item still in the bag at run end and WHY it could not leave —
+ * leftovers are reported, never silently carried. Reads are the grouped
+ * identified items; `unread` cells never yielded item text at all.
+ */
+export function describeBagLeftovers(
+  items: ReadonlyArray<Pick<IdentifiedItem, "itemClass" | "dest" | "cells">>,
+  unread: ReadonlyArray<{ row: number; col: number }>,
+  context: {
+    undepositable: ReadonlySet<string>;
+    stuckTabs?: ReadonlyMap<string, ReadonlySet<string>>;
+    unavailableDests?: ReadonlySet<string>;
+  },
+): BagLeftover[] {
+  const leftovers: BagLeftover[] = [];
+  for (const item of items) {
+    const first = item.cells[0];
+    if (!first) continue;
+    const key = `${first.row},${first.col}`;
+    const stuckCell = item.cells.find((cell) =>
+      context.undepositable.has(`${cell.row},${cell.col}`),
+    );
+    let why: string;
+    if (stuckCell) {
+      const tabs = [...(context.stuckTabs?.get(`${stuckCell.row},${stuckCell.col}`) ?? [])];
+      why = `would not deposit anywhere (bounced in ${tabs.join(" and ") || "two different tabs"}, shift+ctrl included)`;
+    } else if (item.dest !== "junk" && context.unavailableDests?.has(item.dest)) {
+      why = `home tab "${item.dest}" is full or unreachable this session`;
+    } else if (item.dest === "junk") {
+      why = "junk with no junk tab in this layout (place it by hand)";
+    } else {
+      why = "no verified deposit landed (check it by hand)";
+    }
+    leftovers.push({
+      cell: key,
+      ...(item.itemClass !== undefined ? { itemClass: item.itemClass } : {}),
+      dest: item.dest,
+      why,
+    });
+  }
+  for (const cell of unread) {
+    leftovers.push({
+      cell: `${cell.row},${cell.col}`,
+      why: "never yielded item text (Ctrl+C silent) — identify it by hand",
+    });
+  }
+  return leftovers;
+}
+
+/* ---------------- persistent phantom cells ---------------- */
+
+/**
+ * A stash cell that scored occupied but never yielded Ctrl+C text through
+ * the full probe battery (center + informed + blind cross) — glare or
+ * decorative art. Persisted WITH its pixel signature so later runs skip it
+ * instantly instead of re-grinding ~10 hovers per cell per run ("stuck
+ * just clicking around", user 2026-09-01). The signature is the safety: a
+ * real item landing on the cell changes its mean/variance, the signature
+ * stops matching, and the cell gets probed again — nothing real can ever
+ * be masked by the blacklist.
+ */
+export interface PhantomCellRecord {
+  tab: string;
+  row: number;
+  col: number;
+  mean: number;
+  variance: number;
+  at: string;
+}
+
+/** Same appearance as when the cell proved phantom: mean within ±12 gray
+ * levels and variance within ±35% (glare is static; item art is neither). */
+export function phantomSignatureMatches(
+  stored: Pick<PhantomCellRecord, "mean" | "variance">,
+  current: { mean: number; variance: number },
+): boolean {
+  if (Math.abs(current.mean - stored.mean) > 12) return false;
+  const varBand = Math.max(30, stored.variance * 0.35);
+  return Math.abs(current.variance - stored.variance) <= varBand;
 }
 
 /* ---------------- corrections ---------------- */

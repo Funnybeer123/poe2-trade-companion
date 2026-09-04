@@ -69,10 +69,19 @@
     "tabs:finish-gear": "npx --yes tsx scripts/stash-tab-admin.ts --finish-gear --allow-priced",
     "sort:gear": "npx --yes tsx scripts/sort-gear.ts",
     "sort:gear:dry": "npx --yes tsx scripts/sort-gear.ts --dry-run",
+    "shop": "npx --yes tsx scripts/shop.ts",
+    "shop:record": "npx --yes tsx scripts/shop.ts --record",
+    "shop:apply": "npx --yes tsx scripts/shop.ts --live",
+    "shop:apply:step": "npx --yes tsx scripts/shop.ts --live --step",
+    "shop:list": "npx --yes tsx scripts/shop.ts --list",
+    "shop:report": "npx --yes tsx scripts/shop.ts --report",
     "craft:gear": "npx --yes tsx scripts/craft-gear.ts",
     "craft:gear:live": "cross-env POE2_CRAFT_LIVE=1 npx --yes tsx scripts/craft-gear.ts --live",
     "craft:plan": "npx --yes tsx scripts/craft-gear.ts --from-clipboard",
-    "teach:record": "npx --yes tsx scripts/record-teach.ts"
+    "teach:record": "npx --yes tsx scripts/record-teach.ts",
+    "shop:buckets": "npx --yes tsx scripts/shop-buckets.ts",
+    "shop:buckets:live": "npx --yes tsx scripts/shop-buckets.ts --live --step",
+    "shop:tab": "npx --yes tsx scripts/shop-list-bag.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

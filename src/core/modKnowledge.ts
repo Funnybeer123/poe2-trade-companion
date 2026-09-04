@@ -33,9 +33,139 @@ export interface ModFamily {
    * an Additional Arrow" is a top-tier mod written without digits.
    */
   noNumberValue?: number;
+  /**
+   * Item classes this family applies to (Ctrl+C "Item Class:" values). A
+   * family with classes is consulted only for those classes, and BEFORE the
+   * generic families: a jewel's "6% increased Attack Speed" is a strong roll
+   * on a jewel and a nothing roll on gloves, so the same line needs its own
+   * thresholds per class (2026-09-03: every rare jewel screened as "no
+   * notable mods" against the gear-scale numbers).
+   */
+  classes?: string[];
 }
 
+/** Jewel mod families: the same words as gear, jewel-scale rolls. */
+const JEWEL: string[] = ["Jewels"];
+
 export const MOD_FAMILIES: ModFamily[] = [
+  // ---- Jewels (checked first for Item Class: Jewels) ----------------------
+  {
+    id: "jewel-life",
+    label: "Jewel: maximum life %",
+    pattern: String.raw`\d+% increased maximum Life`,
+    weight: 9,
+    tiers: { t1: 6, t2: 4, t3: 3 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-es",
+    label: "Jewel: maximum energy shield %",
+    pattern: String.raw`\d+% increased maximum Energy Shield`,
+    weight: 7,
+    tiers: { t1: 8, t2: 6, t3: 4 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-skill-speed",
+    label: "Jewel: skill speed",
+    pattern: String.raw`\d+% increased Skill Speed`,
+    weight: 9,
+    tiers: { t1: 6, t2: 4, t3: 3 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-attack-speed",
+    label: "Jewel: attack speed",
+    pattern: String.raw`\d+% increased Attack Speed`,
+    weight: 8,
+    tiers: { t1: 8, t2: 6, t3: 4 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-cast-speed",
+    label: "Jewel: cast speed",
+    pattern: String.raw`\d+% increased Cast Speed`,
+    weight: 8,
+    tiers: { t1: 8, t2: 6, t3: 4 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-minion-speed",
+    label: "Jewel: minion attack and cast speed",
+    pattern: String.raw`Minions have \d+% increased Attack and Cast Speed`,
+    weight: 6,
+    tiers: { t1: 8, t2: 6, t3: 4 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-crit-chance",
+    label: "Jewel: critical hit chance",
+    pattern: String.raw`\d+% increased Critical Hit Chance`,
+    weight: 7,
+    tiers: { t1: 20, t2: 14, t3: 8 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-crit-damage",
+    label: "Jewel: critical damage bonus",
+    pattern: String.raw`\d+% increased Critical Damage Bonus`,
+    weight: 7,
+    tiers: { t1: 20, t2: 14, t3: 8 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-penetration",
+    label: "Jewel: resistance penetration",
+    pattern: String.raw`Damage Penetrates \d+% .*Resistances?`,
+    weight: 6,
+    tiers: { t1: 8, t2: 6, t3: 4 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-leech",
+    label: "Jewel: life leech",
+    pattern: String.raw`[\d.]+% of (?:Physical |Attack )?Damage Leeched as Life`,
+    weight: 5,
+    tiers: { t1: 0.6, t2: 0.4, t3: 0.2 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-all-res",
+    label: "Jewel: all elemental resistances",
+    pattern: String.raw`\+?\d+% to all Elemental Resistances`,
+    weight: 7,
+    tiers: { t1: 8, t2: 6, t3: 4 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-chaos-res",
+    label: "Jewel: chaos resistance",
+    pattern: String.raw`\+?\d+% to Chaos Resistance`,
+    weight: 6,
+    tiers: { t1: 10, t2: 7, t3: 4 },
+    classes: JEWEL,
+  },
+  {
+    id: "jewel-rarity",
+    label: "Jewel: item rarity found",
+    pattern: String.raw`\d+% increased Rarity of Items found`,
+    weight: 5,
+    tiers: { t1: 12, t2: 9, t3: 6 },
+    classes: JEWEL,
+  },
+  {
+    // Generic "increased … Damage" (physical, spell, elemental, projectile,
+    // minion, "with Bow Skills" …) — declared after the specific families so
+    // "Critical Damage Bonus" keeps its own. Thresholds sit above the junk
+    // band: nearly every rare jewel carries some damage roll.
+    id: "jewel-damage",
+    label: "Jewel: increased damage",
+    pattern: String.raw`\d+% increased (?:[A-Za-z' ]+ )?Damage(?! taken)`,
+    weight: 6,
+    tiers: { t1: 16, t2: 13, t3: 11 },
+    classes: JEWEL,
+  },
+  // ---- Gear (generic) -----------------------------------------------------
   {
     id: "skill-levels",
     label: "+ to skill levels",
@@ -246,14 +376,30 @@ function extractNumbers(text: string): number[] {
   return [...text.matchAll(/-?\d+(?:\.\d+)?/g)].map((entry) => Number(entry[0]));
 }
 
+/** The families that apply to an item class: class-specific first, then generic. */
+export function familiesForClass(itemClass: string | undefined): ModFamily[] {
+  const wanted = (itemClass ?? "").trim().toLowerCase();
+  const specific = wanted
+    ? MOD_FAMILIES.filter((family) =>
+        family.classes?.some((name) => name.toLowerCase() === wanted),
+      )
+    : [];
+  const generic = MOD_FAMILIES.filter((family) => !family.classes);
+  return [...specific, ...generic];
+}
+
 /**
  * Match one mod line against the knowledge base. Families are checked in
  * declaration order; the first hit wins (order the specific before the
  * general — "all Attributes" precedes single attributes for this reason).
+ * With an item class, that class's own families are tried first.
  */
-export function matchModFamily(modText: string): ModMatch | undefined {
+export function matchModFamily(
+  modText: string,
+  context: { itemClass?: string } = {},
+): ModMatch | undefined {
   const line = modText.replace(/\s+/g, " ").trim();
-  for (const family of MOD_FAMILIES) {
+  for (const family of familiesForClass(context.itemClass)) {
     const regex = new RegExp(family.pattern, "i");
     if (!regex.test(line)) continue;
     const numbers = extractNumbers(line);

@@ -134,6 +134,10 @@ contextBridge.exposeInMainWorld("poe2", {
       return () => ipcRenderer.removeListener("stash-tabs:event", listener);
     },
   },
+  shop: {
+    overview: () => ipcRenderer.invoke("shop:overview"),
+    saveConfig: (config: unknown) => ipcRenderer.invoke("shop:save-config", config),
+  },
   stashSort: {
     status: () => ipcRenderer.invoke("stash-sort:status"),
     start: (request: unknown) => ipcRenderer.invoke("stash-sort:start", request),

@@ -1,10 +1,18 @@
 /**
  * Gear sorter CLI — thin wiring around the reworked state machine.
  *
- *   npx tsx scripts/sort-gear.ts [--sources=A,B,...]
+ *   npx tsx scripts/sort-gear.ts [--sources=A,B,...] [--scope=gear|tabs|all]
  *                                [--fast] [--step] [--dry-run] [--no-chest]
  *                                [--no-triage] [--review-corrections]
  *                                [--drain-remove-only] [--guild]
+ *
+ * DEFAULT (no --sources/--scope, 2026-09-01): sort the top-level DUMP quad
+ * into the Gear folder — every identified gear item leaves Dump for its
+ * per-class tab, junk stays in Dump, and the run does not end while the bag
+ * still holds depositable items (leftovers are reported cell-by-cell). The
+ * old defaults are opt-in now: --scope=gear re-verifies the Gear folder's
+ * own tabs, --scope=all adds every top-level tab, --sources=A,B names tabs
+ * explicitly.
  *
  * --drain-remove-only: the Standard-league drain flow (gear-first increment,
  * docs/HANDOFF-standard-drain-guild-stash.md). Sources become the Remove-only
@@ -91,11 +99,22 @@ const teach = argv.includes("--teach");
 const teachGrid = argv.includes("--teach-grid");
 const sourcesArg = argv.find((a) => a.startsWith("--sources="))?.slice(10);
 const scopeArg = argv.find((a) => a.startsWith("--scope="))?.slice(8);
-const scope = scopeArg === "gear" || scopeArg === "tabs" ? scopeArg : "all";
-/** With no --sources flag, every tab discovered in the folder gets sorted. */
-const sourceFilter = sourcesArg
-  ? sourcesArg.split(",").map((s) => s.trim()).filter(Boolean)
-  : undefined;
+/**
+ * No flags (and not a drain) = THE default job: sort the Dump quad into the
+ * Gear folder. The gear-folder verification sweep (--scope=gear) and the
+ * everything-run (--scope=all) are opt-in.
+ */
+const defaultDumpRun = !drainRemoveOnly && !sourcesArg && !scopeArg;
+const scope = defaultDumpRun
+  ? ("tabs" as const)
+  : scopeArg === "gear" || scopeArg === "tabs"
+    ? scopeArg
+    : ("all" as const);
+const sourceFilter = defaultDumpRun
+  ? ["Dump"]
+  : sourcesArg
+    ? sourcesArg.split(",").map((s) => s.trim()).filter(Boolean)
+    : undefined;
 
 if (argv.includes("--review-corrections")) {
   const file = path.join(outDir, "corrections.jsonl");
@@ -233,7 +252,7 @@ try {
   await host.send({ op: "focus" });
   harness.startKeyListener();
   console.log(
-    `sort-gear ${fast ? "fast" : "DEBUG"}${stepMode ? " STEP" : ""}${dryRun ? " DRY-RUN" : ""}${drainRemoveOnly ? " DRAIN-REMOVE-ONLY" : ""}${guild ? " GUILD-CHEST" : ""}${triage && !guild ? ` triage→${triage.routing.reviewTab}/${triage.routing.dumpTab}` : " no-triage"} pace=${harness.pace.toFixed(2)} — numpad: 8 good · 9 wrong · 5 pause · 0 stop`,
+    `sort-gear ${fast ? "fast" : "DEBUG"}${stepMode ? " STEP" : ""}${dryRun ? " DRY-RUN" : ""}${defaultDumpRun ? " DUMP→GEAR (default)" : ""}${drainRemoveOnly ? " DRAIN-REMOVE-ONLY" : ""}${guild ? " GUILD-CHEST" : ""}${triage && !guild ? ` triage→${triage.routing.reviewTab}/${triage.routing.dumpTab}` : " no-triage"} pace=${harness.pace.toFixed(2)} — numpad: 8 good · 9 wrong · 5 pause · 0 stop`,
   );
   const moved = await sorter.run(sourceFilter, scope);
   console.log(`sort complete — ~${moved} cells moved`);

@@ -15,8 +15,17 @@ class FakeHost {
     this.calls.push(payload);
     return this.respond?.(payload) ?? { ok: true };
   }
+  /**
+   * Overlay/click ops only: the harness also re-focuses the game window
+   * (rect + focus) before a gated step so Numpad approvals land (2026-09-03);
+   * that is focus management, not overlay hygiene.
+   */
   ops(): string[] {
-    return this.calls.map((call) => String(call.op));
+    return this.calls.map((call) => String(call.op)).filter((op) => op !== "rect" && op !== "focus");
+  }
+  firstMarks(): Array<Record<string, unknown>> {
+    const call = this.calls.find((entry) => entry.op === "marks");
+    return (call?.rects ?? []) as Array<Record<string, unknown>>;
   }
 }
 
@@ -82,7 +91,7 @@ describe("overlay hygiene", () => {
     const result = await harness.click(500, 600, "open stash chest");
     expect(result).toBe("clicked");
     expect(host.ops()).toEqual(["marks", "hidemark", "click"]);
-    const marks = host.calls[0]!.rects as Array<Record<string, unknown>>;
+    const marks = host.firstMarks();
     expect(marks[0]!.label).toBe("open stash chest");
     expect(harness.hasOverlay).toBe(false);
   });
@@ -110,7 +119,7 @@ describe("bursts", () => {
     const found = [...targets, { x: 900, y: 900 }];
     const sent = await harness.burst(targets, { found, cellW: 56, cellH: 56, label: "withdraw 7" });
     expect(sent).toBe(7);
-    const marks = host.calls[0]!.rects as Array<Record<string, unknown>>;
+    const marks = host.firstMarks();
     expect(marks.filter((rect) => rect.kind === "found")).toHaveLength(1); // the non-target
     expect(marks.filter((rect) => rect.kind === "click")).toHaveLength(7);
     const bursts = host.calls.filter((call) => call.op === "ctrlburst");

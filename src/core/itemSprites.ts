@@ -105,6 +105,44 @@ export function boundaryBrightness24(
 }
 
 /**
+ * Fraction of sampled pixels inside `region` (screen coords) whose gray
+ * values differ by more than `minDelta` between two same-size frames.
+ *
+ * This exists because pixwait's change baseline is grabbed AFTER the click
+ * that caused the change: a fast tab switch completes before the baseline
+ * and reads as "no change" (live 2026-09-01: three real Rings selections
+ * were called unreachable). Comparing a frame captured BEFORE the click
+ * against one captured after is immune to that race. Mismatched frame sizes
+ * report full change — something drastic happened; never call it quiet.
+ */
+export function regionChangedFraction(
+  before: GrayImage,
+  after: GrayImage,
+  client: ScreenRect,
+  region: BBox,
+  step = 4,
+  minDelta = 15,
+): number {
+  if (before.width !== after.width || before.height !== after.height) return 1;
+  const sx = before.width / client.width;
+  const sy = before.height / client.height;
+  const x0 = Math.max(0, Math.round((region.x - client.left) * sx));
+  const y0 = Math.max(0, Math.round((region.y - client.top) * sy));
+  const x1 = Math.min(before.width, Math.round((region.x + region.w - client.left) * sx));
+  const y1 = Math.min(before.height, Math.round((region.y + region.h - client.top) * sy));
+  let sampled = 0;
+  let changed = 0;
+  for (let y = y0; y < y1; y += step) {
+    const row = y * before.width;
+    for (let x = x0; x < x1; x += step) {
+      sampled += 1;
+      if (Math.abs(before.pixels[row + x]! - after.pixels[row + x]!) > minDelta) changed += 1;
+    }
+  }
+  return sampled === 0 ? 0 : changed / sampled;
+}
+
+/**
  * The single best Ctrl+C probe point for a cell whose CENTRE hover yielded no
  * item text: the centre of the brightest 9x9 pixel block inside the cell
  * (small art — rings, jewels — can sit off-centre where the centre hover

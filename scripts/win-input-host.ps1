@@ -85,12 +85,24 @@ function Await-WinRt($operation, $resultType) {
   return $task.Result
 }
 
-function Invoke-OcrRegion([int]$left, [int]$top, [int]$width, [int]$height) {
+function Invoke-OcrRegion([int]$left, [int]$top, [int]$width, [int]$height, [int]$scale = 1) {
   Add-Type -AssemblyName System.Drawing
-  $bmp = New-Object System.Drawing.Bitmap $width, $height
-  $g = [System.Drawing.Graphics]::FromImage($bmp)
-  $g.CopyFromScreen($left, $top, 0, 0, $bmp.Size)
+  $grab = New-Object System.Drawing.Bitmap $width, $height
+  $g = [System.Drawing.Graphics]::FromImage($grab)
+  $g.CopyFromScreen($left, $top, 0, 0, $grab.Size)
   $g.Dispose()
+  $bmp = $grab
+  if ($scale -gt 1) {
+    # Upscale before recognition: small glyphs (the tooltip's "1x" amount)
+    # never OCR at native size but read fine at 2x. Coordinates are mapped
+    # back to screen space below.
+    $bmp = New-Object System.Drawing.Bitmap ($width * $scale), ($height * $scale)
+    $g2 = [System.Drawing.Graphics]::FromImage($bmp)
+    $g2.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
+    $g2.DrawImage($grab, 0, 0, ($width * $scale), ($height * $scale))
+    $g2.Dispose()
+    $grab.Dispose()
+  }
   $ms = New-Object System.IO.MemoryStream
   $bmp.Save($ms, [System.Drawing.Imaging.ImageFormat]::Png)
   $bmp.Dispose()
@@ -115,10 +127,10 @@ function Invoke-OcrRegion([int]$left, [int]$top, [int]$width, [int]$height) {
     }
     $lines += @{
       text = [string]$line.Text
-      x = [int]($left + $minX)
-      y = [int]($top + $minY)
-      w = [int]($maxX - $minX)
-      h = [int]($maxY - $minY)
+      x = [int]($left + ($minX / $scale))
+      y = [int]($top + ($minY / $scale))
+      w = [int](($maxX - $minX) / $scale)
+      h = [int](($maxY - $minY) / $scale)
     }
   }
   return @{ text = [string]$result.Text; lines = $lines }
@@ -409,8 +421,30 @@ $ShiftKeys = @{
   ([char]'}') = [byte]0xDD
 }
 
+# Read the next command WITHOUT starving the overlay: a blocking ReadLine
+# leaves the full-screen mark form's message queue unserviced, and Windows
+# declares a window "Not Responding" after ~5s of that — exactly what a
+# step-mode bullseye waiting on Numpad 8 does (WER AppHangB1, 2026-09-02).
+# The read runs as a task; while it is pending the form gets DoEvents.
+# NOT [Console]::In.ReadLineAsync(): PowerShell 5.1 wraps Console.In in a
+# SyncTextReader whose "async" methods run inline and block. A StreamReader
+# over the raw stdin stream reads on the thread pool for real.
+$script:StdinReader = New-Object System.IO.StreamReader(
+  [Console]::OpenStandardInput(),
+  (New-Object System.Text.UTF8Encoding($false))
+)
+function Read-CommandLine {
+  $task = $script:StdinReader.ReadLineAsync()
+  while (-not $task.Wait(15)) {
+    if ($script:MarkForm) {
+      try { [System.Windows.Forms.Application]::DoEvents() } catch {}
+    }
+  }
+  return $task.Result
+}
+
 while ($true) {
-  $line = [Console]::In.ReadLine()
+  $line = Read-CommandLine
   if ($null -eq $line) { break }
   if ($line.Trim() -eq "quit") { break }
   try {
@@ -541,8 +575,11 @@ while ($true) {
       [AssistiveWin]::keybd_event(0x12, 0, 0, [UIntPtr]::Zero)
       Start-Sleep -Milliseconds 180
     }
+    $scale = if ($null -ne $cmd.scale) { [int]$cmd.scale } else { 1 }
+    if ($scale -lt 1) { $scale = 1 }
+    if ($scale -gt 4) { $scale = 4 }
     try {
-      $ocr = Invoke-OcrRegion $ox $oy $ow $oh
+      $ocr = Invoke-OcrRegion $ox $oy $ow $oh $scale
       Emit @{ ok = $true; text = $ocr.text; lines = @($ocr.lines) }
     } catch {
       Emit @{ ok = $false; error = "ocr-failed"; detail = [string]$_.Exception.Message }

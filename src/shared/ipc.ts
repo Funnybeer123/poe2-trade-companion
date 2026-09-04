@@ -469,6 +469,7 @@ export interface Poe2Bridge {
   scanner: ScannerBridge;
   stashSort: Record<string, (...args: never[]) => unknown>;
   stashTabs: Record<string, (...args: never[]) => unknown>;
+  shop: Record<string, (...args: never[]) => unknown>;
   priceFeed: Record<string, (...args: never[]) => unknown>;
   assistive: Record<string, unknown>;
   calibration: Record<string, (...args: never[]) => unknown>;

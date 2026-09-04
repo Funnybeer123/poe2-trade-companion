@@ -14,6 +14,7 @@ const gameActions = useGameActions();
 
 const navigation = [
   { to: "/sort", label: "Sort", short: "SO", detail: "Run & triage" },
+  { to: "/shop", label: "Shop", short: "SH", detail: "Listings & sales" },
   { to: "/items", label: "Item log", short: "IT", detail: "Parse & review" },
   { to: "/search", label: "Search", short: "SR", detail: "Queries & rules" },
   { to: "/builds", label: "Builds", short: "BL", detail: "Target coverage" },

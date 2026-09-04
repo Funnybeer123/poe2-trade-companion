@@ -16,6 +16,12 @@ import { resolveBuildMode } from "../core/capabilities.js";
 import { loadHotkeyBindings, saveHotkeyBindings } from "../core/hotkeyBindings.js";
 import { HOTKEY_ACTIONS, RESERVED_CONTROL_KEYS } from "../shared/hotkeyActions.js";
 import { parseFindRecords } from "../core/sortTriage.js";
+import {
+  deriveShopState,
+  parseListingEvents,
+  parseShopConfig,
+} from "../core/shopListings.js";
+import { salesStats } from "../core/shopPricing.js";
 import { generateLootFilter } from "../core/lootFilter.js";
 import {
   normalizeVoiceTransferConfig,
@@ -610,6 +616,44 @@ app.whenReady().then(() => {
     } catch {
       return [];
     }
+  });
+  // Shop listings (docs/HANDOFF-shop-listings.md): the CLI owns the game
+  // driving; the app reads/edits the same artifacts the script does —
+  // shop.json (config), listings.jsonl (ledger), shop-scan/plan.json.
+  ipcMain.handle("shop:overview", () => {
+    try {
+      const dir = path.join(process.cwd(), "artifacts", "tab-admin");
+      const read = (name: string): string | undefined => {
+        const file = path.join(dir, name);
+        return existsSync(file) ? readFileSync(file, "utf8") : undefined;
+      };
+      const configRaw = read("shop.json");
+      const { config, issues } = parseShopConfig(
+        configRaw ? (JSON.parse(configRaw) as unknown) : undefined,
+      );
+      const events = parseListingEvents(read("listings.jsonl") ?? "");
+      const scanRaw = read("shop-scan.json");
+      const planRaw = read("shop-plan.json");
+      return {
+        config,
+        issues,
+        state: deriveShopState(events),
+        stats: salesStats(events),
+        eventCount: events.length,
+        recentEvents: events.slice(-25).reverse(),
+        scan: scanRaw ? (JSON.parse(scanRaw) as unknown) : null,
+        plan: planRaw ? (JSON.parse(planRaw) as unknown) : null,
+      };
+    } catch (error) {
+      return { error: error instanceof Error ? error.message : String(error) };
+    }
+  });
+  ipcMain.handle("shop:save-config", (_event, raw: unknown) => {
+    const { config, issues } = parseShopConfig(raw);
+    const dir = path.join(process.cwd(), "artifacts", "tab-admin");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(path.join(dir, "shop.json"), JSON.stringify(config, null, 2));
+    return { config, issues };
   });
   ipcMain.handle("voice:status", () => voiceStatus());
   ipcMain.handle("voice:trigger", () => voiceService?.trigger("ui"));

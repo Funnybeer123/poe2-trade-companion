@@ -1103,13 +1103,103 @@ export interface PriceFeedApi {
 }
 
 function compatibilityApi<T>(
-  section: "calibration" | "assistive" | "stashSort" | "stashTabs" | "priceFeed",
+  section: "calibration" | "assistive" | "stashSort" | "stashTabs" | "shop" | "priceFeed",
 ): T | undefined {
   return nativeBridge()?.[section] as unknown as T | undefined;
 }
 
 export function getStashTabAdminApi(): StashTabAdminApi | undefined {
   return compatibilityApi<StashTabAdminApi>("stashTabs");
+}
+
+export interface ShopListingView {
+  fingerprint: string;
+  name: string;
+  itemClass: string;
+  count: number;
+  price?: { amount: number; currency: string; exalted?: number };
+  listedAt: string;
+  pricedAt: string;
+  by: "app" | "user" | "unknown";
+}
+
+export interface ShopPlanActionView {
+  kind: "reprice" | "delist" | "price-unpriced";
+  fingerprint: string;
+  name: string;
+  itemClass: string;
+  from?: { amount: number; currency: string };
+  to?: { amount: number; currency: string; exalted: number };
+  badges: string[];
+  reasons: string[];
+}
+
+export interface ShopPlanHoldView {
+  fingerprint: string;
+  name: string;
+  badges: string[];
+  reasons: string[];
+}
+
+export interface ShopSalesStatsView {
+  itemClass: string;
+  listed: number;
+  sold: number;
+  delisted: number;
+  medianDaysToSale?: number;
+  realizedExalted: number;
+}
+
+export interface ShopConfigView {
+  schemaVersion: 1;
+  shopTab: string;
+  returnTab: string;
+  undercutPercent: number;
+  compsPercentile: number;
+  staleDays: number;
+  underpricedPercent: number;
+  ladder: Array<{ afterDays: number; stepPercent: number }>;
+  delistFloorExalted: number;
+  maxAutoList: { amount: number; currency: string };
+  minListConfidence: number;
+  minCompsCount: number;
+  maxCompsSpread: number;
+  minListExalted: number;
+  sources: Array<"bag" | "review">;
+  maxActionsPerRun: number;
+  /** Price-bucket merchant tabs ("1Ex", "5D" …) — the one-key listing flow. */
+  bucketTabs: string[];
+}
+
+export interface ShopOverviewView {
+  error?: string;
+  config?: ShopConfigView;
+  issues?: string[];
+  state?: ShopListingView[];
+  stats?: ShopSalesStatsView[];
+  eventCount?: number;
+  scan?: {
+    snapshot?: { at: string; tab: string; items: unknown[]; unpricedCount: number };
+    freeCells?: number;
+  } | null;
+  plan?: {
+    at: string;
+    tab: string;
+    actions: ShopPlanActionView[];
+    holds: ShopPlanHoldView[];
+    report: string[];
+  } | null;
+}
+
+export interface ShopApi {
+  overview: () => Promise<ShopOverviewView>;
+  saveConfig: (
+    config: ShopConfigView,
+  ) => Promise<{ config: ShopConfigView; issues: string[] }>;
+}
+
+export function getShopApi(): ShopApi | undefined {
+  return compatibilityApi<ShopApi>("shop");
 }
 
 export function getPriceFeedApi(): PriceFeedApi | undefined {

@@ -93,7 +93,7 @@ function appraiseMods(parsed: ParsedItem): {
   let t2 = 0;
   let t3 = 0;
   for (const mod of parsed.mods) {
-    const match: ModMatch | undefined = matchModFamily(mod.text);
+    const match: ModMatch | undefined = matchModFamily(mod.text, { itemClass: parsed.itemClass });
     if (!match) {
       mods.push({ text: mod.text, points: 0 });
       continue;

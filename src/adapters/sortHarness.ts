@@ -202,6 +202,22 @@ export class SortHarness {
   async checkpoint(where: string): Promise<void> {
     this.throwIfStopped(where);
     await this.pauseGate();
+    // Hovers and Ctrl+C only mean anything inside the game: if the user
+    // has clicked away, bring the game back before the next sweep instead
+    // of reading whatever window is up (2026-09-03). Throttled — checkpoints
+    // are frequent.
+    if (Date.now() - this.lastForegroundCheck > 2_000) {
+      this.lastForegroundCheck = Date.now();
+      try {
+        const rect = await this.host.send({ op: "rect" });
+        if (rect.ok && rect.foregroundIsPoe === false) {
+          await this.host.send({ op: "focus" });
+          await this.sleepBase(250);
+        }
+      } catch {
+        // A failed probe must not break the run; the next checkpoint retries.
+      }
+    }
     if (this.wrongFlagged) {
       this.wrongFlagged = false;
       this.markedWrong = false;
@@ -298,8 +314,11 @@ export class SortHarness {
     this.planRejected = false;
   }
 
+  private lastForegroundCheck = 0;
+
   /** Wait for the user's verdict on the shown click. */
   private async stepGate(why: string): Promise<"good" | "wrong"> {
+    let lastFocusCheck = Date.now();
     for (;;) {
       if (this.stopRequested) throw new SortStop(`${this.stopWhy} at step: ${why}`);
       if (this.approved) return "good";
@@ -311,6 +330,18 @@ export class SortHarness {
         // The bullseye stays up (it names the step); just wait here.
         await this.sleepBase(100);
         continue;
+      }
+      // The host's waitkey only counts numpad presses while the game is the
+      // foreground window; a user who glanced at the terminal presses 8 into
+      // nothing (2026-09-02). Pull the game back every few seconds.
+      if (Date.now() - lastFocusCheck > 3_000) {
+        lastFocusCheck = Date.now();
+        try {
+          const rect = await this.host.send({ op: "rect" });
+          if (rect.ok && rect.foregroundIsPoe === false) await this.host.send({ op: "focus" });
+        } catch {
+          // A failed probe must not break the gate; the next tick retries.
+        }
       }
       await this.sleepBase(100);
     }

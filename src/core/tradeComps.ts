@@ -38,6 +38,20 @@ export interface CompsQuery {
  * mod-similarity pass does the narrowing the stat-id filter system would
  * otherwise need).
  */
+/**
+ * A MAGIC item's copy text has no base-type line — the single header line is
+ * "[Prefix] Base [of Suffix]" — so the base is derived: the words before
+ * " of " (or all of them), minus a leading prefix word when three or more
+ * remain. "Entombing Bandit Mace of the Champion" → "Bandit Mace";
+ * "Bandit Mace of the Champion" → "Bandit Mace"; "Flaming Adherent Bow of
+ * the Parched" → "Adherent Bow". trade2 rejects the full name (HTTP 400).
+ */
+export function magicBaseType(name: string): string {
+  const beforeOf = name.split(/\s+of\s+/i)[0]!.trim();
+  const words = beforeOf.split(/\s+/).filter(Boolean);
+  return (words.length >= 3 ? words.slice(1) : words).join(" ");
+}
+
 export function buildCompsQuery(parsed: ParsedItem): CompsQuery | undefined {
   const status = { option: "online" };
   const sort = { price: "asc" };
@@ -50,7 +64,11 @@ export function buildCompsQuery(parsed: ParsedItem): CompsQuery | undefined {
       },
     };
   }
-  if (!parsed.baseType) return undefined;
+  const baseType =
+    /^magic$/i.test(parsed.rarity) && parsed.baseType === parsed.name
+      ? magicBaseType(parsed.name)
+      : parsed.baseType;
+  if (!baseType) return undefined;
   const itemLevel = parsed.itemLevel ?? 0;
   const filters: Record<string, unknown> = {
     type_filters: {
@@ -63,7 +81,7 @@ export function buildCompsQuery(parsed: ParsedItem): CompsQuery | undefined {
   return {
     basis: "base-type",
     body: {
-      query: { status, type: parsed.baseType, filters },
+      query: { status, type: baseType, filters },
       sort,
     },
   };
@@ -84,20 +102,32 @@ export interface CompListing {
   indexed?: string;
 }
 
-/** trade currency ids → the crafting economy's orb ids. */
+/** trade currency ids (and note-currency words) → the crafting economy's orb ids. */
 const TRADE_CURRENCY_TO_ORB: Record<string, OrbId> = {
   exalted: "exalted",
   exalt: "exalted",
+  ex: "exalted",
   divine: "divine",
+  div: "divine",
   chaos: "chaos",
   regal: "regal",
   annul: "annulment",
+  annulment: "annulment",
   vaal: "vaal",
   alch: "alchemy",
+  alchemy: "alchemy",
   transmute: "transmutation",
+  transmutation: "transmutation",
   aug: "augmentation",
+  augmentation: "augmentation",
   "fracturing-orb": "fracturing",
+  fracturing: "fracturing",
 };
+
+/** Fold a trade/note currency token to its orb id, when it is one. */
+export function tradeCurrencyToOrb(token: string): OrbId | undefined {
+  return TRADE_CURRENCY_TO_ORB[token.trim().toLowerCase()];
+}
 
 /**
  * PoE2 fetch payloads annotate game terms as `[Token]` or `[Token|Display]`
@@ -198,10 +228,10 @@ export function listingPriceInExalted(
 // Similarity + summary
 // ---------------------------------------------------------------------------
 
-function familiesOf(mods: readonly string[]): Set<string> {
+function familiesOf(mods: readonly string[], itemClass?: string): Set<string> {
   const families = new Set<string>();
   for (const mod of mods) {
-    const match = matchModFamily(mod);
+    const match = matchModFamily(mod, { itemClass });
     if (match && match.tier !== 0) families.add(match.family.id);
   }
   return families;
@@ -212,10 +242,16 @@ function familiesOf(mods: readonly string[]): Set<string> {
  * with no notable families compares on base type alone (similarity 1) so
  * plain bases still get a floor price.
  */
-export function listingSimilarity(ourMods: readonly string[], listing: CompListing): number {
-  const ours = familiesOf(ourMods);
+export function listingSimilarity(
+  ourMods: readonly string[],
+  listing: CompListing,
+  itemClass?: string,
+): number {
+  // Comps share our item's class (the query is by base type), so both sides
+  // are judged with that class's families.
+  const ours = familiesOf(ourMods, itemClass);
   if (ours.size === 0) return 1;
-  const theirs = familiesOf(listing.mods);
+  const theirs = familiesOf(listing.mods, itemClass);
   let shared = 0;
   for (const family of ours) if (theirs.has(family)) shared += 1;
   return shared / ours.size;
@@ -244,14 +280,14 @@ export function summarizeComps(
   ourMods: readonly string[],
   listings: readonly CompListing[],
   basis: CompsQuery["basis"],
-  options: { priceTable?: PriceTable; minSimilarity?: number } = {},
+  options: { priceTable?: PriceTable; minSimilarity?: number; itemClass?: string } = {},
 ): CompsSummary {
   const minSimilarity = options.minSimilarity ?? 0.5;
   const priced = listings
     .map((listing) => ({
       listing,
       price: listingPriceInExalted(listing, options.priceTable),
-      similarity: listingSimilarity(ourMods, listing),
+      similarity: listingSimilarity(ourMods, listing, options.itemClass),
     }))
     .filter(
       (entry): entry is { listing: CompListing; price: number; similarity: number } =>

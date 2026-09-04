@@ -46,7 +46,15 @@ export type StashTabScriptKind =
   | "sort-gear"
   | "sort-gear-dry"
   | "craft-gear"
-  | "craft-gear-dry";
+  | "craft-gear-dry"
+  | "shop-scan-dry"
+  | "shop-scan"
+  | "shop-apply"
+  | "shop-apply-step"
+  | "shop-list-dry"
+  | "shop-list"
+  | "shop-buckets-dry"
+  | "shop-buckets";
 
 const SCRIPT_ARGS: Record<StashTabScriptKind, string[]> = {
   renumber: ["scripts/stash-tab-admin.ts", "--renumber"],
@@ -56,6 +64,18 @@ const SCRIPT_ARGS: Record<StashTabScriptKind, string[]> = {
   "sort-gear-dry": ["scripts/sort-gear.ts", "--dry-run"],
   "craft-gear": ["scripts/craft-gear.ts", "--live"],
   "craft-gear-dry": ["scripts/craft-gear.ts"],
+  // Shop listings (docs/HANDOFF-shop-listings.md). Dry scans read the tab
+  // and print the plan; --record appends the reconcile (sold detection);
+  // --live executes the plan; the step variant teaches the price dialog.
+  "shop-scan-dry": ["scripts/shop.ts"],
+  "shop-scan": ["scripts/shop.ts", "--record"],
+  "shop-apply": ["scripts/shop.ts", "--live"],
+  "shop-apply-step": ["scripts/shop.ts", "--live", "--step"],
+  "shop-list-dry": ["scripts/shop.ts", "--list"],
+  "shop-list": ["scripts/shop.ts", "--live", "--list"],
+  // Price-bucket tabs: the one-key flow (also Num4 in the action daemon).
+  "shop-buckets-dry": ["scripts/shop-buckets.ts"],
+  "shop-buckets": ["scripts/shop-buckets.ts", "--live"],
 };
 
 export class StashTabAdminService {

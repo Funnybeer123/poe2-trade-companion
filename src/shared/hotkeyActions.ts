@@ -41,7 +41,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyActionInfo[] = [
     label: "Vendor",
     detail: "Quick-sell the bag to ZELINA (window opens; the sell click is not wired yet).",
     context: "hideout",
-    defaultKey: 4,
+    defaultKey: null,
   },
   {
     id: "identify",
@@ -57,6 +57,14 @@ export const HOTKEY_ACTIONS: readonly HotkeyActionInfo[] = [
     detail: "/hideout, sell all identified junk to ZELINA, and return to the same map through its portal.",
     context: "map",
     defaultKey: 7,
+  },
+  {
+    id: "shop",
+    label: "Shop",
+    detail:
+      "Price every bag item for the current league (live feed + trade2 comps), then list each in its price-bucket merchant tab (1Ex, 5Ex, 10Ex, 1D …) via Ange's Manage Shop. Numpad 0 stops.",
+    context: "hideout",
+    defaultKey: 4,
   },
 ];
 

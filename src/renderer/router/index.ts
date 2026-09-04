@@ -29,6 +29,17 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: "/shop",
+    name: "shop",
+    component: () => import("../views/ShopView.vue"),
+    meta: {
+      title: "Shop",
+      eyebrow: "Operate",
+      description:
+        "Manage the public-tab sale listings: scan by Ctrl+C ground truth, reprice stale listings, track realized sales.",
+    },
+  },
+  {
     path: "/items",
     name: "items",
     component: () => import("../views/ItemLogView.vue"),

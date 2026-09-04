@@ -95,6 +95,7 @@ function makeService(options?: {
     });
   const service = new PriceFeedService({
     configDir: options?.configDir ?? mkdtempSync(path.join(tmpdir(), "pfs-test-")),
+    rateLimitBackoffMs: 0, // a 429 retries once, immediately
     getPriceTable: () => table,
     savePriceTable: (next) => (table = next),
     now: options?.now,
@@ -235,7 +236,7 @@ describe("PriceFeedService comps", () => {
   });
 
   it("surfaces trade rate limiting as a friendly error", async () => {
-    const { service } = makeService({
+    const { service, calls } = makeService({
       respond: (url) => {
         if (url.endsWith("/Leagues")) return jsonResponse(LEAGUES);
         if (url.includes("/search/")) return jsonResponse({}, 429);
@@ -246,6 +247,8 @@ describe("PriceFeedService comps", () => {
     const result = await service.fetchComps(RARE_RING);
     expect(result.ok).toBe(false);
     expect(result.error).toContain("rate limit");
+    // One backoff retry happened before giving up.
+    expect(calls.filter((call) => call.url.includes("/search/")).length).toBe(2);
   });
 
   it("returns an empty summary when the search finds nothing", async () => {

@@ -22,6 +22,7 @@
  *   step mode, corrections, overlay hygiene); there are no bare click sends.
  * - Round decisions come from src/core/gearSort.ts so they are unit-tested.
  */
+import os from "node:os";
 import path from "node:path";
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import {
@@ -44,6 +45,7 @@ import {
   brightHeaderRuns,
   brightestCellPoint,
   cellEdgeContinuity,
+  regionChangedFraction,
   scoreGridCells,
 } from "../core/itemSprites.js";
 import { hasConsistentCellGrid, perceiveUi } from "../core/uiPerception.js";
@@ -55,22 +57,34 @@ import { encodeBgrPng } from "../core/pngWrite.js";
 import {
   BAG_AREA,
   BAG_CELL_CAPACITY,
+  CLICK_SURFACES,
   GEAR_TAB_NAMES,
-  SEARCH_BOX,
   STASH_AREA,
+  STASH_AREA_TOP_LEVEL,
+  TOP_LEVEL_GRID_DY,
+  bagCompletionVerdict,
   clampToArea,
   canonicalTTabLabel,
   claimNeedsReverify,
+  classifyListRead,
+  clickRefusal,
+  decideListToggle,
+  describeBagLeftovers,
   emptyCellKeysByBaseline,
   detectGridDivisions,
   foreignItemsFor,
   groupIdentifiedCells,
   guildDestForItem,
   isTTabLabel,
+  packTripByDest,
+  phantomSignatureMatches,
   stashRegionSane,
+  withdrawObservation,
+  type PhantomCellRecord,
   type Cell,
   type GridCell,
   type IdentifiedItem,
+  type ListVisibility,
 } from "../core/gearSort.js";
 import type { TriageRouting } from "../core/bagTriage.js";
 import { STASH_SCAN } from "../core/copyTiming.js";
@@ -120,7 +134,31 @@ export interface SourceTab {
    * refuses the deposit, so the return would silently fail).
    */
   drain?: boolean;
+  /**
+   * The designated SHOP tab (docs/HANDOFF-shop-listings.md): the ONE public
+   * tab the shop flow may touch. Mirrors the drain flag's shape — navigation
+   * may select it despite the priced-tab protection, but ONLY on a strict
+   * labelsEqualFolded match (garbled labels refuse, guess fallbacks are off)
+   * and never via cleanTab (cleaning would scatter the listings).
+   */
+  shop?: boolean;
 }
+
+/** Phase-1 result of a tab visit: the single index every decision runs off. */
+export interface TabIndex {
+  /** Occupied cells the occupancy scan planned to sweep (0 = empty tab). */
+  occupiedCount: number;
+  modelItems: IdentifiedItem[];
+  reads: Array<{ cell: GridCell; text: string }>;
+  unread: GridCell[];
+  region: { x: number; y: number; w: number; h: number };
+  cols: number;
+  rows: number;
+}
+
+export type TabScanResult =
+  | ({ ok: true } & TabIndex)
+  | { ok: false; reason: "source-unreachable" | "no-geometry" };
 
 export interface GearSorterTriageOptions {
   /** Tier decision for one copied item's text (rules + price table). */
@@ -205,6 +243,10 @@ const LIST_TOGGLE_FOLDER = { x: 1287, y: 278 } as const;
  */
 const LIST_ROW_CLICK_X = 1430;
 
+/** Pixel probe over the dropdown's on-screen area, for verifying that a
+ * toggle click actually opened/closed the list without an OCR round trip. */
+const LIST_PIXEL_PROBE = { x: 1345, y: 195, w: 320, h: 1000 } as const;
+
 /**
  * Guild pacing floors (docs/HANDOFF-standard-drain-guild-stash.md): every
  * guild-stash write is a synchronous realm-master round trip with no
@@ -264,6 +306,11 @@ export class GearSorter {
     return `${source.label}#${source.occurrence}:${cell.row},${cell.col}`;
   }
 
+  /** Scratch dir for the per-frame capture BMPs (24MB each, created and
+   * deleted hundreds of times per run) — the system temp dir, NOT the
+   * OneDrive-synced repo, whose sync watcher taxes rapid create/delete. */
+  private readonly captureScratchDir: string;
+
   constructor(
     private readonly host: SortHost,
     private readonly harness: SortHarness,
@@ -272,6 +319,8 @@ export class GearSorter {
   ) {
     this.debugDir = path.join(options.root, "artifacts", "tab-admin", "debug");
     mkdirSync(this.debugDir, { recursive: true });
+    this.captureScratchDir = path.join(os.tmpdir(), "poe2-sort-captures");
+    mkdirSync(this.captureScratchDir, { recursive: true });
     this.log = options.log ?? ((line) => console.log(line));
   }
 
@@ -314,7 +363,7 @@ export class GearSorter {
 
   private async captureRaw(): Promise<RawFrame> {
     const rect = await this.host.send({ op: "rect" });
-    const file = path.join(this.debugDir, `cap-${Date.now()}.bmp`);
+    const file = path.join(this.captureScratchDir, `cap-${Date.now()}-${Math.random().toString(16).slice(2, 6)}.bmp`);
     const captured = await this.host.send({ op: "capture", path: file });
     if (!captured.ok) throw new Error(String(captured.error ?? "capture-failed"));
     const bgr = readBmpBgr(file);
@@ -404,10 +453,11 @@ export class GearSorter {
       w: bounds.w / frame.client.width,
       h: bounds.h / frame.client.height,
     };
-    return (
+    const visible =
       hasConsistentCellGrid(frame.gray, uv, 12, 12) ||
-      hasConsistentCellGrid(frame.gray, uv, 24, 24)
-    );
+      hasConsistentCellGrid(frame.gray, uv, 24, 24);
+    if (visible) this.noteStashProof();
+    return visible;
   }
 
   /**
@@ -442,12 +492,45 @@ export class GearSorter {
     return (await this.stashGridVisible()) || (await this.stashTitleVisible());
   }
 
-  /** A 60px band across the middle of the stash grid — the change-detection
-   * probe for "the tab actually switched". */
-  private gridProbeStrip(): { x: number; y: number; w: number; h: number } | undefined {
+  /**
+   * Change-detection probe for "the tab actually switched": the strip rows
+   * PLUS the top of the grid. Near-empty destination tabs are pixel-identical
+   * in a grid-only band (tab-switch-not-observed fired 44× last session on
+   * hops that had actually succeeded, burning the 1100ms cap each time), but
+   * the header highlight always moves on a real switch — so the probe covers
+   * both "the grid repainted" and "the highlight moved" (dump-sort handoff
+   * item 5).
+   */
+  private tabSwitchProbe(): { x: number; y: number; w: number; h: number } | undefined {
     const bounds = this.calibratedStashBounds();
     if (!bounds) return undefined;
-    return { x: bounds.x, y: bounds.y + bounds.h * 0.4, w: bounds.w, h: 60 };
+    const top = STRIP_ROWS.top.min + 4;
+    return { x: bounds.x, y: top, w: bounds.w, h: Math.round(bounds.y - top + 120) };
+  }
+
+  /**
+   * Click through the harness ONLY after the point passes its surface check:
+   * every surface automation touches is declared (strip bands, dropdown,
+   * grids, search box), and a click outside its surface is refused BEFORE
+   * sending — a strip click computed while the strip was off screen once
+   * sprayed the top-left of the bare world, and a drifted cached row Y would
+   * land in the game world. Refusals are guarded so misfires are measurable,
+   * and callers treat a refusal like a failed click: diagnose, never retry
+   * the same point blind.
+   */
+  private async surfaceClick(
+    x: number,
+    y: number,
+    surface: keyof typeof CLICK_SURFACES,
+    why: string,
+  ): Promise<boolean> {
+    const refusal = clickRefusal({ x, y }, CLICK_SURFACES[surface]);
+    if (this.harness.guard("click-surface-refused", refusal !== undefined)) {
+      this.log(`  ! refusing click "${why}" at (${x},${y}) — ${refusal}`);
+      return false;
+    }
+    await this.harness.click(x, y, why);
+    return true;
   }
 
   /**
@@ -460,7 +543,7 @@ export class GearSorter {
   private async settleAfterTabClick(
     expectChange: boolean,
   ): Promise<"changed" | "unchanged" | "unknown"> {
-    const strip = this.gridProbeStrip();
+    const strip = this.tabSwitchProbe();
     if (strip) {
       const changed = await this.pixwait(strip, {
         waitChangeMs: expectChange ? 1100 : 0,
@@ -484,6 +567,79 @@ export class GearSorter {
 
   private async park(): Promise<void> {
     await this.host.send({ op: "move", ...PARK });
+  }
+
+  /**
+   * Poll until `region` differs from the `before` frame (true) or the cap
+   * expires (false). This is the race-free change primitive: the baseline
+   * predates the click, so a change that completes in any window is seen.
+   * Each poll is one capture (~250-350ms), so the wait lasts exactly as
+   * long as the animation does instead of a blind worst-case sleep.
+   */
+  private async regionChangedSince(
+    before: RawFrame,
+    region: { x: number; y: number; w: number; h: number },
+    capMs: number,
+  ): Promise<boolean> {
+    const deadline = Date.now() + capMs;
+    for (;;) {
+      const now = await this.captureRaw();
+      if (regionChangedFraction(before.gray, now.gray, now.client, region) > 0.002) return true;
+      if (Date.now() >= deadline) return false;
+      await this.harness.sleep(150, false);
+    }
+  }
+
+  /**
+   * Race-free tab-switch observation, BASELINE-FIRST: pixwait grabs its
+   * change baseline AFTER the click that causes the change, so its
+   * change-wait missed 20 of 20 real switches live (2026-09-01) and every
+   * hop burned the 1100ms cap + 500ms penalty before the pre-click
+   * comparison rescued it. The comparison IS the observation now — over the
+   * strip plus the WHOLE grid (a real switch moves tens of thousands of
+   * pixels; a static panel ~none; live measurements: no-op 0.00%, real
+   * switches 11-27%) — and pixwait only holds for repaint stability once a
+   * change is seen, so the grid proof never reads a mid-repaint frame.
+   */
+  private async observeTabSwitch(
+    before: RawFrame | undefined,
+    expectChange: boolean,
+  ): Promise<"changed" | "unchanged" | "unknown"> {
+    if (!before || !expectChange) return this.settleAfterTabClick(expectChange);
+    const bounds = this.calibratedStashBounds();
+    if (!bounds) return this.settleAfterTabClick(expectChange);
+    const top = STRIP_ROWS.top.min + 4;
+    const probe = { x: bounds.x, y: top, w: bounds.w, h: bounds.y + bounds.h - top };
+    if (await this.regionChangedSince(before, probe, 1200)) {
+      await this.pixwait(probe, { stableMs: 140 });
+      // A live, repainting stash panel is also positive proof the stash UI
+      // is on screen — nothing else repaints that region.
+      this.noteStashProof();
+      return "changed";
+    }
+    this.harness.guard("tab-switch-not-observed", true);
+    this.log("  · switch check: no panel change against the pre-click frame");
+    return "unchanged";
+  }
+
+  /* ---------------- stash-proof freshness ---------------- */
+
+  /**
+   * The last moment a POSITIVE stash proof succeeded (title OCR, grid
+   * lattice, or an observed panel repaint). Full-screen OCR proofs cost
+   * 1.5-2s each and the trip cycle was paying several per hop for a panel
+   * that verifiably repainted moments earlier — a fresh proof (<20s, no
+   * anomaly since) stands in for a new one. Any recovery entry or
+   * unobserved click resets the freshness to zero.
+   */
+  private lastStashProofAt = 0;
+
+  private noteStashProof(): void {
+    this.lastStashProofAt = Date.now();
+  }
+
+  private stashRecentlyProven(): boolean {
+    return Date.now() - this.lastStashProofAt < 20_000;
   }
 
   private async ocrBand(band: { left: number; top: number; width: number; height: number }): Promise<string> {
@@ -513,17 +669,17 @@ export class GearSorter {
   private async stashTitleVisible(): Promise<boolean> {
     await this.park();
     await this.harness.sleep(350, false);
-    if (this.titleMatchesChest(await this.ocrBand(STASH_BAND))) return true;
+    if (this.titleMatchesChest(await this.ocrBand(STASH_BAND))) {
+      this.noteStashProof();
+      return true;
+    }
     await this.harness.sleep(600, false);
-    return this.titleMatchesChest(await this.ocrBand(STASH_BAND));
+    const visible = this.titleMatchesChest(await this.ocrBand(STASH_BAND));
+    if (visible) this.noteStashProof();
+    return visible;
   }
 
   /* ---------------- ensureSession ---------------- */
-
-  /** True once the Highlight box has been cleared this session. Nothing in
-   * the ground-truth flow ever TYPES a query, so one clear per session is
-   * enough — the old per-tab clear cost a focus-proof + typing per tab. */
-  private searchCleared = false;
 
   async ensureSession(): Promise<void> {
     const endPhase = this.harness.startPhase("ensure-session");
@@ -537,11 +693,10 @@ export class GearSorter {
       if (!this.guildChest && !(await this.ensureFolderRowOpen())) {
         throw new Error("gear-folder-row-not-openable");
       }
-      // A stale Highlight query dims everything it does not match and sinks
-      // dimmed cells below the occupancy thresholds — a boots tab full of
-      // boots once read EMPTY under a leftover "class: jewel" filter. The
-      // sorter itself never types queries any more, so once per session.
-      if (await this.clearSearch()) this.searchCleared = true;
+      // The Highlight (search) box is never touched any more — the user
+      // confirmed it is unused (2026-09-01), and ground-truth Ctrl+C
+      // identification does not care about dimming. If a stale query ever
+      // dims a tab, clear it by hand.
       endPhase();
     } catch (error) {
       endPhase(error instanceof SortStop ? "stopped" : "failed");
@@ -551,6 +706,12 @@ export class GearSorter {
 
   /** Get the stash panel + inventory open, with bounded, diagnosed recovery. */
   private async ensureStash(): Promise<boolean> {
+    // Recovery can close the dropdown underneath us (Escape, panel re-open,
+    // chest re-click) — the folder-list flag is OBSERVATION-only, and entering
+    // recovery ends the observation (dump-sort handoff item 3). The same for
+    // the stash-proof freshness: recovery means doubt.
+    this.folderListOpen = false;
+    this.lastStashProofAt = 0;
     let chestClicks = 0;
     let invToggles = 0;
     let navClicks = 0;
@@ -752,6 +913,16 @@ export class GearSorter {
       }
       let header = strip.top.find((entry) => /gear/i.test(entry.label));
       if (!header) {
+        // Never page the scroll arrows blind: with the stash panel gone the
+        // arrow coordinate points at the bare world — this was the "clicking
+        // top-left of my screen" incident. A positive stash proof gates
+        // every arrow click, and a strip that VANISHES mid-page stops the
+        // paging instead of spraying the remaining clicks.
+        if (!(await this.stashOpenProof())) {
+          this.harness.guard("strip-clicks-refused-no-stash", true);
+          if (!(await this.ensureStash())) return false;
+          continue;
+        }
         // Selecting any tab scrolls the strip; a junk trip to a T tab can
         // leave it far right with "Gear" off-screen (seen live: top row read
         // only "T13"). Page the top row back toward its left end, where the
@@ -759,11 +930,25 @@ export class GearSorter {
         this.harness.guard("strip-scrolled-off-gear", true);
         for (let page = 0; page < 4 && !header; page += 1) {
           for (let step = 0; step < 4; step += 1) {
-            await this.harness.click(52, 212, `scroll tab strip left (${page * 4 + step + 1}/16)`);
+            if (
+              !(await this.surfaceClick(
+                52,
+                212,
+                "stripTop",
+                `scroll tab strip left (${page * 4 + step + 1}/16)`,
+              ))
+            ) {
+              return false;
+            }
             await this.harness.sleep(260, false);
           }
           await this.park();
-          header = (await this.kit.readStrip()).top.find((entry) => /gear/i.test(entry.label));
+          const reread = await this.kit.readStrip();
+          if (reread.top.length === 0 && reread.folder.length === 0) {
+            this.harness.guard("strip-vanished-mid-scroll", true);
+            break; // stash likely gone — let the recovery below diagnose
+          }
+          header = reread.top.find((entry) => /gear/i.test(entry.label));
         }
       }
       if (!header) {
@@ -775,7 +960,9 @@ export class GearSorter {
       const clickX = merged ? Math.round(header.point.x - header.width / 2 + 35) : header.point.x;
       await this.host.send({ op: "focus" });
       await this.harness.sleep(200);
-      await this.harness.click(clickX, header.point.y, "open Gear folder row");
+      if (!(await this.surfaceClick(clickX, header.point.y, "stripTop", "open Gear folder row"))) {
+        continue;
+      }
       await this.harness.sleep(900);
     }
     const strip = await this.kit.readStrip();
@@ -783,79 +970,153 @@ export class GearSorter {
   }
 
   /**
-   * Get the FOLDER list open and read its rows. The folder chevron
-   * (LIST_TOGGLE_FOLDER) is the only opener used; a top-level list that
-   * somehow got opened is closed via its own toggle first. Ambiguous reads
-   * are re-read, never acted on.
+   * Get the FOLDER list open and read its rows, with the one-click-verified
+   * toggle discipline (dump-sort handoff item 3): visibility is DETECTED
+   * from every read (≥4 rows + folder context = open; zero rows = closed),
+   * the chevron is clicked ONLY when the observed state must change, and
+   * every click's effect is verified by the next read — an unchanged state
+   * gets ONE retry, then falls to recovery. Blind alternating toggles (the
+   * old close-then-immediately-reopen in one iteration) are gone.
+   *
+   * In this layout the folder chevron is the ONLY dropdown toggle that
+   * renders — the old top-toggle click at (1287,212) landed on a control
+   * that does not exist here (it is inside the top strip band and could
+   * even select a tab), so no personal-chest path clicks it any more.
    */
   private async openFolderList(): Promise<TabListRow[]> {
-    if (!(await this.stashTitleVisible())) throw new Error("stash-panel-closed");
-    this.folderListOpen = false; // unknown until this read verifies it
+    // A fresh positive stash proof (an observed repaint seconds ago) stands
+    // in for the 1.5-2s title-OCR round — the trip cycle paid several of
+    // these per hop for a panel that verifiably just repainted.
+    if (!this.stashRecentlyProven() && !(await this.stashTitleVisible())) {
+      throw new Error("stash-panel-closed");
+    }
+    this.folderListOpen = false; // unknown until a read verifies it
     // A hover tooltip from wherever the cursor last rested can overlap the
     // list region and OCR as phantom tab rows (jewel names once queued as
     // eight tabs) — park before every read so no tooltip is showing.
     await this.park();
-    // Eight attempts, not four: recovering from a scrolled/parity-flipped
-    // list costs one attempt per corrective toggle (reset scroll, close top
-    // list, reopen folder), and a budget of four ran out mid-recovery.
+    /** Visibility right before the last toggle click, pending verification. */
+    let pendingFrom: ListVisibility | undefined;
+    let unverifiedToggles = 0;
+    let unreadableReads = 0;
     for (let attempt = 0; attempt < 8; attempt += 1) {
       const rows = await this.kit.readTabList();
-      if (rows.length >= 4) {
-        const context = this.listContext(rows);
+      let visibility = classifyListRead(rows.length, this.listContext(rows));
+      if (visibility === "unreadable") {
+        // A half-drawn transition frame: re-read once before believing it; a
+        // second unreadable read in a row means the list is closed with a
+        // stray world line or two leaking through the filters.
+        unreadableReads += 1;
+        if (unreadableReads < 2) {
+          await this.harness.sleep(400, false);
+          continue;
+        }
+        visibility = "closed";
+      }
+      unreadableReads = 0;
+      // Verify the previous toggle actually changed the state before doing
+      // anything else. Unchanged = ONE retry (the decision below re-clicks),
+      // then recovery — never a blind toggle fight.
+      if (pendingFrom !== undefined && visibility === pendingFrom) {
+        this.harness.guard("list-toggle-unverified", true);
+        unverifiedToggles += 1;
+        if (unverifiedToggles >= 2) {
+          if (!(await this.ensureStash())) throw new Error("stash-lost-and-unrecoverable");
+          unverifiedToggles = 0;
+          pendingFrom = undefined;
+          continue;
+        }
+      } else {
+        unverifiedToggles = 0;
+      }
+      pendingFrom = undefined;
+      const action = decideListToggle(visibility, "folder");
+      if (action === "none") {
+        this.folderListOpen = true;
+        // Remember what the OPEN list looks like — the trip cycle's fast
+        // reopen re-proves "list showing" against this frame with zero OCR.
+        this.folderListOpenRef = await this.captureRaw();
         // Strip the top-level rows of the combined list before returning: a
         // scrolled window shows them above the children, and matching must
         // never click Gear/AFFINITIES/T-tab rows while hunting a folder tab.
-        if (context === "folder") {
-          this.folderListOpen = true;
-          return rows.filter((row) => !(row.readable && this.isTopLevelRowLabel(row.label)));
-        }
-        if (this.harness.guard("top-level-list-open", context === "top-level")) {
-          this.log(`  · top-level list open: [${this.describeRows(rows)}] — closing it`);
-          await this.harness.click(LIST_TOGGLE_TOP.x, LIST_TOGGLE_TOP.y, "close top-level tab list");
-          await this.park();
-          await this.harness.sleep(700);
-        } else {
-          // An ambiguous read can be a STABLE scrolled state (the dropdown
-          // parked in the special-tabs region shows no gear rows at all, and
-          // re-reading forever livelocked a run) — actively close the list
-          // so the reopen below resets its scroll.
-          this.harness.guard("tab-list-ambiguous", true);
-          this.log(`  · list read ambiguous: [${this.describeRows(rows)}] — closing to reset scroll`);
-          await this.harness.click(LIST_TOGGLE_TOP.x, LIST_TOGGLE_TOP.y, "close scrolled tab list");
-          await this.park();
-          await this.harness.sleep(700);
-        }
+        return rows.filter((row) => !(row.readable && this.isTopLevelRowLabel(row.label)));
       }
+      if (visibility === "top-level" || visibility === "ambiguous-open") {
+        // A stable scrolled window (top-level rows on top, or parked in the
+        // special-tabs region with no gear rows at all — re-reading forever
+        // livelocked a run): ONE chevron click closes the list and resets
+        // its scroll; the next read verifies it actually closed.
+        this.harness.guard("tab-list-scrolled-reset", true);
+        this.log(
+          `  · list scrolled/ambiguous: [${this.describeRows(rows)}] — closing to reset scroll`,
+        );
+        const preClose = await this.captureRaw();
+        if (
+          await this.surfaceClick(
+            LIST_TOGGLE_FOLDER.x,
+            LIST_TOGGLE_FOLDER.y,
+            "tabList",
+            "close folder list (reset scroll)",
+          )
+        ) {
+          pendingFrom = visibility;
+          await this.park();
+          // Pixel-verified wait: exactly as long as the close animation
+          // takes, and the next OCR read never races a half-drawn list
+          // (that race caused one list-toggle-unverified per trip live).
+          await this.regionChangedSince(preClose, LIST_PIXEL_PROBE, 900);
+        } else {
+          await this.park();
+        }
+        continue;
+      }
+      // Closed: make sure the chevron even exists (the folder row renders
+      // it), then ONE opening click, verified by the next read.
       if (!(await this.ensureFolderRowOpen())) continue;
       await this.host.send({ op: "focus" });
       await this.harness.sleep(200);
-      await this.harness.click(
-        LIST_TOGGLE_FOLDER.x,
-        LIST_TOGGLE_FOLDER.y,
-        "open gear folder list",
-      );
-      await this.park();
-      await this.harness.sleep(900);
+      const preOpen = await this.captureRaw();
+      if (
+        await this.surfaceClick(
+          LIST_TOGGLE_FOLDER.x,
+          LIST_TOGGLE_FOLDER.y,
+          "tabList",
+          "open gear folder list",
+        )
+      ) {
+        pendingFrom = visibility;
+        await this.park();
+        await this.regionChangedSince(preOpen, LIST_PIXEL_PROBE, 900);
+      } else {
+        await this.park();
+      }
     }
     throw new Error("gear-folder-list-unreadable");
   }
 
   /**
-   * Close whatever list is open, with the toggle matching its CONTENT — the
-   * two toggles sit 66px apart and clicking the wrong one opens the other
-   * list instead of closing this one. Policy: the FOLDER list lives to the
-   * right of the stash panel and stays open between hops; this is only for
-   * recovery paths and for the top-level list, which does need closing.
+   * Close whatever list is open, verified. In the personal layout ONE
+   * physical dropdown exists and the folder chevron is its only toggle —
+   * whatever a scrolled read claims the window shows, closing means clicking
+   * that chevron (the old top-toggle click at (1287,212) aimed at a control
+   * that does not render here). Guild mode keeps its real top toggle. Each
+   * close is verified by a re-read; one retry, then give up loudly and let
+   * the caller's flow recover.
    */
   private async closeTabListIfOpen(): Promise<void> {
-    const rows = await this.kit.readTabList();
-    if (!this.harness.guard("dropdown-stayed-open", rows.length >= 4)) return;
-    const context = this.listContext(rows);
-    const toggle = context === "top-level" ? LIST_TOGGLE_TOP : LIST_TOGGLE_FOLDER;
-    if (context !== "top-level") this.folderListOpen = false;
-    await this.harness.click(toggle.x, toggle.y, `close ${context} tab list`);
-    await this.park();
-    await this.harness.sleep(600);
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const rows = await this.kit.readTabList();
+      if (!this.harness.guard("dropdown-stayed-open", rows.length >= 4)) return;
+      this.folderListOpen = false;
+      const toggle = this.guildChest ? LIST_TOGGLE_TOP : LIST_TOGGLE_FOLDER;
+      await this.surfaceClick(toggle.x, toggle.y, "tabList", "close tab list");
+      await this.park();
+      await this.harness.sleep(600);
+    }
+    if ((await this.kit.readTabList()).length >= 4) {
+      this.harness.guard("list-close-unverified", true);
+      this.log("  ! tab list did not close after two verified attempts — leaving it to recovery");
+    }
   }
 
   /** Folder-list rows from the last verified read. Rows never move while the
@@ -869,6 +1130,78 @@ export class GearSorter {
    * physical dropdown), and clicking a remembered row with no list open
    * would click into the game world. */
   private folderListOpen = false;
+
+  /** Reference frame of the dropdown region captured while the folder list
+   * was verifiably OPEN (rows read, context proven). The rows never move,
+   * so "the list is showing" can be re-proven by pixel similarity alone —
+   * only the selected row's highlight differs between visits (~5% of the
+   * region), while a closed list shows game world (a wholly different
+   * frame). This is what makes the trip cycle's reopen cheap: the full
+   * OCR-verified reopen measured 30-40s per trip. */
+  private folderListOpenRef: RawFrame | undefined;
+
+  /**
+   * Fast reopen of the folder list against the open-state reference: if the
+   * region already matches, the list is open (a strip hop merely lost the
+   * observation); otherwise ONE chevron click, then poll until the region
+   * matches the reference. Anything else falls back to the slow
+   * OCR-verified openFolderList. Match threshold 0.10: a moved row
+   * highlight differs ~5%, open-vs-world differs far more.
+   */
+  private async reopenFolderListFast(): Promise<boolean> {
+    if (!this.folderRowsCache || !this.folderListOpenRef) return false;
+    const ref = this.folderListOpenRef;
+    const fractionVs = async (): Promise<number> => {
+      const frame = await this.captureRaw();
+      return regionChangedFraction(ref.gray, frame.gray, frame.client, LIST_PIXEL_PROBE);
+    };
+    if ((await fractionVs()) < 0.1) {
+      this.folderListOpen = true;
+      return true;
+    }
+    if (
+      !(await this.surfaceClick(
+        LIST_TOGGLE_FOLDER.x,
+        LIST_TOGGLE_FOLDER.y,
+        "tabList",
+        "reopen gear folder list",
+      ))
+    ) {
+      return false;
+    }
+    await this.park();
+    const deadline = Date.now() + 1000;
+    let fraction = 1;
+    for (;;) {
+      fraction = await fractionVs();
+      if (fraction < 0.1) {
+        this.harness.guard("folder-list-fast-reopen", true);
+        this.folderListOpen = true;
+        return true;
+      }
+      if (Date.now() >= deadline) break;
+      await this.harness.sleep(150, false);
+    }
+    // The pixels do not match the stored open-state frame — but the list
+    // may simply LOOK different now (moved highlight, drifted appearance).
+    // One OCR read settles it far cheaper than the 36s slow path measured
+    // per trip (2026-09-01); a genuine non-open falls through to that path.
+    const rows = await this.kit.readTabList();
+    const visibility = classifyListRead(rows.length, this.listContext(rows));
+    this.log(
+      `  · fast reopen: ref-match ${(fraction * 100).toFixed(1)}% off, read says ${visibility} (${rows.length} rows)`,
+    );
+    if (visibility === "folder") {
+      this.harness.guard("folder-list-reopen-by-read", true);
+      this.folderListOpen = true;
+      this.folderListOpenRef = await this.captureRaw(); // adopt the new look
+      this.folderRowsCache = rows.filter(
+        (row) => !(row.readable && this.isTopLevelRowLabel(row.label)),
+      );
+      return true;
+    }
+    return false; // slow path re-proves state
+  }
 
   /**
    * Resolve a folder-list row for `label`#`occurrence` from `rows`, with the
@@ -967,6 +1300,7 @@ export class GearSorter {
     topLevel = false,
     rowY?: number,
     drain = false,
+    shop = false,
   ): Promise<boolean> {
     // Symmetric refusals: a drain goto may ONLY select a drainable
     // Remove-only row; every other goto keeps refusing them exactly as
@@ -977,12 +1311,19 @@ export class GearSorter {
       this.log(`  ! drain navigation requires a top-level Remove-only label — refusing "${label}"`);
       return false;
     }
+    // A shop goto mirrors the drain shape: it may select the ONE designated
+    // (usually priced) top-level tab on the personal chest, nothing else.
+    if (shop && (!topLevel || drain || this.guildChest)) {
+      this.harness.guard("shop-goto-refused", true);
+      this.log(`  ! shop navigation is top-level personal-chest only — refusing "${label}"`);
+      return false;
+    }
     if (!drain && isRemoveOnlyTabLabel(label)) {
       this.harness.guard("remove-only-refused", true);
       this.log(`  ! refusing to select Remove-only tab "${label}"`);
       return false;
     }
-    if (topLevel) return this.gotoTopTab(label, rowY, drain, occurrence);
+    if (topLevel) return this.gotoTopTab(label, rowY, drain, occurrence, shop);
     const cacheKey = `${label}#${occurrence}`;
     const endPhase = this.harness.startPhase(`goto:${cacheKey}`);
     try {
@@ -993,32 +1334,64 @@ export class GearSorter {
         endPhase("already-active");
         return true;
       }
-      const cachedRow = this.folderListOpen && this.folderRowsCache
+      let cachedRow = this.folderRowsCache
         ? this.matchFolderRow(this.folderRowsCache, label, occurrence)
         : undefined;
-      if (cachedRow && !isRemoveOnlyTabLabel(cachedRow.label) && (await this.stashGridVisible())) {
-        await this.harness.click(LIST_ROW_CLICK_X, cachedRow.clickY, `select tab ${label} (cached row)`);
-        const wasSelected = this.lastSelected;
-        this.lastSelected = cacheKey;
-        await this.park();
-        const observed = await this.settleAfterTabClick(true);
-        // The fast path accepts only POSITIVE proof: the grid repainted and
-        // is still a grid. Anything less (no repaint seen, grid gone) means
-        // the click may have missed a closed list — re-prove the slow way
-        // before anything deposits into a wrong tab.
-        if (observed === "changed" && (await this.stashGridVisible())) {
-          if (cachedRow.readable) this.rowYCache.set(cacheKey, cachedRow.clickY);
-          endPhase("cached-row");
-          return true;
-        }
-        this.harness.guard("goto-fast-path-miss", true);
-        this.folderRowsCache = undefined;
-        this.folderListOpen = false;
-        this.lastSelected = wasSelected;
+      // The list may be CLOSED (every Dump return loses the observation) —
+      // the pixel-reference reopen restores it without the 30-40s OCR
+      // chain. Failure just clears the fast path; the slow path re-proves.
+      // A successful reopen may refresh the row cache, so re-match after.
+      if (cachedRow && !this.folderListOpen) {
+        cachedRow =
+          (await this.reopenFolderListFast()) && this.folderRowsCache
+            ? this.matchFolderRow(this.folderRowsCache, label, occurrence)
+            : undefined;
       }
+      // One capture serves both the stash proof and the switch baseline. A
+      // dense quad defeats the lattice check (which is why the fast path
+      // never fired from Dump) — a fresh positive proof stands in for it.
+      const fastBefore =
+        cachedRow && !isRemoveOnlyTabLabel(cachedRow.label) ? await this.captureRaw() : undefined;
+      if (
+        cachedRow &&
+        fastBefore &&
+        (this.stashRecentlyProven() || (await this.stashGridVisible(fastBefore)))
+      ) {
+        if (
+          !(await this.surfaceClick(
+            LIST_ROW_CLICK_X,
+            cachedRow.clickY,
+            "tabList",
+            `select tab ${label} (cached row)`,
+          ))
+        ) {
+          // The cached Y drifted off the list surface — the cache is poison.
+          this.folderRowsCache = undefined;
+          this.folderListOpen = false;
+        } else {
+          const wasSelected = this.lastSelected;
+          this.lastSelected = cacheKey;
+          await this.park();
+          const observed = await this.observeTabSwitch(fastBefore, true);
+          // The fast path accepts only POSITIVE proof: the grid repainted and
+          // is still a grid. Anything less (no repaint seen, grid gone) means
+          // the click may have missed a closed list — re-prove the slow way
+          // before anything deposits into a wrong tab.
+          if (observed === "changed" && (await this.stashGridVisible())) {
+            if (cachedRow.readable) this.rowYCache.set(cacheKey, cachedRow.clickY);
+            endPhase("cached-row");
+            return true;
+          }
+          this.harness.guard("goto-fast-path-miss", true);
+          this.folderRowsCache = undefined;
+          this.folderListOpen = false;
+          this.lastSelected = wasSelected;
+        }
+      }
+      let switchMisses = 0;
       for (let attempt = 0; attempt < 3; attempt += 1) {
         await this.harness.checkpoint(`goto ${label}`);
-        if (!(await this.stashTitleVisible())) {
+        if (!this.stashRecentlyProven() && !(await this.stashTitleVisible())) {
           if (!(await this.ensureStash())) throw new Error("stash-lost-and-unrecoverable");
         }
         let rows: TabListRow[];
@@ -1054,14 +1427,47 @@ export class GearSorter {
           endPhase("refused");
           return false;
         }
-        await this.harness.click(LIST_ROW_CLICK_X, row.clickY, `select tab ${label}`);
-        const expectChange = this.lastSelected !== cacheKey;
+        const before = await this.captureRaw(); // switch baseline, pre-click
+        if (
+          !(await this.surfaceClick(LIST_ROW_CLICK_X, row.clickY, "tabList", `select tab ${label}`))
+        ) {
+          this.folderRowsCache = undefined;
+          continue; // the row Y is off the list surface — re-read, never send
+        }
+        const wasSelected = this.lastSelected;
+        const expectChange = wasSelected !== cacheKey;
         this.lastSelected = cacheKey;
         await this.park();
         // The folder list sits to the RIGHT of the stash panel and obstructs
         // nothing — leave it open between hops (the user asked for exactly
         // this: only a top-level list ever needs closing).
-        await this.settleAfterTabClick(expectChange);
+        const observed = await this.observeTabSwitch(before, expectChange);
+        if (expectChange && observed === "unchanged") {
+          // The probe covers the strip AND the grid top: a real switch moves
+          // the header highlight even when two near-empty grids are pixel-
+          // identical, so "unchanged" now means the click did nothing
+          // observable. The one legitimate case is an unknown active tab
+          // (session start / post-recovery) that already WAS the wanted tab.
+          if (wasSelected === undefined && switchMisses === 0) {
+            this.harness.guard("tab-select-blind-accept", true);
+          } else {
+            // We KNEW a different tab was active — diagnose, never believe:
+            // re-read next attempt, and after two misses run the full-screen
+            // stash diagnosis (pause menu, toast over the title, panel
+            // closed all have known signatures there).
+            switchMisses += 1;
+            this.harness.guard("tab-select-unobserved", true);
+            this.lastSelected = undefined; // honest: the active tab is unknown now
+            this.folderRowsCache = undefined;
+            this.folderListOpen = false;
+            this.lastStashProofAt = 0; // an unobserved click ends the trust
+
+            if (switchMisses >= 2 && !(await this.ensureStash())) {
+              throw new Error("stash-lost-and-unrecoverable");
+            }
+            continue;
+          }
+        }
         endPhase();
         return true;
       }
@@ -1086,7 +1492,7 @@ export class GearSorter {
       w: 700,
       h: TAB_LIST.region.height,
     };
-    await this.harness.click(LIST_TOGGLE_TOP.x, LIST_TOGGLE_TOP.y, "close top-level tab list");
+    await this.surfaceClick(LIST_TOGGLE_TOP.x, LIST_TOGGLE_TOP.y, "tabList", "close top-level tab list");
     await this.park();
     // Wait for the close animation to finish (stability), then prove the
     // grid is showing. The toggle click happened before the pixwait baseline,
@@ -1101,7 +1507,26 @@ export class GearSorter {
    * the one-time unmask hop this tells "unreadable because ACTIVE" apart
    * from "does not exist". */
   private readonly knownTopLabels = new Set<string>();
+
+  /** Verified strip-header click points per top-level label. The strip
+   * never moves in the no-overflow layout, so a return hop clicks the
+   * remembered point directly instead of re-running the 2.5s settledOcr
+   * strip read every trip (Dump returns measured 11.5s each; the cached
+   * click verifies exactly like any select — pre-click baseline + observed
+   * repaint — and any doubt falls back to the full strip path). */
+  private readonly topHeaderPoints = new Map<string, { x: number; y: number }>();
   private topStripDisambiguated = false;
+
+  /**
+   * The top-list toggle only RENDERS in overflow layouts. T tabs on the
+   * strip are the live evidence of one; without it (the current no-overflow
+   * layout: Dump, Gear, AFFINITIES, Extra) the toggle's coordinate is a dead
+   * click — worse, it sits inside the top strip band and could select a tab.
+   * The guild chest is always overflowed.
+   */
+  private get topListEvidence(): boolean {
+    return this.guildChest || [...this.knownTopLabels].some((label) => isTTabLabel(label));
+  }
 
   private canonTopLabel(label: string): string {
     return canonicalTTabLabel(label) ?? normalizeTabLabel(label);
@@ -1117,9 +1542,15 @@ export class GearSorter {
   /** Top-strip entries that are safe to CLICK (real tabs, not folders or
    * protected tabs). A drain goto inverts the Remove-only rule: it may ONLY
    * click Remove-only entries (priced protection still outranks it). */
-  private clickableTopEntry(entry: StripEntry, drain = false): boolean {
+  private clickableTopEntry(entry: StripEntry, drain = false, shop = false): boolean {
     const trimmed = entry.label.trim();
     if (drain) return isDrainableRemoveOnlyLabel(trimmed);
+    if (shop) {
+      // The designated shop tab is usually priced — the exact-match gate in
+      // the caller already proved identity, so only the never-touch rules
+      // remain (a garbled label reading Remove-only still refuses).
+      return trimmed.length >= 2 && !isRemoveOnlyTabLabel(trimmed);
+    }
     return (
       trimmed.length >= 2 &&
       !/^(gear|affinities)$/i.test(trimmed) &&
@@ -1144,17 +1575,28 @@ export class GearSorter {
     label: string,
     cacheKey: string,
     drain = false,
+    shop = false,
   ): Promise<boolean | undefined> {
-    const findEntry = (entries: readonly StripEntry[]): StripEntry | undefined =>
-      pickExact(entries, label) ?? pickUnique(entries, label) ?? findLabelSegment(entries, label);
+    const findEntry = (entries: readonly StripEntry[]): StripEntry | undefined => {
+      if (shop) {
+        // Shop navigation matches with labelsEqualFolded ONLY: a clipped or
+        // garbled label ("rice 5 exalted") must refuse, never resolve — the
+        // wrong priced tab is exactly the tab this flow must never touch.
+        const hits = entries.filter((candidate) => labelsEqualFolded(candidate.label, label));
+        return hits.length === 1 ? hits[0] : undefined;
+      }
+      return (
+        pickExact(entries, label) ?? pickUnique(entries, label) ?? findLabelSegment(entries, label)
+      );
+    };
     let strip = await this.kit.readStrip();
     this.noteTopStrip(strip.top);
     let entry = findEntry(strip.top);
-    if (entry && !this.clickableTopEntry(entry, drain)) return false; // protected — refuse
-    if (!entry && drain) {
-      // Remove-only labels are long and always OCR; the guesswork fallbacks
-      // below (bright-header elimination, the unmask hop) could select a
-      // DIFFERENT tab, and a drain must never run against a guessed tab.
+    if (entry && !this.clickableTopEntry(entry, drain, shop)) return false; // protected — refuse
+    if (!entry && (drain || shop)) {
+      // Remove-only and shop labels must resolve exactly; the guesswork
+      // fallbacks below (bright-header elimination, the unmask hop) could
+      // select a DIFFERENT tab, and neither flow may run against a guess.
       // Report nothing-proven and let the caller retry or skip the source.
       return undefined;
     }
@@ -1192,15 +1634,24 @@ export class GearSorter {
         );
         await this.host.send({ op: "focus" });
         await this.harness.sleep(200);
-        await this.harness.click(cx, cy, `select top tab ${label} (bright header)`);
+        if (!(await this.surfaceClick(cx, cy, "stripTop", `select top tab ${label} (bright header)`))) {
+          return undefined;
+        }
         this.lastSelected = cacheKey;
+        // A top-level selection changes what the ONE physical dropdown lists
+        // (the active tab's container) — cached folder rows must not be
+        // clicked again until a fresh read proves the folder context.
+        this.folderListOpen = false;
         await this.park();
         // No repaint is legitimate here — the header may already have been
         // the active tab. The verdict is simply "is the stash still open":
         // the dense-quad case defeats the lattice check, so the panel title
         // is the fallback proof.
         await this.settleAfterTabClick(true);
-        if (await this.stashOpenProof()) return true;
+        if (await this.stashOpenProof()) {
+          this.topHeaderPoints.set(label, { x: cx, y: cy });
+          return true;
+        }
         return undefined;
       }
       if (!this.topStripDisambiguated && !this.guildChest) {
@@ -1222,12 +1673,42 @@ export class GearSorter {
     if (!entry) return undefined;
     await this.host.send({ op: "focus" });
     await this.harness.sleep(200);
-    await this.harness.click(entry.point.x, entry.point.y, `select top tab ${label} (strip)`);
+    const wasSelected = this.lastSelected;
+    const before = await this.captureRaw(); // switch baseline, pre-click
+    if (
+      !(await this.surfaceClick(
+        entry.point.x,
+        entry.point.y,
+        "stripTop",
+        `select top tab ${label} (strip)`,
+      ))
+    ) {
+      return undefined;
+    }
     this.lastSelected = cacheKey;
+    // See the bright-header path: a top-level selection invalidates the
+    // cached folder-list context (one physical dropdown).
+    this.folderListOpen = false;
     await this.park();
-    const observed = await this.settleAfterTabClick(true);
-    if (observed !== "unchanged" && (await this.stashOpenProof())) return true;
+    const observed = await this.observeTabSwitch(before, true);
+    if (observed !== "unchanged" && (await this.stashOpenProof())) {
+      this.topHeaderPoints.set(label, { x: entry.point.x, y: entry.point.y });
+      return true;
+    }
+    if (observed === "unchanged" && wasSelected === undefined && (await this.stashOpenProof())) {
+      // No repaint and no highlight move with the active tab UNKNOWN
+      // (session start / post-recovery): the wanted tab was very likely
+      // already active, and clicking its own header repaints nothing.
+      // Accept once, visibly — demanding a change here called an already-
+      // active Dump "unreachable" after 35s of futile clicks (dry-run,
+      // 2026-09-01).
+      this.harness.guard("top-strip-blind-accept", true);
+      return true;
+    }
     this.harness.guard("top-strip-click-unverified", true);
+    // The click proved nothing — claiming the tab is selected would let a
+    // later "already-active" check trust a switch that never happened.
+    this.lastSelected = wasSelected === cacheKey ? undefined : wasSelected;
     return undefined;
   }
 
@@ -1243,6 +1724,7 @@ export class GearSorter {
     rowY?: number,
     drain = false,
     occurrence = 0,
+    shop = false,
   ): Promise<boolean> {
     // The guild stash repeats labels (three "2 (Remove-only)" tabs live);
     // occurrence keys the cache and picks the nth matching list row, the
@@ -1259,16 +1741,49 @@ export class GearSorter {
       // only a couple of headers in the overflowed guild layout, and the
       // strip path's guess fallbacks must never pick a deposit target.
       if (!this.guildChest && !label.startsWith("T@row") && rowY === undefined) {
+        // Cached header point first — the strip never moves, and the full
+        // path's settledOcr read cost every Dump return ~11.5s live.
+        const cachedPoint = this.topHeaderPoints.get(label);
+        if (cachedPoint && !drain) {
+          await this.host.send({ op: "focus" });
+          await this.harness.sleep(200);
+          const wasSelected = this.lastSelected;
+          const before = await this.captureRaw();
+          if (
+            await this.surfaceClick(
+              cachedPoint.x,
+              cachedPoint.y,
+              "stripTop",
+              `select top tab ${label} (cached header)`,
+            )
+          ) {
+            this.lastSelected = cacheKey;
+            this.folderListOpen = false; // one physical dropdown (see viaStrip)
+            await this.park();
+            const observed = await this.observeTabSwitch(before, true);
+            if (
+              observed === "changed" &&
+              (this.stashRecentlyProven() || (await this.stashOpenProof()))
+            ) {
+              endPhase("cached-header");
+              return true;
+            }
+          }
+          // Doubt: forget the point and re-derive it the slow, verified way.
+          this.harness.guard("top-header-cache-miss", true);
+          this.topHeaderPoints.delete(label);
+          this.lastSelected = wasSelected === cacheKey ? undefined : wasSelected;
+        }
         for (let attempt = 0; attempt < 3; attempt += 1) {
           await this.harness.checkpoint(`goto top ${label}`);
-          const viaStrip = await this.gotoTopTabViaStrip(label, cacheKey, drain);
+          const viaStrip = await this.gotoTopTabViaStrip(label, cacheKey, drain, shop);
           if (viaStrip !== undefined) {
             endPhase(viaStrip ? "strip" : "refused");
             return viaStrip;
           }
           // Nothing proven this attempt — make sure the stash is even open
           // before reading the strip again.
-          if (!(await this.stashTitleVisible())) {
+          if (!this.stashRecentlyProven() && !(await this.stashTitleVisible())) {
             if (!(await this.ensureStash())) throw new Error("stash-lost-and-unrecoverable");
           }
         }
@@ -1348,7 +1863,16 @@ export class GearSorter {
           continue;
         }
         if (row.readable) this.rowYCache.set(cacheKey, row.clickY);
-        await this.harness.click(LIST_ROW_CLICK_X, row.clickY, `select top tab ${label}`);
+        if (
+          !(await this.surfaceClick(
+            LIST_ROW_CLICK_X,
+            row.clickY,
+            "tabList",
+            `select top tab ${label}`,
+          ))
+        ) {
+          continue; // the row Y is off the list surface — re-read, never send
+        }
         this.lastSelected = cacheKey;
         await this.park();
         await this.harness.sleep(300);
@@ -1505,41 +2029,99 @@ export class GearSorter {
 
   /**
    * Get the TOP-LEVEL list open and read its rows — the folder list's mirror
-   * image, used to reach the T* tabs.
+   * image. QUARANTINED to layouts that can satisfy it (dump-sort handoff
+   * item 2): guild chest, or a personal strip that has shown T tabs. In the
+   * strip-only layout the toggle does not render and every attempt would be
+   * a dead click — the caller's strip path covers everything there. Same
+   * verified one-click toggle discipline as openFolderList.
    */
   private async openTopList(attempts = 8): Promise<TabListRow[]> {
+    if (!this.topListEvidence) {
+      this.harness.guard("top-list-toggle-absent", true);
+      throw new Error("top-list-toggle-not-rendered");
+    }
     if (!(await this.stashTitleVisible())) throw new Error("stash-panel-closed");
     // There is ONE physical dropdown: getting the top list open means the
     // folder list is (or is about to be) closed — the folder fast path must
     // not click remembered rows after this.
     this.folderListOpen = false;
     await this.park(); // no tooltip over the list region (see openFolderList)
+    let pendingFrom: ListVisibility | undefined;
+    let unverifiedToggles = 0;
+    let unreadableReads = 0;
     for (let attempt = 0; attempt < attempts; attempt += 1) {
       const rows = await this.kit.readTabList();
-      if (rows.length >= 4) {
-        const context = this.listContext(rows);
-        if (context === "top-level") return rows;
-        if (context === "folder") {
-          await this.harness.click(
+      let visibility = classifyListRead(rows.length, this.listContext(rows));
+      if (visibility === "unreadable") {
+        unreadableReads += 1;
+        if (unreadableReads < 2) {
+          await this.harness.sleep(400, false);
+          continue;
+        }
+        visibility = "closed";
+      }
+      unreadableReads = 0;
+      if (pendingFrom !== undefined && visibility === pendingFrom) {
+        this.harness.guard("list-toggle-unverified", true);
+        unverifiedToggles += 1;
+        if (unverifiedToggles >= 2) {
+          if (!(await this.ensureStash())) throw new Error("stash-lost-and-unrecoverable");
+          unverifiedToggles = 0;
+          pendingFrom = undefined;
+          continue;
+        }
+      } else {
+        unverifiedToggles = 0;
+      }
+      pendingFrom = undefined;
+      if (decideListToggle(visibility, "top-level") === "none") return rows;
+      if (visibility === "folder") {
+        if (
+          await this.surfaceClick(
             LIST_TOGGLE_FOLDER.x,
             LIST_TOGGLE_FOLDER.y,
+            "tabList",
             "close gear folder list",
-          );
-          await this.park();
-          await this.harness.sleep(700);
-        } else {
-          // Stable scrolled state showing only special tabs — close so the
-          // reopen below resets the scroll (see openFolderList).
-          this.harness.guard("tab-list-ambiguous", true);
-          this.log(`  · list read ambiguous: [${this.describeRows(rows)}] — closing to reset scroll`);
-          await this.harness.click(LIST_TOGGLE_TOP.x, LIST_TOGGLE_TOP.y, "close scrolled tab list");
-          await this.park();
-          await this.harness.sleep(700);
+          )
+        ) {
+          pendingFrom = visibility;
         }
+        await this.park();
+        await this.harness.sleep(700);
+        continue;
       }
+      if (visibility === "ambiguous-open") {
+        // Stable scrolled state showing only special tabs — close so the
+        // reopen below resets the scroll (see openFolderList).
+        this.harness.guard("tab-list-ambiguous", true);
+        this.log(`  · list read ambiguous: [${this.describeRows(rows)}] — closing to reset scroll`);
+        if (
+          await this.surfaceClick(
+            LIST_TOGGLE_TOP.x,
+            LIST_TOGGLE_TOP.y,
+            "tabList",
+            "close scrolled tab list",
+          )
+        ) {
+          pendingFrom = visibility;
+        }
+        await this.park();
+        await this.harness.sleep(700);
+        continue;
+      }
+      // Closed: one opening click, verified by the next read.
       await this.host.send({ op: "focus" });
       await this.harness.sleep(200);
-      await this.harness.click(LIST_TOGGLE_TOP.x, LIST_TOGGLE_TOP.y, "open top-level tab list");
+      if (
+        await this.surfaceClick(
+          LIST_TOGGLE_TOP.x,
+          LIST_TOGGLE_TOP.y,
+          "tabList",
+          "open top-level tab list",
+        )
+      ) {
+        pendingFrom = visibility;
+      }
       await this.park();
       await this.harness.sleep(900);
     }
@@ -1553,30 +2135,6 @@ export class GearSorter {
       if (!this.harness.guard("grid-not-settled", !stashRegionSane(frame.facts.stashRegion))) return;
       await this.harness.sleep(500, false);
     }
-  }
-
-  /* ---------------- search ---------------- */
-
-  /**
-   * Clear the Highlight box (click, select-all, backspace). The sorter never
-   * TYPES queries any more — ground-truth Ctrl+C identification replaced the
-   * whole search/highlight flow — so the old focus-probe machinery (typing
-   * `---`, pixel-differencing the box) went with it. A clear that misses the
-   * box sends one harmless backspace to the game.
-   */
-  private async clearSearch(): Promise<boolean> {
-    if (!/stash/i.test(await this.ocrBand(STASH_BAND))) return false;
-    await this.host.send({ op: "focus" });
-    await this.harness.sleep(150);
-    await this.harness.click(SEARCH_BOX.x, SEARCH_BOX.y, "clear search box");
-    await this.harness.sleep(250);
-    await this.host.send({ op: "hotkey", keys: "ctrla" });
-    await this.harness.sleep(120);
-    await this.host.send({ op: "hotkey", keys: "backspace" });
-    await this.harness.sleep(120);
-    await this.park();
-    await this.harness.sleep(250);
-    return true;
   }
 
   /* ---------------- deposit ---------------- */
@@ -1641,13 +2199,13 @@ export class GearSorter {
    * Hover a bag cell and Ctrl+C its item text, sentinel-verified, restoring
    * the user's clipboard afterwards. Stop/pause land inside harness.sleep.
    */
-  private async copyItemAt(x: number, y: number): Promise<string> {
+  private async copyItemAt(x: number, y: number, hoverMs?: number): Promise<string> {
     const original = await this.host.send({ op: "clipboard" });
     const originalText = String(original.text ?? "");
     const sentinel = `poe2-triage-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
     try {
       await this.host.send({ op: "move", x, y });
-      await this.harness.sleep(STASH_SCAN.inventory.hoverMs, false);
+      await this.harness.sleep(hoverMs ?? STASH_SCAN.inventory.hoverMs, false);
       for (let attempt = 0; attempt < 2; attempt += 1) {
         const cleared = await this.host.send({ op: "setclipboard", text: sentinel });
         if (!cleared.ok) return "";
@@ -1701,9 +2259,13 @@ export class GearSorter {
       looksEmpty?: (cell: GridCell) => boolean;
       probePoint?: (cell: GridCell) => Cell | undefined;
       sameSpriteAsLeft?: (cell: GridCell) => boolean;
+      /** Called the MOMENT a cell finishes the whole probe battery silent —
+       * so the learning survives a Numpad 0 mid-sweep (two stopped runs
+       * lost it and re-ground the same glare cells, 2026-09-01). */
+      onSilent?: (cell: GridCell) => void;
     } = {},
   ): Promise<{ items: IdentifiedItem[]; unread: GridCell[]; reads: Array<{ cell: GridCell; text: string }> }> {
-    const { phantomScope, looksEmpty, probePoint, sameSpriteAsLeft } = options;
+    const { phantomScope, looksEmpty, probePoint, sameSpriteAsLeft, onSilent } = options;
     const reads: Array<{ cell: GridCell; text: string }> = [];
     const unread: GridCell[] = [];
     const gotText = (cell: GridCell, text: string): boolean => {
@@ -1732,8 +2294,11 @@ export class GearSorter {
       const reply = await this.host.send({
         op: "copysweep",
         points: target.map((cell) => ({ x: cell.x, y: cell.y })),
-        // 100ms turbo hover: retested after grid calibration centred the
-        // hovers (90ms pre-calibration read 22/93 — watch the read-rate).
+        // 100ms turbo hover (99.8% read-rate pedigree, 419/420 live). A
+        // 90ms retest on 2026-09-01 was inconclusive: the 23 unread cells
+        // it hit were unreadable at 100ms too (a persistent silent cluster
+        // in Dump, not a speed effect). Keeping 100ms as the proven
+        // setting; a future 90ms retest needs a FULL tab, not the residue.
         hoverMs: this.options.turbo ? 100 : 130,
         sentinel,
       });
@@ -1836,16 +2401,32 @@ export class GearSorter {
           // retry rounds ("stuck on the Dump tab").
           continue;
         }
-        found = gotText(cell, await this.copyItemAt(informed.x, informed.y));
+        // 140ms probe hover: the default inventory hover is 35ms, which is
+        // too short for a reluctant tooltip — top-of-Dump jewels stayed
+        // silent through the whole sweep (2026-09-01, user found them).
+        found = gotText(cell, await this.copyItemAt(informed.x, informed.y, 140));
+        if (!found) {
+          // Blind-cross fallback: small art (jewels!) can sit where even
+          // the brightest-block probe misses the hover hitbox. Only cells
+          // with something bright to aim at pay these four hovers, so the
+          // probeless-empty short-circuit above still protects glare.
+          for (const [dx, dy] of [[14, 0], [-14, 0], [0, 14], [0, -14]] as const) {
+            if (gotText(cell, await this.copyItemAt(cell.x + dx, cell.y + dy, 140))) {
+              found = true;
+              break;
+            }
+          }
+        }
       } else {
         for (const [dx, dy] of [[14, 0], [-14, 0], [0, 14], [0, -14]] as const) {
-          if (gotText(cell, await this.copyItemAt(cell.x + dx, cell.y + dy))) {
+          if (gotText(cell, await this.copyItemAt(cell.x + dx, cell.y + dy, 140))) {
             found = true;
             break;
           }
         }
       }
       if (found) continue;
+      onSilent?.(cell);
       const key = phantomScope ? this.phantomKey(phantomScope, cell) : `bag:${cell.row},${cell.col}`;
       const misses = (this.emptyCopyCounts.get(key) ?? 0) + 1;
       this.emptyCopyCounts.set(key, misses);
@@ -1951,10 +2532,16 @@ export class GearSorter {
     return 0;
   }
 
-  private async depositCells(points: readonly GridCell[], destLabel: string): Promise<number> {
+  private async depositCells(
+    points: readonly GridCell[],
+    destLabel: string,
+    options: { shiftOnly?: boolean } = {},
+  ): Promise<number> {
     if (this.guildChest) return this.guildDepositSerial(points, destLabel);
     let targets = [...points];
-    for (let pass = 0; pass < 2 && targets.length > 0; pass += 1) {
+    // shiftOnly (the shop flow): shift+ctrl targets the OPEN tab outright,
+    // so a stash affinity can never divert an item away from the shop tab.
+    for (let pass = options.shiftOnly ? 1 : 0; pass < 2 && targets.length > 0; pass += 1) {
       const sent = await this.harness.burst(targets, {
         cellW: 70,
         cellH: 70,
@@ -1963,22 +2550,18 @@ export class GearSorter {
       });
       if (sent === 0) return targets.length; // rejected or dry-run
       // A bounced deposit (full tab) leaves the cells briefly EMPTY while
-      // the items fly back to the bag — a too-early read called a full tab
-      // a clean deposit and re-filed the same rings for whole rounds
-      // (watched live 2026-08-30). Wait out the animation UNPACED, then
-      // require TWO agreeing reads before believing a cell emptied.
-      await this.harness.sleep(700, false);
-      const first = new Set((await this.currentBagCells()).map((cell) => `${cell.row},${cell.col}`));
-      // Some bounces (Jewels) outlast even a ~1s window — the second read
-      // waits substantially longer so a slow flyback cannot fake a landing.
-      await this.harness.sleep(650, false);
-      const second = new Set((await this.currentBagCells()).map((cell) => `${cell.row},${cell.col}`));
-      const stillThere = (cell: GridCell) =>
-        first.has(`${cell.row},${cell.col}`) || second.has(`${cell.row},${cell.col}`);
-      if (this.harness.guard("deposit-bounce-detected", targets.some((cell) => !first.has(`${cell.row},${cell.col}`) && second.has(`${cell.row},${cell.col}`)))) {
-        this.log(`  · deposit read raced the bounce animation in ${destLabel} — trusting the later read`);
-      }
-      targets = targets.filter(stillThere);
+      // the items fly back to the bag (0.7-1.3s) — a read inside that
+      // window called a full tab a clean deposit and re-filed the same
+      // rings for whole rounds (watched live 2026-08-30). ONE read past
+      // the window has the same detection power as the old 700ms+650ms
+      // pair: their union rule meant the early read could only add an item
+      // present at 700ms and gone at 1350ms, which no real bounce produces
+      // (watcher-bot analysis #9, 2026-09-01).
+      await this.harness.sleep(1450, false);
+      const settled = new Set(
+        (await this.currentBagCells()).map((cell) => `${cell.row},${cell.col}`),
+      );
+      targets = targets.filter((cell) => settled.has(`${cell.row},${cell.col}`));
       if (targets.length > 0 && pass === 1) this.markStuck(targets, destLabel);
     }
     return targets.length;
@@ -2038,7 +2621,7 @@ export class GearSorter {
    * unexpectedly remain stay modelled, cells that appear get identified.
    */
   private async distributeBag(
-    context: { returnTo?: SourceTab; deadDests?: Set<string> } = {},
+    context: { returnTo?: SourceTab; deadDests?: Set<string>; navFailed?: Set<string> } = {},
   ): Promise<number> {
     const endPhase = this.harness.startPhase("distribute-bag");
     let filed = 0;
@@ -2178,13 +2761,23 @@ export class GearSorter {
             this.log(`  ! triage tab "${dest}" unreachable — routing those items normally instead`);
             continue;
           }
-          // Destination unreachable (the layout may simply not have this
-          // tab any more — no Weapons quad since the 2026-08-30 rework):
-          // remember it as dead for this visit so its items stop being
-          // withdrawn, and bail this group.
-          this.harness.guard("dest-unreachable-marked-dead", true);
-          context.deadDests?.add(dest);
-          this.log(`  ! "${dest}" unreachable — its items return to the source and stop being withdrawn`);
+          // Destination unreachable. Distinguish a NAVIGATION failure from
+          // a genuinely missing tab (the layout has no Weapons quad since
+          // the 2026-08-30 rework): a known gear tab that cannot be reached
+          // right now gets ONE retry on a later trip before it is declared
+          // dead — one flaky goto once dead-marked Helmets right after it
+          // had accepted 12 deposits and stranded 7 items for the visit
+          // (live 2026-09-01). Either way this group bails now.
+          const knownTab = GEAR_TAB_NAMES.some((name) => labelsEqualFolded(name, dest));
+          if (knownTab && context.navFailed && !context.navFailed.has(dest)) {
+            context.navFailed.add(dest);
+            this.harness.guard("dest-nav-failed-retry-later", true);
+            this.log(`  ! "${dest}" navigation failed — items return to the source for one retry later`);
+          } else {
+            this.harness.guard("dest-unreachable-marked-dead", true);
+            context.deadDests?.add(dest);
+            this.log(`  ! "${dest}" unreachable — its items return to the source and stop being withdrawn`);
+          }
           const left = await bail(grabPoints);
           filed += group.length - Math.min(group.length, left);
           continue;
@@ -2288,7 +2881,16 @@ export class GearSorter {
       );
       if (!candidate) break;
       tried.add(candidate.label);
-      await this.harness.click(LIST_ROW_CLICK_X, candidate.clickY, `select junk tab ${candidate.label}`);
+      if (
+        !(await this.surfaceClick(
+          LIST_ROW_CLICK_X,
+          candidate.clickY,
+          "tabList",
+          `select junk tab ${candidate.label}`,
+        ))
+      ) {
+        continue;
+      }
       this.lastSelected = `top:${candidate.label}#0`;
       await this.park();
       await this.harness.sleep(300);
@@ -2296,6 +2898,36 @@ export class GearSorter {
       await fileInto(candidate.label);
     }
     return targets.length;
+  }
+
+  /** Persistent phantom cells (see PhantomCellRecord). Keyed "tab:row,col". */
+  private phantomStore: Map<string, PhantomCellRecord> | undefined;
+
+  private get phantomStoreFile(): string {
+    return path.join(this.options.root, "artifacts", "tab-admin", "phantom-cells.json");
+  }
+
+  private loadPhantomStore(): Map<string, PhantomCellRecord> {
+    if (this.phantomStore) return this.phantomStore;
+    this.phantomStore = new Map();
+    try {
+      const parsed = JSON.parse(readFileSync(this.phantomStoreFile, "utf8")) as PhantomCellRecord[];
+      for (const record of parsed) {
+        this.phantomStore.set(`${record.tab}:${record.row},${record.col}`, record);
+      }
+    } catch {
+      // no store yet
+    }
+    return this.phantomStore;
+  }
+
+  private savePhantomStore(): void {
+    if (!this.phantomStore) return;
+    try {
+      writeFileSync(this.phantomStoreFile, JSON.stringify([...this.phantomStore.values()], null, 2));
+    } catch {
+      // the store is a convenience cache, never a failure
+    }
   }
 
   /** User-taught grid geometry per tab, persisted across sessions. */
@@ -2562,10 +3194,348 @@ export class GearSorter {
 
   /**
    * Empty a tab of everything that is not its own class — the user's core
-   * requirement, driven entirely by Ctrl+C ground truth: identify every
-   * occupied cell, withdraw the foreigners a bag-load at a time, and file
-   * each withdrawn item into its true tab (junk to T*).
+   * requirement, driven entirely by Ctrl+C ground truth: index every
+   * occupied cell ONCE, then withdraw the foreigners a destination-packed
+   * bag-load at a time and file each by its own text (junk to T*).
    */
+  /**
+   * PHASE 1 of a tab visit, shared by cleanTab and scanTab: index the tab
+   * ONCE — geometry (user-taught first, per-tab-kind calibrated defaults,
+   * lattice detection), the occupancy scan with the dim-cell rescue, and the
+   * Ctrl+C sweep with the persistent phantom store. The caller must already
+   * have navigated to the tab. Returns undefined when no geometry source
+   * exists (the stash-region-insane guard has fired by then).
+   */
+  private async indexTab(source: SourceTab, key: string): Promise<TabIndex | undefined> {
+    let raw: RawFrame = await this.captureRaw();
+    // The scan ALWAYS covers the full grid — trusting pixel occupancy to
+    // pick cells let foreigners hide in cells it under-read. Cheap pixel
+    // stats only SKIP cells that are unmistakably black; everything else
+    // gets hovered. Geometry priority: the USER-TAUGHT grid for this tab,
+    // else the user's calibrated default for the perceived grid size, else
+    // this frame if sane, else the best seen this session, else the
+    // calibration profile. The calibrated default outranks perception
+    // because the panel bounds are shared across tabs and a perceived
+    // region can pass the sanity check while sitting a full row high —
+    // the very failure that made manual calibration necessary.
+    this.loadGridCalibration();
+    const taught = this.gridCalibration[`${source.label}#${source.occurrence}`];
+    // Both layouts share the user-calibrated panel bounds; only the
+    // number of divisions differs, and the tab's own separator lines say
+    // which it is (a taught per-tab entry still outranks detection).
+    // TOP-LEVEL tabs render the grid ONE STRIP ROW HIGHER than folder
+    // tabs (no second tab row — user-diagnosed via the overlay,
+    // 2026-09-01): use the top-level calibration, or shift the folder one.
+    const folderBounds =
+      this.gridCalibration["__default_24x24"] ?? this.gridCalibration["__default_12x12"];
+    const bounds = source.topLevel
+      ? this.gridCalibration["__default_24x24_toplevel"] ??
+        (folderBounds
+          ? { ...folderBounds, y: folderBounds.y + TOP_LEVEL_GRID_DY }
+          : undefined)
+      : folderBounds;
+    if (taught) {
+      this.lastGoodStashGeometry = {
+        region: { x: taught.x, y: taught.y, w: taught.w, h: taught.h },
+        cols: taught.cols,
+        rows: taught.rows,
+      };
+    } else if (bounds && source.shop) {
+      // Merchant tabs are 12x12 by construction (measured 2026-09-02); a
+      // full tab's crowded sprites fooled the lattice detector into 24x24
+      // live on 2026-09-03, which would have halved every cell.
+      this.log(`  · ${key}: merchant tab — grid pinned to 12x12`);
+      this.lastGoodStashGeometry = {
+        region: { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h },
+        cols: 12,
+        rows: 12,
+      };
+    } else if (bounds) {
+      const { odd, even } = boundaryBrightness24(raw.gray, raw.client, bounds);
+      const { divisions, oddMedian, evenMedian } = detectGridDivisions(odd, even);
+      this.log(
+        `  · ${key}: grid ${divisions}x${divisions} by lattice lines (odd ${oddMedian.toFixed(0)} vs even ${evenMedian.toFixed(0)})`,
+      );
+      this.lastGoodStashGeometry = {
+        region: { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h },
+        cols: divisions,
+        rows: divisions,
+      };
+    } else {
+      // No calibration anywhere — only now is the full perception pass
+      // worth its cost (geometry fallback for uncalibrated setups).
+      const frame = await this.captureFrame();
+      raw = frame;
+      if (stashRegionSane(frame.facts.stashRegion) && frame.facts.stashGridSize) {
+        this.lastGoodStashGeometry = {
+          region: frame.facts.stashRegion!,
+          cols: frame.facts.stashGridSize.cols,
+          rows: frame.facts.stashGridSize.rows,
+        };
+      }
+    }
+    if (!this.lastGoodStashGeometry) {
+      const grid = this.profile.quadStashGrid ?? this.profile.stashGrid;
+      if (grid) {
+        this.lastGoodStashGeometry = {
+          region: {
+            x: raw.client.left + grid.x,
+            y: raw.client.top + grid.y,
+            w: grid.w,
+            h: grid.h,
+          },
+          cols: grid.cols ?? 24,
+          rows: grid.rows ?? 24,
+        };
+      }
+    }
+    if (!this.lastGoodStashGeometry) {
+      this.harness.guard("stash-region-insane", true);
+      return undefined;
+    }
+    let { region, cols, rows } = this.lastGoodStashGeometry;
+    if ((this.options.teach || this.options.teachGrid) && !taught) {
+      ({ region, cols, rows } = await this.teachGrid(source, { region, cols, rows }));
+      this.lastGoodStashGeometry = { region, cols, rows };
+    }
+    const scores = scoreGridCells(raw.gray, raw.client, region, cols, rows);
+    const byKey = new Map(scores.map((score) => [`${score.row},${score.col}`, score]));
+    const emptyKeys = emptyCellKeysByBaseline(scores);
+    const cellAt = (r: number, c: number): GridCell => ({
+      row: r,
+      col: c,
+      x: Math.round(region.x + ((c + 0.5) * region.w) / cols),
+      y: Math.round(region.y + ((r + 0.5) * region.h) / rows),
+    });
+    let occupied: GridCell[] = [];
+    let dimRescues = 0;
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        if (emptyKeys.has(`${r},${c}`)) {
+          // The baseline may only skip cells that are unmistakably black —
+          // but tiny dim art (amulets, charms, thin blades) sits UNDER its
+          // thresholds: ten small items survived three runs unseen (user
+          // screenshot, 2026-09-01). A cell with any block meaningfully
+          // brighter than its own floor is not unmistakable: sweep it.
+          // Glare cells rescued this way go silent once and land in the
+          // phantom store, so the cost is one-time.
+          if (!brightestCellPoint(raw.gray, raw.client, region, cols, rows, { row: r, col: c })) {
+            continue;
+          }
+          dimRescues += 1;
+        }
+        occupied.push(cellAt(r, c));
+      }
+    }
+    if (dimRescues > 0) {
+      this.harness.guard("dim-cell-rescued", true);
+      this.log(
+        `  · ${key}: ${dimRescues} baseline-empty cell(s) hold bright blocks — sweeping them too`,
+      );
+    }
+    occupied = clampToArea(
+      occupied,
+      source.topLevel ? STASH_AREA_TOP_LEVEL : STASH_AREA,
+    ).filter((cell) => !this.phantomStash.has(this.phantomKey(source, cell)));
+    // PERSISTED phantoms: cells that survived the full probe battery in a
+    // previous run are skipped outright while their pixel SIGNATURE still
+    // matches — a real item landing there changes the signature and gets
+    // probed normally. This is what stops the per-run "clicking around"
+    // grind on the same glare cells.
+    const phantomStore = this.loadPhantomStore();
+    const tabKey = `${source.label}#${source.occurrence}`;
+    let phantomsSkipped = 0;
+    occupied = occupied.filter((cell) => {
+      const stored = phantomStore.get(`${tabKey}:${cell.row},${cell.col}`);
+      if (!stored) return true;
+      const score = byKey.get(`${cell.row},${cell.col}`);
+      if (score && phantomSignatureMatches(stored, score)) {
+        phantomsSkipped += 1;
+        return false;
+      }
+      return true;
+    });
+    if (phantomsSkipped > 0) {
+      this.harness.guard("phantom-cells-skipped", true);
+      this.log(
+        `  · ${key}: skipping ${phantomsSkipped} known phantom cell(s) (signatures unchanged)`,
+      );
+    }
+    if (this.options.teach) {
+      occupied = await this.teachOccupancy(source, occupied, cellAt, region, cols, rows);
+    }
+    if (occupied.length === 0) {
+      return { occupiedCount: 0, modelItems: [], reads: [], unread: [], region, cols, rows };
+    }
+    const sweepOptions = {
+      phantomScope: source,
+      looksEmpty: (cell: GridCell) => {
+        const score = byKey.get(`${cell.row},${cell.col}`);
+        return !score || (score.itemFrac < 0.08 && score.variance < 120);
+      },
+      probePoint: (cell: GridCell) =>
+        brightestCellPoint(raw.gray, raw.client, region, cols, rows, cell),
+      sameSpriteAsLeft: (cell: GridCell) =>
+        cellEdgeContinuity(raw.gray, raw.client, region, cols, rows, cell.row, cell.col),
+      // Persist each phantom the MOMENT it proves silent — a Numpad 0
+      // mid-sweep must never throw the probing away (it did, twice).
+      onSilent: (cell: GridCell) => {
+        const score = byKey.get(`${cell.row},${cell.col}`);
+        if (!score) return;
+        phantomStore.set(`${tabKey}:${cell.row},${cell.col}`, {
+          tab: tabKey,
+          row: cell.row,
+          col: cell.col,
+          mean: score.mean,
+          variance: score.variance,
+          at: new Date().toISOString(),
+        });
+        this.savePhantomStore();
+      },
+    };
+    await this.step(`${key}: sweeping ${occupied.length}/${cols * rows} cells (black space skipped)`);
+    const swept = await this.identifyCells(occupied, sweepOptions);
+    const tabReads = new Map<string, { cell: GridCell; text: string }>();
+    for (const read of swept.reads) tabReads.set(`${read.cell.row},${read.cell.col}`, read);
+    // NO retry pass: the sweep already probes every silent cell deeply
+    // (center + informed 140ms probe + blind cross), and onSilent has
+    // already persisted each survivor's signature — no later run grinds
+    // them again while their pixels stay unchanged.
+    const unread = swept.unread;
+    if (unread.length > 0) {
+      this.log(
+        `! ${key}: ${unread.length} cell(s) never yielded item text — recorded as phantoms ` +
+          `(re-probed automatically if their pixels ever change); check them by hand once`,
+      );
+    }
+    const reads = [...tabReads.values()];
+    let modelItems = groupIdentifiedCells(reads);
+    if (this.options.teach && modelItems.length > 0) {
+      modelItems = await this.teachItems(source, modelItems, region, cols, rows);
+    }
+    return { occupiedCount: occupied.length, modelItems, reads, unread, region, cols, rows };
+  }
+
+  /* ---------------- shop seams (docs/HANDOFF-shop-listings.md) ---------------- */
+
+  /**
+   * Read-only tab visit for the shop flow: navigate (the shop flag rides the
+   * source) and return the full phase-1 index without withdrawing anything.
+   */
+  async scanTab(
+    source: SourceTab,
+    options: {
+      /** false = the caller already put the tab on screen (the Merchant
+       * panel's own tab strip is not stash navigation); just index it. */
+      navigate?: boolean;
+    } = {},
+  ): Promise<TabScanResult> {
+    const key = source.occurrence ? `${source.label}#${source.occurrence}` : source.label;
+    const endPhase = this.harness.startPhase(`scan:${key}`);
+    this.findLocation = key;
+    try {
+      if (
+        options.navigate !== false &&
+        !(await this.gotoTab(
+          source.label,
+          source.occurrence,
+          source.topLevel,
+          source.rowY,
+          source.drain,
+          source.shop,
+        ))
+      ) {
+        endPhase("source-unreachable");
+        return { ok: false, reason: "source-unreachable" };
+      }
+      const index = await this.indexTab(source, key);
+      if (!index) {
+        endPhase("no-geometry");
+        return { ok: false, reason: "no-geometry" };
+      }
+      endPhase();
+      return { ok: true, ...index };
+    } catch (error) {
+      endPhase(error instanceof SortStop ? "stopped" : "failed");
+      throw error;
+    } finally {
+      this.findLocation = "bag";
+    }
+  }
+
+  /** Current occupied bag cells (pixel occupancy), for the shop flow. */
+  async bagCellsNow(): Promise<GridCell[]> {
+    return this.currentBagCells();
+  }
+
+  /** Identify every occupied bag cell by Ctrl+C — phase 2's item source. */
+  async identifyBagItems(): Promise<{
+    items: IdentifiedItem[];
+    unread: GridCell[];
+  }> {
+    const cells = await this.currentBagCells();
+    const { items, unread } = await this.identifyCells(cells, {});
+    return { items, unread };
+  }
+
+  /** Hover + Ctrl+C one screen point — the shop flow's Note-line re-read. */
+  async copyAt(x: number, y: number, hoverMs = 140): Promise<string> {
+    return this.copyItemAt(x, y, hoverMs);
+  }
+
+  /**
+   * Verified-serial withdraw for the shop flow (delists): ONE ctrl-click at
+   * a time, the next only after the bag pixel-verifiably grew. Listings are
+   * few and every one matters to the ledger — the serial commit check is the
+   * point, not speed. Returns the items that actually left the tab.
+   */
+  async withdrawItemsSerial(
+    items: readonly IdentifiedItem[],
+    label: string,
+  ): Promise<IdentifiedItem[]> {
+    const withdrawn: IdentifiedItem[] = [];
+    for (const item of items) {
+      const before = await this.bagCount();
+      const sent = await this.harness.burst([item.cells[0]!], {
+        found: items.flatMap((entry) => entry.cells),
+        cellW: 56,
+        cellH: 56,
+        label: `shop withdraw ${withdrawn.length + 1}/${items.length} (${label})`,
+      });
+      if (sent === 0) return withdrawn; // rejected or dry-run
+      let committed = false;
+      const deadline = Date.now() + 3_000;
+      while (Date.now() < deadline) {
+        await this.harness.sleep(300, false);
+        if ((await this.bagCount()) > before) {
+          committed = true;
+          break;
+        }
+      }
+      if (!committed) {
+        this.harness.guard("shop-withdraw-not-observed", true);
+        await this.step(`${label}: a shop withdraw did not commit — stopping the batch`);
+        return withdrawn;
+      }
+      withdrawn.push(item);
+      await this.harness.sleep(250, false);
+    }
+    return withdrawn;
+  }
+
+  /**
+   * Deposit specific bag cells into the ACTIVE tab, bounce-verified. The
+   * shop flow deposits with `shiftOnly` so stash affinities can never divert
+   * an item away from the open (shop) tab. Returns how many cells stayed.
+   */
+  async depositBagCells(
+    points: readonly GridCell[],
+    destLabel: string,
+    options: { shiftOnly?: boolean } = {},
+  ): Promise<number> {
+    return this.depositCells(points, destLabel, options);
+  }
+
   async cleanTab(source: SourceTab): Promise<number> {
     const key = source.occurrence ? `${source.label}#${source.occurrence}` : source.label;
     // Triage tabs hold what the value tiers detoured — cleaning one would
@@ -2573,6 +3543,12 @@ export class GearSorter {
     const routingCfg = this.options.triage?.routing;
     if (routingCfg && !source.topLevel && isTriageTabLabel(source.label, routingCfg)) {
       this.log(`  · ${key} is a triage tab — never cleaned`);
+      return 0;
+    }
+    // The shop tab holds public listings — withdrawing them is delisting.
+    // Only the shop flow's own verified actions may do that, never a clean.
+    if (source.shop) {
+      this.log(`  · ${key} is the designated shop tab — never cleaned (scanTab is the only read)`);
       return 0;
     }
     // A gear-folder tab owns its class; a top-level T tab "owns" junk — gear
@@ -2583,176 +3559,58 @@ export class GearSorter {
     const endPhase = this.harness.startPhase(`clean:${key}`);
     let moved = 0;
     let lastForeign = Number.POSITIVE_INFINITY;
-    /** cell key -> Ctrl+C read, valid for this tab visit (incremental model). */
-    const tabReads = new Map<string, { cell: GridCell; text: string }>();
-    /** Set once the belt-and-braces full re-sweep has been queued, so a
-     * clean verdict built on trusted reads is verified exactly once. */
-    let finalSweepQueued = false;
+    let withdrawMisses = 0;
     /** Destinations proven unreachable/full during THIS visit — their items
      * stop being withdrawn (they would only churn bag→source forever). */
     const deadDests = new Set<string>();
+    /** Known gear tabs whose navigation failed ONCE — retried on a later
+     * trip before dead-marking (see distributeBag). */
+    const navFailed = new Set<string>();
     this.findLocation = key;
     try {
-      for (let round = 0; round < 10; round += 1) {
-        if (
-          !(await this.gotoTab(
-            source.label,
-            source.occurrence,
-            source.topLevel,
-            source.rowY,
-            source.drain,
-          ))
-        ) {
-          endPhase("source-unreachable");
-          return moved;
+      /* ---------------- PHASE 1: index the tab ONCE ----------------
+       * The user's guarantee (2026-09-01): nothing else touches the stash
+       * while a sort runs, so this single sweep IS the tab's state for the
+       * whole visit — withdrawn items leave the model and nothing is ever
+       * re-swept (the per-trip re-scans and the belt-and-braces
+       * verification sweep went away with the assumption that required
+       * them). Bailed items land back here in cells the model does not
+       * track, but their destinations are dead/full, so they are never
+       * withdrawn again this visit.
+       */
+      if (
+        !(await this.gotoTab(
+          source.label,
+          source.occurrence,
+          source.topLevel,
+          source.rowY,
+          source.drain,
+        ))
+      ) {
+        endPhase("source-unreachable");
+        return moved;
+      }
+      const index = await this.indexTab(source, key);
+      if (!index) {
+        endPhase("no-geometry");
+        return moved;
+      }
+      const { region, cols, rows, unread } = index;
+      if (index.occupiedCount === 0) {
+        if (source.drain) {
+          this.log(`  · ${key}: zero occupied cells — fully drained (the tab will vanish on its own)`);
         }
-        // Occupancy must be read with NO search filter dimming the grid; the
-        // sorter never types queries, so one clear per SESSION covers it.
-        if (round === 0 && !this.searchCleared) {
-          if (!(await this.clearSearch())) {
-            endPhase("search-clear-failed");
-            return moved;
-          }
-          this.searchCleared = true;
-        }
-        let raw: RawFrame = await this.captureRaw();
-        // The scan ALWAYS covers the full grid — trusting pixel occupancy to
-        // pick cells let foreigners hide in cells it under-read. Cheap pixel
-        // stats only SKIP cells that are unmistakably black; everything else
-        // gets hovered. Geometry priority: the USER-TAUGHT grid for this tab,
-        // else the user's calibrated default for the perceived grid size, else
-        // this frame if sane, else the best seen this session, else the
-        // calibration profile. The calibrated default outranks perception
-        // because the panel bounds are shared across tabs and a perceived
-        // region can pass the sanity check while sitting a full row high —
-        // the very failure that made manual calibration necessary.
-        this.loadGridCalibration();
-        const taught = this.gridCalibration[`${source.label}#${source.occurrence}`];
-        // Both layouts share the user-calibrated panel bounds; only the
-        // number of divisions differs, and the tab's own separator lines say
-        // which it is (a taught per-tab entry still outranks detection).
-        const bounds =
-          this.gridCalibration["__default_24x24"] ?? this.gridCalibration["__default_12x12"];
-        if (taught) {
-          this.lastGoodStashGeometry = {
-            region: { x: taught.x, y: taught.y, w: taught.w, h: taught.h },
-            cols: taught.cols,
-            rows: taught.rows,
-          };
-        } else if (bounds) {
-          const { odd, even } = boundaryBrightness24(raw.gray, raw.client, bounds);
-          const { divisions, oddMedian, evenMedian } = detectGridDivisions(odd, even);
-          this.log(
-            `  · ${key}: grid ${divisions}x${divisions} by lattice lines (odd ${oddMedian.toFixed(0)} vs even ${evenMedian.toFixed(0)})`,
-          );
-          this.lastGoodStashGeometry = {
-            region: { x: bounds.x, y: bounds.y, w: bounds.w, h: bounds.h },
-            cols: divisions,
-            rows: divisions,
-          };
-        } else {
-          // No calibration anywhere — only now is the full perception pass
-          // worth its cost (geometry fallback for uncalibrated setups).
-          const frame = await this.captureFrame();
-          raw = frame;
-          if (stashRegionSane(frame.facts.stashRegion) && frame.facts.stashGridSize) {
-            this.lastGoodStashGeometry = {
-              region: frame.facts.stashRegion!,
-              cols: frame.facts.stashGridSize.cols,
-              rows: frame.facts.stashGridSize.rows,
-            };
-          }
-        }
-        if (!this.lastGoodStashGeometry) {
-          const grid = this.profile.quadStashGrid ?? this.profile.stashGrid;
-          if (grid) {
-            this.lastGoodStashGeometry = {
-              region: {
-                x: raw.client.left + grid.x,
-                y: raw.client.top + grid.y,
-                w: grid.w,
-                h: grid.h,
-              },
-              cols: grid.cols ?? 24,
-              rows: grid.rows ?? 24,
-            };
-          }
-        }
-        if (!this.lastGoodStashGeometry) {
-          this.harness.guard("stash-region-insane", true);
-          await this.harness.sleep(900, false);
-          continue;
-        }
-        let { region, cols, rows } = this.lastGoodStashGeometry;
-        if ((this.options.teach || this.options.teachGrid) && !taught && round === 0) {
-          ({ region, cols, rows } = await this.teachGrid(source, { region, cols, rows }));
-          this.lastGoodStashGeometry = { region, cols, rows };
-        }
-        const scores = scoreGridCells(raw.gray, raw.client, region, cols, rows);
-        const byKey = new Map(scores.map((score) => [`${score.row},${score.col}`, score]));
-        const emptyKeys = emptyCellKeysByBaseline(scores);
-        const cellAt = (r: number, c: number): GridCell => ({
-          row: r,
-          col: c,
-          x: Math.round(region.x + ((c + 0.5) * region.w) / cols),
-          y: Math.round(region.y + ((r + 0.5) * region.h) / rows),
-        });
-        let occupied: GridCell[] = [];
-        for (let r = 0; r < rows; r += 1) {
-          for (let c = 0; c < cols; c += 1) {
-            if (emptyKeys.has(`${r},${c}`)) continue;
-            occupied.push(cellAt(r, c));
-          }
-        }
-        occupied = clampToArea(occupied, STASH_AREA).filter(
-          (cell) => !this.phantomStash.has(this.phantomKey(source, cell)),
-        );
-        if (this.options.teach) {
-          occupied = await this.teachOccupancy(source, occupied, cellAt, region, cols, rows);
-        }
-        if (occupied.length === 0) {
-          if (source.drain) {
-            this.log(`  · ${key}: zero occupied cells — fully drained (the tab will vanish on its own)`);
-          }
-          endPhase();
-          return moved;
-        }
-        // INCREMENTAL re-sweep: within this tab visit, only cells the model
-        // does not know can have changed (withdrawn cells were forgotten,
-        // deposits show up as new occupied cells, unread cells never joined).
-        // Untouched cells keep their prior reads; a final full sweep before
-        // declaring clean is the belt-and-braces (still saves n-1 of n).
-        const occupiedKeys = new Set(occupied.map((cell) => `${cell.row},${cell.col}`));
-        for (const modelKey of [...tabReads.keys()]) {
-          if (!occupiedKeys.has(modelKey)) tabReads.delete(modelKey);
-        }
-        const toSweep = occupied.filter((cell) => !tabReads.has(`${cell.row},${cell.col}`));
-        const trusted = occupied.length - toSweep.length;
-        let unread: GridCell[] = [];
-        if (toSweep.length > 0) {
-          await this.step(
-            `${key}: sweeping ${toSweep.length}/${cols * rows} cells` +
-              (trusted > 0 ? ` (${trusted} already read this visit)` : " (black space skipped)"),
-          );
-          const swept = await this.identifyCells(toSweep, {
-            phantomScope: source,
-            looksEmpty: (cell) => {
-              const score = byKey.get(`${cell.row},${cell.col}`);
-              return !score || (score.itemFrac < 0.08 && score.variance < 120);
-            },
-            probePoint: (cell) => brightestCellPoint(raw.gray, raw.client, region, cols, rows, cell),
-            sameSpriteAsLeft: (cell) =>
-              cellEdgeContinuity(raw.gray, raw.client, region, cols, rows, cell.row, cell.col),
-          });
-          unread = swept.unread;
-          for (const read of swept.reads) {
-            tabReads.set(`${read.cell.row},${read.cell.col}`, read);
-          }
-        }
-        let items = groupIdentifiedCells([...tabReads.values()]);
-        if (this.options.teach && items.length > 0) {
-          items = await this.teachItems(source, items, region, cols, rows);
-        }
+        endPhase();
+        return moved;
+      }
+      let modelItems = index.modelItems;
+      /* ---------------- PHASE 2: withdraw trips from the index ----------------
+       * Each trip packs the bag with the biggest DESTINATION groups that fit
+       * (packTripByDest) so a bag-load deposits in one or two hops instead
+       * of a dozen. The index is only ever reduced; the one read back from
+       * the tab is the cheap pixel check for what a shortfall burst left.
+       */
+      for (let trip = 0; trip < 24; trip += 1) {
         const skippable = new Set<string>([
           ...deadDests,
           ...(source.topLevel ? this.fullDests : []),
@@ -2761,9 +3619,9 @@ export class GearSorter {
         // full "Armor 1" re-routes its items to "Armor 2" instead of
         // skipping them (and a fully unavailable chain resolves to "junk"
         // — the item stays put).
-        if (this.guildChest) {
-          items = items.map((item) => ({ ...item, dest: guildDestForItem(item, skippable) }));
-        }
+        const items = this.guildChest
+          ? modelItems.map((item) => ({ ...item, dest: guildDestForItem(item, skippable) }))
+          : modelItems;
         const foreign = foreignItemsFor(items, own, skippable.size > 0 ? skippable : undefined);
         const skipped = foreignItemsFor(items, own).length - foreign.length;
         if (skipped > 0) {
@@ -2791,33 +3649,11 @@ export class GearSorter {
             leaving = [...foreign, ...detours.map((entry) => entry.item)];
           }
         }
-        // A cell whose copy failed may HIDE an item — a tab is not clean
-        // until every non-phantom cell has been read. Retry them next round
-        // (identifyCells blacklists true phantoms after two misses) instead
-        // of declaring done past them.
-        if (leaving.length === 0 && unread.length > 0 && round < 9) {
-          this.harness.guard("unread-cells-retry", true);
-          await this.step(`${key}: ${unread.length} cell(s) unread — retrying before declaring clean`);
-          continue;
-        }
-        if (unread.length > 0) {
-          this.log(`! ${key}: ${unread.length} cell(s) never yielded item text — check them by hand`);
-        }
         this.log(
-          `  · ${key}: ${items.length} item(s), ${leaving.length} leaving ` +
-            `(${[...new Set(foreign.map((f) => f.dest))].join(", ") || "none"})`,
+          `  · ${key}: ${items.length} item(s) indexed, ${leaving.length} leaving ` +
+            `(${[...new Set(leaving.map((f) => f.dest))].join(", ") || "none"})`,
         );
         if (leaving.length === 0) {
-          // A clean verdict built partly on TRUSTED prior reads gets one
-          // belt-and-braces full re-sweep before it counts (handoff rule);
-          // a verdict from a full sweep of everything stands on its own.
-          if (trusted > 0 && !finalSweepQueued && round < 9) {
-            finalSweepQueued = true;
-            tabReads.clear();
-            this.harness.guard("incremental-clean-verify", true);
-            await this.step(`${key}: incremental pass reads clean — verifying with one full sweep`);
-            continue;
-          }
           if (source.drain) {
             // Everything routable has left; what stays is unreadable or
             // had a fully unavailable destination chain — report it.
@@ -2830,30 +3666,42 @@ export class GearSorter {
           endPhase();
           return moved;
         }
-        finalSweepQueued = false; // new foreigners reset the verification
         if (leaving.length >= lastForeign) {
           await this.step(`${key}: ${leaving.length} item(s) refuse to move — stopping`);
           endPhase("stalled");
           return moved;
         }
         lastForeign = leaving.length;
-        // Budget by REAL cell counts, straight from the identified items.
-        const bagFree = BAG_CELL_CAPACITY - (await this.bagCount());
-        const batch: IdentifiedItem[] = [];
-        let cellsNeeded = 0;
-        for (const item of leaving) {
-          if (cellsNeeded + item.cells.length > bagFree - 2) continue;
-          batch.push(item);
-          cellsNeeded += item.cells.length;
-        }
+        // Budget by PLACEMENT, not cell count: the packer simulates the
+        // game's own first-fit fill of the 12x5 bag over its current
+        // occupancy, so every withdraw click has a real landing spot.
+        const bagCellsNow = await this.currentBagCells();
+        const batch = packTripByDest(leaving, bagCellsNow);
+        const cellsNeeded = batch.reduce((sum, item) => sum + item.cells.length, 0);
         if (batch.length === 0) {
           await this.step("bag too full for any foreign item — filing bag first");
-          await this.distributeBag({ returnTo: source, deadDests });
+          await this.distributeBag({ returnTo: source, deadDests, navFailed });
           lastForeign = Number.POSITIVE_INFINITY;
           continue;
         }
+        // Back to the source (the first trip is already there; later trips
+        // return from wherever the last deposit landed).
+        if (
+          !(await this.gotoTab(
+            source.label,
+            source.occurrence,
+            source.topLevel,
+            source.rowY,
+            source.drain,
+          ))
+        ) {
+          endPhase("source-unreachable");
+          return moved;
+        }
         const grabPoints = batch.map((item) => item.cells[0]!);
-        await this.step(`${key}: withdrawing ${batch.length} item(s) (${cellsNeeded} cells)`);
+        await this.step(
+          `${key}: withdrawing ${batch.length} item(s) (${cellsNeeded} cells) → ${[...new Set(batch.map((item) => item.dest))].join(", ")}`,
+        );
         let withdrawn: IdentifiedItem[];
         if (this.guildChest) {
           withdrawn = await this.guildWithdrawSerial(batch, leaving, key);
@@ -2861,7 +3709,17 @@ export class GearSorter {
             endPhase("plan-not-executed");
             return moved;
           }
+          await this.harness.sleep(400);
         } else {
+          const bagBefore = bagCellsNow.length;
+          // Park + one frame BEFORE the burst: if the burst under-delivers,
+          // comparing this frame against a post-burst frame says exactly
+          // which items stayed. The old occupancy-score check over-restored
+          // 10 of 15 items live (2026-09-01) — the cursor rested on the last
+          // clicked cell and its item TOOLTIP covered the grid, reading as
+          // occupied cells everywhere.
+          await this.park();
+          const preBurst = await this.captureRaw();
           const sent = await this.harness.burst(grabPoints, {
             found: leaving.flatMap((item) => item.cells),
             cellW: 56,
@@ -2872,24 +3730,173 @@ export class GearSorter {
             endPhase("plan-not-executed");
             return moved;
           }
+          // Unpaced settle POLL, not a fixed sleep: a paced 400ms (280ms at
+          // pace 0.7) expired while the game was still processing the burst
+          // chunks — the bag undercounted and the shortfall check
+          // "restored" items that had actually left, every single trip
+          // (watcher-bot finding #1, 2026-09-01). Two consecutive agreeing
+          // reads are the commit signal.
+          let bagAfter = await this.bagCount();
+          const settleDeadline = Date.now() + 2500 + batch.length * 50;
+          for (;;) {
+            await this.harness.sleep(300, false);
+            const again = await this.bagCount();
+            const settled = again === bagAfter;
+            bagAfter = again;
+            if (settled || Date.now() >= settleDeadline) break;
+          }
+          // Postcondition: the bag must GROW by the batch's cells. Shrank
+          // means the clicks landed on the WRONG side and deposited — the
+          // world no longer matches the index; stop the visit loudly. Flat
+          // means nothing came out (missed clicks / covered panel) — one
+          // retry, then stop.
+          const direction = withdrawObservation(bagBefore, bagAfter);
+          if (direction === "shrank") {
+            this.harness.guard("withdraw-wrong-direction", true);
+            await this.step(`${key}: withdraw burst DEPOSITED (bag shrank) — stopping this visit`);
+            endPhase("withdraw-anomaly");
+            return moved;
+          }
+          if (direction === "flat") {
+            this.harness.guard("withdraw-not-observed", true);
+            withdrawMisses += 1;
+            if (withdrawMisses >= 2) {
+              await this.step(`${key}: two withdraw bursts landed nothing — stopping`);
+              endPhase("stalled");
+              return moved;
+            }
+            await this.step(`${key}: withdraw burst did not land — retrying`);
+            lastForeign = Number.POSITIVE_INFINITY;
+            continue;
+          }
+          withdrawMisses = 0;
           withdrawn = batch;
+          const actualGrowth = bagAfter - bagBefore;
+          if (actualGrowth < cellsNeeded) {
+            // A partial burst: some clicks missed or were refused. Compare
+            // the pre-burst frame against a fresh one, per item bounding
+            // box: a withdrawn item's cells changed massively (sprite →
+            // background), a stayed item's changed not at all. Park first
+            // so no tooltip pollutes the after-frame. No re-sweep, no
+            // hovering, immune to glare and occupancy-threshold guesses.
+            await this.park();
+            const cw = region.w / cols;
+            const ch = region.h / rows;
+            const stayedIn = (check: RawFrame): Set<IdentifiedItem> =>
+              new Set(
+                batch.filter((item) => {
+                  const minR = Math.min(...item.cells.map((cell) => cell.row));
+                  const maxR = Math.max(...item.cells.map((cell) => cell.row));
+                  const minC = Math.min(...item.cells.map((cell) => cell.col));
+                  const maxC = Math.max(...item.cells.map((cell) => cell.col));
+                  const box = {
+                    x: region.x + minC * cw,
+                    y: region.y + minR * ch,
+                    w: (maxC - minC + 1) * cw,
+                    h: (maxR - minR + 1) * ch,
+                  };
+                  const fraction = regionChangedFraction(
+                    preBurst.gray,
+                    check.gray,
+                    check.client,
+                    box,
+                    2,
+                  );
+                  return fraction < 0.15; // its pixels never moved — it stayed
+                }),
+              );
+            let stayed = stayedIn(await this.captureRaw());
+            if (stayed.size > Math.ceil(batch.length * 0.3)) {
+              // Implausibly many "stayed" — the removal animation may still
+              // be painting. One later frame decides (the same trust-the-
+              // later-read pattern the deposit bounce check uses).
+              await this.harness.sleep(700, false);
+              stayed = stayedIn(await this.captureRaw());
+            }
+            if (stayed.size > 0) {
+              this.harness.guard("withdraw-partial-restored", true);
+              this.log(
+                `  · ${key}: ${stayed.size} item(s) did not leave — kept in the index for the next trip`,
+              );
+              withdrawn = batch.filter((item) => !stayed.has(item));
+            }
+          }
         }
-        await this.harness.sleep(400);
         moved += withdrawn.length;
-        // The withdrawn cells are the ONLY stash cells this trip changed —
-        // forget them; the incremental model keeps every other read.
-        for (const item of withdrawn) {
-          for (const cell of item.cells) tabReads.delete(`${cell.row},${cell.col}`);
-        }
-        await this.distributeBag({ returnTo: source, deadDests });
+        // The withdrawn items are the ONLY change to the tab — drop exactly
+        // them from the index, matched by grab cell (guild remaps clone the
+        // items, so identity alone cannot be trusted).
+        const withdrawnKeys = new Set(
+          withdrawn.map((item) => `${item.cells[0]!.row},${item.cells[0]!.col}`),
+        );
+        modelItems = modelItems.filter(
+          (item) => !withdrawnKeys.has(`${item.cells[0]!.row},${item.cells[0]!.col}`),
+        );
+        await this.distributeBag({ returnTo: source, deadDests, navFailed });
       }
-      endPhase("round-limit");
+      endPhase("trip-limit");
       return moved;
     } catch (error) {
       endPhase(error instanceof SortStop ? "stopped" : "failed");
       throw error;
     } finally {
       this.findLocation = "bag";
+    }
+  }
+
+  /**
+   * The EMPTY-BAG GUARANTEE (dump-sort handoff item 4): the run may not end
+   * — other than Numpad 0 or fatal stash loss — while depositable identified
+   * items remain in the bag. Keeps filing until the bag is verifiably empty
+   * (TWO agreeing pixel reads; the bounce animation fakes empty frames) or
+   * only blacklisted cells remain, then reports every leftover with its item
+   * class and the reason it could not leave. Nothing is silently carried.
+   */
+  private async finishBag(returnTo?: SourceTab): Promise<number> {
+    const endPhase = this.harness.startPhase("finish-bag");
+    let filed = 0;
+    try {
+      const deadDests = new Set<string>(this.fullDests);
+      const navFailed = new Set<string>();
+      for (let round = 0; round < 4; round += 1) {
+        const occupied = await this.currentBagCells();
+        const verdict = bagCompletionVerdict(occupied, this.undepositableBag);
+        if (verdict === "empty") {
+          await this.harness.sleep(650, false);
+          if ((await this.currentBagCells()).length === 0) {
+            endPhase();
+            return filed;
+          }
+          continue; // a bounce flyback re-filled it — file again
+        }
+        if (verdict === "only-undepositable") break;
+        filed += await this.distributeBag({ ...(returnTo ? { returnTo } : {}), deadDests, navFailed });
+      }
+      const leftovers = await this.currentBagCells();
+      if (leftovers.length === 0) {
+        endPhase();
+        return filed;
+      }
+      this.harness.guard("bag-not-empty-at-end", true);
+      await this.step(`bag not empty at run end — identifying ${leftovers.length} leftover cell(s)`);
+      const { items, unread } = await this.identifyCells(leftovers, {});
+      const report = describeBagLeftovers(items, unread, {
+        undepositable: this.undepositableBag,
+        stuckTabs: this.stuckObservations,
+        unavailableDests: deadDests,
+      });
+      for (const entry of report) {
+        this.log(
+          `! bag leftover at ${entry.cell}: ${entry.itemClass ?? "unreadable"}` +
+            (entry.dest && entry.dest !== "junk" ? ` (home ${entry.dest})` : "") +
+            ` — ${entry.why}`,
+        );
+      }
+      endPhase("leftovers-reported");
+      return filed;
+    } catch (error) {
+      endPhase(error instanceof SortStop ? "stopped" : "failed");
+      throw error;
     }
   }
 
@@ -3033,11 +4040,18 @@ export class GearSorter {
         .map((s) => (s.occurrence ? `${s.label}#${s.occurrence}` : s.label) + (s.topLevel ? "^" : ""))
         .join(", ")} (^ = top-level)`,
     );
+    // Bail target for homeless items: the first top-level source (the Dump
+    // tab in the default flow). Items whose home tab is full or missing get
+    // verifiably returned there instead of riding the bag forever — a drain
+    // source never qualifies (deposits into Remove-only tabs are refused).
+    const defaultReturn = sources.find((source) => source.topLevel && !source.drain);
     // A dirty bag from earlier interruptions gets filed FIRST, each item to
     // its true tab by Ctrl+C identity — never dumped wholesale somewhere.
     // Guild runs skip this: live requires an empty bag (gate above), and a
     // dry-run must not churn plans for personal items against guild tabs.
-    let moved = this.guildChest ? 0 : await this.distributeBag();
+    let moved = this.guildChest
+      ? 0
+      : await this.distributeBag(defaultReturn ? { returnTo: defaultReturn } : {});
     const queue = [...sources];
     const requeued = new Set<string>();
     const unreachable: string[] = [];
@@ -3067,6 +4081,11 @@ export class GearSorter {
       moved += await this.cleanTab(source);
       this.log(`${key}: done`);
     }
+    // The run may not end while depositable identified items remain in the
+    // bag — file them (bailing the homeless to the default source) and
+    // REPORT whatever survives, cell by cell. Guild runs demanded an empty
+    // bag up front and file everything inline.
+    if (!this.guildChest) moved += await this.finishBag(defaultReturn);
     if (unreachable.length > 0) {
       this.log(`! unreachable tabs this session (labels never OCRed): ${unreachable.join(", ")}`);
     }
