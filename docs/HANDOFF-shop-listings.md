@@ -1,3 +1,16 @@
+> **STILL NEEDS LIVE TESTING (2026-09-04).** Merged to main with these
+> parts never exercised against the game:
+> - the vendor step of the one-key bag flow (`vendorBagItems` → ZELINA for
+>   sub-floor / dump-tier items) — run `shop-buckets.ts --live --step` with
+>   a white item in the bag and approve the ctrl-click;
+> - the jewel mod-family thresholds in `src/core/modKnowledge.ts` — watch
+>   the "priced … (N notable mod(s))" lines on the next jewel bag and tune;
+> - implied-user-delist ledger rows (written when re-listing an item the
+>   ledger still holds) — confirm the next reprice pass shows no phantom
+>   "sold" rows.
+> Everything else in this document marked LIVE-VERIFIED has run against
+> the game; see the dated STATUS blocks below.
+
 # HANDOFF — Shop: manage public-tab sale listings, then auto-list appraised finds
 
 **Mission** (user's words, 2026-09-01): add a way in the APPLICATION to
