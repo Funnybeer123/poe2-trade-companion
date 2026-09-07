@@ -28,6 +28,7 @@ import { fileURLToPath } from "node:url";
 import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { startWinHost } from "../src/adapters/winHost.js";
 import { DrainKit } from "../src/adapters/drainKit.js";
+import { defaultNameplateCacheFile, findNameplate } from "../src/adapters/nameplateFinder.js";
 import { SortHarness, SortStop } from "../src/adapters/sortHarness.js";
 import {
   captureBagSprites,
@@ -52,6 +53,7 @@ import type { OcrLine } from "../src/core/tabList.js";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const templateDir = path.join(root, "fixtures", "perception", "templates");
 const outDir = path.join(root, "artifacts", "vendor-cycle");
+const nameplateCacheFile = defaultNameplateCacheFile(root);
 
 const argv = process.argv.slice(2);
 const flag = (name: string): boolean => argv.includes(name);
@@ -263,6 +265,18 @@ async function findLine(pattern: RegExp, holdAlt = false): Promise<OcrLine | und
   return lines.find((line) => pattern.test(line.text.trim()));
 }
 
+/** ZELINA via the cached finder: one small band on a hit, full-screen (Alt held) on a miss. */
+async function findZelina(onFullScan?: (lines: OcrLine[]) => void): Promise<OcrLine | undefined> {
+  const found = await findNameplate(host, /^zelina$/i, {
+    cacheKey: "zelina",
+    cacheFile: nameplateCacheFile,
+    holdAlt: true,
+    onFullScan,
+    log: (line) => console.log(`· ${line}`),
+  });
+  return found?.line;
+}
+
 /** Lines from the map HUD worth trying as the hideout portal's label. */
 /**
  * The skill bar's portal button (spawns the hideout portal at the player).
@@ -373,10 +387,15 @@ async function departToHideout(): Promise<string | undefined> {
 async function walkToHub(): Promise<OcrLine | undefined> {
   const kit = new DrainKit(host, root, templateDir);
   for (let attempt = 0; attempt < 4; attempt += 1) {
-    const lines = await findOcrLines(host, true);
-    const zelina = lines.find((line) => /^zelina$/i.test(line.text.trim()));
-    const hub = zelina ?? lines.find((line) => /^stash$/i.test(line.text.trim()) && line.x < 3000);
-    if (hub) return zelina;
+    // ZELINA first through the cached finder (one small band on a hit); its
+    // full-screen fallback hands back the lines, so the stash and crest
+    // checks below never cost a second full OCR.
+    let lines: OcrLine[] = [];
+    const zelina = await findZelina((scanned) => {
+      lines = scanned;
+    });
+    if (zelina) return zelina;
+    if (lines.some((line) => /^stash$/i.test(line.text.trim()) && line.x < 3000)) return undefined;
     const crest = lines.find((line) => /hideout/i.test(line.text.trim()) && line.x < 3000);
     if (!crest) {
       // No landmark to walk toward — let the drain kit try its own plate
@@ -420,7 +439,7 @@ async function openVendorWindow(knownPlate?: OcrLine): Promise<void> {
     let plate = attempt === 0 ? knownPlate : undefined;
     if (!plate) {
       await closePanels();
-      plate = await findLine(/^zelina$/i, true);
+      plate = await findZelina();
     }
     if (!plate) throw new Error("zelina-not-found — is she in this hideout?");
     await harness.checkpoint("open ZELINA");
