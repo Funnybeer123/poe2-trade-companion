@@ -95,6 +95,7 @@ function makeService(options?: {
   respond?: (url: string, init?: RequestInit) => Response | Promise<Response>;
   now?: () => Date;
   configDir?: string;
+  secretDir?: string;
 }) {
   const calls: FetchCall[] = [];
   let table: PriceTable = {
@@ -113,6 +114,7 @@ function makeService(options?: {
     });
   const service = new PriceFeedService({
     configDir: options?.configDir ?? mkdtempSync(path.join(tmpdir(), "pfs-test-")),
+    secretDir: options?.secretDir ?? mkdtempSync(path.join(tmpdir(), "pfs-secret-")),
     rateLimitBackoffMs: 0, // a 429 retries once, immediately
     getPriceTable: () => table,
     savePriceTable: (next) => (table = next),
@@ -301,24 +303,47 @@ describe("PriceFeedService snapshot", () => {
 });
 
 describe("PriceFeedService config", () => {
-  it("persists config, masks the cookie, and clears it explicitly", async () => {
+  it("persists config, keeps the cookie out of the shared dir, masks it, and clears it", async () => {
     const configDir = mkdtempSync(path.join(tmpdir(), "pfs-config-"));
-    const first = makeService({ configDir });
+    const secretDir = mkdtempSync(path.join(tmpdir(), "pfs-config-secret-"));
+    const first = makeService({ configDir, secretDir });
     disposers.push(() => first.service.dispose());
     const masked = first.service.configure({ league: "Standard", poesessid: "secret-cookie" });
     expect(masked.config.poesessid).toBe("(set)");
+    // The shared (repo, possibly cloud-synced) config never carries the cookie...
     const raw = JSON.parse(readFileSync(path.join(configDir, "price-feed.json"), "utf8"));
-    expect(raw.poesessid).toBe("secret-cookie");
+    expect(raw.poesessid).toBeUndefined();
     expect(raw.league).toBe("Standard");
+    // ...the per-user secret file does.
+    const secretFile = path.join(secretDir, "price-feed.secret.json");
+    expect(JSON.parse(readFileSync(secretFile, "utf8"))).toEqual({ poesessid: "secret-cookie" });
 
-    // A fresh instance reloads the persisted config.
-    const second = makeService({ configDir });
+    // A fresh instance reloads both halves.
+    const second = makeService({ configDir, secretDir });
     disposers.push(() => second.service.dispose());
     expect(second.service.status().config.league).toBe("Standard");
     expect(second.service.status().config.poesessid).toBe("(set)");
 
     const cleared = second.service.configure({ poesessid: "" });
     expect(cleared.config.poesessid).toBe("");
+    expect(existsSync(secretFile)).toBe(false);
+  });
+
+  it("migrates a cookie found in the old price-feed.json into the secret file", () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "pfs-legacy-"));
+    const secretDir = mkdtempSync(path.join(tmpdir(), "pfs-legacy-secret-"));
+    writeFileSync(
+      path.join(configDir, "price-feed.json"),
+      JSON.stringify({ league: "Standard", autoRefreshDaily: false, poesessid: "legacy-cookie" }),
+    );
+    const { service } = makeService({ configDir, secretDir });
+    disposers.push(() => service.dispose());
+    expect(service.status().config.poesessid).toBe("(set)");
+    const raw = JSON.parse(readFileSync(path.join(configDir, "price-feed.json"), "utf8"));
+    expect(raw.poesessid).toBeUndefined();
+    expect(JSON.parse(readFileSync(path.join(secretDir, "price-feed.secret.json"), "utf8"))).toEqual({
+      poesessid: "legacy-cookie",
+    });
   });
 
   it("sends the cookie only when configured", async () => {

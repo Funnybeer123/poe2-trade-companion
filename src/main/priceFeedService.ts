@@ -14,7 +14,8 @@
  *   - The network is opt-in: nothing fetches until the renderer asks or the
  *     user enables the daily auto-refresh.
  */
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import {
   AmbiguousLeagueError,
@@ -165,6 +166,13 @@ export interface SearchListingsResult {
 
 interface PriceFeedServiceOptions {
   configDir: string;
+  /**
+   * Where the optional POESESSID lives. Defaults to the per-user app-data
+   * folder (%APPDATA%/poe2-trade-companion), NOT configDir: artifacts/ sits in
+   * the repo (often cloud-synced), and a session cookie must never land
+   * there. The app and every CLI resolve the same default.
+   */
+  secretDir?: string;
   getPriceTable: () => PriceTable;
   savePriceTable: (table: PriceTable) => PriceTable;
   now?: () => Date;
@@ -200,6 +208,9 @@ export class PriceFeedService {
 
   constructor(private readonly options: PriceFeedServiceOptions) {
     this.config = this.loadConfig();
+    // A cookie found in the old location (price-feed.json) moves to the
+    // secret file on first sight, and the config is rewritten without it.
+    if (this.legacyCookieInConfig) this.persistConfig();
     this.syncResolvedLeague();
     this.pacer = new TradePacer(this.loadPacing());
     this.loadCompsCache();
@@ -340,6 +351,45 @@ export class PriceFeedService {
     return this.options.now?.() ?? new Date();
   }
 
+  /** Set by loadConfig when price-feed.json still carried the cookie. */
+  private legacyCookieInConfig = false;
+
+  private secretDir(): string {
+    return (
+      this.options.secretDir ??
+      path.join(
+        process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"),
+        "poe2-trade-companion",
+      )
+    );
+  }
+
+  /** The POESESSID, alone, outside the repo tree. */
+  private secretFile(): string {
+    return path.join(this.secretDir(), "price-feed.secret.json");
+  }
+
+  private loadSecret(): string {
+    try {
+      const file = this.secretFile();
+      if (!existsSync(file)) return "";
+      const parsed = JSON.parse(readFileSync(file, "utf8")) as { poesessid?: unknown };
+      return typeof parsed.poesessid === "string" ? parsed.poesessid : "";
+    } catch {
+      return "";
+    }
+  }
+
+  private persistSecret(): void {
+    const file = this.secretFile();
+    if (!this.config.poesessid) {
+      if (existsSync(file)) rmSync(file, { force: true });
+      return;
+    }
+    mkdirSync(this.secretDir(), { recursive: true });
+    writeFileSync(file, JSON.stringify({ poesessid: this.config.poesessid }, null, 2));
+  }
+
   private configFile(): string {
     return path.join(this.options.configDir, "price-feed.json");
   }
@@ -349,20 +399,27 @@ export class PriceFeedService {
       const file = this.configFile();
       if (!existsSync(file)) return { ...DEFAULT_CONFIG };
       const parsed = JSON.parse(readFileSync(file, "utf8")) as Partial<PriceFeedConfig>;
+      const legacy = typeof parsed.poesessid === "string" ? parsed.poesessid : "";
+      const secret = this.loadSecret();
+      this.legacyCookieInConfig = legacy.length > 0;
       return {
         league: typeof parsed.league === "string" && parsed.league.trim() ? parsed.league : "auto",
         autoRefreshDaily: parsed.autoRefreshDaily === true,
-        poesessid: typeof parsed.poesessid === "string" ? parsed.poesessid : "",
+        // The secret file wins; a cookie still in the config is migrated.
+        poesessid: secret || legacy,
       };
     } catch {
-      return { ...DEFAULT_CONFIG };
+      return { ...DEFAULT_CONFIG, poesessid: this.loadSecret() };
     }
   }
 
   private persistConfig(): void {
     try {
       mkdirSync(this.options.configDir, { recursive: true });
-      writeFileSync(this.configFile(), JSON.stringify(this.config, null, 2));
+      const shareable = { league: this.config.league, autoRefreshDaily: this.config.autoRefreshDaily };
+      writeFileSync(this.configFile(), JSON.stringify(shareable, null, 2));
+      this.persistSecret();
+      this.legacyCookieInConfig = false;
     } catch {
       // The in-memory config still applies for this session.
     }

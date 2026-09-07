@@ -2,6 +2,7 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { StashTabAdminEvent, StashTabAdminStatus } from "@core/stashTabAdmin";
 import { formatAmbiguousLeagueMessage } from "@core/priceFeed";
+import { pricingReadiness } from "../utils/readiness";
 import { useGameActions } from "../composables/useGameActions";
 import {
   getPriceFeedApi,
@@ -43,6 +44,9 @@ const busy = ref(false);
 
 /** Editable copy of the config (saved back to artifacts/tab-admin/shop.json). */
 const config = ref<ShopConfigView | undefined>(undefined);
+
+/** League, feed age, trade2 budget — the same checks the Sort home shows. */
+const pricingChecks = computed(() => pricingReadiness(feedStatus.value ?? undefined));
 
 let unsubscribe: (() => void) | undefined;
 let disposed = false;
@@ -211,6 +215,13 @@ async function saveConfig(): Promise<void> {
     <p v-if="feedAmbiguityMessage" class="inline-notice danger" role="alert">
       Pricing is blocked: {{ feedAmbiguityMessage }}
     </p>
+
+    <ul v-if="pricingChecks.length" class="pricing-readiness" aria-label="Pricing readiness">
+      <li v-for="check in pricingChecks" :key="check.label" :class="{ ok: check.ok }">
+        <span class="readiness-dot" aria-hidden="true" />
+        <span><strong>{{ check.label }}</strong><small>{{ check.detail }}</small></span>
+      </li>
+    </ul>
 
     <p v-if="!available" class="inline-notice warning">
       The shop needs the desktop app — the browser preview has no game bridge.
@@ -456,6 +467,12 @@ async function saveConfig(): Promise<void> {
 <style scoped>
 .shop-workspace { display: flex; flex-direction: column; gap: 1rem; }
 .shop-hero { display: flex; flex-wrap: wrap; gap: 1.25rem; justify-content: space-between; }
+.pricing-readiness { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0.6rem 1.6rem; }
+.pricing-readiness li { display: flex; gap: 0.5rem; align-items: flex-start; }
+.pricing-readiness li span:last-child { display: flex; flex-direction: column; }
+.pricing-readiness small { opacity: 0.7; }
+.pricing-readiness .readiness-dot { width: 0.65rem; height: 0.65rem; border-radius: 50%; background: #b35050; margin-top: 0.35rem; flex: none; }
+.pricing-readiness li.ok .readiness-dot { background: #4fa84f; }
 .shop-hero-copy { max-width: 42rem; display: flex; flex-direction: column; gap: 0.4rem; }
 .shop-summary { list-style: none; margin: 0; padding: 0; display: flex; gap: 1.4rem; align-items: center; }
 .shop-summary li { display: flex; flex-direction: column; align-items: center; }
