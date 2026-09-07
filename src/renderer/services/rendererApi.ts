@@ -1094,6 +1094,8 @@ export interface PriceFeedStatusView {
   feedEntryCount: number;
   feedAgeHours?: number;
   refreshing: boolean;
+  /** trade2 lookups spare right now and any penalty window (desktop only). */
+  tradeBudget?: { lookups: number; restrictedUntilIso?: string };
 }
 
 export interface CompsSummaryView {

@@ -139,6 +139,8 @@ export interface PriceFeedStatus {
   feedEntryCount: number;
   feedAgeHours?: number;
   refreshing: boolean;
+  /** trade2 lookups that could go out right now, and any penalty window. */
+  tradeBudget: { lookups: number; restrictedUntilIso?: string };
 }
 
 export interface CompsResult {
@@ -413,6 +415,7 @@ export class PriceFeedService {
         ? { feedAgeHours: Math.round(feedAgeHours(table, "poe2scout", this.now())! * 10) / 10 }
         : {}),
       refreshing: this.refreshing,
+      tradeBudget: this.tradeBudget(),
     };
   }
 

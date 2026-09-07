@@ -8,7 +8,8 @@ import ValueTierEditor from "../components/ValueTierEditor.vue";
 import ViewTabs from "../components/ViewTabs.vue";
 import { useGameActions } from "../composables/useGameActions";
 import { useRuntimeState } from "../composables/useRuntimeState";
-import { getStashTabAdminApi } from "../services/rendererApi";
+import { getPriceFeedApi, getStashTabAdminApi, type PriceFeedStatusView } from "../services/rendererApi";
+import { pricingReadiness } from "../utils/readiness";
 
 const tabs = [
   { id: "run", label: "Run", hint: "Sort & triage" },
@@ -21,6 +22,18 @@ const runtime = useRuntimeState();
 const { dryRun } = useGameActions();
 const api = getStashTabAdminApi();
 const available = computed(() => api !== undefined);
+const priceFeed = getPriceFeedApi();
+/** League, feed age and trade2 budget — the pricing half of readiness. */
+const feedStatus = ref<PriceFeedStatusView | undefined>(undefined);
+
+async function refreshFeedStatus(): Promise<void> {
+  if (!priceFeed) return;
+  try {
+    feedStatus.value = await priceFeed.status();
+  } catch {
+    feedStatus.value = undefined;
+  }
+}
 
 const status = ref<StashTabAdminStatus>({ running: false, phase: "idle" });
 const log = ref<string[]>([]);
@@ -64,13 +77,17 @@ onMounted(async () => {
   unsubscribe = api.onEvent((event: StashTabAdminEvent) => {
     if (event.kind === "phase") {
       status.value = { ...status.value, phase: event.phase, running: event.phase !== "idle" };
-      if (event.phase === "idle") void refreshFinds();
+      if (event.phase === "idle") {
+        void refreshFinds();
+        void refreshFeedStatus();
+      }
     }
     if (event.kind === "error") message.value = event.message;
     if (event.kind === "log") log.value = [...log.value.slice(-249), event.line];
   });
   await refreshStatus();
   await refreshFinds();
+  await refreshFeedStatus();
 });
 
 onBeforeUnmount(() => {
@@ -149,6 +166,7 @@ const readiness = computed(() => [
       ? "Emergency stop is latched — re-arm from the top bar"
       : "Ctrl+Shift+Esc stops everything instantly",
   },
+  ...pricingReadiness(feedStatus.value),
 ]);
 </script>
 
