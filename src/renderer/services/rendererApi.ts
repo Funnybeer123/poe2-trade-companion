@@ -1078,7 +1078,7 @@ export interface CompsSummaryView {
   lowest?: number;
   median?: number;
   currency: "exalted";
-  basis: "unique-name" | "base-type";
+  basis: "unique-name" | "base-type" | "stat-filtered";
   comps: Array<{ price: number; similarity: number; name: string; baseType: string }>;
   caution?: string;
 }
@@ -1089,6 +1089,8 @@ export interface CompsResultView {
   error?: string;
   cached?: boolean;
   league?: string;
+  /** Which search stage produced the summary. */
+  basis?: CompsSummaryView["basis"];
 }
 
 export interface PriceFeedApi {

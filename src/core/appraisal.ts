@@ -19,6 +19,7 @@ import {
   matchModFamily,
   modPoints,
   type ModMatch,
+  type ModMatchContext,
 } from "./modKnowledge.js";
 import { looksLikePoeItemText, parseItemText } from "./parseItem.js";
 import { lookupPrice, type PriceTable } from "./priceTable.js";
@@ -39,6 +40,8 @@ export interface ModAppraisal {
   judgedValue?: number;
   /** 1 = top tier, 3 = notable, 0 = matched family but low roll. */
   tier?: 0 | 1 | 2 | 3;
+  /** Where the tier came from: trade2-learned ranges or the hand thresholds. */
+  source?: ModMatch["source"];
   points: number;
 }
 
@@ -80,7 +83,20 @@ function clamp(value: number, low: number, high: number): number {
   return Math.max(low, Math.min(high, value));
 }
 
-function appraiseMods(parsed: ParsedItem): {
+/** Learned-tier context threaded into every mod match. */
+export type TierContext = Pick<ModMatchContext, "learnedTiers" | "statIds">;
+
+function tierContext(options: TierContext): TierContext {
+  return {
+    ...(options.learnedTiers ? { learnedTiers: options.learnedTiers } : {}),
+    ...(options.statIds ? { statIds: options.statIds } : {}),
+  };
+}
+
+function appraiseMods(
+  parsed: ParsedItem,
+  context: TierContext,
+): {
   mods: ModAppraisal[];
   points: number;
   t1: number;
@@ -93,7 +109,10 @@ function appraiseMods(parsed: ParsedItem): {
   let t2 = 0;
   let t3 = 0;
   for (const mod of parsed.mods) {
-    const match: ModMatch | undefined = matchModFamily(mod.text, { itemClass: parsed.itemClass });
+    const match: ModMatch | undefined = matchModFamily(mod.text, {
+      itemClass: parsed.itemClass,
+      ...context,
+    });
     if (!match) {
       mods.push({ text: mod.text, points: 0 });
       continue;
@@ -109,6 +128,7 @@ function appraiseMods(parsed: ParsedItem): {
       familyLabel: match.family.label,
       judgedValue: match.judgedValue,
       tier: match.tier,
+      source: match.source,
       points: Math.round(earned * 10) / 10,
     });
   }
@@ -123,7 +143,7 @@ function stackCount(parsed: ParsedItem): number | undefined {
     : undefined;
 }
 
-export interface AppraiseOptions {
+export interface AppraiseOptions extends TierContext {
   priceTable?: PriceTable;
   /** Pre-parsed item to skip re-parsing. */
   parsed?: ParsedItem;
@@ -217,7 +237,7 @@ export function appraiseItem(itemText: string, options: AppraiseOptions = {}): I
   }
 
   // Mod-tier scoring against the knowledge base.
-  const scored = appraiseMods(parsed);
+  const scored = appraiseMods(parsed, tierContext(options));
   const strongMods = scored.t1 + scored.t2;
   let modScore = clamp(Math.round((scored.points / FULL_SCORE_POINTS) * 100), 0, 100);
   if (strongMods >= 3) {
@@ -282,7 +302,7 @@ export const DEFAULT_PROMOTION: PromotionPolicy = {
   minConfidence: 50,
 };
 
-export interface EvaluateWithAppraisalOptions extends EvaluateTierOptions {
+export interface EvaluateWithAppraisalOptions extends EvaluateTierOptions, TierContext {
   /** Enables heuristic promotion of unknown items. Never demotes, never dumps. */
   promote?: PromotionPolicy | false;
 }
@@ -300,6 +320,7 @@ export function evaluateWithAppraisal(
   const base = evaluateValueTier(itemText, options);
   const appraisal = appraiseItem(itemText, {
     ...(options.priceTable ? { priceTable: options.priceTable } : {}),
+    ...tierContext(options),
     verdict: base,
   });
   const verdict: TierVerdict = { ...base, appraisal };

@@ -1,0 +1,452 @@
+{
+  "note": "Trimmed subset of GET https://www.pathofexile.com/api/trade2/data/stats (fetched 2026-09-07): only the explicit entries our mod families resolve to (src/core/statIds.ts) plus the pseudo total resistance/life entries. Entry shape is verbatim.",
+  "result": [
+    {
+      "id": "pseudo",
+      "label": "Pseudo",
+      "entries": [
+        {
+          "id": "pseudo.pseudo_total_cold_resistance",
+          "text": "+#% total to Cold Resistance",
+          "type": "pseudo"
+        },
+        {
+          "id": "pseudo.pseudo_total_fire_resistance",
+          "text": "+#% total to Fire Resistance",
+          "type": "pseudo"
+        },
+        {
+          "id": "pseudo.pseudo_total_lightning_resistance",
+          "text": "+#% total to Lightning Resistance",
+          "type": "pseudo"
+        },
+        {
+          "id": "pseudo.pseudo_total_elemental_resistance",
+          "text": "+#% total Elemental Resistance",
+          "type": "pseudo"
+        },
+        {
+          "id": "pseudo.pseudo_total_chaos_resistance",
+          "text": "+#% total to Chaos Resistance",
+          "type": "pseudo"
+        },
+        {
+          "id": "pseudo.pseudo_total_resistance",
+          "text": "+#% total Resistance",
+          "type": "pseudo"
+        },
+        {
+          "id": "pseudo.pseudo_count_resistances",
+          "text": "# total Resistances",
+          "type": "pseudo"
+        },
+        {
+          "id": "pseudo.pseudo_count_elemental_resistances",
+          "text": "# total Elemental Resistances",
+          "type": "pseudo"
+        },
+        {
+          "id": "pseudo.pseudo_total_all_elemental_resistances",
+          "text": "+#% total to all Elemental Resistances",
+          "type": "pseudo"
+        },
+        {
+          "id": "pseudo.pseudo_total_life",
+          "text": "+# total maximum Life",
+          "type": "pseudo"
+        }
+      ]
+    },
+    {
+      "id": "explicit",
+      "label": "Explicit",
+      "entries": [
+        {
+          "id": "explicit.stat_1050105434",
+          "text": "# to maximum Mana",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3299347043",
+          "text": "# to maximum Life",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_4220027924",
+          "text": "#% to Cold Resistance",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1671376347",
+          "text": "#% to Lightning Resistance",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3372524247",
+          "text": "#% to Fire Resistance",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_328541901",
+          "text": "# to Intelligence",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3917489142",
+          "text": "#% increased Rarity of Items found",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3261801346",
+          "text": "# to Dexterity",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_4080418644",
+          "text": "# to Strength",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3325883026",
+          "text": "# Life Regeneration per second",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2974417149",
+          "text": "#% increased Spell Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_4052037485",
+          "text": "# to maximum Energy Shield (Local)",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2891184298",
+          "text": "#% increased Cast Speed",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2901986750",
+          "text": "#% to all Elemental Resistances",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2923486259",
+          "text": "#% to Chaos Resistance",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1509134228",
+          "text": "#% increased Physical Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3981240776",
+          "text": "# to Spirit",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2482852589",
+          "text": "#% increased maximum Energy Shield",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2250533757",
+          "text": "#% increased Movement Speed",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3489782002",
+          "text": "# to maximum Energy Shield",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2231156303",
+          "text": "#% increased Lightning Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_587431675",
+          "text": "#% increased Critical Hit Chance",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3291658075",
+          "text": "#% increased Cold Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1940865751",
+          "text": "Adds # to # Physical Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1379411836",
+          "text": "# to all Attributes",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3336890334",
+          "text": "Adds # to # Lightning Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3962278098",
+          "text": "#% increased Fire Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3556824919",
+          "text": "#% increased Critical Damage Bonus",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_736967255",
+          "text": "#% increased Chaos Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_709508406",
+          "text": "Adds # to # Fire Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1037193709",
+          "text": "Adds # to # Cold Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_210067635",
+          "text": "#% increased Attack Speed (Local)",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_681332047",
+          "text": "#% increased Attack Speed",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1202301673",
+          "text": "# to Level of all Projectile Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_9187492",
+          "text": "# to Level of all Melee Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2162097452",
+          "text": "# to Level of all Minion Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3141070085",
+          "text": "#% increased Elemental Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2557965901",
+          "text": "Leech #% of Physical Attack Damage as Life",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_124131830",
+          "text": "# to Level of all Spell Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_55876295",
+          "text": "Leeches #% of Physical Damage as Life",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3714003708",
+          "text": "#% increased Critical Damage Bonus for Attack Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1839076647",
+          "text": "#% increased Projectile Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2843214518",
+          "text": "#% increased Attack Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3417711605",
+          "text": "Damage Penetrates #% Cold Resistance",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1545858329",
+          "text": "# to Level of all Lightning Spell Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1310194496",
+          "text": "#% increased Global Physical Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1002362373",
+          "text": "#% increased Melee Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_983749596",
+          "text": "#% increased maximum Life",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3091578504",
+          "text": "Minions have #% increased Attack and Cast Speed",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_818778753",
+          "text": "Damage Penetrates #% Lightning Resistance",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1890519597",
+          "text": "#% increased Monster Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_591105508",
+          "text": "# to Level of all Fire Spell Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3851254963",
+          "text": "#% increased Totem Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2653955271",
+          "text": "Damage Penetrates #% Fire Resistance",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2254480358",
+          "text": "# to Level of all Cold Spell Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2768835289",
+          "text": "#% increased Spell Physical Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_970213192",
+          "text": "#% increased Skill Speed",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_4226189338",
+          "text": "# to Level of all Chaos Spell Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1600707273",
+          "text": "# to Level of all Physical Spell Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1315743832",
+          "text": "#% increased Thorns damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2154246560",
+          "text": "#% increased Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3035140377",
+          "text": "# to Level of all Attack Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3885405204",
+          "text": "Bow Attacks fire # additional Arrows",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1569159338",
+          "text": "#% increased Parry Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1697951953",
+          "text": "#% increased Hazard Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_599749213",
+          "text": "# to Level of all Fire Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1147690586",
+          "text": "# to Level of all Lightning Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_4283407333",
+          "text": "# to Level of all Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2704225257",
+          "text": "# to Spirit",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1881230714",
+          "text": "#% chance to gain Onslaught on Killing Hits with this Weapon",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2901213448",
+          "text": "# to Level of all Elemental Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_782941180",
+          "text": "#% of Spell Damage Leeched as Life",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1078455967",
+          "text": "# to Level of all Cold Skills",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2101383955",
+          "text": "Damage Penetrates #% Elemental Resistances",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3131442032",
+          "text": "#% increased Grenade Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2897413282",
+          "text": "# to all Attributes",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_67169579",
+          "text": "# to Level of all Chaos Skills",
+          "type": "explicit"
+        }
+      ]
+    }
+  ]
+}

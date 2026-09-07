@@ -6,7 +6,14 @@
  * editable, league-agnostic approximations — the price table stays the
  * authority for exact worth; this layer answers "does this rare LOOK like it
  * sells" with an explainable per-mod breakdown.
+ *
+ * Since 2026-09-07 the thresholds are the FALLBACK: when a learned-tier
+ * store (tierLearning.ts, fed by every trade2 comps fetch) covers a mod's
+ * stat id, the observed ranges decide the tier instead.
  */
+
+import { statIdsForMatch, type StatCatalogue } from "./statIds.js";
+import { tierForValue, type LearnedTiers } from "./tierLearning.js";
 
 export interface ModFamily {
   id: string;
@@ -42,6 +49,12 @@ export interface ModFamily {
    * notable mods" against the gear-scale numbers).
    */
   classes?: string[];
+  /**
+   * trade2 stat text(s) in the catalogue's `#` form ("+# to maximum Life"),
+   * for families whose regex cannot be rewritten into one (statIds.ts
+   * derives the text from `pattern` when this is absent).
+   */
+  statText?: string | string[];
 }
 
 /** Jewel mod families: the same words as gear, jewel-scale rolls. */
@@ -124,10 +137,17 @@ export const MOD_FAMILIES: ModFamily[] = [
   {
     id: "jewel-leech",
     label: "Jewel: life leech",
-    pattern: String.raw`[\d.]+% of (?:Physical |Attack )?Damage Leeched as Life`,
+    // PoE2 prints "Leech #% of Physical Attack Damage as Life" / "Leeches
+    // #% of Physical Damage as Life" / "#% of Spell Damage Leeched as Life".
+    pattern: String.raw`(?:Leech(?:es)? [\d.]+% of (?:Physical |Attack |Physical Attack )?Damage as Life|[\d.]+% of (?:Physical |Attack |Spell )?Damage Leeched as Life)`,
     weight: 5,
     tiers: { t1: 0.6, t2: 0.4, t3: 0.2 },
     classes: JEWEL,
+    statText: [
+      "Leech #% of Physical Attack Damage as Life",
+      "Leeches #% of Physical Damage as Life",
+      "#% of Spell Damage Leeched as Life",
+    ],
   },
   {
     id: "jewel-all-res",
@@ -172,6 +192,27 @@ export const MOD_FAMILIES: ModFamily[] = [
     pattern: String.raw`\+\d+ to Level of all .* Skills`,
     weight: 10,
     tiers: { t1: 4, t2: 3, t3: 2 },
+    // The regex covers 261 catalogue texts (every "all X Skills" variant
+    // unique items print); pin the ones rare gear rolls.
+    statText: [
+      "+# to Level of all Skills",
+      "+# to Level of all Spell Skills",
+      "+# to Level of all Attack Skills",
+      "+# to Level of all Melee Skills",
+      "+# to Level of all Projectile Skills",
+      "+# to Level of all Minion Skills",
+      "+# to Level of all Elemental Skills",
+      "+# to Level of all Fire Skills",
+      "+# to Level of all Cold Skills",
+      "+# to Level of all Lightning Skills",
+      "+# to Level of all Chaos Skills",
+      "+# to Level of all Physical Skills",
+      "+# to Level of all Fire Spell Skills",
+      "+# to Level of all Cold Spell Skills",
+      "+# to Level of all Lightning Spell Skills",
+      "+# to Level of all Chaos Spell Skills",
+      "+# to Level of all Physical Spell Skills",
+    ],
   },
   {
     id: "spirit",
@@ -247,6 +288,7 @@ export const MOD_FAMILIES: ModFamily[] = [
     weight: 9,
     tiers: { t1: 2, t2: 1, t3: 1 },
     noNumberValue: 1,
+    statText: "Bow Attacks fire # additional Arrows",
   },
   {
     id: "onslaught-on-kill",
@@ -254,6 +296,7 @@ export const MOD_FAMILIES: ModFamily[] = [
     pattern: String.raw`\d+% chance to gain Onslaught on Killing`,
     weight: 5,
     tiers: { t1: 15, t2: 10, t3: 5 },
+    statText: "#% chance to gain Onslaught on Killing Hits with this Weapon",
   },
   {
     id: "attack-speed",
@@ -344,9 +387,11 @@ export const MOD_FAMILIES: ModFamily[] = [
   {
     id: "life-regen",
     label: "Life regeneration",
-    pattern: String.raw`Regenerate [\d.]+ Life per second`,
+    // PoE2 prints "+12.3 Life Regeneration per second".
+    pattern: String.raw`(?:Regenerate [\d.]+ Life per second|[\d.]+ Life Regeneration per second)`,
     weight: 3,
     tiers: { t1: 30, t2: 18, t3: 8 },
+    statText: "# Life Regeneration per second",
   },
   {
     id: "skill-speed",
@@ -364,6 +409,19 @@ export interface ModMatch {
   /** The numeric this family judges (first roll or two-roll average). */
   judgedValue: number;
   tier: ModTier;
+  /**
+   * "learned" = the tier came from trade2-observed ranges (tierLearning.ts);
+   * "threshold" = the family's hand-guessed t1/t2/t3 decided.
+   */
+  source: "learned" | "threshold";
+}
+
+export interface ModMatchContext {
+  itemClass?: string;
+  /** Observed tier ranges; used ahead of the hand thresholds when they cover the stat. */
+  learnedTiers?: LearnedTiers;
+  /** Stat-id catalogue that keys a mod line to its learned entry. */
+  statIds?: StatCatalogue;
 }
 
 /** Points a matched mod contributes: weight scaled by tier quality. */
@@ -396,7 +454,7 @@ export function familiesForClass(itemClass: string | undefined): ModFamily[] {
  */
 export function matchModFamily(
   modText: string,
-  context: { itemClass?: string } = {},
+  context: ModMatchContext = {},
 ): ModMatch | undefined {
   const line = modText.replace(/\s+/g, " ").trim();
   for (const family of familiesForClass(context.itemClass)) {
@@ -404,19 +462,43 @@ export function matchModFamily(
     if (!regex.test(line)) continue;
     const numbers = extractNumbers(line);
     if (numbers.length === 0) {
-      if (family.noNumberValue === undefined) return { family, judgedValue: 0, tier: 0 };
+      if (family.noNumberValue === undefined) {
+        return { family, judgedValue: 0, tier: 0, source: "threshold" };
+      }
       const value = family.noNumberValue;
       const { t1, t2, t3 } = family.tiers;
       const noNumberTier: ModTier = value >= t1 ? 1 : value >= t2 ? 2 : value >= t3 ? 3 : 0;
-      return { family, judgedValue: value, tier: noNumberTier };
+      return { family, judgedValue: value, tier: noNumberTier, source: "threshold" };
     }
     const judgedValue =
       family.judge === "average2" && numbers.length >= 2
         ? (numbers[0]! + numbers[1]!) / 2
         : numbers[0]!;
+    const learned = learnedTier(line, family, judgedValue, context);
+    if (learned !== undefined) return { family, judgedValue, tier: learned, source: "learned" };
     const { t1, t2, t3 } = family.tiers;
     const tier: ModTier = judgedValue >= t1 ? 1 : judgedValue >= t2 ? 2 : judgedValue >= t3 ? 3 : 0;
-    return { family, judgedValue, tier };
+    return { family, judgedValue, tier, source: "threshold" };
+  }
+  return undefined;
+}
+
+/**
+ * The learned verdict for one matched line, when the store covers it: the
+ * line's exact stat id is tried first, then the family's sibling ids. The
+ * item class narrows to that class's ranges (tierForValue falls back to the
+ * class-less entry itself).
+ */
+function learnedTier(
+  line: string,
+  family: ModFamily,
+  judgedValue: number,
+  context: ModMatchContext,
+): ModTier | undefined {
+  if (!context.learnedTiers || !context.statIds) return undefined;
+  for (const statId of statIdsForMatch(context.statIds, family.id, line)) {
+    const tier = tierForValue(context.learnedTiers, statId, judgedValue, context.itemClass);
+    if (tier !== undefined) return tier;
   }
   return undefined;
 }

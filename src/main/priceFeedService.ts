@@ -26,12 +26,28 @@ import {
 } from "../core/priceFeed.js";
 import {
   buildCompsQuery,
+  buildStatFilteredQuery,
   parseCompListings,
   summarizeComps,
   type CompListing,
   type CompsQuery,
   type CompsSummary,
 } from "../core/tradeComps.js";
+import { appraiseItem } from "../core/appraisal.js";
+import { MOD_FAMILIES } from "../core/modKnowledge.js";
+import { buildStatCatalogue, unresolvedFamilies, type StatCatalogue } from "../core/statIds.js";
+import {
+  addObservations,
+  emptyLearnedTiers,
+  learnTiersFromFetch,
+  serializeLearnedTiers,
+  type LearnedTiers,
+} from "../core/tierLearning.js";
+import {
+  LEARNED_TIERS_FILE,
+  TRADE_STATS_FILE,
+  loadLearnedTiers,
+} from "../adapters/learnedTiersStore.js";
 import {
   FETCH_POLICY,
   SEARCH_POLICY,
@@ -52,6 +68,14 @@ const TRADE_MIN_GAP_MS = 750;
 const COMPS_CACHE_BASE_MS = 6 * 60 * 60_000;
 /** Unique-name searches move with the market: an hour. */
 const COMPS_CACHE_UNIQUE_MS = 60 * 60_000;
+/** Stat-filtered searches are the item's own market: an hour too. */
+const COMPS_CACHE_STAT_MS = 60 * 60_000;
+/** The stats catalogue is static data (Cache-Control: 4h upstream); a week. */
+const STATS_CACHE_MS = 7 * 24 * 60 * 60_000;
+/** After a failed catalogue fetch, leave the stat stage off this long. */
+const STATS_RETRY_MS = 5 * 60_000;
+/** A stat-filtered search must find this many listings to price by itself. */
+const STAT_STAGE_MIN_IDS = 3;
 
 /**
  * One cached trade2 query: the RAW listings, not a summary. The mod
@@ -66,7 +90,11 @@ interface CachedComps {
 }
 
 function compsTtl(basis: CompsQuery["basis"]): number {
-  return basis === "unique-name" ? COMPS_CACHE_UNIQUE_MS : COMPS_CACHE_BASE_MS;
+  return basis === "unique-name"
+    ? COMPS_CACHE_UNIQUE_MS
+    : basis === "stat-filtered"
+      ? COMPS_CACHE_STAT_MS
+      : COMPS_CACHE_BASE_MS;
 }
 
 function isCachedComps(value: unknown): value is CachedComps {
@@ -75,7 +103,9 @@ function isCachedComps(value: unknown): value is CachedComps {
   return (
     typeof entry.at === "number" &&
     typeof entry.league === "string" &&
-    (entry.basis === "unique-name" || entry.basis === "base-type") &&
+    (entry.basis === "unique-name" ||
+      entry.basis === "base-type" ||
+      entry.basis === "stat-filtered") &&
     Array.isArray(entry.listings)
   );
 }
@@ -112,6 +142,8 @@ export interface CompsResult {
   error?: string;
   cached?: boolean;
   league?: string;
+  /** Which search stage produced the summary (stat-filtered beats base-type). */
+  basis?: CompsQuery["basis"];
 }
 
 interface PriceFeedServiceOptions {
@@ -464,27 +496,191 @@ export class PriceFeedService {
     return second;
   }
 
+  // ---- stats catalogue + learned tiers (lazy: nothing loads until a lookup) --
+
+  private statCatalogue: StatCatalogue | undefined;
+  private statsFailedAt = 0;
+  private statWarningLogged = false;
+  private learnedTiersStore: LearnedTiers | undefined;
+
+  private statsFile(): string {
+    return path.join(this.options.configDir, TRADE_STATS_FILE);
+  }
+
+  private catalogueFrom(payload: unknown): StatCatalogue | undefined {
+    const catalogue = buildStatCatalogue(payload, MOD_FAMILIES);
+    if (catalogue.entryCount === 0) return undefined;
+    if (!this.statWarningLogged) {
+      this.statWarningLogged = true;
+      const missing = unresolvedFamilies(catalogue.byFamily, MOD_FAMILIES);
+      if (missing.length > 0) {
+        console.warn(`[price-feed] no trade2 stat id for mod families: ${missing.join(", ")}`);
+      }
+    }
+    return catalogue;
+  }
+
+  /**
+   * The trade2 stats catalogue as a family/text → id index, from
+   * configDir/trade-stats.json (7-day TTL) or one GET of
+   * /api/trade2/data/stats — static data outside the search/fetch policies.
+   * A stale disk copy beats a failed fetch (ids do not move); a failed fetch
+   * with no copy turns the stat stage off for five minutes.
+   */
+  async fetchStats(): Promise<StatCatalogue | undefined> {
+    if (this.statCatalogue) return this.statCatalogue;
+    let stale: StatCatalogue | undefined;
+    try {
+      const file = this.statsFile();
+      if (existsSync(file)) {
+        const parsed = JSON.parse(readFileSync(file, "utf8")) as { at?: unknown; payload?: unknown };
+        const catalogue = this.catalogueFrom(parsed.payload);
+        if (catalogue && typeof parsed.at === "number" && Date.now() - parsed.at < STATS_CACHE_MS) {
+          this.statCatalogue = catalogue;
+          return catalogue;
+        }
+        stale = catalogue;
+      }
+    } catch {
+      // Corrupt cache: refetch.
+    }
+    if (Date.now() - this.statsFailedAt < STATS_RETRY_MS) return stale;
+    try {
+      const payload = await this.getJson(`${TRADE_BASE}/data/stats`);
+      const catalogue = this.catalogueFrom(payload);
+      if (!catalogue) throw new Error("trade2 stats catalogue held no explicit entries");
+      try {
+        mkdirSync(this.options.configDir, { recursive: true });
+        writeFileSync(this.statsFile(), JSON.stringify({ at: Date.now(), payload }));
+      } catch {
+        // Best effort; the in-memory catalogue serves this process.
+      }
+      this.statCatalogue = catalogue;
+      return catalogue;
+    } catch {
+      this.statsFailedAt = Date.now();
+      return stale;
+    }
+  }
+
+  /** The learned-tier store (configDir/mod-tiers.json), loaded on first use. */
+  learnedTiers(): LearnedTiers {
+    if (!this.learnedTiersStore) {
+      this.learnedTiersStore = loadLearnedTiers(this.options.configDir) ?? emptyLearnedTiers();
+    }
+    return this.learnedTiersStore;
+  }
+
+  /** Fold one fetch payload's tier data into the store and persist it. */
+  private learnFromFetch(payload: unknown, itemClass: string | undefined): number {
+    const observations = learnTiersFromFetch(payload, itemClass);
+    if (observations.length === 0) return 0;
+    this.learnedTiersStore = addObservations(this.learnedTiers(), observations);
+    try {
+      mkdirSync(this.options.configDir, { recursive: true });
+      writeFileSync(
+        path.join(this.options.configDir, LEARNED_TIERS_FILE),
+        serializeLearnedTiers(this.learnedTiersStore),
+      );
+    } catch {
+      // Best effort; the in-memory store still serves this process.
+    }
+    return observations.length;
+  }
+
+  /**
+   * One search (+ one fetch of up to 10 listings when the search finds at
+   * least `minIds`). Every fetch teaches the learned-tier store.
+   */
+  private async runCompsQuery(
+    league: string,
+    query: CompsQuery,
+    itemClass: string | undefined,
+    minIds: number,
+  ): Promise<{ kind: "ok"; listings: CompListing[] } | { kind: "rate-limited" }> {
+    const searchResponse = await this.tradeRequestWithBackoff(
+      `${TRADE_BASE}/search/poe2/${encodeURIComponent(league)}`,
+      { method: "POST", body: JSON.stringify(query.body) },
+    );
+    if (searchResponse.status === 429) return { kind: "rate-limited" };
+    if (!searchResponse.ok) throw new Error(`trade2 search → HTTP ${searchResponse.status}`);
+    const search = (await searchResponse.json()) as { id?: string; result?: string[] };
+    const ids = Array.isArray(search.result) ? search.result.slice(0, 10) : [];
+    if (!search.id || ids.length === 0 || ids.length < minIds) return { kind: "ok", listings: [] };
+    const fetchResponse = await this.tradeRequestWithBackoff(
+      `${TRADE_BASE}/fetch/${ids.join(",")}?query=${encodeURIComponent(search.id)}`,
+      { method: "GET" },
+    );
+    if (fetchResponse.status === 429) return { kind: "rate-limited" };
+    if (!fetchResponse.ok) throw new Error(`trade2 fetch → HTTP ${fetchResponse.status}`);
+    const payload = await fetchResponse.json();
+    this.learnFromFetch(payload, itemClass);
+    return { kind: "ok", listings: parseCompListings(payload) };
+  }
+
+  /**
+   * Two-stage comps (2026-09-07):
+   *   1. stat-filtered — base type + the item's own notable mods as stat
+   *      filters. Runs when the item is not unique, has notable mods, and
+   *      the catalogue resolves them. Prices by itself when the search
+   *      finds ≥ 3 listings (the similarity bar drops to 0: they matched by
+   *      construction); a thinner result is cached and falls through.
+   *   2. base-type / unique-name — the broad search, similarity-filtered.
+   * Each stage caches under its own query body; a fresh base cache is
+   * served while a penalty window is in force instead of an error.
+   */
   async fetchComps(itemText: string): Promise<CompsResult> {
     if (!looksLikePoeItemText(itemText)) {
       return { ok: false, error: "Not recognizable item text." };
     }
     const parsed = parseItemText(itemText);
-    const query = buildCompsQuery(parsed);
-    if (!query) return { ok: false, error: "The item has no searchable base type." };
+    const baseQuery = buildCompsQuery(parsed);
+    if (!baseQuery) return { ok: false, error: "The item has no searchable base type." };
 
-    const cacheKey = JSON.stringify(query.body);
     const ourMods = parsed.mods.filter((mod) => !mod.implicit).map((mod) => mod.text);
-    const summarize = (listings: readonly CompListing[]): CompsSummary =>
-      summarizeComps(ourMods, listings, query.basis, {
+    const learnedTiers = this.learnedTiers();
+    let statIds: StatCatalogue | undefined;
+    let statQuery: CompsQuery | undefined;
+    if (baseQuery.basis === "base-type" && ourMods.length > 0) {
+      statIds = await this.fetchStats();
+      if (statIds) {
+        const appraisal = appraiseItem(itemText, { parsed, learnedTiers, statIds });
+        statQuery = buildStatFilteredQuery(parsed, appraisal, statIds);
+      }
+    }
+    // The store is re-read at summary time: the fetch being summarized has
+    // just taught it.
+    const summarize = (listings: readonly CompListing[], basis: CompsQuery["basis"]): CompsSummary =>
+      summarizeComps(ourMods, listings, basis, {
         priceTable: this.options.getPriceTable(),
         itemClass: parsed.itemClass,
+        learnedTiers: this.learnedTiers(),
+        ...(statIds ? { statIds } : {}),
+        ...(basis === "stat-filtered" ? { minSimilarity: 0 } : {}),
       });
-    const cached = this.compsCache.get(cacheKey);
-    if (cached && Date.now() - cached.at < compsTtl(cached.basis)) {
-      return { ok: true, cached: true, league: cached.league, summary: summarize(cached.listings) };
+    const fromCache = (entry: CachedComps): CompsResult => ({
+      ok: true,
+      cached: true,
+      league: entry.league,
+      basis: entry.basis,
+      summary: summarize(entry.listings, entry.basis),
+    });
+    const fresh = (entry: CachedComps | undefined): entry is CachedComps =>
+      entry !== undefined && Date.now() - entry.at < compsTtl(entry.basis);
+
+    const statKey = statQuery ? JSON.stringify(statQuery.body) : undefined;
+    const statCached = statKey ? this.compsCache.get(statKey) : undefined;
+    if (fresh(statCached) && statCached.listings.length >= STAT_STAGE_MIN_IDS) {
+      return fromCache(statCached);
     }
+    const baseKey = JSON.stringify(baseQuery.body);
+    const baseCached = this.compsCache.get(baseKey);
+    // Stage 1 still owed? Only when it has not been tried within its TTL.
+    const statStagePending = statQuery !== undefined && !fresh(statCached);
+    if (!statStagePending && fresh(baseCached)) return fromCache(baseCached);
     const until = this.rateLimitedUntilIso();
     if (until) {
+      if (fresh(baseCached)) return fromCache(baseCached);
       return {
         ok: false,
         error: `trade2 rate limited until ${new Date(until).toLocaleTimeString()} — try again then`,
@@ -494,33 +690,37 @@ export class PriceFeedService {
     try {
       const league = await this.resolveLeague();
       this.resolvedLeague = league;
-      const remember = (listings: CompListing[]): CompsResult => {
-        this.compsCache.set(cacheKey, { at: Date.now(), league, basis: query.basis, listings });
+      const remember = (key: string, basis: CompsQuery["basis"], listings: CompListing[]) => {
+        this.compsCache.set(key, { at: Date.now(), league, basis, listings });
         this.saveCompsCache();
-        return { ok: true, league, summary: summarize(listings) };
       };
-      const searchResponse = await this.tradeRequestWithBackoff(
-        `${TRADE_BASE}/search/poe2/${encodeURIComponent(league)}`,
-        { method: "POST", body: JSON.stringify(query.body) },
-      );
-      if (searchResponse.status === 429) {
-        return { ok: false, error: "trade2 rate limit hit — wait a minute and try again." };
+      const rateLimited: CompsResult = {
+        ok: false,
+        error: "trade2 rate limit hit — wait a minute and try again.",
+      };
+      if (statQuery && statKey && statStagePending) {
+        const stage = await this.runCompsQuery(league, statQuery, parsed.itemClass, STAT_STAGE_MIN_IDS);
+        if (stage.kind === "rate-limited") return rateLimited;
+        remember(statKey, "stat-filtered", stage.listings);
+        if (stage.listings.length >= STAT_STAGE_MIN_IDS) {
+          return {
+            ok: true,
+            league,
+            basis: "stat-filtered",
+            summary: summarize(stage.listings, "stat-filtered"),
+          };
+        }
       }
-      if (!searchResponse.ok) {
-        throw new Error(`trade2 search → HTTP ${searchResponse.status}`);
-      }
-      const search = (await searchResponse.json()) as { id?: string; result?: string[] };
-      const ids = Array.isArray(search.result) ? search.result.slice(0, 10) : [];
-      if (!search.id || ids.length === 0) return remember([]);
-      const fetchResponse = await this.tradeRequestWithBackoff(
-        `${TRADE_BASE}/fetch/${ids.join(",")}?query=${encodeURIComponent(search.id)}`,
-        { method: "GET" },
-      );
-      if (fetchResponse.status === 429) {
-        return { ok: false, error: "trade2 rate limit hit — wait a minute and try again." };
-      }
-      if (!fetchResponse.ok) throw new Error(`trade2 fetch → HTTP ${fetchResponse.status}`);
-      return remember(parseCompListings(await fetchResponse.json()));
+      if (fresh(baseCached)) return fromCache(baseCached);
+      const stage = await this.runCompsQuery(league, baseQuery, parsed.itemClass, 1);
+      if (stage.kind === "rate-limited") return rateLimited;
+      remember(baseKey, baseQuery.basis, stage.listings);
+      return {
+        ok: true,
+        league,
+        basis: baseQuery.basis,
+        summary: summarize(stage.listings, baseQuery.basis),
+      };
     } catch (error) {
       return {
         ok: false,

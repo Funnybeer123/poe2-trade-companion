@@ -43,6 +43,7 @@ import { SortHarness, SortStop } from "../src/adapters/sortHarness.js";
 import { GearSorter } from "../src/adapters/gearSorter.js";
 import { ShopKeeper } from "../src/adapters/shopKeeper.js";
 import { PriceFeedService } from "../src/main/priceFeedService.js";
+import { loadTierKnowledge } from "../src/adapters/learnedTiersStore.js";
 import { evaluateWithAppraisal } from "../src/core/appraisal.js";
 import { bucketTabs, parseShopConfig } from "../src/core/shopListings.js";
 import { starterPriceTable, validatePriceTable, type PriceTable } from "../src/core/priceTable.js";
@@ -94,9 +95,14 @@ function loadTriageExport(): {
       console.log(`triage.json unreadable (${String(error)}) — starter tiers/prices`);
     }
   }
+  // Learned mod tiers + stat ids (mod-tiers.json / trade-stats.json in
+  // outDir): keep this spread when src/adapters/triageLoader.ts replaces
+  // this loader — the evaluator falls back to hand thresholds without it.
+  const tierKnowledge = loadTierKnowledge(outDir);
   return {
     priceTable,
-    evaluate: (itemText) => evaluateWithAppraisal(itemText, { rules, priceTable, thresholds }),
+    evaluate: (itemText) =>
+      evaluateWithAppraisal(itemText, { rules, priceTable, thresholds, ...tierKnowledge }),
   };
 }
 
