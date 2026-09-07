@@ -178,6 +178,8 @@ export interface WatchableMod {
   familyId?: string;
   judgedValue?: number;
   tier?: number;
+  /** False for implicit/enchant/rune lines — never seeds a stat filter. */
+  affix?: boolean;
   points: number;
 }
 
@@ -240,7 +242,7 @@ export function watchForItem(
     rarity: "nonunique",
     ...(itemLevel >= 78 ? { minItemLevel: 78 } : {}),
   };
-  const stats = appraisal ? notableModsForWatch(appraisal.mods) : [];
+  const stats = appraisal ? notableModsForWatch(appraisal.mods.filter((mod) => mod.affix !== false)) : [];
   if (stats.length > 0) {
     const query: WatchQuery = { ...common, stats };
     return { ...base, kind: "stat-filtered", query, label: defaultLabel("stat-filtered", query) };

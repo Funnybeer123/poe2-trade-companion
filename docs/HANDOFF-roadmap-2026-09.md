@@ -147,9 +147,11 @@ clean. Tests now run under Electron-as-Node (see "Tooling").
 - **Parser**: `(rune)` and `(desecrated)` mod tags are recognised
   (`ItemModKind` gained `rune` / `desecrated`; `isAffixMod` in
   `parseItem.ts`). Runes no longer consume an open-affix slot in the
-  crafting planner. Other consumers (appraisal craft hint, comps
-  similarity, stat filters, lookup screen) still count every parsed mod —
-  next step is to route them through `isAffixMod` as well.
+  crafting planner, the appraisal's craft hint, comps similarity (our side),
+  trade2 stat filters, the lookup screen's notable count, and watch seeding
+  (`ModAppraisal.affix`/`kind`; `tests/affix-consumers.test.ts`). Rune
+  rolls still add to the value score — the item sells with them — but they
+  are never treated as the item's own substance.
 - **End-to-end smoke revived**: both Playwright projects were stale since
   the navigation merge; they now walk every workspace (incl. Wealth,
   Market, Deals, Loot filter), evaluate an item with the real valuation,

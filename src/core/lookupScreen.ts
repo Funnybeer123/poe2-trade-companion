@@ -58,7 +58,7 @@ export const CRAFT_BASE_ILVL = 81;
 function decide(item: ScreenInput): ScreenDecision {
   const appraisal = item.appraisal;
   const notable = appraisal
-    ? appraisal.mods.filter((mod) => mod.tier !== undefined && mod.tier >= 1)
+    ? appraisal.mods.filter((mod) => mod.affix !== false && mod.tier !== undefined && mod.tier >= 1)
     : [];
   const base = { key: item.key, name: item.name, notableMods: notable.length };
   const route = (

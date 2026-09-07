@@ -21,7 +21,7 @@ import {
   type ModMatch,
   type ModMatchContext,
 } from "./modKnowledge.js";
-import { looksLikePoeItemText, parseItemText } from "./parseItem.js";
+import { isAffixMod, looksLikePoeItemText, parseItemText } from "./parseItem.js";
 import { lookupPrice, type PriceTable } from "./priceTable.js";
 import {
   evaluateValueTier,
@@ -29,7 +29,7 @@ import {
   type TierVerdict,
   type TriageTier,
 } from "./valueTiers.js";
-import type { ParsedItem } from "./types.js";
+import type { ItemModKind, ParsedItem } from "./types.js";
 
 export type ConfidenceBand = "very-high" | "high" | "medium" | "low";
 
@@ -42,6 +42,14 @@ export interface ModAppraisal {
   tier?: 0 | 1 | 2 | 3;
   /** Where the tier came from: trade2-learned ranges or the hand thresholds. */
   source?: ModMatch["source"];
+  /** The parsed mod kind (implicit, explicit, rune, desecrated …). */
+  kind?: ItemModKind;
+  /**
+   * False for implicit, enchant, and socketed-rune lines: they do not occupy
+   * affix slots and are not the item's own substance for comps, stat filters,
+   * the lookup screen, or watch seeding. Missing means affix.
+   */
+  affix?: boolean;
   points: number;
 }
 
@@ -102,19 +110,24 @@ function appraiseMods(
   t1: number;
   t2: number;
   t3: number;
+  /** Tier-1/2 rolls on slot-occupying mods (runes and implicits excluded). */
+  strongAffixes: number;
 } {
   const mods: ModAppraisal[] = [];
   let points = 0;
   let t1 = 0;
   let t2 = 0;
   let t3 = 0;
+  let strongAffixes = 0;
   for (const mod of parsed.mods) {
+    const affix = isAffixMod(mod);
+    const kindOf = mod.kind ? { kind: mod.kind } : {};
     const match: ModMatch | undefined = matchModFamily(mod.text, {
       itemClass: parsed.itemClass,
       ...context,
     });
     if (!match) {
-      mods.push({ text: mod.text, points: 0 });
+      mods.push({ text: mod.text, ...kindOf, affix, points: 0 });
       continue;
     }
     const earned = modPoints(match);
@@ -122,6 +135,7 @@ function appraiseMods(
     if (match.tier === 1) t1 += 1;
     else if (match.tier === 2) t2 += 1;
     else if (match.tier === 3) t3 += 1;
+    if (affix && (match.tier === 1 || match.tier === 2)) strongAffixes += 1;
     mods.push({
       text: mod.text,
       familyId: match.family.id,
@@ -129,10 +143,12 @@ function appraiseMods(
       judgedValue: match.judgedValue,
       tier: match.tier,
       source: match.source,
+      ...kindOf,
+      affix,
       points: Math.round(earned * 10) / 10,
     });
   }
-  return { mods, points, t1, t2, t3 };
+  return { mods, points, t1, t2, t3, strongAffixes };
 }
 
 /** The current size of a stack ("Stack Size: 12/20" → 12), or undefined. */
@@ -258,8 +274,11 @@ export function appraiseItem(itemText: string, options: AppraiseOptions = {}): I
   // Craft stock: a rare with few affixes but at least one strong roll has
   // open affixes to gamble on.
   let craftHint: string | undefined;
-  if (/^rare$/i.test(parsed.rarity) && parsed.mods.length <= 4 && strongMods >= 1) {
-    craftHint = `Craft base: only ${parsed.mods.length} affixes with ${strongMods} strong roll${strongMods > 1 ? "s" : ""} — open affixes remain.`;
+  // Only slot-occupying mods count here: an implicit or a socketed rune is
+  // neither an affix nor a reason to call the base craft-worthy.
+  const affixCount = parsed.mods.filter(isAffixMod).length;
+  if (/^rare$/i.test(parsed.rarity) && affixCount <= 4 && scored.strongAffixes >= 1) {
+    craftHint = `Craft base: only ${affixCount} affixes with ${scored.strongAffixes} strong roll${scored.strongAffixes > 1 ? "s" : ""} — open affixes remain.`;
     reasons.push(craftHint);
   }
 

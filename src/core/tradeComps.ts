@@ -101,7 +101,7 @@ export interface StatFilteredOptions {
 }
 
 /** The slice of an appraisal the stat-filtered query needs. */
-export type NotableMod = Pick<ModAppraisal, "text" | "familyId" | "judgedValue" | "tier">;
+export type NotableMod = Pick<ModAppraisal, "text" | "familyId" | "judgedValue" | "tier" | "affix">;
 
 /**
  * Stage-1 comps query: base type + rarity nonunique + the item's own notable
@@ -135,6 +135,7 @@ export function buildStatFilteredQuery(
   const notable = appraisal.mods
     .filter(
       (mod): mod is NotableMod & { familyId: string; judgedValue: number; tier: 1 | 2 | 3 } =>
+        mod.affix !== false &&
         typeof mod.familyId === "string" &&
         typeof mod.judgedValue === "number" &&
         mod.judgedValue > 0 &&

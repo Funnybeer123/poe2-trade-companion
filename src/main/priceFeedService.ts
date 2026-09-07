@@ -53,7 +53,7 @@ import {
   loadLearnedTiers,
 } from "../adapters/learnedTiersStore.js";
 import { TradePacer, policyForUrl, type PacerSnapshot } from "../core/tradePacing.js";
-import { looksLikePoeItemText, parseItemText } from "../core/parseItem.js";
+import { isAffixMod, looksLikePoeItemText, parseItemText } from "../core/parseItem.js";
 import type { PriceTable } from "../core/priceTable.js";
 
 const SCOUT_BASE = "https://api.poe2scout.com/poe2";
@@ -833,7 +833,7 @@ export class PriceFeedService {
       return { ok: false, error: this.recordError(error) };
     }
 
-    const ourMods = parsed.mods.filter((mod) => !mod.implicit).map((mod) => mod.text);
+    const ourMods = parsed.mods.filter(isAffixMod).map((mod) => mod.text);
     const learnedTiers = this.learnedTiers();
     let statIds: StatCatalogue | undefined;
     let statQuery: CompsQuery | undefined;
@@ -934,7 +934,7 @@ export class PriceFeedService {
     const parsed = parseItemText(itemText);
     const query = buildCompsQuery(parsed);
     if (!query) return undefined;
-    const ourMods = parsed.mods.filter((mod) => !mod.implicit).map((mod) => mod.text);
+    const ourMods = parsed.mods.filter(isAffixMod).map((mod) => mod.text);
     const learnedTiers = this.learnedTiers();
     const statIds = this.statCatalogue;
     const summarize = (entry: CachedComps): CompsSummary =>
