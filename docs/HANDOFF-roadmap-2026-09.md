@@ -108,6 +108,15 @@ clean. Tests now run under Electron-as-Node (see "Tooling").
   `craft-gear --from-tab=<label>` and `--then-list` (spawns shop-buckets
   after a live crafting pass, only when no other input host runs).
 
+### Sorter split (`src/adapters/gearSorter.ts` → `src/adapters/gearSorter/`)
+- Purely mechanical: 114 of 114 method bodies byte-identical after the
+  `this.` → context rewrite; every log line, step label, timing constant
+  and guard preserved; the public `GearSorter` API is unchanged so no
+  consumer changed. Layout: orchestrator (1,236 lines) + `context.ts`
+  (types, constants, `SorterContext`), `stashPerception.ts`,
+  `tabNavigation.ts`, `itemIdentification.ts`, `transfers.ts`. Shared
+  mutable state stays on the orchestrator behind accessors.
+
 ### Ops
 - `npm run clean` (`clean:artifacts` prunes images per dir, never
   `artifacts/teach`, never `.json/.jsonl`; `clean:release` empties
