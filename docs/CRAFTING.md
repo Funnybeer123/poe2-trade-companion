@@ -111,6 +111,28 @@ Dry-run switch ("Preview crafting" vs "Craft gear").
 Useful flags: `--budget=N` (ex per item), `--min-confidence=N`,
 `--max-steps=N` (session cap), `--json`.
 
+### Craft-to-sell loop
+
+The sorter can park crafting stock: with a **Craft tab** configured under
+Sort → Value tiers, a rare whose verdict is unknown or sell, with ≤ 4
+affixes and ≥ 1 strong roll (the appraisal's craft hint), detours there
+(never a keep or dump; the confidence gate applies; the tab is never a
+cleaning source). Two flags close the loop:
+
+- `--from-tab=<label>` — before the bag sweep, index that tab by Ctrl+C
+  ground truth (`GearSorter.scanTab`), pack what the bag places, and
+  withdraw it verified-serial (`withdrawItemsSerial`, one ctrl-click at a
+  time, next only after the bag grew). Dry-run prints the batch and touches
+  nothing; live needs the usual `--live` + `POE2_CRAFT_LIVE=1` and the
+  other-host check.
+- `--then-list` — after the pass, spawn `scripts/shop-buckets.ts`
+  (`--live` only when THIS run was live) so the items that finished at SELL
+  get listed. It runs only after this script's input host has closed, and
+  is skipped (exit 1, with a message) while any other input host is
+  running or after a stop/failure.
+
+Neither flag has had a live run yet (2026-09-07).
+
 Requirements for the live bag modes: calibrated bag grid, stash+inventory
 open, craft candidates AND the orbs together in the bag (orb stacks are
 found by reading them, no extra calibration).

@@ -92,6 +92,95 @@ describe("value-aware sorter routing", () => {
     expect(isTriageTabLabel("review", ROUTING)).toBe(true);
     expect(isTriageTabLabel("Rings", ROUTING)).toBe(false);
   });
+
+  it("counts the craft tab as a triage tab (never a cleaning source)", () => {
+    expect(triageTabLabels({ ...ROUTING, craftTab: "Craft" }).size).toBe(3);
+    expect(isTriageTabLabel("craft", { ...ROUTING, craftTab: "Craft" })).toBe(true);
+    expect(triageTabLabels({ ...ROUTING, craftTab: "  " }).size).toBe(2);
+  });
+});
+
+describe("craft-tab routing", () => {
+  const CRAFT_ROUTING = { ...ROUTING, sellTab: "Sell", craftTab: "Craft" };
+  const craftHint = "Craft base: only 2 affixes with 1 strong roll — open affixes remain.";
+  const craftConfig = (verdict: TierVerdict): SortTriageConfig => ({
+    evaluate: () => verdict,
+    routing: CRAFT_ROUTING,
+    minDetourConfidence: DEFAULT_MIN_DETOUR_CONFIDENCE,
+  });
+
+  it("sends an unknown rare with a craft hint to the craft tab", () => {
+    const routed = routeIdentifiedItem(
+      identified("Rings"),
+      craftConfig(verdictWith("unknown", "default", 70, { craftHint })),
+    );
+    expect(routed).toMatchObject({ dest: "Craft", fallbackDest: "Rings", detoured: true, craft: true });
+  });
+
+  it("prefers the craft tab over the sell tab for craftable sells", () => {
+    const routed = routeIdentifiedItem(
+      identified("Rings"),
+      craftConfig(verdictWith("sell", "heuristic", 70, { craftHint })),
+    );
+    expect(routed.dest).toBe("Craft");
+    expect(routed.craft).toBe(true);
+  });
+
+  it("never overrides keep or dump verdicts", () => {
+    const kept = routeIdentifiedItem(
+      identified("Rings"),
+      craftConfig(verdictWith("keep", "rule", 80, { craftHint })),
+    );
+    expect(kept.dest).toBe("Review");
+    expect(kept.craft).toBeUndefined();
+    const dumped = routeIdentifiedItem(
+      identified("junk"),
+      craftConfig(verdictWith("dump", "rule", 80, { craftHint })),
+    );
+    expect(dumped.dest).toBe("Dump");
+    expect(dumped.craft).toBeUndefined();
+  });
+
+  it("requires a rare, a craft hint, and the confidence gate", () => {
+    const magic = routeIdentifiedItem(
+      identified("Rings", "Item Class: Rings\nRarity: Magic\nStorm Loop"),
+      craftConfig(verdictWith("unknown", "default", 70, { craftHint })),
+    );
+    expect(magic.dest).toBe("Rings");
+    const noHint = routeIdentifiedItem(
+      identified("Rings"),
+      craftConfig(verdictWith("unknown", "default", 70)),
+    );
+    expect(noHint.dest).toBe("Rings");
+    const shy = routeIdentifiedItem(
+      identified("Rings"),
+      craftConfig(verdictWith("unknown", "default", 30, { craftHint })),
+    );
+    expect(shy.dest).toBe("Rings");
+    expect(shy.detoured).toBe(false);
+  });
+
+  it("changes nothing when no craft tab is configured", () => {
+    const routed = routeIdentifiedItem(
+      identified("Rings"),
+      config(verdictWith("unknown", "default", 70, { craftHint })),
+    );
+    expect(routed).toMatchObject({ dest: "Rings", detoured: false });
+    const sell = routeIdentifiedItem(
+      identified("Rings"),
+      config(verdictWith("sell", "heuristic", 70, { craftHint })),
+    );
+    expect(sell.dest).toBe("Review");
+  });
+
+  it("logs a craft find with the hint as its reason", () => {
+    const routed = routeIdentifiedItem(
+      identified("Rings"),
+      craftConfig(verdictWith("unknown", "default", 70, { craftHint })),
+    );
+    const record = findRecordFor(routed, "Dump", "2026-09-07T00:00:00.000Z");
+    expect(record).toMatchObject({ tier: "craft", routedTo: "Craft", reason: craftHint, location: "Dump" });
+  });
 });
 
 describe("find records", () => {

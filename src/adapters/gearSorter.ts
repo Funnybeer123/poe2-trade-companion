@@ -3684,7 +3684,8 @@ export class GearSorter {
             .map((item) => this.routeWithFallback(item, config))
             .filter(
               (entry) =>
-                entry.detoured && (entry.verdict?.tier === "keep" || entry.verdict?.tier === "sell"),
+                entry.detoured &&
+                (entry.craft || entry.verdict?.tier === "keep" || entry.verdict?.tier === "sell"),
             );
           if (detours.length > 0) {
             this.log(`  · ${key}: ${detours.length} valuable item(s) detour to triage tabs`);

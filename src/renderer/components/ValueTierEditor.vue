@@ -42,6 +42,7 @@ const sellAtOrAbove = ref(0.5);
 const reviewTab = ref("Review");
 const dumpTab = ref("Dump");
 const sellTab = ref("");
+const craftTab = ref("");
 const minDetourConfidence = ref(55);
 
 const testText = ref("");
@@ -60,6 +61,7 @@ function applyConfig(config: ValueTierConfigView): void {
   reviewTab.value = config.routing.reviewTab;
   dumpTab.value = config.routing.dumpTab;
   sellTab.value = config.routing.sellTab ?? "";
+  craftTab.value = config.routing.craftTab ?? "";
   minDetourConfidence.value = config.minDetourConfidence ?? 55;
 }
 
@@ -102,6 +104,7 @@ function buildRequest(): SaveValueTierConfigRequest {
       reviewTab: reviewTab.value.trim() || "Review",
       dumpTab: dumpTab.value.trim() || "Dump",
       ...(sellTab.value.trim() ? { sellTab: sellTab.value.trim() } : {}),
+      ...(craftTab.value.trim() ? { craftTab: craftTab.value.trim() } : {}),
     },
     minDetourConfidence: Math.max(0, Math.min(100, Number(minDetourConfidence.value) || 55)),
   };
@@ -224,10 +227,17 @@ async function testItem(): Promise<void> {
           Sell tab <span class="optional">(optional)</span>
           <input v-model="sellTab" type="text" placeholder="defaults to Review" />
         </label>
+        <label>
+          Craft tab <span class="optional">(optional)</span>
+          <input v-model="craftTab" type="text" placeholder="off when empty" />
+        </label>
       </div>
       <p class="muted">
         The routing tabs must exist inside the Gear folder; an unreachable tab
-        simply leaves those items in the normal flow.
+        simply leaves those items in the normal flow. With a Craft tab set,
+        rares that are unknown or sell-tier, have at most four affixes, and
+        carry at least one strong roll go there as crafting stock instead
+        (keep and dump verdicts are never overridden).
       </p>
 
       <div class="button-row">
