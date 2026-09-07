@@ -18,6 +18,8 @@ import type { TierVerdict } from "../../core/valueTiers.js";
 import type { InventoryRecord } from "../../core/inventoryLedger.js";
 import type { StashPerception } from "./stashPerception.js";
 import type { TabNavigation } from "./tabNavigation.js";
+import type { ItemIdentification } from "./itemIdentification.js";
+import type { Transfers } from "./transfers.js";
 
 export interface SortHost {
   send(payload: Record<string, unknown>): Promise<WinReply>;
@@ -203,6 +205,7 @@ export interface SorterContext {
   readonly guildChest: boolean;
   readonly profile: CalibrationProfile;
   titleMatchesChest(text: string): boolean;
+  step(text: string): Promise<void>;
   park(): Promise<void>;
   surfaceClick(x: number, y: number, surface: keyof typeof CLICK_SURFACES, why: string): Promise<boolean>;
 
@@ -214,9 +217,17 @@ export interface SorterContext {
   lastSelected: string | undefined;
   folderRowsCache: TabListRow[] | undefined;
   readonly knownTopLabels: Set<string>;
+  readonly undepositableBag: Set<string>;
+  readonly fullDests: Set<string>;
   gridCalibration: Record<string, { x: number; y: number; w: number; h: number; cols: number; rows: number }>;
+
+  /** Orchestrator flow the modules call back into. */
+  recordObservations(items: readonly IdentifiedItem[], location: string, partial?: boolean): void;
+  distributeBag(context?: { returnTo?: SourceTab; deadDests?: Set<string>; navFailed?: Set<string> }): Promise<number>;
 
   /** The sibling modules (cross-module calls go through here). */
   readonly perception: StashPerception;
   readonly navigation: TabNavigation;
+  readonly identification: ItemIdentification;
+  readonly transfers: Transfers;
 }
