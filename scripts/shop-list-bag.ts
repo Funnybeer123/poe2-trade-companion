@@ -5,6 +5,10 @@
  *
  *   npx tsx scripts/shop-list-bag.ts --tab=1Ex [--amount=1 --currency=exalted]
  *                                    [--reprice] [--current] [--live] [--step] [--max=N]
+ *                                    [--full-verify]
+ *
+ * --full-verify: verify listings with the whole-tab rescan instead of the
+ * targeted landing-cell diff (which falls back per item on any ambiguity).
  *
  * A BUCKET tab ("1Ex", "5D", "10Ex") names its own price — everything in it
  * sells for that; --amount/--currency are only needed for other tabs.
@@ -51,6 +55,7 @@ const reprice = flag("--reprice");
 /** --current: the wanted tab is already on screen — never touch the strip
  * (the "1Ex" label does not OCR, so selection would prompt or hop). */
 const current = flag("--current");
+const fullVerify = flag("--full-verify");
 const dryRun = !live;
 const tab = (value("--tab") ?? "").trim();
 if (!tab) {
@@ -109,6 +114,7 @@ const keeper = new ShopKeeper(host, harness, kit, sorter, {
   stepMode,
   priceTable,
   ...(current ? { assumeCurrentTab: true } : {}),
+  ...(fullVerify ? { fullVerify: true } : {}),
 });
 
 let exitCode = 0;

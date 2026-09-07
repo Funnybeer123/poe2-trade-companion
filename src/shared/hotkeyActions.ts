@@ -66,6 +66,14 @@ export const HOTKEY_ACTIONS: readonly HotkeyActionInfo[] = [
     context: "hideout",
     defaultKey: 4,
   },
+  {
+    id: "ladder",
+    label: "Ladder",
+    detail:
+      "Step stale app listings down one price-bucket merchant tab (delist to the bag, relist in the cheaper bucket) via Ange's Manage Shop. Unbound by default; Numpad 0 stops.",
+    context: "hideout",
+    defaultKey: null,
+  },
 ];
 
 /** In-run control keys — never bindable to actions. */

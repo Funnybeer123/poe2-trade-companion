@@ -416,6 +416,27 @@ describe("magic item base type for comps", () => {
   });
 });
 
+describe("bucket ladder next to the price ladder", () => {
+  it("applies the same 'market did not move' rule as repriceDecision", async () => {
+    const { bucketTabs } = await import("../src/core/shopListings.js");
+    const { planBucketLadder } = await import("../src/core/shopPricing.js");
+    const buckets = bucketTabs(["1Ex", "5Ex", "10Ex"], starterPriceTable());
+    const listing = appListing(); // 10 ex, priced 4 days before NOW
+    const supported: PriceSuggestion = {
+      targetExalted: 11,
+      display: { amount: 11, currency: "exalted", exalted: 11 },
+      comps: { at: AT, basis: "base-type", sampleSize: 5, candidateCount: 5, anchorExalted: 11 },
+      cautions: [],
+    };
+    expect(repriceDecision({ listing, suggestion: supported, config: config(), nowMs: NOW }).action).toBe("hold");
+    const plan = planBucketLadder({ listings: [listing], buckets, config: config(), nowMs: NOW, compsFor: () => supported });
+    expect(plan.moves).toHaveLength(0);
+    expect(plan.holds[0]!.reasons[0]).toMatch(/market did not move/);
+    const moved = planBucketLadder({ listings: [listing], buckets, config: config(), nowMs: NOW });
+    expect(moved.moves[0]).toMatchObject({ from: { label: "10Ex" }, to: { label: "5Ex" } });
+  });
+});
+
 describe("floor vs undercut", () => {
   it("lists at the floor when the comps sit exactly at it, vendors only below it", () => {
     const atFloor = suggestListingPrice(comps([1, 1, 1, 2]), config(), { at: AT });

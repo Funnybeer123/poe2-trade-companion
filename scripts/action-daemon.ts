@@ -255,11 +255,24 @@ async function actionShop(): Promise<void> {
   log({ action: "shop", phase: "result", message: `shop-buckets --live exited ${code}` });
 }
 
+/**
+ * Ladder (unbound by default): shop-ladder --live — move stale app listings
+ * down one price-bucket tab (delist to the bag, relist in the cheaper
+ * bucket). The delist gesture is unverified: the script captures a
+ * screenshot and stops on anything it cannot prove by Ctrl+C. Numpad 0
+ * stops. See docs/HANDOFF-shop-listings.md.
+ */
+async function actionLadder(): Promise<void> {
+  const code = await spawnScript(["scripts/shop-ladder.ts", "--live"], "ladder");
+  log({ action: "ladder", phase: "result", message: `shop-ladder --live exited ${code}` });
+}
+
 async function runAction(name: string, key: number): Promise<void> {
   log({ action: name, phase: "start", message: `Num${key} pressed` });
   try {
     if (name === "stash") await actionStash();
     else if (name === "shop") await actionShop();
+    else if (name === "ladder") await actionLadder();
     else if (name === "sort") await actionSort();
     else if (name === "fill") await actionFill();
     else if (name === "vendor") await actionVendor();

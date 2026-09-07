@@ -6,7 +6,17 @@
  *
  *   npx tsx scripts/shop-buckets.ts [--live] [--step] [--no-comps] [--no-refresh]
  *                                   [--comps-limit=N] [--buckets=1Ex,5Ex,...]
- *                                   [--league=NAME]
+ *                                   [--league=NAME] [--source=bag|review]
+ *                                   [--full-verify]
+ *
+ * --source=review stages the stash REVIEW tab first (label from the triage
+ * export's routing.reviewTab): open the stash, index the tab, withdraw as
+ * many items as the bag's free cells hold (verified-serial), close the stash
+ * (Escape, title-band verified), then run the ordinary bag flow. A dry-run
+ * reports what would be withdrawn and still closes the stash.
+ *
+ * --full-verify verifies each listing with the whole-tab rescan instead of
+ * the targeted landing-cell diff (the diff falls back per item anyway).
  *
  * Prices are for the CONFIGURED league: "auto" (default) resolves to the
  * current softcore challenge league via poe2scout; --league=NAME pins it
@@ -45,6 +55,7 @@ import { ShopKeeper } from "../src/adapters/shopKeeper.js";
 import { PriceFeedService } from "../src/main/priceFeedService.js";
 import { loadTriageExport } from "../src/adapters/triageLoader.js";
 import { bucketTabs, parseShopConfig } from "../src/core/shopListings.js";
+import { DEFAULT_TRIAGE_ROUTING } from "../src/core/bagTriage.js";
 import type { PriceTable } from "../src/core/priceTable.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -64,6 +75,13 @@ const bucketsArg = value("--buckets");
 const leagueArg = value("--league");
 const noRefresh = flag("--no-refresh");
 const noVendor = flag("--no-vendor");
+const fullVerify = flag("--full-verify");
+const sourceArg = (value("--source") ?? "bag").trim().toLowerCase();
+if (sourceArg !== "bag" && sourceArg !== "review") {
+  console.error(`--source must be "bag" or "review" (got "${sourceArg}")`);
+  process.exit(1);
+}
+const reviewSource = sourceArg === "review";
 
 // The app's triage export (tiers + price table), placeholders stripped and
 // the newest feed snapshot merged — src/adapters/triageLoader.ts.
@@ -85,7 +103,9 @@ const sorter = new GearSorter(host, harness, kit, {
   templateDir,
   dryRun,
   debug: false,
-  maxChestClicks: 0,
+  // The Review source opens the stash itself (sorter session); the bag
+  // source never touches the chest.
+  maxChestClicks: reviewSource ? 2 : 0,
 });
 const feed = noComps
   ? undefined
@@ -105,6 +125,7 @@ const keeper = new ShopKeeper(host, harness, kit, sorter, {
   stepMode,
   priceTable,
   evaluate,
+  ...(fullVerify ? { fullVerify: true } : {}),
   ...(feed
     ? {
         comps: async (itemText: string) => {
@@ -122,8 +143,19 @@ const keeper = new ShopKeeper(host, harness, kit, sorter, {
 let exitCode = 0;
 try {
   console.log(
-    `shop-buckets ${dryRun ? "DRY-RUN" : "LIVE"}${stepMode ? " STEP" : ""}${noComps ? " no-comps" : ` comps≤${compsLimit}`} — numpad: 8 good · 9 wrong · 5 pause · 0 stop`,
+    `shop-buckets ${dryRun ? "DRY-RUN" : "LIVE"}${stepMode ? " STEP" : ""}${noComps ? " no-comps" : ` comps≤${compsLimit}`}${reviewSource ? " source=review" : ""}${fullVerify ? " full-verify" : ""} — numpad: 8 good · 9 wrong · 5 pause · 0 stop`,
   );
+
+  // Review tab as the source: stage it into the bag BEFORE the Merchant
+  // opens (stash + merchant cannot be open together). Dry-run reports.
+  if (reviewSource) {
+    const reviewTab = triage.routing.reviewTab?.trim() || DEFAULT_TRIAGE_ROUTING.reviewTab;
+    const staged = await keeper.stageReviewItems(reviewTab);
+    for (const line of staged.report) console.log(`  · ${line}`);
+    if (!dryRun && staged.withdrawn.length === 0 && staged.chosen.length > 0) {
+      throw new Error(`review-withdraw-failed — nothing left "${reviewTab}" for the bag`);
+    }
+  }
 
   // Live prices first: the divine rate and every feed-priced unique/currency
   // come from poe2scout for the configured league; comps are per item later.
@@ -186,6 +218,8 @@ try {
   const { plan, held, vendor } = await keeper.planBagBuckets(buckets, { compsLimit });
   console.log(`\nplan: ${plan.length} item(s) to list, ${vendor.length} to vendor, ${held.length} held`);
   for (const entry of plan) {
+    // A stack's basis carries "STACK ×N (whole|per-unit)" — the pricing mode
+    // is unverified live; the first live stack listing is step-gated.
     console.log(
       `  ${entry.name} (${entry.itemClass}) ≈${entry.estimateExalted} ex via ${entry.basis} → ${entry.bucket.label} (${entry.bucket.amount} ${entry.bucket.currency})`,
     );

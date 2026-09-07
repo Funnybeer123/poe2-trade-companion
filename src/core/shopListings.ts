@@ -16,7 +16,7 @@
 import { orbCosts, type OrbId } from "./crafting.js";
 import { parseItemText } from "./parseItem.js";
 import { tradeCurrencyToOrb } from "./tradeComps.js";
-import type { PriceTable } from "./priceTable.js";
+import { lookupPrice, type PriceTable } from "./priceTable.js";
 
 export const SHOP_CONFIG_SCHEMA_VERSION = 1 as const;
 export const LISTING_LEDGER_SCHEMA_VERSION = 1 as const;
@@ -154,7 +154,22 @@ export interface ShopConfig {
    * run that relied on the strip alone could silently lose a bucket.
    */
   bucketTabs: string[];
+  /**
+   * Bucket ladder without comps: when no usable comps are supplied for a
+   * stale app listing, age alone steps it down a bucket (true, default) or
+   * the listing holds until comps say the market moved (false).
+   */
+  ladderWithoutComps: boolean;
+  /**
+   * How the SET ITEM PRICE dialog prices a currency STACK — UNVERIFIED
+   * live (docs/HANDOFF-shop-listings.md). "whole": the typed amount buys the
+   * whole stack, so a stack is bucketed at unit × count; "per-unit": the
+   * amount is per orb, so a stack is bucketed at its unit value.
+   */
+  stackPricing: "whole" | "per-unit";
 }
+
+export type StackPricingMode = ShopConfig["stackPricing"];
 
 export function defaultShopConfig(): ShopConfig {
   return {
@@ -178,6 +193,8 @@ export function defaultShopConfig(): ShopConfig {
     sources: ["bag"],
     maxActionsPerRun: 10,
     bucketTabs: [],
+    ladderWithoutComps: true,
+    stackPricing: "whole",
   };
 }
 
@@ -216,7 +233,16 @@ export function parseShopConfig(input: unknown): { config: ShopConfig; issues: s
     maxCompsSpread: num(input.maxCompsSpread, base.maxCompsSpread, 1.1),
     minListExalted: num(input.minListExalted, base.minListExalted, 0),
     maxActionsPerRun: Math.round(num(input.maxActionsPerRun, base.maxActionsPerRun, 1, 200)),
+    ladderWithoutComps:
+      typeof input.ladderWithoutComps === "boolean" ? input.ladderWithoutComps : base.ladderWithoutComps,
+    stackPricing:
+      input.stackPricing === "whole" || input.stackPricing === "per-unit"
+        ? input.stackPricing
+        : base.stackPricing,
   };
+  if (input.stackPricing !== undefined && input.stackPricing !== config.stackPricing) {
+    issues.push(`stackPricing must be "whole" or "per-unit" — using "${config.stackPricing}"`);
+  }
   if (Array.isArray(input.ladder)) {
     const steps = input.ladder
       .filter(isRecord)
@@ -621,6 +647,275 @@ export function ageDays(fromIso: string, nowMs: number): number {
   const from = Date.parse(fromIso);
   if (!Number.isFinite(from)) return 0;
   return Math.max(0, (nowMs - from) / 86_400_000);
+}
+
+// ---------------------------------------------------------------------------
+// Earnings (Remove-only) sub-tab: sale proceeds land here as currency stacks
+// (user demonstration 2026-09-02). Its delta between two scans is the ONLY
+// ground truth for "sold" — the gone-from-tab heuristic stays the fallback.
+// ---------------------------------------------------------------------------
+
+export interface EarningsStack {
+  /** The currency's item name as copied ("Exalted Orb"). */
+  name: string;
+  /** Orbs in the stack (the Stack Size property's current value). */
+  count: number;
+  /** The stack's value in exalted when the currency is priced. */
+  exalted?: number;
+}
+
+export interface EarningsSnapshot {
+  at: string;
+  stacks: EarningsStack[];
+}
+
+export interface EarningsCurrencyDelta {
+  name: string;
+  before: number;
+  after: number;
+  /** after − before; negative when stacks were collected to the bag. */
+  delta: number;
+  unitExalted?: number;
+  /** delta × unit, when the currency is priced. */
+  deltaExalted?: number;
+}
+
+export interface EarningsDelta {
+  at: string;
+  previousAt?: string;
+  perCurrency: EarningsCurrencyDelta[];
+  /** Sum of the POSITIVE deltas in exalted (proceeds that arrived). */
+  totalExalted: number;
+  /** Currencies that arrived but could not be valued. */
+  unpriced: string[];
+}
+
+/**
+ * One unit of a currency in exalted: the price table by item name first
+ * (the poe2scout feed prices every currency by name), else the crafting
+ * economy's orb rates by the folded orb word.
+ */
+export function currencyUnitExalted(name: string, priceTable?: PriceTable): number | undefined {
+  if (priceTable) {
+    const hit = lookupPrice(priceTable, {
+      name,
+      baseType: name,
+      itemClass: "Stackable Currency",
+      rarity: "Currency",
+    });
+    if (hit && hit.entry.match.name !== undefined && hit.value > 0) return hit.value;
+  }
+  const word = name
+    .trim()
+    .toLowerCase()
+    .replace(/^orb of\s+/, "")
+    .replace(/\s+orbs?$/, "");
+  const orb = tradeCurrencyToOrb(word);
+  const rate = orb ? orbCosts(priceTable)[orb as OrbId] : undefined;
+  return rate && Number.isFinite(rate) && rate > 0 ? rate : undefined;
+}
+
+/** Sum the stacks of one snapshot per currency name. */
+function countsByName(snapshot: EarningsSnapshot | undefined): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const stack of snapshot?.stacks ?? []) {
+    const key = stack.name.trim();
+    if (!key || !Number.isFinite(stack.count)) continue;
+    counts.set(key, (counts.get(key) ?? 0) + Math.max(0, Math.floor(stack.count)));
+  }
+  return counts;
+}
+
+/** Per-currency deltas between two Earnings scans and the proceeds total. */
+export function diffEarnings(
+  previous: EarningsSnapshot | undefined,
+  current: EarningsSnapshot,
+  priceTable?: PriceTable,
+): EarningsDelta {
+  const before = countsByName(previous);
+  const after = countsByName(current);
+  const names = [...new Set([...before.keys(), ...after.keys()])].sort();
+  const perCurrency: EarningsCurrencyDelta[] = [];
+  const unpriced: string[] = [];
+  let totalExalted = 0;
+  for (const name of names) {
+    const was = before.get(name) ?? 0;
+    const now = after.get(name) ?? 0;
+    const delta = now - was;
+    const unit = currencyUnitExalted(name, priceTable);
+    const entry: EarningsCurrencyDelta = {
+      name,
+      before: was,
+      after: now,
+      delta,
+      ...(unit !== undefined ? { unitExalted: unit } : {}),
+      ...(unit !== undefined ? { deltaExalted: Math.round(delta * unit * 100) / 100 } : {}),
+    };
+    perCurrency.push(entry);
+    if (delta > 0) {
+      if (unit === undefined) unpriced.push(name);
+      else totalExalted += delta * unit;
+    }
+  }
+  return {
+    at: current.at,
+    ...(previous ? { previousAt: previous.at } : {}),
+    perCurrency,
+    totalExalted: Math.round(totalExalted * 100) / 100,
+    unpriced,
+  };
+}
+
+export interface GoneListing {
+  fingerprint: string;
+  name: string;
+  count: number;
+  price?: ListingPrice;
+}
+
+/** Relative tolerance under which two exalted values count as "exact". */
+const EXACT_TOLERANCE = 0.005;
+/** Relative tolerance for a SUM of several gone listings. */
+const SUM_TOLERANCE = 0.05;
+
+function within(value: number, target: number, tolerance: number): boolean {
+  if (target <= 0) return value <= 0;
+  return Math.abs(value - target) / target <= tolerance;
+}
+
+/**
+ * The realized price a matched delta implies: a single-currency delta keeps
+ * its own denomination, a mixed one is expressed in exalted.
+ */
+function realizedFromDelta(delta: EarningsDelta): ListingPrice {
+  const arrived = delta.perCurrency.filter((entry) => entry.delta > 0);
+  if (arrived.length === 1 && arrived[0]!.deltaExalted !== undefined) {
+    const only = arrived[0]!;
+    return {
+      amount: only.delta,
+      currency: normalizeNoteCurrency(
+        only.name.toLowerCase().replace(/^orb of\s+/, "").replace(/\s+orbs?$/, ""),
+      ),
+      exalted: only.deltaExalted,
+    };
+  }
+  return { amount: delta.totalExalted, currency: "exalted", exalted: delta.totalExalted };
+}
+
+/**
+ * Upgrade heuristic "sold" events to VERIFIED when the Earnings delta backs
+ * them: the delta equals one gone listing's price (exact), or the sum of
+ * several gone listings within 5%; a delta that matches nothing while
+ * exactly one listing is gone is that listing's real sale price. Anything
+ * else stays heuristic, with a report line saying why.
+ */
+export function verifySalesWithEarnings(args: {
+  events: readonly ListingEvent[];
+  goneListings: readonly GoneListing[];
+  earningsDelta: EarningsDelta;
+}): { events: ListingEvent[]; report: string[] } {
+  const report: string[] = [];
+  const delta = args.earningsDelta;
+  const total = delta.totalExalted;
+  const sold = args.events.filter((event) => event.kind === "sold" && event.certainty === "heuristic");
+  const valueOf = (event: ListingEvent): number | undefined => {
+    const gone = args.goneListings.find((entry) => entry.fingerprint === event.fingerprint);
+    const price = event.realized ?? gone?.price;
+    return price?.exalted !== undefined ? price.exalted * event.count : undefined;
+  };
+  const upgrade = (event: ListingEvent, realized: ListingPrice, reason: string): ListingEvent => ({
+    ...event,
+    certainty: "verified",
+    realized,
+    reason,
+  });
+
+  if (sold.length === 0) {
+    if (total > 0) {
+      report.push(
+        `Earnings grew by ≈${total} ex but no listing left the shop — proceeds from an earlier, already-recorded sale, or a listing this ledger never held`,
+      );
+    }
+    return { events: [...args.events], report };
+  }
+  if (total <= 0) {
+    report.push(
+      `Earnings unchanged (${delta.perCurrency.length === 0 ? "empty" : "no proceeds arrived"}) — ${sold.length} presumed sale(s) stay heuristic (removed by hand?)`,
+    );
+    return { events: [...args.events], report };
+  }
+  if (delta.unpriced.length > 0) {
+    report.push(`Earnings: ${delta.unpriced.join(", ")} arrived but cannot be valued — the total ignores it`);
+  }
+
+  const verified = new Map<ListingEvent, ListingEvent>();
+  const priced = sold.filter((event) => valueOf(event) !== undefined);
+  // 1. One gone listing whose price IS the delta.
+  const exact = priced.find((event) => within(valueOf(event)!, total, EXACT_TOLERANCE));
+  if (exact && sold.length === 1) {
+    verified.set(exact, upgrade(exact, exact.realized!, `verified by the Earnings tab: +${total} ex arrived`));
+  } else if (sold.length === 1) {
+    // 2. Exactly one listing gone, delta says something else: that IS the sale.
+    const only = sold[0]!;
+    const realized = realizedFromDelta(delta);
+    verified.set(
+      only,
+      upgrade(
+        only,
+        realized,
+        `verified by the Earnings tab: +${total} ex arrived` +
+          (valueOf(only) !== undefined ? ` (listed at ${valueOf(only)} ex)` : " (listing price unknown)"),
+      ),
+    );
+  } else {
+    // 3. Several gone: an exact single match first, else the subset whose
+    //    sum lands within 5% (small n — the ledger's gone set is a handful).
+    if (exact) {
+      verified.set(exact, upgrade(exact, exact.realized!, `verified by the Earnings tab: +${total} ex arrived`));
+    } else {
+      const pool = priced.slice(0, 14);
+      let best: { subset: ListingEvent[]; error: number } | undefined;
+      for (let mask = 1; mask < 1 << pool.length; mask += 1) {
+        let sum = 0;
+        const subset: ListingEvent[] = [];
+        for (let bit = 0; bit < pool.length; bit += 1) {
+          if (mask & (1 << bit)) {
+            subset.push(pool[bit]!);
+            sum += valueOf(pool[bit]!)!;
+          }
+        }
+        if (!within(sum, total, SUM_TOLERANCE)) continue;
+        const error = Math.abs(sum - total);
+        if (!best || error < best.error) best = { subset, error };
+      }
+      if (best) {
+        for (const event of best.subset) {
+          verified.set(
+            event,
+            upgrade(
+              event,
+              event.realized!,
+              `verified by the Earnings tab: ${best.subset.length} sale(s) sum to ≈${total} ex`,
+            ),
+          );
+        }
+      }
+    }
+  }
+
+  const events = args.events.map((event) => verified.get(event) ?? event);
+  const stillHeuristic = sold.filter((event) => !verified.has(event));
+  if (verified.size > 0) {
+    report.push(
+      `Earnings +${total} ex verified ${verified.size} sale(s): ${[...verified.values()].map((event) => `${event.count}x ${event.name}`).join(", ")}`,
+    );
+  }
+  if (stillHeuristic.length > 0) {
+    report.push(
+      `Earnings +${total} ex does not account for ${stillHeuristic.map((event) => `${event.count}x ${event.name}`).join(", ")} — left heuristic; correct the ledger by hand if you moved them`,
+    );
+  }
+  return { events, report };
 }
 
 // ---------------------------------------------------------------------------

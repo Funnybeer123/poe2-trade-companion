@@ -11,6 +11,90 @@
 > Everything else in this document marked LIVE-VERIFIED has run against
 > the game; see the dated STATUS blocks below.
 
+## STATUS (2026-09-07): FIVE LISTING-FLOW ADDITIONS BUILT, ZERO LIVE RUNS
+
+Built offline (tsc + vue-tsc + eslint + vitest green; 127 shop tests), NOT
+one of them has touched the game. Every new gesture follows the repo rule:
+Ctrl+C ground truth or nothing, and any unexpected UI state saves a
+screenshot to `artifacts/tab-admin/debug/shop-<tag>-<ts>.png` and STOPS
+(`ShopKeeper.captureAndStop`). First live checks are in "Still open" below.
+
+1. **Verified sales from the Earnings tab.** `ShopKeeper.scanEarnings()`
+   finds the "Earnings (Remove-only)" sub-tab on the TOP strip band by
+   `pickExact` (word-folded, so the "(Remove-only)" suffix answers to
+   "Earnings" and never reaches the stash refusal — `earningsSource()` is
+   `{label:"Earnings", shop:true}` scanned with `navigate:false`), indexes
+   it by Ctrl+C (stack size from the Stack Size property via
+   `stackCountOf`), diffs against `artifacts/tab-admin/earnings-snapshot.json`
+   (`diffEarnings`), and clicks back to the "Shop" sub-tab. Pure core:
+   `verifySalesWithEarnings` upgrades heuristic "sold" rows to
+   `certainty: "verified"` when the delta equals one gone listing's price
+   (±0.5%), the sum of several within 5% (subset search, n ≤ 14), or when
+   exactly one listing is gone (verified AT the delta); everything else
+   stays heuristic with a report line. `scripts/shop.ts` scans Earnings
+   FIRST on every run (`--no-earnings` skips), passes the delta into
+   `reconcile()`, and saves the snapshot as the next baseline only with
+   `--record`. `--collect-earnings` (needs `--live`) left-clicks each stack
+   (the demonstrated move-to-bag gesture), verified by a bag Ctrl+C read
+   naming the same currency. Sub-tab found = the sale rows read "verified
+   by the Earnings tab"; not found = "sold detection falls back to the
+   gone-from-tab heuristic" in the report.
+2. **Targeted verification rescan.** `listBagItems` no longer rescans the
+   whole tab per batch: it takes a pixel-occupancy baseline
+   (`GearSorter.occupiedStashCellsNow` — a thin public wrapper over the
+   same baseline + bright-block rule `indexTab` sweeps with, on the
+   pre-scan's geometry, no Ctrl+C) and after each listing diffs the frame:
+   the newly filled cells are the landing spot, and ONLY those are
+   hovered (Ctrl+C fingerprint must match, then `readAskingPrice`). A
+   diff whose cell count ≠ the item's footprint, or a fingerprint that does
+   not match, logs why and falls back to the whole-tab rescan for that
+   item after the batch. `--full-verify` (shop.ts, shop-buckets.ts,
+   shop-list-bag.ts → `ShopKeeperOptions.fullVerify`) keeps the old path.
+   Dialog-open proof, the bag-cell check, cooldown lines and the tooltip
+   parser are unchanged.
+3. **Bucket reprice ladder.** Pure `planBucketLadder` (shopPricing.ts): for
+   each `by: "app"` listing whose price matches a bucket (`bucketOfPrice`)
+   and whose `pricedAt` age has passed the first ladder step, target = the
+   next cheaper bucket (one step) or the dearest bucket ≤ current × (1 −
+   stepPercent) (several steps), never below the cheapest; comps (when
+   supplied) hold a listing they still support ("market did not move") and
+   floor the target; without comps age alone moves it when shop.json
+   `ladderWithoutComps` (default true, sanitized) allows. User-priced
+   listings never move; every hold/move is a report line; `maxActionsPerRun`
+   caps moves. Adapter `applyBucketLadder`: select the source bucket, find
+   the fingerprint by scan, skip under the game's cooldown lock or if the
+   tooltip is not the bucket price, optional per-move comps re-plan, then
+   the DELIST — a ctrl-click on the listed item (NEVER demonstrated),
+   believed only when a bag Ctrl+C reads the same fingerprint; the price
+   dialog opening instead, no bag growth, or a different item in the new
+   cell → one click back on the same cell (a held item drops), screenshot,
+   STOP. Then `listBagItems` into the target bucket. Ledger: "delisted"
+   (app, verified, previousPrice) then "listed". CLI `scripts/shop-ladder.ts`
+   (npm `shop:ladder` = offline dry-run from the ledger + `bucketTabs`;
+   `shop:ladder:live` = `--live --step`; `--comps`, `--max=N`,
+   `--buckets=`), script kinds `shop-ladder-dry` / `shop-ladder`, ShopView
+   button "Step stale listings down a bucket", hotkey action `ladder`
+   (unbound by default) → `actionLadder` in the daemon.
+4. **Stack pricing flag.** shop.json `stackPricing: "whole" | "per-unit"`
+   (default "whole"; sanitizer + ShopView expert select). Pure
+   `stackBucketValue(estimate, mode)`: whole = unit × count, per-unit =
+   unit. `planBagBuckets` uses it for price-table stacks and the plan
+   line's basis reads `price table STACK ×N (whole|per-unit)`. In live
+   mode the FIRST stack listing of a run is gated on Numpad 8 through
+   `harness.confirmPlan` even without `--step` (9 skips the stack), with
+   the log telling the user to hover the listing afterwards and check
+   whether the Asking Price is for the whole stack or per orb.
+5. **Review tab as a listing source.** `scripts/shop-buckets.ts
+   --source=review`: `ShopKeeper.stageReviewItems(reviewTab)` (label from
+   triage.json `routing.reviewTab`, default "Review") runs
+   `sorter.ensureSession()` (stash + Gear folder row; the sorter gets
+   `maxChestClicks: 2` for this source), `scanTab` on the folder tab,
+   picks items greedily up to the bag's free cells (60 − occupied),
+   `withdrawItemsSerial`, then closes the stash the vendor step's way —
+   Escape, verified by the title band, three tries, else capture-and-stop
+   — and the normal flow continues (`ensureMerchantOpen` → plan → apply).
+   Dry-run indexes, prints "would withdraw", and still closes the stash.
+
 # HANDOFF — Shop: manage public-tab sale listings, then auto-list appraised finds
 
 **Mission** (user's words, 2026-09-01): add a way in the APPLICATION to
@@ -298,9 +382,56 @@ Still open:
   (precision above the floor) and background cache warming from the daemon.
 - Held lookup candidates with zero comparable listings (Maelström Visage)
   could fall back to the base floor with a flag; today they stay in the bag.
-- Per-item verification rescans sweep the whole tab (75+ cells now); a run
-  of 16 listings took 9 minutes. Rescanning only the changed region would
-  cut most of that.
+- **First live checks for the 2026-09-07 additions (all step mode, game
+  foreground, one at a time; every one is an assumption until it passes):**
+  1. Earnings scan — `npm run shop -- --step` (dry-run). Watch: the strip
+     click lands on "Earnings (Remove-only)" at ≈(739,217); the grid
+     indexes as 12x12 (the "-1-" tab); each stack's Ctrl+C carries a Stack
+     Size line; the "Shop" sub-tab click at ≈(428,217) brings the bucket
+     strip back before the shop-tab scan. Then `--record` once to seed
+     `earnings-snapshot.json`; after a real sale, `--record` again and
+     confirm the sold row reads `certainty: "verified"` with the delta.
+     Assumptions: the Earnings label OCRs at native or 2x; the sub-tab
+     click is a plain left-click; the Earnings grid shares the folder-row
+     12x12 bounds.
+  2. Collect earnings — `npm run shop -- --live --step --collect-earnings`
+     with ONE stack in Earnings. Watch: a plain left-click moves it to the
+     bag and the bag Ctrl+C names the currency. If the bag does not grow
+     the run stops with a screenshot — check the cursor (the click may
+     have picked it up instead) and put it down by hand.
+  3. Targeted verification — `npm run shop:buckets:live` with 2–3 bag
+     items. Watch the log for "listed at r,c … tooltip reads" (targeted
+     path) vs "targeted verification inconclusive (…) — whole-tab rescan"
+     (fallback). Assumption: the game places the item at the first free
+     cell and the occupancy diff is exactly its footprint; a 2x-zoom
+     dialog fade or a tooltip lingering over the grid would inflate the
+     diff — if every item falls back, raise the 250ms settle in
+     `listBagItems` or run `--full-verify` and file it.
+  4. Bucket ladder — `npm run shop:ladder` (offline plan) then
+     `npx tsx scripts/shop-ladder.ts --live --step --max=1` on ONE cheap
+     stale listing. The DELIST gesture is the whole question: watch what
+     the ctrl-click does. Item lands in the bag = the gesture is right
+     (the relist then runs the proven bag path). Price dialog opens = the
+     run closes it and stops; the delist is something else (right-click
+     menu? drag?) — record it with `record-teach.ts` and rewire
+     `applyBucketLadder`. Nothing happens = the run clicks the cell once
+     (drops a held item), screenshots, stops — check the cursor. Also
+     watch the cooldown skip: a listing priced minutes ago must report
+     `[cooldown]`, never click.
+  5. Stack pricing — put a 2+ stack of a feed-priced currency in the bag,
+     `npm run shop:buckets:live`. The plan line must read `STACK ×N
+     (whole)`; the first-stack gate waits on Numpad 8 even without
+     `--step`. After LIST ITEM hover the listing: if the tooltip's Asking
+     Price is per orb, set `"stackPricing": "per-unit"` in shop.json (or
+     the ShopView expert select) and reprice the stack by hand.
+  6. Review source — `npx tsx scripts/shop-buckets.ts --source=review`
+     (dry-run) standing where BOTH the stash chest and Ange are on screen.
+     Watch: the stash opens, the Review folder tab indexes, "would
+     withdraw" lines print, Escape closes the stash (title band gone), and
+     the Merchant opens afterwards. If Escape does not close the stash the
+     run stops with a screenshot — note what was open (the folder side
+     list?) and add that state to `closeStashPanel`. Then `--live --step`
+     with 1–2 items.
 
 ## STATUS (2026-09-03): ONE-KEY FLOW LIVE-VERIFIED END TO END (unattended)
 

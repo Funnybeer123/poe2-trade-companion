@@ -118,6 +118,11 @@ async function runList(): Promise<void> {
   await runScriptKind(dryRun.value ? "shop-buckets-dry" : "shop-buckets");
 }
 
+/** Bucket ladder: the dry kind is offline (ledger + shop.json); live moves items. */
+async function runLadder(): Promise<void> {
+  await runScriptKind(dryRun.value ? "shop-ladder-dry" : "shop-ladder");
+}
+
 async function stopScript(): Promise<void> {
   if (!tabsApi) return;
   await (tabsApi as unknown as { stopScript(): Promise<boolean> }).stopScript();
@@ -205,6 +210,15 @@ async function saveConfig(): Promise<void> {
             @click="runList"
           >
             {{ dryRun ? "Price the bag → bucket plan (dry-run)" : "List bag into bucket tabs (live)" }}
+          </button>
+          <button
+            type="button"
+            class="button"
+            :disabled="status.running"
+            :title="dryRun ? 'Prints which stale listings would move to a cheaper bucket (offline, from the ledger)' : 'Delists each stale listing to the bag and relists it one bucket cheaper'"
+            @click="runLadder"
+          >
+            {{ dryRun ? "Step stale listings down a bucket (dry-run)" : "Step stale listings down a bucket (live)" }}
           </button>
           <button type="button" class="button danger" :disabled="!status.running" @click="stopScript">
             Stop
@@ -368,6 +382,17 @@ async function saveConfig(): Promise<void> {
               Underpriced at +%
               <input v-model.number="config.underpricedPercent" type="number" min="5" max="500" />
             </label>
+            <label>
+              Stack pricing (SET ITEM PRICE on a currency stack — unverified live)
+              <select v-model="config.stackPricing">
+                <option value="whole">whole stack (amount buys all)</option>
+                <option value="per-unit">per unit (amount is per orb)</option>
+              </select>
+            </label>
+            <label class="check-row">
+              <input v-model="config.ladderWithoutComps" type="checkbox" />
+              Ladder without comps (age alone moves a stale listing down a bucket)
+            </label>
           </div>
           <p class="muted">
             The reprice ladder and item sources live in
@@ -417,6 +442,7 @@ async function saveConfig(): Promise<void> {
 .config-grid label { display: flex; flex-direction: column; gap: 0.3rem; font-size: 0.85rem; }
 .cap-row { display: flex; gap: 0.4rem; }
 .cap-row input { flex: 1; min-width: 0; }
+.config-grid label.check-row { flex-direction: row; align-items: center; gap: 0.5rem; }
 .expert summary { cursor: pointer; opacity: 0.8; }
 .expert { border-top: 1px solid rgba(140, 140, 160, 0.15); padding-top: 0.6rem; }
 </style>

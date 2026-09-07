@@ -115,13 +115,16 @@ function appraiseMods(parsed: ParsedItem): {
   return { mods, points, t1, t2, t3 };
 }
 
-function stackCount(parsed: ParsedItem): number | undefined {
+/** The current size of a stack ("Stack Size: 12/20" → 12), or undefined. */
+export function stackCountOf(parsed: ParsedItem): number | undefined {
   const property = parsed.properties.find((entry) => /^stack size$/i.test(entry.name));
   const count = property?.rolls?.[0]?.value;
   return typeof count === "number" && Number.isFinite(count) && count > 0
     ? Math.floor(count)
     : undefined;
 }
+
+const stackCount = stackCountOf;
 
 export interface AppraiseOptions {
   priceTable?: PriceTable;

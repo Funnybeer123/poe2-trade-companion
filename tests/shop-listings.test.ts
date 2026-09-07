@@ -137,6 +137,19 @@ describe("shop config", () => {
     expect(config.staleDays).toBe(3);
     expect(config.maxAutoList).toEqual({ amount: 1, currency: "divine" });
     expect(config.sources).toEqual(["bag"]);
+    expect(config.ladderWithoutComps).toBe(true);
+    expect(config.stackPricing).toBe("whole");
+  });
+
+  it("round-trips the bucket-ladder and stack-pricing fields through the sanitizer", () => {
+    const { config, issues } = parseShopConfig({
+      shopTab: "1Ex",
+      ladderWithoutComps: false,
+      stackPricing: "per-unit",
+    });
+    expect(config.ladderWithoutComps).toBe(false);
+    expect(config.stackPricing).toBe("per-unit");
+    expect(issues).toEqual([]);
   });
 
   it("refuses to run without a designated shop tab", () => {
