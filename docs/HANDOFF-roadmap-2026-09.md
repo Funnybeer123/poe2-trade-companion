@@ -108,6 +108,21 @@ clean. Tests now run under Electron-as-Node (see "Tooling").
   `craft-gear --from-tab=<label>` and `--then-list` (spawns shop-buckets
   after a live crafting pass, only when no other input host runs).
 
+### Deals watchlist (`watchlist.ts`, `watchlistService.ts`, Tools → Deals)
+- Watches: unique by name, base type (+ ilvl floor), stat-filtered rare
+  (family + min rows, ids from the stats catalogue). Reference price =
+  override → poe2scout feed row for uniques → median of the sample; alert
+  when ask ≤ 60 % of the reference with ≥ 4 comparable listings; dedupe
+  by listing id (re-raised only when the ask drops).
+- Scheduler: 30 s tick, one scan (search + fetch) per tick, ≥ 3 spare
+  lookups, ≥ 60 s between scheduled scans, ≤ 5 scans per rolling 5 min
+  (trade2's unlisted ~25-calls/5-min lockout), ≤ 20 per hour (persisted),
+  skipped inside a penalty window. Files: `watchlist.json`,
+  `deal-alerts.jsonl`. Windows notification per new alert (toggle).
+- "Copy whisper" writes the listing's `listing.whisper` (verified live) to
+  the clipboard; the app never sends it. "Watch this item" on the Item
+  log seeds a watch from the current item.
+
 ### Sorter split (`src/adapters/gearSorter.ts` → `src/adapters/gearSorter/`)
 - Purely mechanical: 114 of 114 method bodies byte-identical after the
   `this.` → context rewrite; every log line, step label, timing constant
@@ -159,6 +174,10 @@ clean. Tests now run under Electron-as-Node (see "Tooling").
     in-game, confirm the `PlayEffect`/`MinimapIcon` lines are accepted.
 11. Tools → Market → Refresh: ~12 paced poe2scout requests; movers and
     farm ranking populate.
+12. Tools → Deals: add one unique watch, "Scan now", confirm an alert row
+    and that "Copy whisper" pastes a full `@name …` whisper; leave the
+    master switch on for 10 minutes and confirm the trade2 budget line
+    never drops below 3 spare and no 429 appears in the feed status.
 
 ## Known gaps / not done
 - Live verification of everything above (no game during the build).
