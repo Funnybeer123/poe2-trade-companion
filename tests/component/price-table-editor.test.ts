@@ -15,6 +15,32 @@ const bridge = vi.hoisted(() => ({
     refreshing: false,
   },
   refresh: vi.fn(),
+  // Market trends: served from cache only; the editor must never fetch.
+  trends: vi.fn(async () => ({
+    ok: true,
+    league: "Runes of Aldur",
+    fetchedAt: "2026-09-07T06:00:00Z",
+    stale: false,
+    refreshing: false,
+    source: "cache",
+    categories: ["currency"],
+    trends: [
+      {
+        key: "divine",
+        name: "Divine Orb",
+        category: "currency",
+        current: 649.45,
+        change1d: 16.2,
+        change3d: 40.3,
+        change7d: 76.1,
+        volatility7d: 0.17,
+        volume7d: 19_083_150,
+        sampleSize: 7,
+        trend: "rising",
+        liquidity: "deep",
+      },
+    ],
+  })),
 }));
 
 vi.mock("../../src/renderer/services/rendererApi", () => ({
@@ -32,6 +58,10 @@ vi.mock("../../src/renderer/services/rendererApi", () => ({
     refresh: bridge.refresh,
     configure: vi.fn(),
     comps: vi.fn(),
+  }),
+  getMarketApi: () => ({
+    trends: bridge.trends,
+    refresh: vi.fn(),
   }),
 }));
 
@@ -114,6 +144,20 @@ describe("PriceTableEditor with feed entries", () => {
     await flushPromises();
     expect(bridge.refresh).toHaveBeenCalledOnce();
     expect(wrapper.text()).toContain("811 market prices");
+    wrapper.unmount();
+  });
+
+  it("decorates feed rows with a cached trend and never fetches for it", async () => {
+    bridge.trends.mockClear();
+    const wrapper = mount(PriceTableEditor);
+    await flushPromises();
+    expect(bridge.trends).toHaveBeenCalledWith({ cachedOnly: true });
+    const rows = wrapper.findAll("details tbody tr");
+    const divine = rows.find((row) => row.text().includes("Divine Orb"))!;
+    expect(divine.find(".trend-cell").text()).toBe("▲ +40.3%");
+    expect(divine.find(".trend-cell").classes()).toContain("rising");
+    const temporalis = rows.find((row) => row.text().includes("Temporalis"))!;
+    expect(temporalis.find(".trend-cell").exists()).toBe(false);
     wrapper.unmount();
   });
 });

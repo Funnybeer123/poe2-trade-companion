@@ -548,6 +548,7 @@ export interface Poe2Bridge {
   calibration: Record<string, (...args: never[]) => unknown>;
   hotkeys?: HotkeysBridge;
   inventory?: InventoryBridge;
+  market?: Record<string, (...args: never[]) => unknown>;
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {

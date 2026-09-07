@@ -75,6 +75,7 @@ import {
   type ScanSession,
 } from "./scanSessionStore.js";
 import { ScannerRuntimeService } from "./scanRuntimeService.js";
+import { MarketTrendsService, type MarketTrendsQuery } from "./marketTrendsService.js";
 
 const execFileAsync = promisify(execFile);
 const buildMode = resolveBuildMode(
@@ -96,6 +97,7 @@ let localPersistence: LocalPersistenceDatabase | undefined;
 let itemIntelligenceService: ItemIntelligenceService | undefined;
 let priceFeedService: PriceFeedService | undefined;
 let scannerService: ScannerRuntimeService | undefined;
+let marketTrendsService: MarketTrendsService | undefined;
 
 function quotesFile(): string {
   const candidates = [
@@ -610,6 +612,9 @@ app.whenReady().then(() => {
     getPriceTable: () => itemIntelligenceService!.getPriceTable(),
     savePriceTable: (table) => itemIntelligenceService!.savePriceTable(table),
   });
+  // Reads the feed's league from the same directory; writes only its own cache.
+  // Same directory as the price feed so the league choice is shared with the CLIs.
+  marketTrendsService = new MarketTrendsService({ configDir: feedConfigDir });
   registerItemIntelligenceIpc(ipcMain, itemIntelligenceService);
   exportTriageSnapshot();
   scannerService = new ScannerRuntimeService({
@@ -982,6 +987,10 @@ app.whenReady().then(() => {
   ipcMain.handle("inventory:refresh", (_event, query?: InventoryOverviewQuery) =>
     inventoryOverview(query, true),
   );
+  ipcMain.handle("market:trends", (_event, query?: MarketTrendsQuery) =>
+    marketTrendsService?.getTrends(query ?? {}),
+  );
+  ipcMain.handle("market:trends-refresh", () => marketTrendsService?.getTrends({ refresh: true }));
   registerCalibrationIpc();
   // Auto-flask guard config + click calibration; same root as the hotkey bindings.
   registerFlaskGuardIpc(process.cwd());
@@ -996,6 +1005,7 @@ app.on("window-all-closed", () => {
   scannerService?.stop("app-closed");
   priceFeedService?.dispose();
   priceFeedService = undefined;
+  marketTrendsService = undefined;
   dryRunOverlay?.dispose();
   dryRunOverlay = undefined;
   localPersistence?.close();

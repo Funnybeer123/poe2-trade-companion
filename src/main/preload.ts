@@ -203,4 +203,8 @@ contextBridge.exposeInMainWorld("poe2", {
     overview: (query?: InventoryOverviewQuery) => ipcRenderer.invoke("inventory:overview", query),
     refresh: (query?: InventoryOverviewQuery) => ipcRenderer.invoke("inventory:refresh", query),
   },
+  market: {
+    trends: (query?: unknown) => ipcRenderer.invoke("market:trends", query),
+    refresh: () => ipcRenderer.invoke("market:trends-refresh"),
+  },
 });
