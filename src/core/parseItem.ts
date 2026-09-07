@@ -24,7 +24,7 @@ const WAYSTONE_COLON_PREFIXES = [
   "Quantity of Items found:",
 ];
 
-const TRAILING_TAG = /\s*\((augmented|implicit|crafted|fractured|enchant(?:ed)?)\)\s*$/i;
+const TRAILING_TAG = /\s*\((augmented|implicit|crafted|fractured|enchant(?:ed)?|rune|desecrated)\)\s*$/i;
 const NUMBER = /[+-]?(?:\d[\d,]*(?:\.\d+)?|\.\d+)/g;
 const DEFENSE_PROPERTIES = new Set([
   "armour",
@@ -100,14 +100,38 @@ function kindFromTag(tag: string): ItemModKind | undefined {
     case "enchant":
     case "enchanted":
       return "enchant";
+    case "rune":
+      return "rune";
+    case "desecrated":
+      return "desecrated";
     default:
       return undefined;
+  }
+}
+
+/**
+ * Whether a parsed mod occupies one of the item's affix slots. Implicits,
+ * enchants, and socketed rune effects do not: a rune line is removable and
+ * must never count against the open-affix budget or as "substance" when
+ * comparing the item with listings.
+ */
+export function isAffixMod(mod: Pick<ItemMod, "kind" | "implicit">): boolean {
+  if (mod.implicit) return false;
+  switch (mod.kind) {
+    case "implicit":
+    case "enchant":
+    case "rune":
+      return false;
+    default:
+      return true;
   }
 }
 
 function kindFromAnnotation(line: string): ItemModKind | undefined {
   if (!/^\{.+\}$/.test(line.trim())) return undefined;
   const annotation = line.toLowerCase();
+  if (annotation.includes("rune")) return "rune";
+  if (annotation.includes("desecrat")) return "desecrated";
   if (annotation.includes("fractured")) return "fractured";
   if (annotation.includes("crafted")) return "crafted";
   if (annotation.includes("enchant")) return "enchant";

@@ -27,7 +27,7 @@
 
 import { appraiseItem, confidenceBand, type ConfidenceBand, type ItemAppraisal } from "./appraisal.js";
 import { MOD_FAMILIES } from "./modKnowledge.js";
-import { looksLikePoeItemText, parseItemText } from "./parseItem.js";
+import { isAffixMod, looksLikePoeItemText, parseItemText } from "./parseItem.js";
 import { lookupPrice, type PriceTable } from "./priceTable.js";
 import type { ParsedItem } from "./types.js";
 
@@ -369,8 +369,9 @@ export interface CraftPlanOptions {
   parsed?: ParsedItem;
 }
 
+/** The mods that occupy affix slots — runes, enchants and implicits do not. */
 function explicitMods(parsed: ParsedItem): string[] {
-  return parsed.mods.filter((mod) => !mod.implicit).map((mod) => mod.text);
+  return parsed.mods.filter(isAffixMod).map((mod) => mod.text);
 }
 
 function maxAffixes(rarity: string): number {

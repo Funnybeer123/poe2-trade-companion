@@ -208,7 +208,29 @@ describe("archetypes", () => {
   });
 });
 
+const RARE_OPEN_RING_WITH_RUNE = item([
+  "Item Class: Rings",
+  "Rarity: Rare",
+  "Doom Loop",
+  "Ruby Ring",
+  "--------",
+  "Item Level: 81",
+  "--------",
+  "+25% to Lightning Resistance (rune)",
+  "--------",
+  "+120 to maximum Life",
+  "+38% to Fire Resistance",
+  "+32% to Cold Resistance",
+]);
+
 describe("planCraft decisions", () => {
+  it("does not count a socketed rune against the open affixes", () => {
+    const plain = planCraft(RARE_OPEN_RING);
+    const withRune = planCraft(RARE_OPEN_RING_WITH_RUNE);
+    expect(withRune.openAffixes).toBe(plain.openAffixes);
+    expect(withRune.action).toBe(plain.action);
+  });
+
   it("slams open affixes on a coherent rare and marks it auto-eligible", () => {
     const plan = planCraft(RARE_OPEN_RING);
     expect(plan.action).toBe("exalt");

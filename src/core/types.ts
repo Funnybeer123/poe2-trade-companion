@@ -29,6 +29,10 @@ export type ItemModKind =
   | "crafted"
   | "fractured"
   | "enchant"
+  /** A socketed rune's effect ("… (rune)"): removable, not an affix. */
+  | "rune"
+  /** A desecrated (Well of Souls) modifier: occupies an affix slot. */
+  | "desecrated"
   | "unknown";
 
 export interface ItemNumericRoll {
