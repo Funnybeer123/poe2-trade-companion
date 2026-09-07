@@ -1,4 +1,4 @@
-import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -46,7 +46,11 @@ const FETCH_RESULT = {
           { description: "+35% to [Resistances|Fire Resistance]" },
         ],
       },
-      listing: { price: { amount: 3, currency: "exalted" }, account: { name: "seller" } },
+      listing: {
+        price: { amount: 3, currency: "exalted" },
+        account: { name: "seller" },
+        whisper: "@seller Hi, I would like to buy your Comp Ring Ruby Ring listed for 3 exalted in Runes of Aldur",
+      },
     },
     {
       id: "bbb",
@@ -414,6 +418,100 @@ describe("PriceFeedService comps", () => {
     now += 7 * 60 * 60_000;
     vi.setSystemTime(now);
     expect(service.peekComps(RARE_RING)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// searchListings: the watchlist's raw, uncached search + fetch
+// ---------------------------------------------------------------------------
+
+const WATCH_BODY = {
+  query: { status: { option: "online" }, name: "Temporalis", type: "Silk Robe" },
+  sort: { price: "asc" },
+};
+
+describe("PriceFeedService searchListings", () => {
+  it("runs one search and one fetch capped at the limit, parsing whispers, without touching the comps cache", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "pfs-search-"));
+    const { service, calls } = makeService({
+      configDir,
+      respond: (url) => {
+        if (url.endsWith("/Leagues")) return jsonResponse(LEAGUES);
+        if (url.includes("/search/")) return jsonResponse({ id: "search-9", result: ["aaa", "bbb", "ccc"], total: 42 });
+        if (url.includes("/fetch/")) return jsonResponse(FETCH_RESULT);
+        return jsonResponse({}, 404);
+      },
+    });
+    disposers.push(() => service.dispose());
+    const result = await service.searchListings(WATCH_BODY, { limit: 2 });
+    expect(result.ok).toBe(true);
+    expect(result.league).toBe("Runes of Aldur");
+    expect(result.total).toBe(42);
+    expect(result.listings.map((listing) => listing.id)).toEqual(["aaa", "bbb"]);
+    expect(result.listings[0]?.whisper).toContain("@seller Hi, I would like to buy your Comp Ring");
+    expect(result.listings[1]?.whisper).toBeUndefined();
+    const search = calls.find((call) => call.url.includes("/search/"))!;
+    expect(search.url).toContain("/search/poe2/Runes%20of%20Aldur");
+    expect(JSON.parse(String(search.init?.body))).toEqual(WATCH_BODY);
+    const fetched = calls.filter((call) => call.url.includes("/fetch/"));
+    expect(fetched).toHaveLength(1);
+    expect(fetched[0]?.url).toContain("/fetch/aaa,bbb?query=search-9");
+    // Not a price check: nothing was cached for this query.
+    expect(existsSync(path.join(configDir, "comps-cache.json"))).toBe(false);
+
+    // The limit is capped at ten and a search with no ids skips the fetch.
+    const { service: empty, calls: emptyCalls } = makeService({
+      respond: (url) => {
+        if (url.endsWith("/Leagues")) return jsonResponse(LEAGUES);
+        if (url.includes("/search/")) return jsonResponse({ id: "s", result: [], total: 0 });
+        return jsonResponse({}, 404);
+      },
+    });
+    disposers.push(() => empty.dispose());
+    const nothing = await empty.searchListings(WATCH_BODY, { limit: 50 });
+    expect(nothing).toEqual({ ok: true, listings: [], league: "Runes of Aldur", total: 0 });
+    expect(emptyCalls.filter((call) => call.url.includes("/fetch/"))).toHaveLength(0);
+  });
+
+  it("refuses inside a remembered penalty window without any traffic", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "pfs-penalty-"));
+    writeFileSync(
+      path.join(configDir, "comps-cache.json"),
+      JSON.stringify({ _rateLimitedUntil: Date.now() + 10 * 60_000 }),
+    );
+    const { service, calls } = makeService({ configDir });
+    disposers.push(() => service.dispose());
+    const result = await service.searchListings(WATCH_BODY);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("rate limited until");
+    expect(result.listings).toEqual([]);
+    expect(calls).toHaveLength(0);
+    expect(service.tradeBudget().restrictedUntilIso).toBeDefined();
+  });
+
+  it("surfaces a 429 and the league ambiguity like a price check does", async () => {
+    const { service, calls } = makeService({
+      respond: (url) => {
+        if (url.endsWith("/Leagues")) return jsonResponse(LEAGUES);
+        if (url.includes("/search/")) return jsonResponse({}, 429);
+        return jsonResponse({}, 404);
+      },
+    });
+    disposers.push(() => service.dispose());
+    const limited = await service.searchListings(WATCH_BODY);
+    expect(limited.ok).toBe(false);
+    expect(limited.error).toContain("rate limit");
+    expect(calls.filter((call) => call.url.includes("/search/"))).toHaveLength(2); // one backoff retry
+
+    const ambiguous = makeService({
+      respond: (url) => (url.endsWith("/Leagues") ? jsonResponse(TWO_LEAGUES) : jsonResponse({}, 404)),
+    });
+    disposers.push(() => ambiguous.service.dispose());
+    const result = await ambiguous.service.searchListings(WATCH_BODY);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("more than one current league");
+    expect(ambiguous.calls.some((call) => call.url.includes("/search/"))).toBe(false);
+    expect(ambiguous.service.status().leagueAmbiguous).toBe(true);
   });
 });
 

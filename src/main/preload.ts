@@ -13,6 +13,7 @@ import type {
   SaveValueTierConfigRequest,
   ScannerRuntimeEvent,
   ScannerStartRequest,
+  WatchlistSaveRequest,
 } from "../shared/ipc.js";
 import type { LootFilterRequest } from "../core/lootFilter.js";
 import type { PriceTable } from "../core/priceTable.js";
@@ -206,5 +207,12 @@ contextBridge.exposeInMainWorld("poe2", {
   market: {
     trends: (query?: unknown) => ipcRenderer.invoke("market:trends", query),
     refresh: () => ipcRenderer.invoke("market:trends-refresh"),
+  },
+  watchlist: {
+    overview: () => ipcRenderer.invoke("watchlist:overview"),
+    save: (request: WatchlistSaveRequest) => ipcRenderer.invoke("watchlist:save", request),
+    scanNow: (watchId?: string) => ipcRenderer.invoke("watchlist:scan-now", watchId),
+    copyWhisper: (alertId: string) => ipcRenderer.invoke("watchlist:copy-whisper", alertId),
+    dismiss: (alertId: string) => ipcRenderer.invoke("watchlist:dismiss", alertId),
   },
 });

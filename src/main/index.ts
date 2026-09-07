@@ -1,4 +1,13 @@
-import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, shell } from "electron";
+import {
+  app,
+  BrowserWindow,
+  clipboard,
+  dialog,
+  globalShortcut,
+  ipcMain,
+  Notification,
+  shell,
+} from "electron";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -76,6 +85,8 @@ import {
 } from "./scanSessionStore.js";
 import { ScannerRuntimeService } from "./scanRuntimeService.js";
 import { MarketTrendsService, type MarketTrendsQuery } from "./marketTrendsService.js";
+import { WatchlistService } from "./watchlistService.js";
+import type { WatchlistSaveRequest } from "../shared/ipc.js";
 
 const execFileAsync = promisify(execFile);
 const buildMode = resolveBuildMode(
@@ -98,6 +109,7 @@ let itemIntelligenceService: ItemIntelligenceService | undefined;
 let priceFeedService: PriceFeedService | undefined;
 let scannerService: ScannerRuntimeService | undefined;
 let marketTrendsService: MarketTrendsService | undefined;
+let watchlistService: WatchlistService | undefined;
 
 function quotesFile(): string {
   const candidates = [
@@ -615,6 +627,18 @@ app.whenReady().then(() => {
   // Reads the feed's league from the same directory; writes only its own cache.
   // Same directory as the price feed so the league choice is shared with the CLIs.
   marketTrendsService = new MarketTrendsService({ configDir: feedConfigDir });
+  // Deals watchlist: shares the feed's trade2 budget and league; its own
+  // two files live next to the pacing log. Alerts notify, never whisper.
+  watchlistService = new WatchlistService({
+    configDir: feedConfigDir,
+    feed: priceFeedService,
+    getPriceTable: () => itemIntelligenceService!.getPriceTable(),
+    writeClipboard: (text) => clipboard.writeText(text),
+    notify: ({ title, body }) => {
+      if (!Notification.isSupported()) return;
+      new Notification({ title, body }).show();
+    },
+  });
   registerItemIntelligenceIpc(ipcMain, itemIntelligenceService);
   exportTriageSnapshot();
   scannerService = new ScannerRuntimeService({
@@ -991,6 +1015,19 @@ app.whenReady().then(() => {
     marketTrendsService?.getTrends(query ?? {}),
   );
   ipcMain.handle("market:trends-refresh", () => marketTrendsService?.getTrends({ refresh: true }));
+  ipcMain.handle("watchlist:overview", () => watchlistService?.overview());
+  ipcMain.handle("watchlist:save", (_event, request: WatchlistSaveRequest) =>
+    watchlistService?.save(request ?? {}),
+  );
+  ipcMain.handle("watchlist:scan-now", (_event, watchId?: string) =>
+    watchlistService?.scanNow(typeof watchId === "string" && watchId ? watchId : undefined),
+  );
+  ipcMain.handle("watchlist:copy-whisper", (_event, alertId: string) =>
+    watchlistService?.copyWhisper(String(alertId ?? "")) ?? { ok: false, error: "Watchlist unavailable." },
+  );
+  ipcMain.handle("watchlist:dismiss", (_event, alertId: string) =>
+    watchlistService?.dismiss(String(alertId ?? "")),
+  );
   registerCalibrationIpc();
   // Auto-flask guard config + click calibration; same root as the hotkey bindings.
   registerFlaskGuardIpc(process.cwd());
@@ -1003,6 +1040,8 @@ app.on("window-all-closed", () => {
   assistiveService?.stop("app-closed");
   stashSortService?.stop("app-closed");
   scannerService?.stop("app-closed");
+  watchlistService?.dispose();
+  watchlistService = undefined;
   priceFeedService?.dispose();
   priceFeedService = undefined;
   marketTrendsService = undefined;

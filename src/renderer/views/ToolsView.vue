@@ -9,6 +9,7 @@ import FilterSettingsTool from "../components/tools/FilterSettingsTool.vue";
 import HotkeyActionsTool from "../components/tools/HotkeyActionsTool.vue";
 import QaReplayTool from "../components/tools/QaReplayTool.vue";
 import MarketTrendsTool from "../components/tools/MarketTrendsTool.vue";
+import WatchlistTool from "../components/tools/WatchlistTool.vue";
 
 const route = useRoute();
 
@@ -22,6 +23,7 @@ const tools = [
   { id: "filter", label: "Loot filter", detail: "Local generation" },
   { id: "settings", label: "Settings", detail: "Automation defaults" },
   { id: "market", label: "Market", detail: "Trends & stack advice" },
+  { id: "deals", label: "Deals", detail: "Underpriced listings" },
 ] as const;
 
 type ToolId = (typeof tools)[number]["id"];
@@ -59,6 +61,7 @@ const selectedTool = computed<ToolId>(() => {
       <QaReplayTool v-else-if="selectedTool === 'diagnostics'" />
       <FilterSettingsTool v-else-if="selectedTool === 'filter'" panel="filter" />
       <MarketTrendsTool v-else-if="selectedTool === 'market'" />
+      <WatchlistTool v-else-if="selectedTool === 'deals'" />
       <FilterSettingsTool v-else panel="settings" />
     </div>
   </div>

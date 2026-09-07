@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
+import { useRouter } from "vue-router";
+import { watchForItem } from "@core/watchlist";
 import ItemDetail from "../components/ItemDetail.vue";
 import OpportunityTool from "../components/tools/OpportunityTool.vue";
 import { useIntelligenceStore } from "../composables/useIntelligenceStore";
-import { getPriceFeedApi, type CompsResultView } from "../services/rendererApi";
+import { getPriceFeedApi, getWatchlistApi, type CompsResultView } from "../services/rendererApi";
 import { formatAmount, formatDate } from "../utils/intelligence";
 
 const store = useIntelligenceStore();
+const router = useRouter();
 const sourceText = ref(store.currentEvaluation.value?.raw ?? "");
 const catalogQuery = ref("");
 const pendingDeleteId = ref("");
@@ -14,6 +17,42 @@ const pendingDeleteId = ref("");
 const priceFeed = getPriceFeedApi();
 const comps = ref<CompsResultView | null>(null);
 const compsBusy = ref(false);
+
+const watchlist = getWatchlistApi();
+const watchBusy = ref(false);
+const watchError = ref("");
+
+/**
+ * "Watch this item": a unique watches its name + base; a rare with notable
+ * mods watches its base with those mods as stat filters; anything else
+ * watches its base. Saved to the Deals tool, then routed there.
+ */
+async function watchThisItem(): Promise<void> {
+  const item = store.currentItem.value;
+  if (!watchlist || !item || watchBusy.value) return;
+  watchBusy.value = true;
+  watchError.value = "";
+  try {
+    const appraisal = store.currentEvaluation.value?.tier?.appraisal;
+    const watch = watchForItem(
+      {
+        name: item.name,
+        baseType: item.baseType,
+        rarity: item.rarity,
+        itemClass: item.itemClass,
+        ...(item.itemLevel !== undefined ? { itemLevel: item.itemLevel } : {}),
+      },
+      appraisal ? { mods: appraisal.mods } : undefined,
+    );
+    const overview = await watchlist.overview();
+    await watchlist.save({ watches: [...overview.watches, watch] });
+    await router.push("/tools/deals");
+  } catch (reason) {
+    watchError.value = reason instanceof Error ? reason.message : String(reason);
+  } finally {
+    watchBusy.value = false;
+  }
+}
 
 async function fetchComps(): Promise<void> {
   const raw = store.currentEvaluation.value?.raw;
@@ -250,7 +289,18 @@ async function removeCatalogEntry(
           </button>
           <span v-if="comps?.cached" class="muted">cached</span>
           <span v-if="comps?.league" class="muted">{{ comps.league }}</span>
+          <button
+            v-if="watchlist && store.currentItem.value"
+            type="button"
+            class="button secondary compact"
+            :disabled="watchBusy"
+            title="Add a Deals watch for this item and open Tools → Deals"
+            @click="watchThisItem"
+          >
+            {{ watchBusy ? "Adding watch…" : "Watch this item" }}
+          </button>
         </div>
+        <p v-if="watchError" class="inline-notice danger" role="alert">{{ watchError }}</p>
         <p v-if="comps && !comps.ok" class="inline-notice danger" role="alert">{{ comps.error }}</p>
         <template v-if="comps?.ok && comps.summary">
           <p v-if="comps.summary.sampleSize === 0" class="muted">
