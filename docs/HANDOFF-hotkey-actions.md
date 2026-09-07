@@ -386,3 +386,38 @@ misses items on the game's RED cell tint (sceptre, gloves, spear all left
 uncompacted) — captureClientSprites now adds an RGB-occupancy net
 (scoreGridCellsRgb) whose uncovered cells become synthetic 1x1 regions the
 eval sweep copy-confirms or discards.
+
+## Auto-flask guard (2026-09-07) — BUILT, dry-run verified live
+
+Life/mana auto-flask that lives alongside the daemon. Pieces:
+`src/shared/flaskGuard.ts` (config, hue-agnostic classifier, TS mirror of
+the fire decision), `src/core/flaskGuardConfig.ts` (artifacts/flask-guard.json),
+`src/adapters/flaskGuardRunner.ts` (runner on its OWN win host + click
+calibration + sample-now), host ops `sample` / `flaskguard` / `ping` in
+`scripts/win-input-host.ps1`, `scripts/flask-guard.ts` CLI, app IPC
+`src/main/flaskGuardIpc.ts`, UI section in HotkeyActionsTool.vue.
+
+Measured truths that shaped it:
+- EVERY GDI screen readback costs a flat ~16.6ms (waits on the compositor
+  frame) regardless of size, and PowerShell's Start-Sleep granularity is
+  15.6ms by default. So the host loop grabs ONE rect spanning all probes
+  per tick, raises the timer resolution (timeBeginPeriod 1) for the loop,
+  and sleeps 1ms → ~30ms/tick (~33Hz) live. Reaction ≈ tick + 25ms press.
+- Globe colours at 4K: life red (144,33,41), life under energy shield
+  teal (125,206,206), mana (29,102,155), empty glass (32,32,37). Hence
+  "filled" = chroma ≥ 0.4·chroma(ref) AND brightness ≥ 0.4·bright(ref)
+  from the user's own calibration click — never a fixed red hue.
+- The daemon's host blocks on waitkey/flows, so the guard needs a second
+  host process; cycles are 5s `flaskguard` ops with armed/cooldown
+  continuity passed in and out; a stray `ping` line breaks a cycle early
+  (pause, stop, config change via 1s mtime poll).
+- Numpad − (waitkey key 11) toggles pause in the daemon.
+
+Verified live 2026-09-07 (hideout, full globes): sample-now reads both
+globes "filled", 5s cycles run back-to-back with armed continuity, Numpad −
+pause/resume and stop, and a host-level forced fire (armed=true passed in,
+impossible thresholds, dry-run) reported the press. NOT yet exercised: a
+real low-globe fire in a fight, and the app-side Calibrate button
+end-to-end (the CLI calibration path shares the same helper).
+Known limits: full ES over low life reads "filled"; open chat box would
+receive the key.

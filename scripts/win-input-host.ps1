@@ -433,14 +433,102 @@ $script:StdinReader = New-Object System.IO.StreamReader(
   [Console]::OpenStandardInput(),
   (New-Object System.Text.UTF8Encoding($false))
 )
+# One outstanding ReadLineAsync at a time: a StreamReader throws if a second
+# read starts while one is pending, and the long-running `flaskguard` loop
+# peeks at the pending task to abort early. A line it consumed that way is
+# parked in PendingLine and served by the next Read-CommandLine call.
+$script:StdinTask = $null
+$script:PendingLine = $null
 function Read-CommandLine {
-  $task = $script:StdinReader.ReadLineAsync()
+  if ($null -ne $script:PendingLine) {
+    $line = $script:PendingLine
+    $script:PendingLine = $null
+    return $line
+  }
+  if ($null -eq $script:StdinTask) {
+    $script:StdinTask = $script:StdinReader.ReadLineAsync()
+  }
+  $task = $script:StdinTask
   while (-not $task.Wait(15)) {
     if ($script:MarkForm) {
       try { [System.Windows.Forms.Application]::DoEvents() } catch {}
     }
   }
+  $script:StdinTask = $null
   return $task.Result
+}
+
+# Screen sampler for the auto-flask guard (compiled lazily: it costs ~0.5s
+# of csc time that the stash flows never need). Measured 2026-09-07: EVERY
+# GDI screen readback (BitBlt/CopyFromScreen/GetPixel) costs a flat ~16.6ms
+# regardless of size — it waits on the compositor's next frame — so the
+# guard grabs ONE rect that spans every probe per tick and averages the
+# patches out of that buffer. Sleep granularity is the other cost: the
+# default 15.6ms timer makes Start-Sleep 5 take 15ms, hence FlaskTimer
+# raises the resolution to 1ms for the duration of a guard loop.
+$script:FlaskSamplerReady = $false
+function Initialize-FlaskSampler {
+  if ($script:FlaskSamplerReady) { return $true }
+  try {
+    Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Runtime.InteropServices;
+public class FlaskSampler : IDisposable {
+  private readonly int left, top, width, height;
+  private Bitmap bmp;
+  private Graphics g;
+  public FlaskSampler(int left, int top, int width, int height) {
+    this.left = left; this.top = top;
+    this.width = Math.Max(1, width); this.height = Math.Max(1, height);
+    bmp = new Bitmap(this.width, this.height, PixelFormat.Format32bppArgb);
+    g = Graphics.FromImage(bmp);
+  }
+  public void Capture() {
+    g.CopyFromScreen(left, top, 0, 0, bmp.Size, CopyPixelOperation.SourceCopy);
+  }
+  // Average colour of the size x size square centred on screen point (cx, cy),
+  // clamped to the captured rect. Reads pixels in place — no buffer copy.
+  public int[] Patch(int cx, int cy, int size) {
+    int half = Math.Max(1, size) / 2;
+    int x0 = Math.Max(0, cx - half - left), x1 = Math.Min(width - 1, cx + half - left);
+    int y0 = Math.Max(0, cy - half - top), y1 = Math.Min(height - 1, cy + half - top);
+    if (x1 < x0 || y1 < y0) return new int[] { 0, 0, 0 };
+    BitmapData data = bmp.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+    try {
+      long r = 0, gg = 0, b = 0; int n = 0;
+      for (int y = y0; y <= y1; y++) {
+        long row = (long)y * data.Stride;
+        for (int x = x0; x <= x1; x++) {
+          int px = Marshal.ReadInt32(data.Scan0, (int)(row + x * 4));
+          b += px & 0xFF; gg += (px >> 8) & 0xFF; r += (px >> 16) & 0xFF; n++;
+        }
+      }
+      return new int[] { (int)(r / n), (int)(gg / n), (int)(b / n) };
+    } finally {
+      bmp.UnlockBits(data);
+    }
+  }
+  public static int[] Sample(int cx, int cy, int size) {
+    int s = Math.Max(3, size);
+    using (FlaskSampler one = new FlaskSampler(cx - s / 2, cy - s / 2, s, s)) {
+      one.Capture();
+      return one.Patch(cx, cy, s);
+    }
+  }
+  public void Dispose() { g.Dispose(); bmp.Dispose(); }
+}
+public static class FlaskTimer {
+  [DllImport("winmm.dll")] public static extern uint timeBeginPeriod(uint ms);
+  [DllImport("winmm.dll")] public static extern uint timeEndPeriod(uint ms);
+}
+"@
+    $script:FlaskSamplerReady = $true
+  } catch {
+    return $false
+  }
+  return $true
 }
 
 while ($true) {
@@ -456,6 +544,13 @@ while ($true) {
   $op = [string]$cmd.op
   if ($op -eq "monitors") {
     Emit @{ ok = $true; monitors = @(Get-Monitors) }
+    continue
+  }
+  if ($op -eq "ping") {
+    # No-op that needs no game window: the guard runner writes one to break
+    # a running `flaskguard` loop out early (the loop parks the line, returns,
+    # and this answers it).
+    Emit @{ ok = $true; pong = $true }
     continue
   }
   $hadPinnedWindow = $script:PinnedPoeHwnd -ne 0
@@ -535,6 +630,163 @@ while ($true) {
       Emit @{ ok = $true; key = $hit }
     } else {
       Emit @{ ok = $false; error = "timeout" }
+    }
+    continue
+  }
+  if ($op -eq "sample") {
+    # Average colour of small patches at absolute screen points (physical
+    # pixels — the host is DPI-aware). Used by auto-flask calibration and by
+    # the app's "Test now" probe. Sends no input and never steals focus.
+    if (-not (Initialize-FlaskSampler)) {
+      Emit @{ ok = $false; error = "sampler-unavailable" }
+      continue
+    }
+    $out = New-Object System.Collections.ArrayList
+    foreach ($p in @($cmd.points)) {
+      $size = if ($p.size) { [int]$p.size } else { 15 }
+      $rgb = [FlaskSampler]::Sample([int]$p.x, [int]$p.y, $size)
+      [void]$out.Add(@{ x = [int]$p.x; y = [int]$p.y; size = $size; r = $rgb[0]; g = $rgb[1]; b = $rgb[2] })
+    }
+    Emit @{ ok = $true; samples = @($out); foregroundIsPoe = ([AssistiveWin]::GetForegroundWindow() -eq $hwnd) }
+    continue
+  }
+  if ($op -eq "flaskguard") {
+    # Auto-flask guard: poll each probe's patch every intervalMs and press
+    # its flask key when the globe fluid has fallen below the calibrated
+    # point. Runs for durationMs or until the next stdin line arrives (the
+    # line is parked for the main loop). The decision rule mirrors
+    # decideFlaskFire() in src/shared/flaskGuard.ts — keep them in sync:
+    #   filled  = chroma >= minChroma AND brightness >= minBright
+    #   armed   = the probe has read "filled" at least once (no firing on
+    #             login/loading screens before the HUD was ever seen)
+    #   fire    = armed AND not filled AND cooldown elapsed; after
+    #             staleAfterMs without a "filled" read (dead, menu, passive
+    #             tree) the cooldown stretches to staleCooldownMs.
+    # Per-probe continuity (armed / lastFire / lastFilled) is passed in and
+    # returned so back-to-back cycles behave as one uninterrupted loop.
+    if (-not (Initialize-FlaskSampler)) {
+      Emit @{ ok = $false; error = "sampler-unavailable" }
+      continue
+    }
+    $intervalMs = if ($null -ne $cmd.intervalMs) { [Math]::Max(0, [int]$cmd.intervalMs) } else { 1 }
+    $durationMs = if ($cmd.durationMs) { [int]$cmd.durationMs } else { 5000 }
+    $dryRun = [bool]$cmd.dryRun
+    $started = [DateTime]::UtcNow
+    $probes = New-Object System.Collections.ArrayList
+    $rl = [int]::MaxValue; $rt = [int]::MaxValue; $rr = [int]::MinValue; $rb = [int]::MinValue
+    foreach ($p in @($cmd.probes)) {
+      $size = if ($p.size) { [int]$p.size } else { 15 }
+      $half = [int]($size / 2)
+      $rl = [Math]::Min($rl, [int]$p.x - $half); $rr = [Math]::Max($rr, [int]$p.x + $half)
+      $rt = [Math]::Min($rt, [int]$p.y - $half); $rb = [Math]::Max($rb, [int]$p.y + $half)
+      $lastFireAt = [DateTime]::MinValue
+      if ($null -ne $p.lastFireMsAgo -and [int]$p.lastFireMsAgo -ge 0) { $lastFireAt = $started.AddMilliseconds(-[int]$p.lastFireMsAgo) }
+      $lastFilledAt = $started
+      if ($null -ne $p.lastFilledMsAgo -and [int]$p.lastFilledMsAgo -ge 0) { $lastFilledAt = $started.AddMilliseconds(-[int]$p.lastFilledMsAgo) }
+      [void]$probes.Add(@{
+        id = [string]$p.id
+        x = [int]$p.x
+        y = [int]$p.y
+        size = $size
+        vk = [byte][int]$p.vk
+        cooldownMs = [int]$p.cooldownMs
+        minChroma = [int]$p.minChroma
+        minBright = [int]$p.minBright
+        staleAfterMs = $(if ($p.staleAfterMs) { [int]$p.staleAfterMs } else { 12000 })
+        staleCooldownMs = $(if ($p.staleCooldownMs) { [int]$p.staleCooldownMs } else { 10000 })
+        armed = [bool]$p.armed
+        lastFireAt = $lastFireAt
+        lastFilledAt = $lastFilledAt
+        state = "unknown"
+        r = 0; g = 0; b = 0
+        fires = 0
+      })
+    }
+    if ($probes.Count -eq 0) {
+      Emit @{ ok = $false; error = "flaskguard-no-probes" }
+      continue
+    }
+    $sampler = New-Object FlaskSampler $rl, $rt, ($rr - $rl + 1), ($rb - $rt + 1)
+    $fires = New-Object System.Collections.ArrayList
+    $deadline = $started.AddMilliseconds($durationMs)
+    if ($null -eq $script:StdinTask) {
+      $script:StdinTask = $script:StdinReader.ReadLineAsync()
+    }
+    $stoppedBy = "deadline"
+    $ticks = 0
+    $fgTicks = 0
+    [void][FlaskTimer]::timeBeginPeriod(1)
+    while ($true) {
+      if ($script:StdinTask.IsCompleted) {
+        $script:PendingLine = $script:StdinTask.Result
+        $script:StdinTask = $null
+        $stoppedBy = "stdin"
+        break
+      }
+      $now = [DateTime]::UtcNow
+      if ($now -ge $deadline) { break }
+      $ticks += 1
+      $fg = ([AssistiveWin]::GetForegroundWindow() -eq $hwnd)
+      if ($fg) {
+        $fgTicks += 1
+        $sampler.Capture()
+        foreach ($p in $probes) {
+          $rgb = $sampler.Patch($p.x, $p.y, $p.size)
+          $p.r = $rgb[0]; $p.g = $rgb[1]; $p.b = $rgb[2]
+          $max = [Math]::Max($rgb[0], [Math]::Max($rgb[1], $rgb[2]))
+          $min = [Math]::Min($rgb[0], [Math]::Min($rgb[1], $rgb[2]))
+          $filled = (($max - $min) -ge $p.minChroma) -and ($max -ge $p.minBright)
+          if ($filled) {
+            $p.state = "filled"
+            $p.armed = $true
+            $p.lastFilledAt = $now
+            continue
+          }
+          $p.state = "low"
+          if (-not $p.armed) { continue }
+          $stale = (($now - $p.lastFilledAt).TotalMilliseconds -ge $p.staleAfterMs)
+          $cool = if ($stale) { $p.staleCooldownMs } else { $p.cooldownMs }
+          if (($now - $p.lastFireAt).TotalMilliseconds -lt $cool) { continue }
+          $p.lastFireAt = $now
+          $p.fires += 1
+          if (-not $dryRun) {
+            [AssistiveWin]::keybd_event($p.vk, 0, 0, [UIntPtr]::Zero)
+            Start-Sleep -Milliseconds 25
+            [AssistiveWin]::keybd_event($p.vk, 0, 2, [UIntPtr]::Zero)
+          }
+          if ($fires.Count -lt 200) {
+            [void]$fires.Add(@{ id = $p.id; t = [int](($now - $started).TotalMilliseconds); r = $rgb[0]; g = $rgb[1]; b = $rgb[2]; stale = $stale; dry = $dryRun })
+          }
+        }
+      } else {
+        foreach ($p in $probes) { $p.state = "background" }
+        # Nothing to sample while another window is up; don't spin.
+        Start-Sleep -Milliseconds 50
+      }
+      if ($intervalMs -gt 0) { Start-Sleep -Milliseconds $intervalMs }
+    }
+    [void][FlaskTimer]::timeEndPeriod(1)
+    $sampler.Dispose()
+    $endAt = [DateTime]::UtcNow
+    $states = @{}
+    foreach ($p in $probes) {
+      $states[$p.id] = @{
+        state = $p.state
+        r = $p.r; g = $p.g; b = $p.b
+        armed = $p.armed
+        fires = $p.fires
+        lastFireMsAgo = $(if ($p.lastFireAt -eq [DateTime]::MinValue) { -1 } else { [int](($endAt - $p.lastFireAt).TotalMilliseconds) })
+        lastFilledMsAgo = [int](($endAt - $p.lastFilledAt).TotalMilliseconds)
+      }
+    }
+    Emit @{
+      ok = $true
+      stoppedBy = $stoppedBy
+      ticks = $ticks
+      foregroundTicks = $fgTicks
+      ms = [int](($endAt - $started).TotalMilliseconds)
+      fires = @($fires)
+      states = $states
     }
     continue
   }

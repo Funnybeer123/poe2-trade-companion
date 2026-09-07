@@ -19,6 +19,7 @@ import { appendFileSync, mkdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { startWinHost } from "../src/adapters/winHost.js";
 import { DrainKit } from "../src/adapters/drainKit.js";
+import { FlaskGuardRunner } from "../src/adapters/flaskGuardRunner.js";
 import { loadProfile } from "../src/core/calibrationStore.js";
 import { loadHotkeyBindings } from "../src/core/hotkeyBindings.js";
 import { actionForKey, HOTKEY_ACTIONS } from "../src/shared/hotkeyActions.js";
@@ -232,10 +233,21 @@ let lastActionAt = 0;
 let shuttingDown = false;
 const DEBOUNCE_MS = 1_500;
 
+// Auto-flask guard: its own win-input host (this one blocks on waitkey and
+// on whole flows), configured + calibrated in the app under Tools → Hotkeys
+// → Auto-flask (artifacts/flask-guard.json, re-read live). Numpad − toggles
+// pause. `--flask-dry-run` samples and logs WOULD-fire without pressing.
+const flaskGuard = new FlaskGuardRunner({
+  root,
+  dryRun: process.argv.includes("--flask-dry-run"),
+  log: (entry) => log({ action: "flask", phase: entry.phase, message: entry.message }),
+});
+
 process.on("SIGINT", () => {
   log({ action: "daemon", phase: "stopping", message: "SIGINT received; finishing any in-flight action then exiting" });
   shuttingDown = true;
   killSwitch.trip();
+  void flaskGuard.stop();
 });
 
 /**
@@ -266,12 +278,19 @@ async function runAction(name: string, key: number): Promise<void> {
 }
 
 async function mainLoop(): Promise<void> {
-  log({ action: "daemon", phase: "listening", message: `${bindingSummary()} (editable in the app: Tools → Hotkeys). Ctrl+C to stop.` });
+  log({ action: "daemon", phase: "listening", message: `${bindingSummary()} (editable in the app: Tools → Hotkeys). Numpad − pauses/resumes auto-flask. Ctrl+C to stop.` });
+  flaskGuard.start();
   while (!shuttingDown) {
     const reply = await host.send({ op: "waitkey", timeoutMs: 30_000 });
     if (shuttingDown) break;
     if (!reply.ok) continue; // timeout; reissue
     const key = Number(reply.key);
+    if (key === 11) {
+      // Numpad − (reported as 11): pause/resume the auto-flask guard.
+      const paused = flaskGuard.togglePause();
+      log({ action: "flask", phase: "toggle", message: paused ? "auto-flask PAUSED (Numpad − resumes)" : "auto-flask resumed" });
+      continue;
+    }
     const name = actionForKey(currentBindings().bindings, key);
     if (!name) continue;
     if (busy) {
@@ -288,6 +307,7 @@ async function mainLoop(): Promise<void> {
     await runAction(name, key);
     busy = false;
   }
+  await flaskGuard.stop();
   await host.close();
 }
 

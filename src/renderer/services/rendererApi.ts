@@ -103,6 +103,17 @@ import {
   normalizeHotkeyBindings,
   RESERVED_CONTROL_KEYS,
 } from "../../shared/hotkeyActions.js";
+import {
+  defaultFlaskGuardConfig,
+  normalizeFlaskGuardConfig,
+  type FlaskGlobe,
+  type FlaskGuardConfig,
+} from "../../shared/flaskGuard.js";
+import type {
+  FlaskCalibratePayload,
+  FlaskGuardStatePayload,
+  FlaskProbePayload,
+} from "../../shared/ipc.js";
 
 const PREVIEW_STORAGE_KEY = "poe2-item-intelligence-preview-v1";
 const previewMarket = new FixtureMarketProvider(quotes);
@@ -1253,5 +1264,28 @@ export const hotkeysApi = {
     const bridge = nativeBridge();
     if (bridge?.hotkeys) return bridge.hotkeys.daemonStatus();
     return { exists: false };
+  },
+  // Auto-flask guard: config the daemon polls, click calibration, sample-now.
+  async flaskLoad(): Promise<FlaskGuardStatePayload & { preview: boolean }> {
+    const bridge = nativeBridge();
+    if (bridge?.hotkeys?.flaskGet) return { ...(await bridge.hotkeys.flaskGet()), preview: false };
+    return { config: defaultFlaskGuardConfig(), issues: [], source: "defaults", file: "", preview: true };
+  },
+  async flaskSave(
+    config: unknown,
+  ): Promise<{ config: FlaskGuardConfig; issues: string[]; preview: boolean }> {
+    const bridge = nativeBridge();
+    if (bridge?.hotkeys?.flaskSave) return { ...(await bridge.hotkeys.flaskSave(config)), preview: false };
+    return { ...normalizeFlaskGuardConfig(config), preview: true };
+  },
+  async flaskCalibrate(globe: FlaskGlobe): Promise<FlaskCalibratePayload> {
+    const bridge = nativeBridge();
+    if (bridge?.hotkeys?.flaskCalibrate) return bridge.hotkeys.flaskCalibrate(globe);
+    return { ok: false, globe, error: "Calibration needs the desktop app (no native bridge in preview)." };
+  },
+  async flaskProbe(): Promise<FlaskProbePayload> {
+    const bridge = nativeBridge();
+    if (bridge?.hotkeys?.flaskProbe) return bridge.hotkeys.flaskProbe();
+    return { ok: false, foregroundIsPoe: false, probes: [], error: "Sampling needs the desktop app." };
   },
 };

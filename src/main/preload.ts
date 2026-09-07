@@ -42,6 +42,10 @@ contextBridge.exposeInMainWorld("poe2", {
     get: () => ipcRenderer.invoke("hotkeys:get"),
     save: (bindings: Record<string, number | null>) => ipcRenderer.invoke("hotkeys:save", bindings),
     daemonStatus: () => ipcRenderer.invoke("hotkeys:daemon-status"),
+    flaskGet: () => ipcRenderer.invoke("flask:get"),
+    flaskSave: (config: unknown) => ipcRenderer.invoke("flask:save", config),
+    flaskCalibrate: (globe: "life" | "mana") => ipcRenderer.invoke("flask:calibrate", globe),
+    flaskProbe: () => ipcRenderer.invoke("flask:probe"),
   },
   generateFilter: (options: { hideBelowScore: number; highlightUniques: boolean; name: string }) =>
     ipcRenderer.invoke("filter:generate", options),

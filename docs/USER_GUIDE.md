@@ -295,6 +295,41 @@ Every identify and drop is verified by re-copying the cell and journaled to
 `artifacts/map-triage/journal.jsonl`. Every action is logged to
 `artifacts/action-daemon.log`. Stop the daemon with **Ctrl+C**.
 
+### Auto-flask (life & mana)
+
+The daemon also runs an **auto-flask guard**: it watches the life and mana
+globes and presses the flask key the moment the fluid drops below a trigger
+point you set by clicking — measured reaction is roughly 30–60 ms (one
+screen readback per tick, ~33 Hz, plus a 25 ms key press).
+
+1. Stand somewhere safe with full life and mana (town / hideout).
+2. In the app open **Tools → Hotkeys → Auto-flask** and press **Calibrate by
+   clicking** for *life*: the game comes to the front with a banner; click the
+   life globe at the exact height where the flask should fire. Repeat for
+   *mana*. (CLI alternative: `npm run flask:calibrate`.)
+3. Check the keys (defaults **1** life, **2** mana — any digit or letter),
+   the cooldowns (minimum gap between presses while the globe stays low;
+   3 s / 4 s by default), tick **Enable auto-flask**, and **Save**.
+4. Optional: **Test now** samples both globes and shows filled / low for
+   each. `npm run flask:status` prints the same from the CLI.
+
+The guard is live whenever `npm run actions:daemon` runs (or standalone:
+`npm run flask:guard`; `npm run flask:guard:dry` logs WOULD-fire events
+without pressing anything). **Numpad −** pauses / resumes it in game.
+Config lives in `artifacts/flask-guard.json`; saves apply within a second.
+
+How it decides: the averaged colour at the trigger point is compared with
+what your calibration click measured. Fluid is saturated and bright at any
+hue (red life, teal energy shield over life, blue mana); empty glass is dark
+and grey. So "filled" = chroma and brightness above a fraction of the
+calibrated colour (expert ratios in the panel). It never presses before the
+HUD has been seen filled once, only while Path of Exile 2 is the foreground
+window, and after ~12 s without any filled read (death screen, passive tree,
+loading) it slows to one press per 10 s. Known limits: a full energy shield
+covering a low life globe reads as "filled" (set the life trigger higher on
+ES builds), and a low globe while the chat box is open would type the key
+into chat.
+
 ## Where data lives
 
 Local-first. Typical Windows path:

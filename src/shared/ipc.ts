@@ -10,6 +10,7 @@ import type {
   ScanGridCell,
   ScanGridKind,
 } from "../core/scanContracts.js";
+import type { FlaskGlobe, FlaskGuardConfig, Rgb } from "./flaskGuard.js";
 import type {
   RuleValidationResult,
   ScanHistoryItem,
@@ -442,12 +443,46 @@ export interface HotkeysStatePayload {
   source: "file" | "defaults";
 }
 
+export interface FlaskGuardStatePayload {
+  config: FlaskGuardConfig;
+  issues: string[];
+  source: "file" | "defaults";
+  file: string;
+}
+
+export interface FlaskCalibratePayload {
+  ok: boolean;
+  globe: FlaskGlobe;
+  point?: { x: number; y: number };
+  rgb?: Rgb;
+  looksFilled?: boolean;
+  error?: string;
+  config?: FlaskGuardConfig;
+}
+
+export interface FlaskProbePayload {
+  ok: boolean;
+  foregroundIsPoe: boolean;
+  probes: Array<{
+    globe: FlaskGlobe;
+    rgb: Rgb;
+    state: "filled" | "low";
+    thresholds: { minChroma: number; minBright: number };
+    reference: Rgb;
+  }>;
+  error?: string;
+}
+
 export interface HotkeysBridge {
   get: () => Promise<HotkeysStatePayload>;
   save: (
     bindings: Record<string, number | null>,
   ) => Promise<{ bindings: Record<string, number | null>; issues: string[] }>;
   daemonStatus: () => Promise<{ exists: boolean; lastEventAt?: string; lastLine?: string }>;
+  flaskGet: () => Promise<FlaskGuardStatePayload>;
+  flaskSave: (config: unknown) => Promise<{ config: FlaskGuardConfig; issues: string[] }>;
+  flaskCalibrate: (globe: FlaskGlobe) => Promise<FlaskCalibratePayload>;
+  flaskProbe: () => Promise<FlaskProbePayload>;
 }
 
 export interface Poe2Bridge {

@@ -30,6 +30,7 @@ import {
   type VoiceTransferStatus,
 } from "../core/voiceTransfer.js";
 import { readMergedProfile, registerCalibrationIpc } from "./calibrationIpc.js";
+import { registerFlaskGuardIpc } from "./flaskGuardIpc.js";
 import { AssistiveRunService, type AssistiveRunRequest } from "./assistiveRunService.js";
 import {
   findCompanionRepoRoot,
@@ -691,6 +692,8 @@ app.whenReady().then(() => {
   ipcMain.handle("filter:generate", (_event, options) => generateLootFilter(options));
   ipcMain.handle("runtime:mode", () => buildMode);
   registerCalibrationIpc();
+  // Auto-flask guard config + click calibration; same root as the hotkey bindings.
+  registerFlaskGuardIpc(process.cwd());
   createWindow();
   setInterval(() => {
     void evaluateClipboard();
