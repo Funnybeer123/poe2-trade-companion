@@ -33,14 +33,32 @@ const pendingDeleteId = ref("");
 const clock = ref(Date.now());
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let clockTimer: ReturnType<typeof setInterval> | undefined;
+let disposed = false;
 
 async function load(): Promise<void> {
   if (!api) return;
   try {
-    view.value = await api.overview();
+    const next = await api.overview();
+    if (disposed) return;
+    view.value = next;
     fetchedAt.value = Date.now();
   } catch (reason) {
+    if (disposed) return;
     error.value = reason instanceof Error ? reason.message : "The watchlist could not be loaded.";
+  }
+}
+
+/** Retry after a failed first read (the tool shows nothing else until it lands). */
+async function retryLoad(): Promise<void> {
+  if (busy.value) return;
+  busy.value = true;
+  error.value = "";
+  loading.value = true;
+  try {
+    await load();
+  } finally {
+    loading.value = false;
+    busy.value = false;
   }
 }
 
@@ -53,21 +71,24 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
   if (pollTimer) clearInterval(pollTimer);
   if (clockTimer) clearInterval(clockTimer);
 });
 
 async function apply(action: () => Promise<WatchlistOverviewView | undefined>): Promise<void> {
-  if (!api) return;
+  if (!api || busy.value) return;
   busy.value = true;
   error.value = "";
   try {
     const next = await action();
+    if (disposed) return;
     if (next) {
       view.value = next;
       fetchedAt.value = Date.now();
     }
   } catch (reason) {
+    if (disposed) return;
     error.value = reason instanceof Error ? reason.message : "The watchlist could not be saved.";
   } finally {
     busy.value = false;
@@ -186,17 +207,19 @@ function describeOutcome(outcome: WatchlistScanOutcome): string {
 }
 
 async function scanNow(watchId?: string): Promise<void> {
-  if (!api) return;
+  if (!api || busy.value) return;
   busy.value = true;
   error.value = "";
   notice.value = "";
   try {
     const outcome = await api.scanNow(watchId);
+    if (disposed) return;
     const text = describeOutcome(outcome);
     if (outcome.ok) notice.value = text;
     else error.value = text;
     await load();
   } catch (reason) {
+    if (disposed) return;
     error.value = reason instanceof Error ? reason.message : "The scan failed.";
   } finally {
     busy.value = false;
@@ -206,13 +229,22 @@ async function scanNow(watchId?: string): Promise<void> {
 // ---- alerts --------------------------------------------------------------
 
 async function copyWhisper(alert: DealAlert): Promise<void> {
-  if (!api) return;
+  if (!api || busy.value) return;
+  busy.value = true;
   error.value = "";
-  const result = await api.copyWhisper(alert.id);
-  if (result.ok) {
-    notice.value = "Whisper copied — paste it into the game's chat yourself.";
-  } else {
-    error.value = result.error ?? "The whisper could not be copied.";
+  try {
+    const result = await api.copyWhisper(alert.id);
+    if (disposed) return;
+    if (result.ok) {
+      notice.value = "Whisper copied — paste it into the game's chat yourself.";
+    } else {
+      error.value = result.error ?? "The whisper could not be copied.";
+    }
+  } catch (reason) {
+    if (disposed) return;
+    error.value = reason instanceof Error ? reason.message : "The whisper could not be copied.";
+  } finally {
+    busy.value = false;
   }
 }
 
@@ -308,7 +340,16 @@ function formatEta(seconds: number): string {
       <p>Loading the watchlist…</p>
     </div>
 
-    <template v-else-if="view">
+    <div v-else-if="!view" class="state-panel compact-state">
+      <span class="state-icon" aria-hidden="true">!</span>
+      <strong>The watchlist could not be loaded</strong>
+      <p role="alert">{{ error || "The desktop app did not answer." }}</p>
+      <button type="button" class="button secondary compact" :disabled="busy" @click="retryLoad">
+        Retry
+      </button>
+    </div>
+
+    <template v-else>
       <div class="button-row watch-controls">
         <label class="toggle-field">
           <input
@@ -473,7 +514,7 @@ function formatEta(seconds: number): string {
             <button
               type="button"
               class="button secondary compact"
-              :disabled="!alert.whisper"
+              :disabled="busy || !alert.whisper"
               :title="alert.whisper ? 'Copy the seller\'s whisper to the clipboard' : 'This listing came without a whisper'"
               @click="copyWhisper(alert)"
             >

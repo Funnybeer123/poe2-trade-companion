@@ -36,14 +36,6 @@ import type {
   SortMoveSchedule,
   StashSortPlan,
 } from "@core/stashSort";
-import type {
-  StashTabAdminEvent,
-  StashTabAdminStatus,
-  StashTabApplyOutcome,
-  StashTabPlan,
-  StashTabSurveyResult,
-} from "@core/stashTabAdmin";
-import type { FindRecord } from "@core/sortTriage";
 import {
   importTradeQueries,
   type TradeQueryImportResult,
@@ -99,9 +91,11 @@ import {
   type HotkeysStatePayload,
   type LootFilterSaveResult,
   type InventoryBridge,
+  type MarketBridge,
   type ScanSessionDetail,
   type ScanSessionView,
   type ScanSlotView,
+  type StashTabsBridge,
   type WatchlistBridge,
 } from "../../shared/ipc.js";
 import {
@@ -1071,24 +1065,15 @@ export interface StashSortApi {
   ) => () => void;
 }
 
-export interface StashTabAdminApi {
-  status: () => Promise<StashTabAdminStatus>;
-  survey: (folderName?: string) => Promise<StashTabSurveyResult>;
-  /** Recent finds from the sorter's value triage (newest first). */
-  finds?: () => Promise<FindRecord[]>;
-  plan: (payload: {
-    tabs: StashTabSurveyResult["tabs"];
-    requireQuad?: boolean;
-    /** Opt in to rewriting priced tabs; removes their public price. */
-    allowPricedTabs?: boolean;
-  }) => Promise<{ plan: StashTabPlan; errors: string[] }>;
-  apply: (payload: {
-    plan: StashTabPlan;
-    dryRun?: boolean;
-    allowPricedTabs?: boolean;
-  }) => Promise<StashTabApplyOutcome[]>;
-  onEvent: (callback: (payload: StashTabAdminEvent) => void) => () => void;
-}
+/**
+ * Stash-tab admin + packaged script runs (sort, craft, shop, ladder). The
+ * shape is the preload's, typed once in shared/ipc.ts so the views never
+ * cast. Browser-preview fallback: there is no bridge, so `getStashTabAdminApi`
+ * returns `undefined` and every screen shows its "needs the desktop app"
+ * notice instead of offering buttons that could not drive the game.
+ */
+export type StashTabAdminApi = StashTabsBridge;
+export type { StashTabScriptOutcome } from "../../shared/ipc.js";
 
 export interface LeagueCandidateView {
   value: string;
@@ -1145,21 +1130,20 @@ export interface PriceFeedApi {
   comps: (itemText: string) => Promise<CompsResultView>;
 }
 
+/**
+ * The preload still exposes these sections as loose records (their payloads
+ * are typed only here); this is the one remaining cast, kept in one place.
+ * Sections typed in shared/ipc.ts (stashTabs, inventory, market, watchlist,
+ * hotkeys) are read from the bridge directly.
+ */
 function compatibilityApi<T>(
-  section:
-    | "calibration"
-    | "assistive"
-    | "stashSort"
-    | "stashTabs"
-    | "shop"
-    | "priceFeed"
-    | "inventory",
+  section: "calibration" | "assistive" | "stashSort" | "shop" | "priceFeed",
 ): T | undefined {
   return nativeBridge()?.[section] as unknown as T | undefined;
 }
 
 export function getStashTabAdminApi(): StashTabAdminApi | undefined {
-  return compatibilityApi<StashTabAdminApi>("stashTabs");
+  return nativeBridge()?.stashTabs;
 }
 
 export interface ShopListingView {
@@ -1282,7 +1266,7 @@ export type InventoryApi = InventoryBridge;
 
 /** Stash net worth (the Wealth page). Desktop only — the ledger is a local file. */
 export function getInventoryApi(): InventoryApi | undefined {
-  return compatibilityApi<InventoryApi>("inventory");
+  return nativeBridge()?.inventory;
 }
 
 /**
@@ -1340,27 +1324,12 @@ export const hotkeysApi = {
   },
 };
 
-/** Market trends (poe2scout daily price logs) — src/main/marketTrendsService.ts. */
-export interface MarketTrendsView {
-  ok: boolean;
-  league?: string;
-  fetchedAt?: string;
-  stale: boolean;
-  refreshing: boolean;
-  source: "cache" | "network" | "none";
-  categories: string[];
-  trends: Array<import("@core/priceTrends").TrendReport>;
-  error?: string;
-}
-
-export interface MarketApi {
-  /** Cache when fresh, else a fetch; `cachedOnly` never touches the network. */
-  trends: (query?: { refresh?: boolean; cachedOnly?: boolean }) => Promise<MarketTrendsView>;
-  refresh: () => Promise<MarketTrendsView>;
-}
+/** Market trends (poe2scout daily price logs) — src/main/marketTrendsService.ts. Desktop only. */
+export type MarketApi = MarketBridge;
+export type { MarketTrendsView } from "../../shared/ipc.js";
 
 export function getMarketApi(): MarketApi | undefined {
-  return nativeBridge()?.market as unknown as MarketApi | undefined;
+  return nativeBridge()?.market;
 }
 
 /** Deals watchlist (src/main/watchlistService.ts). Desktop only: it needs trade2 and the clipboard. */

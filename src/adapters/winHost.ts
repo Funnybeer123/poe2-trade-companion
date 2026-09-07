@@ -10,6 +10,9 @@ export interface WinHostOptions {
   requestTimeoutMs?: number;
 }
 
+/** Longest close() waits for the host process to exit after kill(). */
+const CLOSE_WAIT_MS = 3_000;
+
 export function resolveWinHostScript(): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const sourceCandidates = [
@@ -109,6 +112,11 @@ export function startWinHost(options: WinHostOptions = {}) {
       });
     });
   }
+  /**
+   * Quit the host and wait (bounded) until the PowerShell process is gone,
+   * so a caller that probes for "another input host" right after closing
+   * its own never counts this one still winding down.
+   */
   async function close() {
     if (closed) return;
     closed = true;
@@ -119,6 +127,14 @@ export function startWinHost(options: WinHostOptions = {}) {
       /* ignore */
     }
     child.kill();
+    if (child.exitCode !== null || child.signalCode !== null) return;
+    await new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, CLOSE_WAIT_MS);
+      child.once("exit", () => {
+        clearTimeout(timer);
+        resolve();
+      });
+    });
   }
   return { send, close };
 }

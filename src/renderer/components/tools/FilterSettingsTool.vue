@@ -35,10 +35,18 @@ const filterText = ref("");
 const filterSummary = ref<LootFilterSummary | null>(null);
 const filterError = ref("");
 const filterBusy = ref(false);
+const saving = ref(false);
 const copied = ref(false);
 const savedPath = ref("");
 const canSave = rendererApi.canSaveFilter();
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
+/**
+ * Every threshold edit rebuilds the preview; only the newest build may land
+ * so a slow earlier one never overwrites a newer preview (or an unmounted
+ * panel).
+ */
+let buildSeq = 0;
+let disposed = false;
 
 function positive(value: unknown, fallback: number): number {
   const num = Number(value);
@@ -69,19 +77,22 @@ const tierCounts = computed(() => {
 });
 
 async function buildFilter(): Promise<void> {
+  const seq = ++buildSeq;
   filterError.value = "";
   copied.value = false;
   savedPath.value = "";
   filterBusy.value = true;
   try {
     const output = await rendererApi.generateFilter(filterRequest.value);
+    if (seq !== buildSeq) return;
     filterText.value = output.text;
     filterSummary.value = output.summary;
   } catch (reason) {
+    if (seq !== buildSeq) return;
     filterError.value =
       reason instanceof Error ? reason.message : "Filter generation failed.";
   } finally {
-    filterBusy.value = false;
+    if (seq === buildSeq) filterBusy.value = false;
   }
 }
 
@@ -98,9 +109,14 @@ onMounted(() => {
 
 onBeforeUnmount(() => {
   if (previewTimer) clearTimeout(previewTimer);
+  buildSeq += 1;
+  disposed = true;
 });
 
 async function saveFilter(): Promise<void> {
+  // The OS dialog is modal; a second click while it is open would queue another.
+  if (saving.value || !filterText.value) return;
+  saving.value = true;
   filterError.value = "";
   savedPath.value = "";
   try {
@@ -116,6 +132,8 @@ async function saveFilter(): Promise<void> {
   } catch (reason) {
     filterError.value =
       reason instanceof Error ? reason.message : "The filter could not be saved.";
+  } finally {
+    saving.value = false;
   }
 }
 
@@ -127,12 +145,23 @@ const feedSessid = ref("");
 const feedSaved = ref("");
 const feedError = ref("");
 const feedChecking = ref(false);
+const feedSaving = ref(false);
+
+function describeFeedError(reason: unknown, fallback: string): string {
+  return reason instanceof Error ? reason.message : fallback;
+}
 
 onMounted(async () => {
   if (!feedApi) return;
-  feedStatus.value = await feedApi.status();
-  feedLeague.value = feedStatus.value.config.league;
-  feedAutoRefresh.value = feedStatus.value.config.autoRefreshDaily;
+  try {
+    const status = await feedApi.status();
+    if (disposed) return;
+    feedStatus.value = status;
+    feedLeague.value = status.config.league;
+    feedAutoRefresh.value = status.config.autoRefreshDaily;
+  } catch (reason) {
+    if (!disposed) feedError.value = describeFeedError(reason, "Market data settings could not be read.");
+  }
 });
 
 /**
@@ -172,31 +201,58 @@ const feedResolvedLine = computed(() => {
 
 /** One small poe2scout read so the picker can list the current leagues. */
 async function checkLeagues(): Promise<void> {
-  if (!feedApi) return;
+  if (!feedApi || feedChecking.value) return;
   feedChecking.value = true;
   feedError.value = "";
   try {
     await feedApi.leagues();
-    feedStatus.value = await feedApi.status();
+    const status = await feedApi.status();
+    if (!disposed) feedStatus.value = status;
   } catch (reason) {
-    feedError.value = reason instanceof Error ? reason.message : "League check failed.";
+    if (!disposed) feedError.value = describeFeedError(reason, "League check failed.");
   } finally {
     feedChecking.value = false;
   }
 }
 
 async function saveFeedConfig(): Promise<void> {
-  if (!feedApi) return;
+  if (!feedApi || feedSaving.value) return;
+  feedSaving.value = true;
   feedSaved.value = "";
   feedError.value = "";
-  feedStatus.value = await feedApi.configure({
-    league: feedLeague.value.trim() || "auto",
-    autoRefreshDaily: feedAutoRefresh.value,
-    // Only send the cookie when the user typed one; blank leaves it as-is.
-    ...(feedSessid.value.trim() ? { poesessid: feedSessid.value.trim() } : {}),
-  });
-  feedSessid.value = "";
-  feedSaved.value = "Market data settings saved.";
+  try {
+    const status = await feedApi.configure({
+      league: feedLeague.value.trim() || "auto",
+      autoRefreshDaily: feedAutoRefresh.value,
+      // Only send the cookie when the user typed one; blank leaves it as-is.
+      ...(feedSessid.value.trim() ? { poesessid: feedSessid.value.trim() } : {}),
+    });
+    if (disposed) return;
+    feedStatus.value = status;
+    feedSessid.value = "";
+    feedSaved.value = "Market data settings saved.";
+  } catch (reason) {
+    if (!disposed) feedError.value = describeFeedError(reason, "Market data settings could not be saved.");
+  } finally {
+    feedSaving.value = false;
+  }
+}
+
+async function clearSavedCookie(): Promise<void> {
+  if (!feedApi || feedSaving.value) return;
+  feedSaving.value = true;
+  feedSaved.value = "";
+  feedError.value = "";
+  try {
+    const status = await feedApi.configure({ poesessid: "" });
+    if (disposed) return;
+    feedStatus.value = status;
+    feedSaved.value = "Saved cookie cleared.";
+  } catch (reason) {
+    if (!disposed) feedError.value = describeFeedError(reason, "The saved cookie could not be cleared.");
+  } finally {
+    feedSaving.value = false;
+  }
 }
 
 async function copyFilter(): Promise<void> {
@@ -274,10 +330,10 @@ async function copyFilter(): Promise<void> {
         v-if="canSave"
         type="button"
         class="button secondary"
-        :disabled="!filterText"
+        :disabled="!filterText || saving"
         @click="saveFilter"
       >
-        Save…
+        {{ saving ? "Saving…" : "Save…" }}
       </button>
       <span v-if="savedPath" class="success-text" role="status">Saved to {{ savedPath }}</span>
     </div>
@@ -384,8 +440,8 @@ async function copyFilter(): Promise<void> {
         <span>Refresh market prices daily while the app is open</span>
         </label>
         <div class="button-row">
-          <button type="button" class="button secondary" @click="saveFeedConfig">
-            Save market settings
+          <button type="button" class="button secondary" :disabled="feedSaving" @click="saveFeedConfig">
+            {{ feedSaving ? "Saving…" : "Save market settings" }}
           </button>
           <button
             type="button"
@@ -400,7 +456,8 @@ async function copyFilter(): Promise<void> {
             v-if="feedStatus?.config.poesessid"
             type="button"
             class="button ghost compact"
-            @click="feedApi?.configure({ poesessid: '' }).then((status) => { feedStatus = status; feedSaved = 'Saved cookie cleared.'; })"
+            :disabled="feedSaving"
+            @click="clearSavedCookie"
           >
             Clear saved cookie
           </button>

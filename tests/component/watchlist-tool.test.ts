@@ -233,6 +233,39 @@ describe("WatchlistTool", () => {
     wrapper.unmount();
   });
 
+  it("shows the failure and a Retry when the first read fails, then recovers", async () => {
+    // The overview mock reads bridge.overview on every call; a rejected first
+    // read used to leave the tool blank (no panel, no error, no buttons).
+    let calls = 0;
+    vi.doMock("../../src/renderer/services/rendererApi", () => ({
+      getWatchlistApi: () => ({
+        overview: vi.fn(async () => {
+          calls += 1;
+          if (calls === 1) throw new Error("ipc down");
+          return bridge.overview;
+        }),
+        save: bridge.save,
+        scanNow: bridge.scanNow,
+        copyWhisper: bridge.copyWhisper,
+        dismiss: bridge.dismiss,
+      }),
+    }));
+    vi.resetModules();
+    const { default: Tool } = await import("../../src/renderer/components/tools/WatchlistTool.vue");
+    const wrapper = mount(Tool);
+    await flushPromises();
+    expect(wrapper.text()).toContain("The watchlist could not be loaded");
+    expect(wrapper.text()).toContain("ipc down");
+    const retry = wrapper.findAll("button").find((button) => button.text() === "Retry");
+    expect(retry).toBeDefined();
+    await retry!.trigger("click");
+    await flushPromises();
+    expect(wrapper.text()).not.toContain("The watchlist could not be loaded");
+    expect(wrapper.text()).toContain("Temporalis (Silk Robe)");
+    wrapper.unmount();
+    vi.doUnmock("../../src/renderer/services/rendererApi");
+  });
+
   it("shows the desktop-only panel without a bridge", async () => {
     // A second module graph where getWatchlistApi returns nothing.
     vi.doMock("../../src/renderer/services/rendererApi", () => ({ getWatchlistApi: () => undefined }));

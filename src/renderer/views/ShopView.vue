@@ -38,23 +38,48 @@ const log = ref<string[]>([]);
 const message = ref("");
 const saveNote = ref("");
 const stepTeach = ref(false);
+/** A script launch or config save is in flight — one click at a time. */
+const busy = ref(false);
 
 /** Editable copy of the config (saved back to artifacts/tab-admin/shop.json). */
 const config = ref<ShopConfigView | undefined>(undefined);
 
 let unsubscribe: (() => void) | undefined;
+let disposed = false;
+
+function describeError(reason: unknown, fallback: string): string {
+  return reason instanceof Error ? reason.message : fallback;
+}
 
 async function refresh(): Promise<void> {
   if (!shopApi) return;
-  const next = await shopApi.overview();
-  overview.value = next;
-  if (next.config) config.value = { ...next.config, maxAutoList: { ...next.config.maxAutoList } };
-  if (next.error) message.value = next.error;
+  try {
+    const next = await shopApi.overview();
+    if (disposed) return;
+    overview.value = next;
+    if (next.config) config.value = { ...next.config, maxAutoList: { ...next.config.maxAutoList } };
+    if (next.error) message.value = next.error;
+  } catch (reason) {
+    if (!disposed) message.value = describeError(reason, "The shop ledger could not be read.");
+  }
+}
+
+async function refreshStatus(): Promise<void> {
+  if (!tabsApi) return;
+  try {
+    const next = await tabsApi.status();
+    if (!disposed) status.value = next;
+  } catch (reason) {
+    if (!disposed) message.value = describeError(reason, "The script status could not be read.");
+  }
 }
 
 onMounted(async () => {
-  if (feedApi) feedStatus.value = await feedApi.status().catch(() => null);
-  if (!available.value) return;
+  if (feedApi) {
+    const next = await feedApi.status().catch(() => null);
+    if (!disposed) feedStatus.value = next;
+  }
+  if (!available.value || disposed) return;
   unsubscribe = tabsApi!.onEvent((event: StashTabAdminEvent) => {
     if (event.kind === "phase") {
       status.value = { ...status.value, phase: event.phase, running: event.phase !== "idle" };
@@ -63,11 +88,14 @@ onMounted(async () => {
     if (event.kind === "error") message.value = event.message;
     if (event.kind === "log") log.value = [...log.value.slice(-249), event.line];
   });
-  status.value = await tabsApi!.status();
+  await refreshStatus();
   await refresh();
 });
 
-onBeforeUnmount(() => unsubscribe?.());
+onBeforeUnmount(() => {
+  disposed = true;
+  unsubscribe?.();
+});
 
 const configured = computed(() => Boolean(config.value?.shopTab?.trim()));
 /** Bucket tabs as one editable line ("1Ex, 5Ex, 1D"). */
@@ -94,16 +122,21 @@ function ageDays(iso: string): string {
 }
 
 async function runScriptKind(kind: string): Promise<void> {
-  if (!tabsApi) return;
+  if (!tabsApi || busy.value) return;
+  busy.value = true;
   log.value = [];
   message.value = "";
-  const result = await (
-    tabsApi as unknown as { runScript(k: string): Promise<{ started: boolean; reason?: string }> }
-  ).runScript(kind);
-  if (!result?.started) {
-    message.value = `Could not start ${kind}: ${result?.reason ?? "unknown"}`;
+  try {
+    const result = await tabsApi.runScript(kind);
+    if (!result?.started) {
+      message.value = `Could not start ${kind}: ${result?.reason ?? "unknown"}`;
+    }
+  } catch (reason) {
+    message.value = `Could not start ${kind}: ${describeError(reason, "unknown")}`;
+  } finally {
+    busy.value = false;
   }
-  status.value = await tabsApi.status();
+  await refreshStatus();
 }
 
 async function runScan(): Promise<void> {
@@ -125,16 +158,28 @@ async function runLadder(): Promise<void> {
 
 async function stopScript(): Promise<void> {
   if (!tabsApi) return;
-  await (tabsApi as unknown as { stopScript(): Promise<boolean> }).stopScript();
-  status.value = await tabsApi.status();
+  try {
+    await tabsApi.stopScript();
+  } catch (reason) {
+    message.value = describeError(reason, "The script could not be stopped.");
+  }
+  await refreshStatus();
 }
 
 async function saveConfig(): Promise<void> {
-  if (!shopApi || !config.value) return;
+  if (!shopApi || !config.value || busy.value) return;
+  busy.value = true;
   saveNote.value = "";
-  const result = await shopApi.saveConfig(config.value);
-  config.value = { ...result.config, maxAutoList: { ...result.config.maxAutoList } };
-  saveNote.value = result.issues.length > 0 ? result.issues.join("; ") : "Saved.";
+  try {
+    const result = await shopApi.saveConfig(config.value);
+    if (disposed) return;
+    config.value = { ...result.config, maxAutoList: { ...result.config.maxAutoList } };
+    saveNote.value = result.issues.length > 0 ? result.issues.join("; ") : "Saved.";
+  } catch (reason) {
+    saveNote.value = describeError(reason, "Saving the shop settings failed.");
+  } finally {
+    busy.value = false;
+  }
   await refresh();
 }
 </script>
@@ -190,13 +235,13 @@ async function saveConfig(): Promise<void> {
           Numpad during a run: <kbd>8</kbd> good · <kbd>9</kbd> wrong · <kbd>5</kbd> pause · <kbd>0</kbd> stop.
         </p>
         <div class="button-row">
-          <button type="button" class="button primary" :disabled="status.running || !configured" @click="runScan">
+          <button type="button" class="button primary" :disabled="busy || status.running || !configured" @click="runScan">
             {{ dryRun ? "Scan shop (dry-run)" : "Scan + record" }}
           </button>
           <button
             type="button"
             class="button"
-            :disabled="status.running || !configured || dryRun"
+            :disabled="busy || status.running || !configured || dryRun"
             :title="dryRun ? 'Turn the global dry-run off to apply' : ''"
             @click="runApply"
           >
@@ -205,7 +250,7 @@ async function saveConfig(): Promise<void> {
           <button
             type="button"
             class="button"
-            :disabled="status.running"
+            :disabled="busy || status.running"
             :title="dryRun ? 'Prices the bag and prints where each item would go' : 'Lists every bag item in its bucket tab'"
             @click="runList"
           >
@@ -214,7 +259,7 @@ async function saveConfig(): Promise<void> {
           <button
             type="button"
             class="button"
-            :disabled="status.running"
+            :disabled="busy || status.running"
             :title="dryRun ? 'Prints which stale listings would move to a cheaper bucket (offline, from the ledger)' : 'Delists each stale listing to the bag and relists it one bucket cheaper'"
             @click="runLadder"
           >
@@ -400,8 +445,8 @@ async function saveConfig(): Promise<void> {
           </p>
         </details>
         <div class="button-row">
-          <button type="button" class="button primary" @click="saveConfig">Save settings</button>
-          <span v-if="saveNote" class="muted">{{ saveNote }}</span>
+          <button type="button" class="button primary" :disabled="busy" @click="saveConfig">Save settings</button>
+          <span v-if="saveNote" class="muted" role="status">{{ saveNote }}</span>
         </div>
       </section>
     </template>

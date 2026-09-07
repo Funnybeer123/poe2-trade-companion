@@ -69,6 +69,16 @@ const live = liveRequested && process.env.POE2_CRAFT_LIVE === "1";
 const asJson = flag("--json");
 const fromTab = value("--from-tab")?.trim();
 const thenList = flag("--then-list");
+
+// A bare `--from-tab` (or `--from-tab=`) would silently craft the bag as-is;
+// the user clearly meant to stage a tab, so refuse instead of guessing.
+if (argv.some((entry) => entry === "--from-tab" || entry.startsWith("--from-tab=")) && !fromTab) {
+  console.error("--from-tab needs the tab label: --from-tab=Craft");
+  process.exit(1);
+}
+if (thenList && (flag("--from-clipboard") || value("--from-file"))) {
+  console.error("--then-list only applies to the bag modes (it lists what the bag holds after the pass) — ignored.");
+}
 const maxSteps = Math.max(1, Number(value("--max-steps") ?? 40));
 const policy = {
   ...DEFAULT_CRAFT_POLICY,
