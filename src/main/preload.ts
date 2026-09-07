@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer } from "electron";
 import type {
   ImportBuildTargetsRequest,
   IntelligenceExportRequest,
+  InventoryOverviewQuery,
   IpcEventChannel,
   IpcInvoker,
   IpcSubscriber,
@@ -190,5 +191,9 @@ contextBridge.exposeInMainWorld("poe2", {
     exportDiagnostic: (payload: unknown) => ipcRenderer.invoke("cal:export-diagnostic", payload),
     stamp: (payload: unknown) => ipcRenderer.invoke("cal:stamp", payload),
     walkNpc: (npc: unknown) => ipcRenderer.invoke("cal:walk-npc", npc),
+  },
+  inventory: {
+    overview: (query?: InventoryOverviewQuery) => ipcRenderer.invoke("inventory:overview", query),
+    refresh: (query?: InventoryOverviewQuery) => ipcRenderer.invoke("inventory:refresh", query),
   },
 });

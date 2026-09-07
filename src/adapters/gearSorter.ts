@@ -99,6 +99,7 @@ import {
   type SortTriageConfig,
 } from "../core/sortTriage.js";
 import type { TierVerdict } from "../core/valueTiers.js";
+import { inventoryRecordsFor, type InventoryRecord } from "../core/inventoryLedger.js";
 
 interface SortHost {
   send(payload: Record<string, unknown>): Promise<WinReply>;
@@ -203,6 +204,13 @@ export interface GearSorterOptions {
    */
   chest?: "personal" | "guild";
   log?: (line: string) => void;
+  /** Inventory ledger (src/core/inventoryLedger.ts): every identified item,
+   * one record per fingerprint per location per run. Estimates come from
+   * `triage.evaluate` when triage is on. */
+  onObservation?: (record: InventoryRecord) => void;
+  /** Groups this session's observations; a location's latest run is its
+   * current contents. Defaults to a timestamp-derived id. */
+  runId?: string;
 }
 
 interface Frame {
@@ -322,6 +330,7 @@ export class GearSorter {
     this.captureScratchDir = path.join(os.tmpdir(), "poe2-sort-captures");
     mkdirSync(this.captureScratchDir, { recursive: true });
     this.log = options.log ?? ((line) => console.log(line));
+    this.runId = options.runId ?? `run-${Date.now().toString(36)}`;
   }
 
   get lastStep(): string {
@@ -2608,6 +2617,33 @@ export class GearSorter {
     );
   }
 
+  /** Ledger throttle: one record per fingerprint per location per run. */
+  private readonly observedKeys = new Set<string>();
+  private readonly runId: string;
+
+  /** Append every identified item to the inventory ledger (never throws). */
+  private recordObservations(items: readonly IdentifiedItem[], location: string, partial = false): void {
+    const sink = this.options.onObservation;
+    if (!sink || items.length === 0) return;
+    const records = inventoryRecordsFor(items, {
+      location,
+      runId: this.runId,
+      at: new Date().toISOString(),
+      ...(this.options.triage ? { evaluate: this.options.triage.evaluate } : {}),
+      partial,
+    });
+    for (const record of records) {
+      const key = `${this.runId}|${location}|${partial ? "p" : "f"}|${record.fingerprint}`;
+      if (this.observedKeys.has(key)) continue;
+      this.observedKeys.add(key);
+      try {
+        sink(record);
+      } catch {
+        // The ledger is a side journal; it must never fail a sort.
+      }
+    }
+  }
+
   /**
    * File every identifiable bag item into its TRUE tab (junk to T tabs).
    * This is what cleans a "dirty" bag left by interruptions — no blanket
@@ -2701,6 +2737,7 @@ export class GearSorter {
               : undefined,
           });
           for (const read of reads) bagReads.set(cellKey(read.cell), read);
+          this.recordObservations(groupIdentifiedCells(reads), "bag");
         }
         let items = groupIdentifiedCells([...bagReads.values()]);
         if (items.length === 0) {
@@ -2784,6 +2821,9 @@ export class GearSorter {
         }
         const left = await this.depositCells(grabPoints, dest);
         filed += group.length - Math.min(group.length, left);
+        // A clean deposit is a verified sighting at the destination (partial:
+        // it adds to that tab's ledger contents without retiring anything).
+        if (left === 0) this.recordObservations(group.map((entry) => entry.item), dest, true);
         if (left >= grabPoints.length) {
           if (group.every((entry) => entry.detoured)) {
             // A FULL triage tab must not push valuables into the junk flow:
@@ -3413,6 +3453,7 @@ export class GearSorter {
     if (this.options.teach && modelItems.length > 0) {
       modelItems = await this.teachItems(source, modelItems, region, cols, rows);
     }
+    this.recordObservations(modelItems, key);
     return { occupiedCount: occupied.length, modelItems, reads, unread, region, cols, rows };
   }
 
@@ -3475,6 +3516,7 @@ export class GearSorter {
   }> {
     const cells = await this.currentBagCells();
     const { items, unread } = await this.identifyCells(cells, {});
+    this.recordObservations(items, "bag");
     return { items, unread };
   }
 

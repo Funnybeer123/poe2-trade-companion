@@ -222,6 +222,23 @@ function loadTriage(): GearSorterTriageOptions | undefined {
 
 const triage = loadTriage();
 
+/**
+ * Inventory ledger (src/core/inventoryLedger.ts): every item the run
+ * identifies by Ctrl+C, wherever it saw it — the Wealth page's net worth
+ * and sell list read this file. One line per fingerprint per location per
+ * run; the run id groups them so a later scan of a tab supersedes the
+ * earlier one.
+ */
+const runId = `sort-${new Date().toISOString().replace(/[:.]/g, "-")}`;
+const inventoryFile = path.join(outDir, "inventory.jsonl");
+const recordInventory = (record: unknown): void => {
+  try {
+    appendFileSync(inventoryFile, `${JSON.stringify(record)}\n`);
+  } catch {
+    // The ledger is a side journal; never fail a sort over it.
+  }
+};
+
 const host = startWinHost({ requestTimeoutMs: 45_000 });
 const controlHost = startWinHost({ requestTimeoutMs: 10_000 });
 const harness = new SortHarness(host, controlHost, {
@@ -243,6 +260,8 @@ const sorter = new GearSorter(host, harness, new StashTabKit(host), {
   chest: guild ? ("guild" as const) : ("personal" as const),
   maxChestClicks: argv.includes("--no-chest") ? 0 : 2,
   ...(triage && !guild ? { triage } : {}),
+  runId,
+  onObservation: recordInventory,
 });
 
 let exitCode = 0;

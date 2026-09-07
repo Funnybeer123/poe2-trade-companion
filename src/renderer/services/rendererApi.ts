@@ -93,6 +93,7 @@ import {
   type ScannerRuntimeStatus,
   type ScannerStartRequest,
   type HotkeysStatePayload,
+  type InventoryBridge,
   type ScanSessionDetail,
   type ScanSessionView,
   type ScanSlotView,
@@ -1103,7 +1104,14 @@ export interface PriceFeedApi {
 }
 
 function compatibilityApi<T>(
-  section: "calibration" | "assistive" | "stashSort" | "stashTabs" | "shop" | "priceFeed",
+  section:
+    | "calibration"
+    | "assistive"
+    | "stashSort"
+    | "stashTabs"
+    | "shop"
+    | "priceFeed"
+    | "inventory",
 ): T | undefined {
   return nativeBridge()?.[section] as unknown as T | undefined;
 }
@@ -1222,6 +1230,13 @@ export function createEmptyBuildProfile(
   input: CreateBuildProfileInput,
 ): BuildProfile {
   return createBuildProfile(input);
+}
+
+export type InventoryApi = InventoryBridge;
+
+/** Stash net worth (the Wealth page). Desktop only — the ledger is a local file. */
+export function getInventoryApi(): InventoryApi | undefined {
+  return compatibilityApi<InventoryApi>("inventory");
 }
 
 /**

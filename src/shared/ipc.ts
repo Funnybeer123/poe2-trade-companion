@@ -28,6 +28,11 @@ import type {
   ValuationResult,
 } from "../core/types.js";
 import type { TriageRouting } from "../core/bagTriage.js";
+import type {
+  LocationStaleness,
+  NetWorthSummary,
+  ValuedObservation,
+} from "../core/inventoryLedger.js";
 import type { PriceTable } from "../core/priceTable.js";
 import type {
   TierVerdict,
@@ -450,6 +455,36 @@ export interface HotkeysBridge {
   daemonStatus: () => Promise<{ exists: boolean; lastEventAt?: string; lastLine?: string }>;
 }
 
+export interface InventoryOverviewQuery {
+  /** Sell-candidate band, inclusive, in exalted per copy (default 1–5). */
+  minExalted?: number;
+  maxExalted?: number;
+  /** Locations the sell list leaves alone (shop tab, Review …). */
+  excludeLocations?: string[];
+}
+
+/** The Wealth page's data: artifacts/tab-admin/inventory.jsonl reduced and priced. */
+export interface InventoryOverviewView {
+  error?: string;
+  generatedAt: string;
+  file: string;
+  recordCount: number;
+  observationCount: number;
+  worth?: NetWorthSummary;
+  topItems: ValuedObservation[];
+  sellCandidates: ValuedObservation[];
+  staleness: LocationStaleness[];
+  /** Catalog rows upserted by a refresh (absent for a plain overview). */
+  catalogUpserts?: number;
+  catalogError?: string;
+}
+
+export interface InventoryBridge {
+  overview: (query?: InventoryOverviewQuery) => Promise<InventoryOverviewView>;
+  /** Recompute AND mirror the observations into the SQLite catalog. */
+  refresh: (query?: InventoryOverviewQuery) => Promise<InventoryOverviewView>;
+}
+
 export interface Poe2Bridge {
   mode: () => Promise<RuntimeMode>;
   fromClipboard: () => Promise<ItemEvaluation | null>;
@@ -474,6 +509,7 @@ export interface Poe2Bridge {
   assistive: Record<string, unknown>;
   calibration: Record<string, (...args: never[]) => unknown>;
   hotkeys?: HotkeysBridge;
+  inventory?: InventoryBridge;
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {

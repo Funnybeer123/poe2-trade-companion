@@ -40,6 +40,17 @@ const routes: RouteRecordRaw[] = [
     },
   },
   {
+    path: "/wealth",
+    name: "wealth",
+    component: () => import("../views/WealthView.vue"),
+    meta: {
+      title: "Wealth",
+      eyebrow: "Inspect",
+      description:
+        "Stash net worth from the sorter's Ctrl+C ledger: what is where, what it is worth, and what to list next.",
+    },
+  },
+  {
     path: "/items",
     name: "items",
     component: () => import("../views/ItemLogView.vue"),
