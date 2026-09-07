@@ -416,6 +416,19 @@ export function planBucketLadder(args: {
       hold(listing, badges, `the ladder step lands back in ${current.label} — nothing to cut`);
       continue;
     }
+    // Buckets are coarse: with no bucket between the comps target and the
+    // current one, the "floor" cannot hold the price and the step would
+    // give most of the item's value away (1D → 10Ex over comps at 500 ex).
+    // Move only when the target bucket sits nearer the comps target than
+    // the current one does; otherwise hold and say so.
+    if (floor > 0 && to.exalted < floor && current.exalted - floor <= floor - to.exalted) {
+      hold(
+        listing,
+        badges,
+        `comps (${floor} ex) sit nearer ${current.label} (${current.exalted} ex) than ${to.label} (${to.exalted} ex) — no bucket in between; holding rather than giving the difference away`,
+      );
+      continue;
+    }
     const reason =
       `stale ${age.toFixed(1)}d (step -${step.stepPercent}% after ${step.afterDays}d): ` +
       `${current.label} (${current.exalted} ex) → ${to.label} (${to.exalted} ex)` +

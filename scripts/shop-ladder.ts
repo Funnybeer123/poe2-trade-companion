@@ -36,7 +36,8 @@ import {
   type BucketTab,
 } from "../src/core/shopListings.js";
 import { planBucketLadder, suggestListingPrice } from "../src/core/shopPricing.js";
-import { starterPriceTable, validatePriceTable, type PriceTable } from "../src/core/priceTable.js";
+import { loadTriageExport } from "../src/adapters/triageLoader.js";
+import type { PriceTable } from "../src/core/priceTable.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const templateDir = path.join(root, "fixtures", "perception", "templates");
@@ -58,24 +59,15 @@ if (useComps && !live) {
   console.log("--comps only applies to --live (the dry-run plan has no item text to price) — ignored");
 }
 
-function loadPriceTable(): PriceTable {
-  const file = path.join(outDir, "triage.json");
-  if (!existsSync(file)) return starterPriceTable();
-  try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as { priceTable?: unknown };
-    const check = validatePriceTable(parsed.priceTable);
-    return check.valid && check.table ? check.table : starterPriceTable();
-  } catch {
-    return starterPriceTable();
-  }
-}
-
 const configFile = path.join(outDir, "shop.json");
 const { config } = parseShopConfig(
   existsSync(configFile) ? (JSON.parse(readFileSync(configFile, "utf8")) as unknown) : undefined,
 );
 if (Number.isFinite(max) && max > 0) config.maxActionsPerRun = Math.min(config.maxActionsPerRun, Math.floor(max));
-let priceTable = loadPriceTable();
+// The app's price table export, placeholders stripped and the newest feed
+// snapshot merged (src/adapters/triageLoader.ts): every bucket's exalted
+// value — and so every ladder step — rides the divine rate in here.
+let priceTable: PriceTable = loadTriageExport(root).priceTable;
 
 const ledgerFile = path.join(outDir, "listings.jsonl");
 const listings = deriveShopState(
@@ -160,6 +152,9 @@ const keeper = new ShopKeeper(host, harness, kit, sorter, {
   dryRun,
   stepMode,
   priceTable,
+  // The feed refresh below replaces the table object: read it live so the
+  // strip's bucket values use the refreshed divine rate, like the comps do.
+  getPriceTable: () => priceTable,
   ...(fullVerify ? { fullVerify: true } : {}),
 });
 

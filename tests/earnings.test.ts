@@ -19,6 +19,7 @@ import {
   type EarningsSnapshot,
   type ListingEvent,
 } from "../src/core/shopListings.js";
+import { salesStats } from "../src/core/shopPricing.js";
 
 /**
  * Verified sales from the Merchant's "Earnings (Remove-only)" sub-tab
@@ -150,6 +151,28 @@ describe("verifySalesWithEarnings", () => {
     expect(events.filter((event) => event.certainty === "verified").map((event) => event.name)).toEqual(["A", "B"]);
     expect(events.find((event) => event.name === "C")?.certainty).toBe("heuristic");
     expect(report.some((line) => /does not account for 1x C/.test(line))).toBe(true);
+  });
+
+  it("keeps the realized price when it comes from the gone listing rather than the event", () => {
+    const { realized: _dropped, ...bare } = soldEvent();
+    const { events } = verifySalesWithEarnings({
+      events: [bare],
+      goneListings: [{ fingerprint: "f1", name: "Doom Loop", count: 1, price: { amount: 5, currency: "exalted", exalted: 5 } }],
+      earningsDelta: deltaOf(5),
+    });
+    expect(events[0]).toMatchObject({ certainty: "verified", realized: { amount: 5, currency: "exalted", exalted: 5 } });
+  });
+
+  it("splits a delta across the copies of one listing — realized is per copy", () => {
+    // Two copies listed at 5 ex, 8 ex arrived: not the exact 10, so the one
+    // gone listing is verified AT the delta, 4 ex a copy (salesStats × count).
+    const { events } = verifySalesWithEarnings({
+      events: [soldEvent({ count: 2 })],
+      goneListings: [],
+      earningsDelta: deltaOf(8),
+    });
+    expect(events[0]).toMatchObject({ certainty: "verified", count: 2, realized: { amount: 4, currency: "exalted", exalted: 4 } });
+    expect(salesStats(events).find((entry) => entry.itemClass === "Rings")?.realizedExalted).toBe(8);
   });
 
   it("leaves everything heuristic when nothing arrived, and says so", () => {

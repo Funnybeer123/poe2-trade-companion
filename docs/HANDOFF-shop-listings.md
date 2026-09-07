@@ -393,7 +393,11 @@ Still open:
      confirm the sold row reads `certainty: "verified"` with the delta.
      Assumptions: the Earnings label OCRs at native or 2x; the sub-tab
      click is a plain left-click; the Earnings grid shares the folder-row
-     12x12 bounds.
+     12x12 bounds. Guard (2026-09-07 review): if the scan reads anything
+     that is NOT currency by Ctrl+C, the sub-tab click did not land — the
+     run screenshots and stops, and no snapshot is taken (a bucket tab
+     recorded as the Earnings baseline would turn every later delta into a
+     false "verified" sale).
   2. Collect earnings — `npm run shop -- --live --step --collect-earnings`
      with ONE stack in Earnings. Watch: a plain left-click moves it to the
      bag and the bag Ctrl+C names the currency. If the bag does not grow
@@ -406,7 +410,11 @@ Still open:
      cell and the occupancy diff is exactly its footprint; a 2x-zoom
      dialog fade or a tooltip lingering over the grid would inflate the
      diff — if every item falls back, raise the 250ms settle in
-     `listBagItems` or run `--full-verify` and file it.
+     `listBagItems` or run `--full-verify` and file it. Guard (2026-09-07
+     review): a price dialog that FAILS after the item has left its bag
+     cell (unpriced in the tab, or on the cursor) stops the run with a
+     screenshot instead of ctrl-clicking the next item on top of it; a
+     failure with the item still in the bag (runes, no dialog) goes on.
   4. Bucket ladder — `npm run shop:ladder` (offline plan) then
      `npx tsx scripts/shop-ladder.ts --live --step --max=1` on ONE cheap
      stale listing. The DELIST gesture is the whole question: watch what
@@ -414,10 +422,20 @@ Still open:
      (the relist then runs the proven bag path). Price dialog opens = the
      run closes it and stops; the delist is something else (right-click
      menu? drag?) — record it with `record-teach.ts` and rewire
-     `applyBucketLadder`. Nothing happens = the run clicks the cell once
-     (drops a held item), screenshots, stops — check the cursor. Also
-     watch the cooldown skip: a listing priced minutes ago must report
-     `[cooldown]`, never click.
+     `applyBucketLadder`. Nothing happens = the run Ctrl+C's the cell
+     first (2026-09-07 review): if the item still reads THERE, nothing
+     moved and the run stops WITHOUT clicking (a plain click on a listed
+     item would pick it up — the very hazard); only when the cell copies
+     empty does it click the cell once to drop a held item, then
+     screenshots and stops — check the cursor (dropping onto a merchant
+     cell may open the price dialog). Also watch the cooldown skip: a
+     listing priced minutes ago must report `[cooldown]`, never click.
+     The plan side holds a move when comps sit nearer the current bucket
+     than the next one down (1D with comps at 500 ex no longer drops to
+     10Ex — "no bucket in between"); age-alone moves are unchanged. Both
+     `shop-buckets` and `shop-ladder` now value the strip's buckets at the
+     REFRESHED divine rate (the keeper read the pre-refresh table before —
+     comps and buckets disagreed on what 1D was worth).
   5. Stack pricing — put a 2+ stack of a feed-priced currency in the bag,
      `npm run shop:buckets:live`. The plan line must read `STACK ×N
      (whole)`; the first-stack gate waits on Numpad 8 even without
