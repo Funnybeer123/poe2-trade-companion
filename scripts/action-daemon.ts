@@ -26,6 +26,7 @@ import { loadHotkeyBindings } from "../src/core/hotkeyBindings.js";
 import { actionForKey, HOTKEY_ACTIONS } from "../src/shared/hotkeyActions.js";
 import { DEFAULT_POE_PROCESS_ALLOWLIST, resolveBuildMode } from "../src/core/capabilities.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
+import { resolveTsxLaunch } from "../src/core/tsxLauncher.js";
 import { AssistiveRunService } from "../src/main/assistiveRunService.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -83,9 +84,13 @@ function bindingSummary(): string {
 
 function spawnScript(args: string[], label: string): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.platform === "win32" ? "npx.cmd" : "npx", ["--yes", "tsx", ...args], {
+    // The local tsx starts the script in ~0.1 s; the npx fallback spent ~1.2 s
+    // resolving the package on every keypress. See src/core/tsxLauncher.ts.
+    const launch = resolveTsxLaunch(root, args);
+    const child = spawn(launch.command, launch.args, {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"],
+      shell: launch.shell,
     });
     const relay = (stream: NodeJS.ReadableStream, phase: string) => {
       stream.on("data", (chunk: Buffer) => {
@@ -285,7 +290,8 @@ async function runAction(name: string, key: number): Promise<void> {
 }
 
 async function mainLoop(): Promise<void> {
-  log({ action: "daemon", phase: "listening", message: `${bindingSummary()} (editable in the app: Tools → Hotkeys). Numpad − pauses/resumes auto-flask. Ctrl+C to stop.` });
+  const runner = resolveTsxLaunch(root, []).source === "local" ? "local tsx" : "npx tsx (slow start; run npm install)";
+  log({ action: "daemon", phase: "listening", message: `${bindingSummary()} (editable in the app: Tools → Hotkeys). Numpad − pauses/resumes auto-flask. Ctrl+C to stop. Script runner: ${runner}.` });
   flaskGuard.start();
   while (!shuttingDown) {
     const reply = await host.send({ op: "waitkey", timeoutMs: 30_000 });

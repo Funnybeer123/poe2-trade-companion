@@ -220,6 +220,7 @@ npm run dev
 
 - Public build: `npm run build:public`
 - QA build (separate artifact, still requires local acknowledgement to arm): `npm run build:qa`
+- Pre-commit gate (lint + both typechecks + unit tests, no packaging): `npm run check`
 - Full local quality gate: `npm run test:full`
 
 See `plans/IMPLEMENTATION_PLAN.md`.

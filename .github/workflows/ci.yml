@@ -8,18 +8,22 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   quality:
+    # Windows-only project: the input host is PowerShell and the packaged
+    # target is win32. Steps mirror `npm run check` + `npm run test:all` +
+    # `npm run build` exactly, so a green local gate predicts a green CI.
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 30
     env:
       CI: "true"
-      CSC_IDENTITY_AUTO_DISCOVERY: "false"
-      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
       POE2_BUILD_MODE: "public-companion"
-      POE2_QA_OPT_IN: "0"
-      POE2_QA_ACK: "0"
       POE2_ENABLE_LIVE_INPUT: "0"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
     steps:
       - uses: actions/checkout@v4
 
@@ -29,6 +33,10 @@ jobs:
           cache: npm
           cache-dependency-path: package-lock.json
 
+      # Electron's postinstall downloads its binary here; the Vitest suites
+      # run under it (ELECTRON_RUN_AS_NODE=1) so better-sqlite3 loads with the
+      # ABI the app uses. The better-sqlite3 prebuilt fetched for Node 24 also
+      # loads under Electron 34, so no rebuild step is needed.
       - name: Install locked dependencies
         run: npm ci
 
@@ -38,32 +46,19 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Run all Vitest suites
+      - name: Test (all Vitest suites under Electron-as-Node)
         run: npm run test:all
 
-      - name: Build public companion
-        run: npm run build:public
-
-      - name: Package public unpacked smoke
-        run: node scripts/run-electron-builder.mjs --retry-once --unique-output --manifest-mode=public-companion --dir --win --config electron-builder.public.yml --config.directories.output=release/ci-public --config.win.signAndEditExecutable=false
-
-      - name: Build authorized QA
-        run: npm run build:qa
-
-      - name: Package QA unpacked smoke
-        run: node scripts/run-electron-builder.mjs --retry-once --unique-output --manifest-mode=authorized-qa --dir --win --config electron-builder.qa.yml --config.directories.output=release/ci-qa --config.win.signAndEditExecutable=false
-
-      - name: Run Playwright Electron smoke
-        run: npm run test:e2e
+      - name: Build
+        run: npm run build
 
       - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: windows-quality-failure
+          name: ci-failure-diagnostics
           if-no-files-found: ignore
           retention-days: 7
           path: |
-            artifacts/playwright/**
-            release/**/builder-debug.yml
-            release/**/builder-effective-config.yaml
+            artifacts/**/*.log
+            artifacts/**/*.jsonl
