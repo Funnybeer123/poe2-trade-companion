@@ -81,16 +81,19 @@ async function buildPlan() {
 }
 
 async function runScript(kind: string) {
+  if (!api) return;
   log.value = [];
   message.value = "";
-  const result = await (api as unknown as { runScript(k: string): Promise<{ started: boolean; reason?: string }> }).runScript(kind);
-  if (!result?.started) message.value = `could not start ${kind}: ${result?.reason ?? "unknown"}`;
-  status.value = await api!.status();
+  const result = await run("Run", () => api.runScript(kind));
+  // run() already reported a thrown error; an undefined reply means no service.
+  if (!result?.started && !message.value) {
+    message.value = `could not start ${kind}: ${result?.reason ?? "unknown"}`;
+  }
 }
 
 async function stopScript() {
-  await (api as unknown as { stopScript(): Promise<boolean> }).stopScript();
-  status.value = await api!.status();
+  if (!api) return;
+  await run("Stop", () => api.stopScript());
 }
 
 async function apply() {

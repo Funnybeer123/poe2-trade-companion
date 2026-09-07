@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import {
   farmRanking,
   formatPercent,
@@ -17,15 +17,19 @@ const priceTable = ref<PriceTable | null>(null);
 const loading = ref(true);
 const busy = ref(false);
 const error = ref("");
+let disposed = false;
 
 async function load(refresh: boolean): Promise<void> {
-  if (!api) return;
+  if (!api || busy.value) return;
   busy.value = true;
   error.value = "";
   try {
-    view.value = refresh ? await api.refresh() : await api.trends();
-    if (view.value.error && !view.value.ok) error.value = view.value.error;
+    const next = refresh ? await api.refresh() : await api.trends();
+    if (disposed) return;
+    view.value = next;
+    if (next.error && !next.ok) error.value = next.error;
   } catch (reason) {
+    if (disposed) return;
     error.value = reason instanceof Error ? reason.message : "Market trends could not be loaded.";
   } finally {
     busy.value = false;
@@ -34,12 +38,17 @@ async function load(refresh: boolean): Promise<void> {
 
 onMounted(async () => {
   try {
-    priceTable.value = await rendererApi.intelligence.prices.get();
+    const table = await rendererApi.intelligence.prices.get();
+    if (!disposed) priceTable.value = table;
   } catch {
     priceTable.value = null;
   }
   await load(false);
   loading.value = false;
+});
+
+onBeforeUnmount(() => {
+  disposed = true;
 });
 
 const trends = computed<TrendReport[]>(() => view.value?.trends ?? []);
@@ -48,7 +57,8 @@ const statusText = computed(() => {
   const current = view.value;
   if (!current) return "";
   if (current.refreshing || busy.value) return "Fetching price history from poe2scout…";
-  if (!current.ok) return current.error ?? "No price history yet — Refresh pulls 7 days of daily prices.";
+  // A failed load's message is the alert below; do not print it twice.
+  if (!current.ok) return current.error ? "" : "No price history yet — Refresh pulls 7 days of daily prices.";
   const stale = current.stale ? " · older than 12 h, refresh when convenient" : "";
   const warning = current.error ? ` · last refresh failed: ${current.error}` : "";
   return `${current.league ?? "?"} · ${current.trends.length} items · fetched ${formatDate(current.fetchedAt)}${stale}${warning}`;

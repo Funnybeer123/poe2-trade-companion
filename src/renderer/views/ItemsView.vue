@@ -54,17 +54,25 @@ async function watchThisItem(): Promise<void> {
   }
 }
 
+/**
+ * Comps belong to the item they were fetched for: a lookup still in flight
+ * when the user evaluates another item is discarded, never shown under the
+ * new one.
+ */
 async function fetchComps(): Promise<void> {
   const raw = store.currentEvaluation.value?.raw;
   if (!priceFeed || !raw || compsBusy.value) return;
   compsBusy.value = true;
   try {
-    comps.value = await priceFeed.comps(raw);
+    const result = await priceFeed.comps(raw);
+    if (store.currentEvaluation.value?.raw === raw) comps.value = result;
   } catch (reason) {
-    comps.value = {
-      ok: false,
-      error: reason instanceof Error ? reason.message : String(reason),
-    };
+    if (store.currentEvaluation.value?.raw === raw) {
+      comps.value = {
+        ok: false,
+        error: reason instanceof Error ? reason.message : String(reason),
+      };
+    }
   } finally {
     compsBusy.value = false;
   }

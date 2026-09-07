@@ -51,14 +51,21 @@ const feedText = computed(() => {
 
 async function refreshFeedStatus(): Promise<void> {
   if (!feedApi) return;
-  feedStatus.value = await feedApi.status();
+  try {
+    feedStatus.value = await feedApi.status();
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : "The market feed status could not be read.";
+  }
 }
 
 async function refreshFeed(): Promise<void> {
-  if (!feedApi) return;
+  if (!feedApi || feedBusy.value) return;
   feedBusy.value = true;
+  error.value = "";
   try {
     feedStatus.value = await feedApi.refresh();
+  } catch (reason) {
+    error.value = reason instanceof Error ? reason.message : "Refreshing market prices failed.";
   } finally {
     feedBusy.value = false;
   }

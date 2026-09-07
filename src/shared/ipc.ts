@@ -36,6 +36,15 @@ import type {
   ValuedObservation,
 } from "../core/inventoryLedger.js";
 import type { PriceTable } from "../core/priceTable.js";
+import type { TrendReport } from "../core/priceTrends.js";
+import type { FindRecord } from "../core/sortTriage.js";
+import type {
+  StashTabAdminEvent,
+  StashTabAdminStatus,
+  StashTabApplyOutcome,
+  StashTabPlan,
+  StashTabSurveyResult,
+} from "../core/stashTabAdmin.js";
 import type {
   TierVerdict,
   ValueTierRules,
@@ -574,6 +583,68 @@ export interface WatchlistBridge {
   dismiss: (alertId: string) => Promise<WatchlistOverviewView>;
 }
 
+/** Reply of stash-tabs:run-script (src/main/stashTabAdminService.ts runScript). */
+export interface StashTabScriptOutcome {
+  started: boolean;
+  /** "busy", "blocked", or "unknown-script:<kind>" when not started. */
+  reason?: string;
+}
+
+/**
+ * Stash-tab administration + the packaged CLI runs (sort, craft, shop …)
+ * behind the Sort, Shop, and Tools → Stash tabs screens. The main process
+ * answers with `undefined` while the service is not constructed, hence the
+ * optional results.
+ */
+export interface StashTabsBridge {
+  status: () => Promise<StashTabAdminStatus>;
+  survey: (folderName?: string) => Promise<StashTabSurveyResult>;
+  /** Recent finds from the sorter's value triage (newest first, at most 100). */
+  finds: () => Promise<FindRecord[]>;
+  plan: (payload: {
+    tabs: StashTabSurveyResult["tabs"];
+    requireQuad?: boolean;
+    /** Opt in to rewriting priced tabs; removes their public price. */
+    allowPricedTabs?: boolean;
+  }) => Promise<{ plan: StashTabPlan; errors: string[] }>;
+  apply: (payload: {
+    plan: StashTabPlan;
+    dryRun?: boolean;
+    allowPricedTabs?: boolean;
+  }) => Promise<StashTabApplyOutcome[]>;
+  /** Spawn one packaged script by kind (StashTabScriptKind in the service). */
+  runScript: (kind: string) => Promise<StashTabScriptOutcome | undefined>;
+  stopScript: () => Promise<boolean | undefined>;
+  onEvent: (callback: (payload: StashTabAdminEvent) => void) => () => void;
+}
+
+export interface MarketTrendsQueryView {
+  /** Fetch now (subject to the service's courtesy interval). */
+  refresh?: boolean;
+  /** Serve only what is on disk; never fetch. */
+  cachedOnly?: boolean;
+}
+
+/** Market trends (poe2scout daily price logs) — src/main/marketTrendsService.ts. */
+export interface MarketTrendsView {
+  ok: boolean;
+  league?: string;
+  fetchedAt?: string;
+  /** Cache older than the TTL (still served; a refresh is due). */
+  stale: boolean;
+  refreshing: boolean;
+  source: "cache" | "network" | "none";
+  categories: string[];
+  trends: TrendReport[];
+  error?: string;
+}
+
+export interface MarketBridge {
+  /** Cache when fresh, else a fetch; `cachedOnly` never touches the network. */
+  trends: (query?: MarketTrendsQueryView) => Promise<MarketTrendsView>;
+  refresh: () => Promise<MarketTrendsView>;
+}
+
 export interface Poe2Bridge {
   mode: () => Promise<RuntimeMode>;
   fromClipboard: () => Promise<ItemEvaluation | null>;
@@ -591,14 +662,14 @@ export interface Poe2Bridge {
   intelligence: ItemIntelligenceBridge;
   scanner: ScannerBridge;
   stashSort: Record<string, (...args: never[]) => unknown>;
-  stashTabs: Record<string, (...args: never[]) => unknown>;
+  stashTabs: StashTabsBridge;
   shop: Record<string, (...args: never[]) => unknown>;
   priceFeed: Record<string, (...args: never[]) => unknown>;
   assistive: Record<string, unknown>;
   calibration: Record<string, (...args: never[]) => unknown>;
   hotkeys?: HotkeysBridge;
   inventory?: InventoryBridge;
-  market?: Record<string, (...args: never[]) => unknown>;
+  market?: MarketBridge;
   watchlist?: WatchlistBridge;
 }
 

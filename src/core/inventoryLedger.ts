@@ -249,15 +249,23 @@ export function latestObservations(records: readonly InventoryRecord[]): Invento
     }
     current.push(...contents.values());
   }
-  // Cross-location superseding for non-stackables: the newest sighting wins.
-  const newest = new Map<string, InventoryObservation>();
-  for (const observation of current) {
-    if (stackable(observation)) continue;
-    const seen = newest.get(observation.fingerprint);
-    if (!seen || later(observation.at, seen.at)) newest.set(observation.fingerprint, observation);
+  // Cross-location superseding for non-stackables: the item is wherever it
+  // was seen LAST, judged over EVERY record rather than only the survivors.
+  // A sighting that was later retired at its newest location (read in the
+  // bag, then missing from the bag's next full scan) must not resurrect an
+  // older tab sighting — the item left that tab when the bag saw it.
+  const newestLocation = new Map<string, InventoryRecord>();
+  for (const record of records) {
+    if (stackable(record)) continue;
+    const seen = newestLocation.get(record.fingerprint);
+    if (!seen || later(record.at, seen.at)) newestLocation.set(record.fingerprint, record);
   }
   return current
-    .filter((observation) => stackable(observation) || newest.get(observation.fingerprint) === observation)
+    .filter((observation) => {
+      if (stackable(observation)) return true;
+      const newest = newestLocation.get(observation.fingerprint);
+      return newest === undefined || newest.location === observation.location;
+    })
     .sort((a, b) => a.location.localeCompare(b.location) || a.name.localeCompare(b.name));
 }
 

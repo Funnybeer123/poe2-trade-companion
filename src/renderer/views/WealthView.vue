@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { RouterLink } from "vue-router";
 import {
   describeAge,
@@ -8,6 +8,7 @@ import {
 } from "@core/inventoryLedger";
 import type { InventoryOverviewView } from "../../shared/ipc.js";
 import { getInventoryApi } from "../services/rendererApi";
+import { formatAmount } from "../utils/intelligence";
 
 const api = getInventoryApi();
 const available = computed(() => api !== undefined);
@@ -20,6 +21,11 @@ const query = ref("");
 const minExalted = ref(1);
 const maxExalted = ref(5);
 const excludeLocations = ref("");
+/**
+ * Band edits fire a reload each; only the newest reply may land, so a slow
+ * earlier read never overwrites a newer band (or an unmounted page).
+ */
+let requestSeq = 0;
 
 function sellQuery() {
   return {
@@ -34,11 +40,13 @@ function sellQuery() {
 
 async function load(persist: boolean): Promise<void> {
   if (!api) return;
+  const seq = ++requestSeq;
   loading.value = true;
   error.value = "";
   notice.value = "";
   try {
     const next = persist ? await api.refresh(sellQuery()) : await api.overview(sellQuery());
+    if (seq !== requestSeq) return;
     overview.value = next;
     if (next.error) error.value = next.error;
     if (persist && next.catalogUpserts !== undefined) {
@@ -46,14 +54,19 @@ async function load(persist: boolean): Promise<void> {
     }
     if (next.catalogError) notice.value = `Catalog mirror skipped: ${next.catalogError}`;
   } catch (reason) {
+    if (seq !== requestSeq) return;
     error.value = reason instanceof Error ? reason.message : "The ledger could not be read.";
   } finally {
-    loading.value = false;
+    if (seq === requestSeq) loading.value = false;
   }
 }
 
 onMounted(() => {
   void load(false);
+});
+
+onBeforeUnmount(() => {
+  requestSeq += 1;
 });
 
 const worth = computed(() => overview.value?.worth);
@@ -98,7 +111,7 @@ async function copySellNames(): Promise<void> {
 
 function ex(value: number | undefined): string {
   if (value === undefined) return "—";
-  return `${Math.round(value * 100) / 100} ex`;
+  return `${formatAmount(value)} ex`;
 }
 
 function when(at: string): string {
@@ -157,6 +170,11 @@ function locationLabel(location: string): string {
     <p v-if="error" class="inline-notice danger" role="alert">{{ error }}</p>
     <p v-if="notice" class="inline-notice" role="status">{{ notice }}</p>
 
+    <div v-if="available && loading && !overview" class="state-panel compact-state" aria-live="polite">
+      <span class="spinner" aria-hidden="true" />
+      <p>Reading the inventory ledger…</p>
+    </div>
+
     <template v-if="worth">
       <section class="card" aria-labelledby="worth-totals-title">
         <div class="section-heading">
@@ -172,11 +190,11 @@ function locationLabel(location: string): string {
           </div>
           <div>
             <dt>Divine</dt>
-            <dd class="wealth-total">{{ worth.totalDivine }} div</dd>
+            <dd class="wealth-total">{{ formatAmount(worth.totalDivine) }} div</dd>
           </div>
           <div>
             <dt>Rate</dt>
-            <dd>{{ worth.divineRate }} ex / div</dd>
+            <dd>{{ formatAmount(worth.divineRate) }} ex / div</dd>
           </div>
           <div>
             <dt>Items</dt>

@@ -27,16 +27,35 @@ const log = ref<string[]>([]);
 const message = ref("");
 const finds = ref<FindRecord[]>([]);
 const findsLoaded = ref(false);
+/** A script launch is in flight — one click at a time. */
+const busy = ref(false);
 
 let unsubscribe: (() => void) | undefined;
+let disposed = false;
+
+function describeError(reason: unknown, fallback: string): string {
+  return reason instanceof Error ? reason.message : fallback;
+}
 
 async function refreshFinds(): Promise<void> {
+  if (!api) return;
   try {
-    finds.value = (await api?.finds?.()) ?? [];
+    const next = await api.finds();
+    if (!disposed) finds.value = next ?? [];
   } catch {
-    finds.value = [];
+    if (!disposed) finds.value = [];
   } finally {
     findsLoaded.value = true;
+  }
+}
+
+async function refreshStatus(): Promise<void> {
+  if (!api) return;
+  try {
+    const next = await api.status();
+    if (!disposed) status.value = next;
+  } catch (reason) {
+    if (!disposed) message.value = describeError(reason, "The script status could not be read.");
   }
 }
 
@@ -50,11 +69,14 @@ onMounted(async () => {
     if (event.kind === "error") message.value = event.message;
     if (event.kind === "log") log.value = [...log.value.slice(-249), event.line];
   });
-  status.value = await api.status();
+  await refreshStatus();
   await refreshFinds();
 });
 
-onBeforeUnmount(() => unsubscribe?.());
+onBeforeUnmount(() => {
+  disposed = true;
+  unsubscribe?.();
+});
 
 const findsValue = computed(() =>
   Math.round(
@@ -70,16 +92,21 @@ function findTime(at: string): string {
 }
 
 async function runScriptKind(kind: string): Promise<void> {
-  if (!api) return;
+  if (!api || busy.value) return;
+  busy.value = true;
   log.value = [];
   message.value = "";
-  const result = await (
-    api as unknown as { runScript(k: string): Promise<{ started: boolean; reason?: string }> }
-  ).runScript(kind);
-  if (!result?.started) {
-    message.value = `Could not start ${kind}: ${result?.reason ?? "unknown"}`;
+  try {
+    const result = await api.runScript(kind);
+    if (!result?.started) {
+      message.value = `Could not start ${kind}: ${result?.reason ?? "unknown"}`;
+    }
+  } catch (reason) {
+    message.value = `Could not start ${kind}: ${describeError(reason, "unknown")}`;
+  } finally {
+    busy.value = false;
   }
-  status.value = await api.status();
+  await refreshStatus();
 }
 
 async function runSort(): Promise<void> {
@@ -92,8 +119,12 @@ async function runCraft(): Promise<void> {
 
 async function stopScript(): Promise<void> {
   if (!api) return;
-  await (api as unknown as { stopScript(): Promise<boolean> }).stopScript();
-  status.value = await api.status();
+  try {
+    await api.stopScript();
+  } catch (reason) {
+    message.value = describeError(reason, "The script could not be stopped.");
+  }
+  await refreshStatus();
 }
 
 const readiness = computed(() => [
@@ -172,7 +203,7 @@ const readiness = computed(() => [
           <button
             type="button"
             class="button primary"
-            :disabled="status.running"
+            :disabled="busy || status.running"
             @click="runSort"
           >
             {{ dryRun ? "Preview gear sort" : "Sort gear" }}
@@ -223,7 +254,7 @@ const readiness = computed(() => [
         <button
           type="button"
           class="button primary"
-          :disabled="status.running"
+          :disabled="busy || status.running"
           @click="runCraft"
         >
           {{ dryRun ? "Preview crafting" : "Craft gear" }}

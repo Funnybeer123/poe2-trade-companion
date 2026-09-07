@@ -229,6 +229,43 @@ describe("latestObservations", () => {
     ]);
     expect(observations.map((entry) => entry.fingerprint).sort()).toEqual(["a", "b"]);
   });
+
+  it("does not resurrect an older tab sighting once the item's newest location retired it", () => {
+    // Read in Rings, withdrawn to the bag (superseding Rings), then gone from
+    // the bag's next full scan: the item left the ledger's knowledge. The
+    // un-rescanned Rings record must not bring it back.
+    const observations = latestObservations([
+      record({ at: "2026-09-07T10:00:00.000Z", location: "Rings", fingerprint: "ring", runId: "r1" }),
+      record({ at: "2026-09-07T10:05:00.000Z", location: "bag", fingerprint: "ring", runId: "r1" }),
+      record({ at: "2026-09-08T09:00:00.000Z", location: "bag", fingerprint: "other", runId: "r2" }),
+    ]);
+    expect(observations.map((entry) => entry.fingerprint)).toEqual(["other"]);
+  });
+
+  it("shows the item at a tab again once that tab's newer full scan re-reads it", () => {
+    const observations = latestObservations([
+      record({ at: "2026-09-07T10:00:00.000Z", location: "Rings", fingerprint: "ring", runId: "r1" }),
+      record({ at: "2026-09-07T10:05:00.000Z", location: "bag", fingerprint: "ring", runId: "r1" }),
+      record({ at: "2026-09-08T09:00:00.000Z", location: "bag", fingerprint: "other", runId: "r2" }),
+      record({ at: "2026-09-08T09:30:00.000Z", location: "Rings", fingerprint: "ring", runId: "r2" }),
+    ]);
+    expect(observations.map((entry) => `${entry.location}:${entry.fingerprint}`)).toEqual([
+      "bag:other",
+      "Rings:ring",
+    ]);
+  });
+
+  it("keeps a stack at its tab even after a smaller stack of it left the bag", () => {
+    const observations = latestObservations([
+      record({ at: "2026-09-07T10:00:00.000Z", location: "Currency", fingerprint: "ex", runId: "r1", stackCount: 200, itemClass: "Stackable Currency" }),
+      record({ at: "2026-09-07T10:05:00.000Z", location: "bag", fingerprint: "ex", runId: "r1", stackCount: 3, itemClass: "Stackable Currency" }),
+      record({ at: "2026-09-08T09:00:00.000Z", location: "bag", fingerprint: "other", runId: "r2" }),
+    ]);
+    expect(observations.map((entry) => `${entry.location}:${entry.fingerprint}`)).toEqual([
+      "bag:other",
+      "Currency:ex",
+    ]);
+  });
 });
 
 describe("netWorth", () => {
