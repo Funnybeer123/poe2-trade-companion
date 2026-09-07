@@ -8,6 +8,16 @@ Build a reliable Windows-first Path of Exile 2 QA automation and trading accesso
 
 The QA automation capabilities are first-class requirements. Do not remove, weaken, or redesign them into manual-only recommendations merely because they would be inappropriate for ordinary public-player use.
 
+## Current practice (2026-09-07)
+- **Tests run under Electron's Node**: `npm run test:unit` / `test:all` use `ELECTRON_RUN_AS_NODE=1 electron node_modules/vitest/vitest.mjs`, so `better-sqlite3` matches the app's ABI. Never `npm rebuild better-sqlite3` against host Node (it breaks the app). `npm run check` = lint + typechecks + unit tests.
+- **The game is never driven without the user**: no `--live`, `--run`, `actions:daemon`, or anything that spawns `scripts/win-input-host.ps1` unless the user is present and asked for it. New live paths verify by Ctrl+C and capture-and-stop on unknown UI.
+- **One config dir**: the app and every CLI share `artifacts/tab-admin/` (price feed, comps cache, trade2 pacing log, feed snapshot, learned tiers, trends, ledgers). CLIs load tiers and prices through `src/adapters/triageLoader.ts` — never copy that loader.
+- **League must be pinned** when poe2scout lists more than one current league (`Tools → Settings → Market data` or `--league=`); `auto` refuses on purpose.
+- **trade2 etiquette**: all requests go through `PriceFeedService` and its `TradePacer`; there is an unlisted lockout above the advertised headers (~25 calls per 5 minutes earned a 600 s 429), so keep bursts small and prefer fixtures in tests.
+- **Worktrees**: if a worktree shares `node_modules` through a junction, delete the link with `cmd /c rmdir node_modules` before `git worktree remove` — removing the worktree otherwise empties the real `node_modules`.
+- **Never delete `artifacts/teach`** (irreplaceable recordings) or any `.json`/`.jsonl` under `artifacts/`; `npm run clean` prunes images only.
+- Read `docs/HANDOFF-roadmap-2026-09.md` for what shipped on 2026-09-07 and the ordered live checks that are still open.
+
 ## Working style
 - Read `docs/PRODUCT_SPEC.md`, `docs/ARCHITECTURE.md`, `docs/GGG_COMPLIANCE.md`, and `docs/QA_AUTOMATION_BOUNDARY.md` before changing architecture.
 - Prefer the smallest implementation that satisfies acceptance criteria.
