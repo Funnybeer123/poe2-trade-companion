@@ -48,6 +48,7 @@ describe("preload API exposure", () => {
         "intelligence",
         "inventory",
         "killLatched",
+        "market",
         "mode",
         "onItem",
         "priceFeed",
