@@ -16,9 +16,11 @@
  * optional. On-demand single-item lookups only — never bulk scans.
  */
 
-import { matchModFamily } from "./modKnowledge.js";
+import { familiesForClass, matchModFamily, type ModMatchContext } from "./modKnowledge.js";
 import { orbCosts, type OrbId } from "./crafting.js";
 import type { PriceTable } from "./priceTable.js";
+import { statIdsForModText, type StatCatalogue } from "./statIds.js";
+import type { ModAppraisal } from "./appraisal.js";
 import type { ParsedItem } from "./types.js";
 
 // ---------------------------------------------------------------------------
@@ -28,8 +30,12 @@ import type { ParsedItem } from "./types.js";
 export interface CompsQuery {
   /** POST body for /api/trade2/search/poe2/{league}. */
   body: Record<string, unknown>;
-  /** What the query keyed on, for the UI/logs. */
-  basis: "unique-name" | "base-type";
+  /**
+   * What the query keyed on, for the UI/logs. "stat-filtered" = base type
+   * plus the item's own notable mods as trade2 stat filters (precision
+   * above the base floor); "base-type" = the broad fallback.
+   */
+  basis: "unique-name" | "base-type" | "stat-filtered";
 }
 
 /**
@@ -83,6 +89,91 @@ export function buildCompsQuery(parsed: ParsedItem): CompsQuery | undefined {
     body: {
       query: { status, type: baseType, filters },
       sort,
+    },
+  };
+}
+
+export interface StatFilteredOptions {
+  /** How many mod families to filter on (default 3, strongest first). */
+  maxFamilies?: number;
+  /** Fraction of our roll the listing must reach (default 0.85: one tier of slack). */
+  slack?: number;
+}
+
+/** The slice of an appraisal the stat-filtered query needs. */
+export type NotableMod = Pick<ModAppraisal, "text" | "familyId" | "judgedValue" | "tier">;
+
+/**
+ * Stage-1 comps query: base type + rarity nonunique + the item's own notable
+ * mods (tier 1-3, top three families by weight) as trade2 stat filters, each
+ * at 85% of our roll. Listings that come back share our substance by
+ * construction — the price band they form is the item's, not the base's.
+ *
+ * Each mod is keyed by the exact catalogue text of its line; where the text
+ * exists as a local and a global stat ("#% increased Attack Speed (Local)")
+ * a count-group ORs the ids. Undefined when nothing resolves (no notable
+ * mods, no catalogue entry) or the item is unique (name searches are exact
+ * already).
+ */
+export function buildStatFilteredQuery(
+  parsed: ParsedItem,
+  appraisal: { mods: readonly NotableMod[] },
+  statIds: StatCatalogue,
+  options: StatFilteredOptions = {},
+): CompsQuery | undefined {
+  if (/^unique$/i.test(parsed.rarity)) return undefined;
+  const baseType =
+    /^magic$/i.test(parsed.rarity) && parsed.baseType === parsed.name
+      ? magicBaseType(parsed.name)
+      : parsed.baseType;
+  if (!baseType) return undefined;
+  const maxFamilies = options.maxFamilies ?? 3;
+  const slack = options.slack ?? 0.85;
+  const families = familiesForClass(parsed.itemClass);
+  const weightOf = (familyId: string | undefined) =>
+    families.find((family) => family.id === familyId)?.weight ?? 0;
+  const notable = appraisal.mods
+    .filter(
+      (mod): mod is NotableMod & { familyId: string; judgedValue: number; tier: 1 | 2 | 3 } =>
+        typeof mod.familyId === "string" &&
+        typeof mod.judgedValue === "number" &&
+        mod.judgedValue > 0 &&
+        mod.tier !== undefined &&
+        mod.tier >= 1,
+    )
+    .sort((a, b) => weightOf(b.familyId) - weightOf(a.familyId) || b.judgedValue - a.judgedValue);
+  const andFilters: Array<Record<string, unknown>> = [];
+  const countGroups: Array<Record<string, unknown>> = [];
+  const seen = new Set<string>();
+  for (const mod of notable) {
+    if (seen.size >= maxFamilies) break;
+    if (seen.has(mod.familyId)) continue;
+    const exact = statIdsForModText(statIds, mod.text);
+    // A digit-less line ("fire an additional Arrow") has no `#` form; its
+    // family's ids stand in when they are few enough to be siblings.
+    const familyIds = statIds.byFamily.get(mod.familyId) ?? [];
+    const ids = exact.length > 0 ? exact : familyIds.length <= 4 ? familyIds : [];
+    if (ids.length === 0) continue;
+    seen.add(mod.familyId);
+    const min = Math.floor(mod.judgedValue * slack);
+    const filter = (id: string) => (min > 0 ? { id, value: { min } } : { id });
+    if (ids.length === 1) andFilters.push(filter(ids[0]!));
+    else countGroups.push({ type: "count", value: { min: 1 }, filters: ids.map(filter) });
+  }
+  if (andFilters.length === 0 && countGroups.length === 0) return undefined;
+  const stats: Array<Record<string, unknown>> = [];
+  if (andFilters.length > 0) stats.push({ type: "and", filters: andFilters });
+  stats.push(...countGroups);
+  return {
+    basis: "stat-filtered",
+    body: {
+      query: {
+        status: { option: "online" },
+        type: baseType,
+        stats,
+        filters: { type_filters: { filters: { rarity: { option: "nonunique" } } } },
+      },
+      sort: { price: "asc" },
     },
   };
 }
@@ -228,10 +319,17 @@ export function listingPriceInExalted(
 // Similarity + summary
 // ---------------------------------------------------------------------------
 
-function familiesOf(mods: readonly string[], itemClass?: string): Set<string> {
+/** Learned-tier context for judging both sides of a comparison. */
+export type SimilarityContext = Pick<ModMatchContext, "learnedTiers" | "statIds">;
+
+function familiesOf(
+  mods: readonly string[],
+  itemClass: string | undefined,
+  context: SimilarityContext,
+): Set<string> {
   const families = new Set<string>();
   for (const mod of mods) {
-    const match = matchModFamily(mod, { itemClass });
+    const match = matchModFamily(mod, { itemClass, ...context });
     if (match && match.tier !== 0) families.add(match.family.id);
   }
   return families;
@@ -246,12 +344,13 @@ export function listingSimilarity(
   ourMods: readonly string[],
   listing: CompListing,
   itemClass?: string,
+  context: SimilarityContext = {},
 ): number {
   // Comps share our item's class (the query is by base type), so both sides
   // are judged with that class's families.
-  const ours = familiesOf(ourMods, itemClass);
+  const ours = familiesOf(ourMods, itemClass, context);
   if (ours.size === 0) return 1;
-  const theirs = familiesOf(listing.mods, itemClass);
+  const theirs = familiesOf(listing.mods, itemClass, context);
   let shared = 0;
   for (const family of ours) if (theirs.has(family)) shared += 1;
   return shared / ours.size;
@@ -276,18 +375,33 @@ export interface CompsSummary {
   caution?: string;
 }
 
+export interface SummarizeOptions extends SimilarityContext {
+  priceTable?: PriceTable;
+  /**
+   * Similarity bar (default 0.5). Stat-filtered listings matched our mods
+   * by construction, so the service relaxes it to 0 for them; similarity
+   * is still computed for display.
+   */
+  minSimilarity?: number;
+  itemClass?: string;
+}
+
 export function summarizeComps(
   ourMods: readonly string[],
   listings: readonly CompListing[],
   basis: CompsQuery["basis"],
-  options: { priceTable?: PriceTable; minSimilarity?: number; itemClass?: string } = {},
+  options: SummarizeOptions = {},
 ): CompsSummary {
   const minSimilarity = options.minSimilarity ?? 0.5;
+  const context: SimilarityContext = {
+    ...(options.learnedTiers ? { learnedTiers: options.learnedTiers } : {}),
+    ...(options.statIds ? { statIds: options.statIds } : {}),
+  };
   const priced = listings
     .map((listing) => ({
       listing,
       price: listingPriceInExalted(listing, options.priceTable),
-      similarity: listingSimilarity(ourMods, listing, options.itemClass),
+      similarity: listingSimilarity(ourMods, listing, options.itemClass, context),
     }))
     .filter(
       (entry): entry is { listing: CompListing; price: number; similarity: number } =>

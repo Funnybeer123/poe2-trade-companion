@@ -27,6 +27,7 @@ import {
   type PriceTable,
 } from "../core/priceTable.js";
 import { DEFAULT_MIN_DETOUR_CONFIDENCE } from "../core/sortTriage.js";
+import { loadTierKnowledge } from "./learnedTiersStore.js";
 import {
   DEFAULT_TIER_THRESHOLDS,
   starterValueTierRules,
@@ -50,6 +51,12 @@ export interface TriageExport {
   source: string;
   /** Set when a persisted feed snapshot was merged into the price table. */
   feedSnapshot?: { league: string; fetchedAt: string };
+  /**
+   * Which learned-tier inputs were on disk (artifacts/tab-admin/mod-tiers.json
+   * and trade-stats.json, written by the price feed service after every
+   * comps fetch). Without them the appraisal uses the hand thresholds.
+   */
+  tierKnowledge: { learnedTiers: boolean; statIds: boolean };
   /** Tier decision for one copied item's text (rules + price table). */
   evaluate: (itemText: string) => TierVerdict;
 }
@@ -142,6 +149,9 @@ export function loadTriageExport(root: string, options: LoadTriageExportOptions 
   }
 
   const table = priceTable;
+  // Learned mod tiers + stat ids from the comps fetches (learnedTiersStore.ts):
+  // the evaluator falls back to the hand thresholds when either is missing.
+  const knowledge = loadTierKnowledge(dir);
   return {
     rules,
     thresholds,
@@ -150,6 +160,11 @@ export function loadTriageExport(root: string, options: LoadTriageExportOptions 
     priceTable: table,
     source,
     ...(feedSnapshot ? { feedSnapshot } : {}),
-    evaluate: (itemText) => evaluateWithAppraisal(itemText, { rules, priceTable: table, thresholds }),
+    tierKnowledge: {
+      learnedTiers: knowledge.learnedTiers !== undefined,
+      statIds: knowledge.statIds !== undefined,
+    },
+    evaluate: (itemText) =>
+      evaluateWithAppraisal(itemText, { rules, priceTable: table, thresholds, ...knowledge }),
   };
 }

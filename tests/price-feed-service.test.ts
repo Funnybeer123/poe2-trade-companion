@@ -4,10 +4,13 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PriceFeedService } from "../src/main/priceFeedService.js";
 import { parseFeedSnapshot } from "../src/core/priceFeed.js";
+import { MOD_FAMILIES, matchModFamily } from "../src/core/modKnowledge.js";
 import {
   PRICE_TABLE_SCHEMA_VERSION,
   type PriceTable,
 } from "../src/core/priceTable.js";
+import { buildStatCatalogue } from "../src/core/statIds.js";
+import { parseLearnedTiers } from "../src/core/tierLearning.js";
 
 const LEAGUES = [
   { Value: "HC Runes of Aldur", IsCurrent: true },
@@ -411,5 +414,170 @@ describe("PriceFeedService comps", () => {
     now += 7 * 60 * 60_000;
     vi.setSystemTime(now);
     expect(service.peekComps(RARE_RING)).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Two-stage comps: stat-filtered first, base-type fallback (2026-09-07)
+// ---------------------------------------------------------------------------
+
+const STATS: unknown = JSON.parse(
+  readFileSync(new URL("../fixtures/trade/stats-subset.json", import.meta.url), "utf8"),
+);
+const LIFE_ID = "explicit.stat_3299347043";
+const FIRE_ID = "explicit.stat_3372524247";
+
+/** A fetched ring in the live PoE2 shape: tier data on each explicitMods entry. */
+function tieredRing(id: string, amount: number, life: number) {
+  return {
+    id,
+    item: {
+      name: `Comp ${id}`,
+      typeLine: "Ruby Ring",
+      baseType: "Ruby Ring",
+      explicitMods: [
+        {
+          description: `+${life} to maximum Life`,
+          domain: "explicit",
+          hash: `stat.${LIFE_ID}`,
+          mods: [{ name: "Robust", tier: "P2", level: 60, magnitudes: [{ min: "100", max: "119" }] }],
+        },
+        {
+          description: "+35% to [Resistances|Fire Resistance]",
+          domain: "explicit",
+          hash: `stat.${FIRE_ID}`,
+          mods: [{ name: "of the Dragon", tier: "S2", level: 50, magnitudes: [{ min: "31", max: "35" }] }],
+        },
+      ],
+      extended: { hashes: { explicit: [[LIFE_ID, [0]], [FIRE_ID, [1]]] } },
+    },
+    listing: { price: { amount, currency: "exalted" } },
+  };
+}
+const FETCH_TIERED = {
+  result: [tieredRing("aaa", 3, 110), tieredRing("bbb", 4, 105), tieredRing("ccc", 5, 118)],
+};
+
+/** Serves the catalogue; a stat-filtered search finds `statIds`, a base search SEARCH_RESULT. */
+function twoStageResponder(statIds: string[]) {
+  return (url: string, init?: RequestInit): Response => {
+    if (url.endsWith("/Leagues")) return jsonResponse(LEAGUES);
+    if (url.endsWith("/data/stats")) return jsonResponse(STATS);
+    if (url.includes("/search/")) {
+      const body = JSON.parse(String(init?.body ?? "{}")) as { query?: { stats?: unknown } };
+      return Array.isArray(body.query?.stats)
+        ? jsonResponse({ id: "stat-search", result: statIds, total: statIds.length })
+        : jsonResponse(SEARCH_RESULT);
+    }
+    if (url.includes("/fetch/")) {
+      return jsonResponse(url.includes("query=stat-search") ? FETCH_TIERED : FETCH_RESULT);
+    }
+    return jsonResponse({}, 404);
+  };
+}
+const searches = (calls: FetchCall[]) => calls.filter((call) => call.url.includes("/search/"));
+const fetches = (calls: FetchCall[]) => calls.filter((call) => call.url.includes("/fetch/"));
+const searchBody = (call: FetchCall) =>
+  JSON.parse(String(call.init?.body)) as { query: { type?: string; stats?: unknown } };
+
+describe("PriceFeedService two-stage comps", () => {
+  it("prices by the stat-filtered stage when the search finds three listings", async () => {
+    const { service, calls } = makeService({ respond: twoStageResponder(["aaa", "bbb", "ccc"]) });
+    disposers.push(() => service.dispose());
+    const result = await service.fetchComps(RARE_RING);
+    expect(result.ok).toBe(true);
+    expect(result.basis).toBe("stat-filtered");
+    expect(result.summary?.basis).toBe("stat-filtered");
+    expect(result.summary?.candidateCount).toBe(3);
+    // Matched by construction: the similarity bar is off for this stage.
+    expect(result.summary?.sampleSize).toBe(3);
+    expect(result.summary?.lowest).toBe(3);
+    expect(searches(calls)).toHaveLength(1);
+    expect(fetches(calls)).toHaveLength(1);
+    const body = searchBody(searches(calls)[0]!);
+    expect(body.query.type).toBe("Ruby Ring");
+    expect(body.query.stats).toEqual([
+      {
+        type: "and",
+        filters: [
+          { id: LIFE_ID, value: { min: 102 } },
+          { id: FIRE_ID, value: { min: 32 } },
+        ],
+      },
+    ]);
+    // Cached under the stat-filtered query body.
+    const again = await service.fetchComps(RARE_RING);
+    expect(again.cached).toBe(true);
+    expect(again.basis).toBe("stat-filtered");
+    expect(searches(calls)).toHaveLength(1);
+  });
+
+  it("falls back to the base-type stage when the stat search is thin", async () => {
+    const { service, calls } = makeService({ respond: twoStageResponder(["aaa"]) });
+    disposers.push(() => service.dispose());
+    const result = await service.fetchComps(RARE_RING);
+    expect(result.ok).toBe(true);
+    expect(result.basis).toBe("base-type");
+    expect(result.summary?.sampleSize).toBe(1); // the similarity bar is back
+    expect(searches(calls)).toHaveLength(2); // stat-filtered, then base-type
+    expect(fetches(calls)).toHaveLength(1); // a thin stat search is not fetched
+    expect(searchBody(searches(calls)[1]!).query.stats).toBeUndefined();
+    // Both stages are cached: the next call makes no requests.
+    const again = await service.fetchComps(RARE_RING);
+    expect(again.cached).toBe(true);
+    expect(again.basis).toBe("base-type");
+    expect(searches(calls)).toHaveLength(2);
+    expect(fetches(calls)).toHaveLength(1);
+  });
+
+  it("skips the stat stage when the catalogue cannot be fetched", async () => {
+    const { service, calls } = makeService(); // the default responder 404s /data/stats
+    disposers.push(() => service.dispose());
+    const result = await service.fetchComps(RARE_RING);
+    expect(result.ok).toBe(true);
+    expect(result.basis).toBe("base-type");
+    expect(searches(calls)).toHaveLength(1);
+    expect(searchBody(searches(calls)[0]!).query.stats).toBeUndefined();
+  });
+
+  it("caches the stats catalogue on disk", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "pfs-stats-"));
+    const first = makeService({ configDir, respond: twoStageResponder(["aaa", "bbb", "ccc"]) });
+    disposers.push(() => first.service.dispose());
+    await first.service.fetchComps(RARE_RING);
+    expect(first.calls.filter((call) => call.url.endsWith("/data/stats"))).toHaveLength(1);
+    expect(existsSync(path.join(configDir, "trade-stats.json"))).toBe(true);
+
+    const second = makeService({ configDir, respond: twoStageResponder(["aaa", "bbb", "ccc"]) });
+    disposers.push(() => second.service.dispose());
+    const result = await second.service.fetchComps(RARE_RING);
+    expect(result.basis).toBe("stat-filtered");
+    expect(result.cached).toBe(true); // the comps cache is on disk too
+    expect(second.calls.filter((call) => call.url.endsWith("/data/stats"))).toHaveLength(0);
+  });
+
+  it("learns mod tiers from every fetch and persists them", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "pfs-tiers-"));
+    const { service } = makeService({ configDir, respond: twoStageResponder(["aaa", "bbb", "ccc"]) });
+    disposers.push(() => service.dispose());
+    await service.fetchComps(RARE_RING);
+    const file = path.join(configDir, "mod-tiers.json");
+    expect(existsSync(file)).toBe(true);
+    const store = parseLearnedTiers(readFileSync(file, "utf8"));
+    expect(store.stats[LIFE_ID]?.tiers["2"]).toEqual({ min: 100, max: 119, count: 3, level: 60 });
+    expect(store.classes.Rings?.[FIRE_ID]?.tiers["2"]).toMatchObject({ min: 31, max: 35, count: 3 });
+    // The observed range now judges: 125 life sits above tier 2's ceiling, so
+    // it reads as tier 1 — the hand threshold (150) would have said tier 2.
+    const match = matchModFamily("+125 to maximum Life", {
+      itemClass: "Rings",
+      learnedTiers: service.learnedTiers(),
+      statIds: buildStatCatalogue(STATS, MOD_FAMILIES),
+    })!;
+    expect(match).toMatchObject({ tier: 1, source: "learned" });
+    expect(matchModFamily("+125 to maximum Life")).toMatchObject({ tier: 2, source: "threshold" });
+    // A fresh service reloads the store from disk.
+    const reloaded = makeService({ configDir });
+    disposers.push(() => reloaded.service.dispose());
+    expect(reloaded.service.learnedTiers().stats[LIFE_ID]?.tiers["2"]?.count).toBe(3);
   });
 });
