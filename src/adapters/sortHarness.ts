@@ -26,6 +26,7 @@
 import path from "node:path";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import type { WinReply } from "./winHost.js";
+import { pruneArtifacts } from "../core/artifactRetention.js";
 import type { Cell, CorrectionRecord } from "../core/gearSort.js";
 
 export interface HarnessHost {
@@ -588,5 +589,14 @@ export class SortHarness {
       guards: Object.fromEntries(this.guards),
       ...summary,
     });
+    // Bound this run's capture folder (and its debug/ subfolder) so every
+    // CLI keeps its own artifacts in check. Journals are never touched, and
+    // housekeeping is never a failure.
+    try {
+      pruneArtifacts(this.options.outDir);
+      pruneArtifacts(path.join(this.options.outDir, "debug"));
+    } catch {
+      // retention is housekeeping, never a failure
+    }
   }
 }

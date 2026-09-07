@@ -224,7 +224,41 @@ async function evaluateClipboard() {
   return evaluateItemText(text, "clipboard");
 }
 
+// Clipboard polling is gated on relevance: every 750 ms while the app window
+// is focused or a Path of Exile window was seen in the last 60 s (recorded
+// whenever listPoeProcesses returns a row), every 3 s otherwise, and skipped
+// entirely while the window is minimized or hidden. Ctrl+D and the IPC paths
+// call evaluateClipboard directly and stay immediate.
+const CLIPBOARD_POLL_ACTIVE_MS = 750;
+const CLIPBOARD_POLL_IDLE_MS = 3_000;
+const POE_WINDOW_RECENT_MS = 60_000;
+let lastPoeWindowSeenAt = 0;
+
+function clipboardPollPlan(): { read: boolean; nextMs: number } {
+  const window = mainWindow;
+  if (!window || window.isDestroyed() || window.isMinimized() || !window.isVisible()) {
+    return { read: false, nextMs: CLIPBOARD_POLL_IDLE_MS };
+  }
+  const poeRecent = Date.now() - lastPoeWindowSeenAt < POE_WINDOW_RECENT_MS;
+  return {
+    read: true,
+    nextMs: window.isFocused() || poeRecent ? CLIPBOARD_POLL_ACTIVE_MS : CLIPBOARD_POLL_IDLE_MS,
+  };
+}
+
+function clipboardPollTick(): void {
+  const { read, nextMs } = clipboardPollPlan();
+  if (read) void evaluateClipboard();
+  setTimeout(clipboardPollTick, nextMs);
+}
+
 async function listPoeProcesses(): Promise<Array<{ name: string; title: string }>> {
+  const rows = await listPoeProcessesUncached();
+  if (rows.length > 0) lastPoeWindowSeenAt = Date.now();
+  return rows;
+}
+
+async function listPoeProcessesUncached(): Promise<Array<{ name: string; title: string }>> {
   try {
     const { stdout } = await execFileAsync("powershell.exe", [
       "-NoProfile",
@@ -695,9 +729,7 @@ app.whenReady().then(() => {
   // Auto-flask guard config + click calibration; same root as the hotkey bindings.
   registerFlaskGuardIpc(process.cwd());
   createWindow();
-  setInterval(() => {
-    void evaluateClipboard();
-  }, 750);
+  setTimeout(clipboardPollTick, CLIPBOARD_POLL_ACTIVE_MS);
 });
 
 app.on("window-all-closed", () => {

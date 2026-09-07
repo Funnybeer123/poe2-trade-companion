@@ -20,12 +20,12 @@ import { spawn } from "node:child_process";
 import { startWinHost } from "../src/adapters/winHost.js";
 import { DrainKit } from "../src/adapters/drainKit.js";
 import { FlaskGuardRunner } from "../src/adapters/flaskGuardRunner.js";
+import { defaultNameplateCacheFile, findNameplate } from "../src/adapters/nameplateFinder.js";
 import { loadProfile } from "../src/core/calibrationStore.js";
 import { loadHotkeyBindings } from "../src/core/hotkeyBindings.js";
 import { actionForKey, HOTKEY_ACTIONS } from "../src/shared/hotkeyActions.js";
 import { DEFAULT_POE_PROCESS_ALLOWLIST, resolveBuildMode } from "../src/core/capabilities.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
-import type { OcrLine } from "../src/core/tabList.js";
 import { AssistiveRunService } from "../src/main/assistiveRunService.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -168,22 +168,12 @@ async function actionVendorCycle(): Promise<void> {
   log({ action: "vendor-cycle", phase: "result", message: `vendor-cycle --run exited ${code}` });
 }
 
-// Windows.Media.Ocr returns zero lines for mid-size crops (1800x1000 and
-// 1920x1080 both come back empty) while the full 3840x2160 grab works, so
-// nameplate hunting must scan the whole screen. ZELINA also sits at x~1177,
-// left of the drain kit's x>=1200 world region.
-const FULL_SCREEN_OCR = { left: 0, top: 0, width: 3840, height: 2160 };
-
-async function findNameplate(
-  pattern: RegExp,
-  region = FULL_SCREEN_OCR,
-): Promise<{ x: number; y: number } | undefined> {
-  const reply = await host.send({ op: "ocr", ...region });
-  const lines = (Array.isArray(reply.lines) ? reply.lines : []) as OcrLine[];
-  const plate = lines.find((line) => pattern.test(line.text.trim()));
-  if (!plate) return undefined;
-  return { x: Math.round(plate.x + plate.w / 2), y: Math.round(plate.y + plate.h / 2 + 70) };
-}
+// Nameplate hunting goes through the cached finder: a small OCR band around
+// where ZELINA stood last time, full-screen (3840x2160) only on a miss —
+// mid-size crops (1800x1000, 1920x1080) hit a Windows.Media.Ocr dead zone
+// and come back empty. ZELINA also sits at x~1177, left of the drain kit's
+// x>=1200 world region, which is why the full pass is whole-screen.
+const nameplateCacheFile = defaultNameplateCacheFile(root);
 
 /**
  * Num4: locate ZELINA via OCR (hideout-only refusal if not found) and
@@ -201,7 +191,11 @@ async function actionVendor(): Promise<void> {
   }
   await host.send({ op: "focus" });
   await sleep(300);
-  const plate = await findNameplate(/^zelina$/i);
+  const plate = await findNameplate(host, /^zelina$/i, {
+    cacheKey: "zelina",
+    cacheFile: nameplateCacheFile,
+    log: (message) => log({ action: "vendor", phase: "ocr", message }),
+  });
   if (!plate) {
     log({ action: "vendor", phase: "error", message: "ZELINA nameplate not found (hideout-only refusal)" });
     return;

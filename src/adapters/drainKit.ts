@@ -1,6 +1,7 @@
 import path from "node:path";
 import { readFileSync, rmSync } from "node:fs";
 import { bgrToGray, readBmpBgr } from "./bmp.js";
+import { defaultNameplateCacheFile, findNameplate } from "./nameplateFinder.js";
 import type { WinReply } from "./winHost.js";
 import { loadProfile } from "../core/calibrationStore.js";
 import { occupiedFromRgbScores, scoreGridCellsRgb } from "../core/cellOccupancy.js";
@@ -123,33 +124,35 @@ export class DrainKit {
   }
 
   async clickStashChest(): Promise<void> {
-    // Full-screen OCR only — mid-size region crops intermittently return
-    // ZERO lines (Windows.Media.Ocr dead zone) and the old fixed-coordinate
-    // fallback then clicked bare ground. Same plate rules as the sorter's
+    // Band OCR around the remembered plate first, full-screen on a miss.
+    // Never a mid-size crop: those intermittently return ZERO lines
+    // (Windows.Media.Ocr dead zone) and the old fixed-coordinate fallback
+    // then clicked bare ground. Same plate rules as the sorter's
     // ensureStash: exclude Guild Stash (±300px) and the minimap's own
     // "Stash" label, which is only safe as a walk-toward click.
-    const world = await this.host.send({ op: "ocr" });
-    const lines = (Array.isArray(world.lines) ? world.lines : []) as OcrLine[];
-    const guilds = lines.filter((line) => /guild/i.test(line.text));
-    const plate = lines.find(
-      (line) =>
-        /^stash$/i.test(line.text.trim()) &&
+    let lines: OcrLine[] = [];
+    const plate = await findNameplate(this.host, /^stash$/i, {
+      cacheKey: "stash",
+      cacheFile: defaultNameplateCacheFile(this.root),
+      accept: (line, all) =>
         line.y >= 150 && line.y <= 1800 && line.x >= 500 && line.x <= 3000 &&
-        !guilds.some((g) => Math.abs(g.x - line.x) < 300 && Math.abs(g.y - line.y) < 60),
-    );
+        !all.some(
+          (g) => /guild/i.test(g.text) && Math.abs(g.x - line.x) < 300 && Math.abs(g.y - line.y) < 60,
+        ),
+      onFullScan: (scanned) => {
+        lines = scanned;
+      },
+    });
     if (plate) {
       await this.host.send({ op: "focus" });
       await sleep(300);
-      await this.host.send({
-        op: "click",
-        x: Math.round(plate.x + plate.w / 2),
-        y: Math.round(plate.y + plate.h / 2 + 70),
-      });
+      await this.host.send({ op: "click", x: plate.x, y: plate.y });
       await sleep(2600);
       return;
     }
-    // Chest not on screen — the minimap's Stash label walks the character
-    // toward it; the next attempt sees the real nameplate.
+    // Chest not on screen — the minimap's Stash label (from the finder's
+    // full-screen pass) walks the character toward it; the next attempt
+    // sees the real nameplate.
     const miniStash = lines.find(
       (line) => /^stash$/i.test(line.text.trim()) && line.x > 3250 && line.y < 600,
     );

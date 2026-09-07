@@ -4,7 +4,7 @@ Windows-first Electron app for Path of Exile 2 item intelligence. The default ap
 
 ## Install and launch
 
-Requirements: Windows 10/11, [Node.js 20+](https://nodejs.org/) (see `.nvmrc`).
+Requirements: Windows 10/11, [Node.js 24+](https://nodejs.org/) (see `.nvmrc`; `npm test` runs vitest under Electron's bundled Node so `better-sqlite3` matches the app's ABI).
 
 ```powershell
 git clone https://github.com/Funnybeer123/poe2-trade-companion.git
