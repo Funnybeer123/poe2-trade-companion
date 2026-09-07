@@ -27,6 +27,8 @@
     "test:e2e:qa": "playwright test --project=authorized-qa",
     "test:full": "npm run lint && npm run typecheck && npm run test:all && npm run smoke:electron",
     "check": "npm run lint && npm run typecheck && npm run test:unit",
+    "postinstall": "node scripts/rebuild-native-electron.mjs",
+    "rebuild:native:electron": "node scripts/rebuild-native-electron.mjs",
     "assistive": "npx --yes tsx scripts/assistive-hands.ts",
     "assistive:probe": "npx --yes tsx scripts/assistive-hands.ts --probe",
     "assistive:empty-bag": "npx --yes tsx scripts/assistive-hands.ts --empty-bag",

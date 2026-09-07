@@ -35,8 +35,9 @@ jobs:
 
       # Electron's postinstall downloads its binary here; the Vitest suites
       # run under it (ELECTRON_RUN_AS_NODE=1) so better-sqlite3 loads with the
-      # ABI the app uses. The better-sqlite3 prebuilt fetched for Node 24 also
-      # loads under Electron 34, so no rebuild step is needed.
+      # ABI the app uses. npm fetches the better-sqlite3 prebuilt for the HOST
+      # Node (ABI 137), which Electron 34 (ABI 132) cannot load — the package's
+      # postinstall (electron-builder install-app-deps) rebuilds it for Electron.
       - name: Install locked dependencies
         run: npm ci
 
@@ -52,6 +53,16 @@ jobs:
       - name: Build
         run: npm run build
 
+      # The packaged smoke: unpacked public + QA builds, then the Playwright
+      # Electron specs (no browsers needed — they drive the packaged app).
+      - name: Package unpacked smoke builds
+        run: npm run pack:smoke
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+
+      - name: Playwright Electron smoke
+        run: npm run test:e2e:packaged
+
       - name: Upload failure diagnostics
         if: failure()
         uses: actions/upload-artifact@v4
@@ -62,3 +73,4 @@ jobs:
           path: |
             artifacts/**/*.log
             artifacts/**/*.jsonl
+            artifacts/playwright/**
