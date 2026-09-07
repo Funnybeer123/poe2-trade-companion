@@ -12,6 +12,10 @@
  * are plain JSON so consecutive CLI processes share ONE budget: on
  * 2026-09-03 eleven items at a fixed 2s gap were double the 60s tier and
  * earned a penalty window every run.
+ *
+ * The advertised rules are not the whole story: HOUSE_RULES below encode an
+ * unlisted lockout layer (2026-09-07) and are enforced in addition to — and
+ * never overwritten by — whatever the headers say.
  */
 
 export interface RateRule {
@@ -56,6 +60,43 @@ export const DEFAULT_RULES: Record<string, RateRule[]> = {
     { max: 10, periodSec: 12, penaltySec: 60 },
   ],
 };
+
+/**
+ * HOUSE rules — enforced on top of whatever the server advertises, and never
+ * replaced by observe(). trade2 has an UNLISTED lockout layer above its
+ * headers: on 2026-09-07 a fetch came back 429 with `Retry-After: 600` and
+ * no rate-limit headers at all while the advertised state read 17/300
+ * searches and 14/300 fetches in five minutes (≈31 calls, every advertised
+ * window far from full). Ten per policy per five minutes — nine usable with
+ * the last-slot margin — keeps a run well under that layer.
+ */
+export const HOUSE_RULES: Readonly<Record<string, readonly RateRule[]>> = {
+  [SEARCH_POLICY]: [{ max: 10, periodSec: 300, penaltySec: 600 }],
+  [FETCH_POLICY]: [{ max: 10, periodSec: 300, penaltySec: 600 }],
+};
+
+/**
+ * The lockout counted searches and fetches TOGETHER (31 calls), so a
+ * combined guard sits over both policies: eighteen per five minutes,
+ * seventeen usable.
+ */
+export const HOUSE_COMBINED_RULE: RateRule = { max: 18, periodSec: 300, penaltySec: 600 };
+const HOUSE_COMBINED_POLICIES: readonly string[] = [SEARCH_POLICY, FETCH_POLICY];
+
+/** Requests allowed in a rule's window; the last slot is never used. */
+function allowedOf(rule: RateRule): number {
+  return Math.max(1, rule.max - 1);
+}
+
+/**
+ * Lookups (one search + one fetch each) a fresh five-minute window allows
+ * under the house rules: the bound a bag run's comps budget is clamped to.
+ */
+export const HOUSE_LOOKUPS_PER_WINDOW = Math.min(
+  allowedOf(HOUSE_RULES[SEARCH_POLICY]![0]!),
+  allowedOf(HOUSE_RULES[FETCH_POLICY]![0]!),
+  Math.floor(allowedOf(HOUSE_COMBINED_RULE) / 2),
+);
 
 /** Extra guard after a window frees a slot, to absorb clock skew. */
 const RELEASE_SLACK_MS = 250;
@@ -144,31 +185,73 @@ export class TradePacer {
     return record;
   }
 
-  private prune(record: PolicyRecord, now: number): void {
-    const horizonMs = Math.max(...record.rules.map((rule) => rule.periodSec)) * 1000;
+  /** The advertised rules plus the house rules that always apply to `name`. */
+  private rulesFor(name: string, record: PolicyRecord): RateRule[] {
+    return [...record.rules, ...(HOUSE_RULES[name] ?? [])];
+  }
+
+  private combinedApplies(name: string): boolean {
+    return HOUSE_COMBINED_POLICIES.includes(name);
+  }
+
+  /**
+   * Hits are kept as long as the LONGEST window that counts them — the
+   * house windows included, so a snapshot written between processes still
+   * carries the five-minute history even while the advertised rules only
+   * reach a few seconds (the default fetch rules top out at 12 s).
+   */
+  private prune(name: string, record: PolicyRecord, now: number): void {
+    const periods = this.rulesFor(name, record).map((rule) => rule.periodSec);
+    if (this.combinedApplies(name)) periods.push(HOUSE_COMBINED_RULE.periodSec);
+    const horizonMs = Math.max(...periods) * 1000;
     record.hits = record.hits.filter((hit) => now - hit < horizonMs && hit <= now);
   }
 
   /** Requests allowed in a rule's window; the last slot is never used. */
   private allowed(rule: RateRule): number {
-    return Math.max(1, rule.max - 1);
+    return allowedOf(rule);
+  }
+
+  /** Every hit under the combined guard's policies, oldest first (pruned). */
+  private combinedHits(now: number): number[] {
+    const hits: number[] = [];
+    for (const policy of HOUSE_COMBINED_POLICIES) {
+      const record = this.policies.get(policy);
+      if (!record) continue;
+      this.prune(policy, record, now);
+      hits.push(...record.hits);
+    }
+    return hits.sort((a, b) => a - b);
+  }
+
+  /** Milliseconds until one more hit fits under `rule` given `sorted` hits. */
+  private ruleWait(rule: RateRule, sorted: readonly number[], now: number): number {
+    const windowMs = rule.periodSec * 1000;
+    const inWindow = sorted.filter((hit) => now - hit < windowMs);
+    const allowed = this.allowed(rule);
+    if (inWindow.length < allowed) return 0;
+    // Enough of the oldest hits must leave the window first.
+    const releasing = inWindow[inWindow.length - allowed]!;
+    return releasing + windowMs - now + RELEASE_SLACK_MS;
+  }
+
+  private ruleSlots(rule: RateRule, hits: readonly number[], now: number): number {
+    const windowMs = rule.periodSec * 1000;
+    const inWindow = hits.filter((hit) => now - hit < windowMs).length;
+    return this.allowed(rule) - inWindow;
   }
 
   /** Milliseconds to wait before one request under `name` may go out. */
   delayFor(name: string, now: number = Date.now()): number {
     const record = this.policy(name);
-    this.prune(record, now);
+    this.prune(name, record, now);
     let wait = Math.max(0, record.restrictedUntil - now);
     const sorted = [...record.hits].sort((a, b) => a - b);
-    for (const rule of record.rules) {
-      const windowMs = rule.periodSec * 1000;
-      const inWindow = sorted.filter((hit) => now - hit < windowMs);
-      const allowed = this.allowed(rule);
-      if (inWindow.length >= allowed) {
-        // Enough of the oldest hits must leave the window first.
-        const releasing = inWindow[inWindow.length - allowed]!;
-        wait = Math.max(wait, releasing + windowMs - now + RELEASE_SLACK_MS);
-      }
+    for (const rule of this.rulesFor(name, record)) {
+      wait = Math.max(wait, this.ruleWait(rule, sorted, now));
+    }
+    if (this.combinedApplies(name)) {
+      wait = Math.max(wait, this.ruleWait(HOUSE_COMBINED_RULE, this.combinedHits(now), now));
     }
     return wait;
   }
@@ -176,22 +259,35 @@ export class TradePacer {
   /** How many requests under `name` could go out right now without waiting. */
   available(name: string, now: number = Date.now()): number {
     const record = this.policy(name);
-    this.prune(record, now);
+    this.prune(name, record, now);
     if (record.restrictedUntil > now) return 0;
     let slots = Number.POSITIVE_INFINITY;
-    for (const rule of record.rules) {
-      const windowMs = rule.periodSec * 1000;
-      const inWindow = record.hits.filter((hit) => now - hit < windowMs).length;
-      slots = Math.min(slots, this.allowed(rule) - inWindow);
+    for (const rule of this.rulesFor(name, record)) {
+      slots = Math.min(slots, this.ruleSlots(rule, record.hits, now));
+    }
+    if (this.combinedApplies(name)) {
+      slots = Math.min(slots, this.ruleSlots(HOUSE_COMBINED_RULE, this.combinedHits(now), now));
     }
     return Number.isFinite(slots) ? Math.max(0, slots) : 0;
+  }
+
+  /**
+   * Lookups (one search + one fetch each) that could go out right now: the
+   * tighter of the two policies, and half the combined guard's spare slots
+   * since every lookup spends one of each.
+   */
+  lookupsAvailable(now: number = Date.now()): number {
+    const search = this.available(SEARCH_POLICY, now);
+    const fetch = this.available(FETCH_POLICY, now);
+    const combined = this.ruleSlots(HOUSE_COMBINED_RULE, this.combinedHits(now), now);
+    return Math.max(0, Math.min(search, fetch, Math.floor(combined / 2)));
   }
 
   /** Note that a request under `name` just went out. */
   record(name: string, now: number = Date.now()): void {
     const record = this.policy(name);
     record.hits.push(now);
-    this.prune(record, now);
+    this.prune(name, record, now);
   }
 
   /** Learn the real rules and our standing from a response's headers. */
@@ -225,7 +321,7 @@ export class TradePacer {
     if (Number.isFinite(retryAfter) && retryAfter > 0) {
       record.restrictedUntil = Math.max(record.restrictedUntil, now + retryAfter * 1000);
     }
-    this.prune(record, now);
+    this.prune(name, record, now);
   }
 
   /** Epoch ms until which any (or the named) policy is restricted; 0 if none. */

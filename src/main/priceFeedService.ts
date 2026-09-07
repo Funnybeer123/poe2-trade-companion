@@ -52,13 +52,7 @@ import {
   TRADE_STATS_FILE,
   loadLearnedTiers,
 } from "../adapters/learnedTiersStore.js";
-import {
-  FETCH_POLICY,
-  SEARCH_POLICY,
-  TradePacer,
-  policyForUrl,
-  type PacerSnapshot,
-} from "../core/tradePacing.js";
+import { TradePacer, policyForUrl, type PacerSnapshot } from "../core/tradePacing.js";
 import { looksLikePoeItemText, parseItemText } from "../core/parseItem.js";
 import type { PriceTable } from "../core/priceTable.js";
 
@@ -207,6 +201,10 @@ export class PriceFeedService {
     this.syncResolvedLeague();
     this.pacer = new TradePacer(this.loadPacing());
     this.loadCompsCache();
+    // A penalty window another process ran into lives in the pacing log;
+    // without this a fresh process would not report it and would stall
+    // inline on the first request instead.
+    this.rateLimitedUntil = Math.max(this.rateLimitedUntil, this.pacer.restrictedUntil());
     this.applyStoredSnapshot();
     this.armDailyTimer();
   }
@@ -252,11 +250,9 @@ export class PriceFeedService {
    * now without waiting, and when a restriction lifts if one is in force.
    */
   tradeBudget(): { lookups: number; restrictedUntilIso?: string } {
-    const now = Date.now();
-    const lookups = Math.min(
-      this.pacer.available(SEARCH_POLICY, now),
-      this.pacer.available(FETCH_POLICY, now),
-    );
+    // Search, fetch, and the house rules' combined guard (a lookup spends
+    // one of each) — see core/tradePacing.ts HOUSE_RULES.
+    const lookups = this.pacer.lookupsAvailable(Date.now());
     const until = this.rateLimitedUntilIso();
     return { lookups: Math.max(0, lookups), ...(until ? { restrictedUntilIso: until } : {}) };
   }
@@ -482,6 +478,26 @@ export class PriceFeedService {
     return error instanceof Error ? error.message : String(error);
   }
 
+  /**
+   * The league a comps cache entry must carry to count as a hit: the pinned
+   * one as-is, else the resolved "auto" league (one /Leagues read per ten
+   * minutes; refused while ambiguous). Listings from another league are
+   * another economy, never a price for this one.
+   */
+  private async cacheLeague(): Promise<string> {
+    if (this.resolvedLeague) return this.resolvedLeague;
+    const league = await this.resolveLeague();
+    this.resolvedLeague = league;
+    return league;
+  }
+
+  /** Inside its TTL AND fetched in `league`. */
+  private cacheHit(entry: CachedComps | undefined, league: string): entry is CachedComps {
+    return (
+      entry !== undefined && entry.league === league && Date.now() - entry.at < compsTtl(entry.basis)
+    );
+  }
+
   /** Pull the full price snapshot and merge it into the price table. */
   async refresh(): Promise<PriceFeedStatus> {
     if (this.refreshing) return this.status();
@@ -556,10 +572,12 @@ export class PriceFeedService {
         });
         const restricted = this.pacer.restrictedUntil();
         if (restricted > this.rateLimitedUntil) this.rateLimitedUntil = restricted;
-        this.savePacing();
         return response;
       } finally {
         clearTimeout(timer);
+        // The hit is on the shared log even when the request timed out or
+        // the socket dropped: the server most likely counted it.
+        this.savePacing();
       }
     });
     this.tradeChain = run.catch(() => undefined);
@@ -580,9 +598,14 @@ export class PriceFeedService {
       Math.min(300_000, (Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : 60) * 1_000);
     // A short penalty is waited out inline; a long one is remembered (on
     // disk too) and reported — a key press must not stall for minutes, and
-    // hitting the API again inside the window only extends it.
-    if (waitMs > 30_000 && this.options.rateLimitBackoffMs === undefined) {
-      this.rateLimitedUntil = Date.now() + waitMs;
+    // hitting the API again inside the window only extends it. The pacer
+    // already took the server's Retry-After in tradeRequest, so a long
+    // restriction there means "do not retry" whatever the test seam says.
+    const restrictedMs = this.pacer.restrictedUntil() - Date.now();
+    if (restrictedMs > 30_000 || (waitMs > 30_000 && this.options.rateLimitBackoffMs === undefined)) {
+      // Never shorten what the pacer already took from Retry-After (600 s on
+      // 2026-09-07): a window remembered as 300 s knocks on the door early.
+      this.rateLimitedUntil = Math.max(this.rateLimitedUntil, Date.now() + Math.max(waitMs, restrictedMs));
       this.saveCompsCache();
       this.lastError = `trade2 rate limited until ${new Date(this.rateLimitedUntil).toLocaleTimeString()}`;
       return first;
@@ -594,7 +617,7 @@ export class PriceFeedService {
       // Still throttled after a retry: assume a longer window, remember it.
       const again = Number(second.headers?.get?.("retry-after"));
       const penaltyMs = Math.min(300_000, (Number.isFinite(again) && again > 0 ? again : 120) * 1_000);
-      this.rateLimitedUntil = Date.now() + penaltyMs;
+      this.rateLimitedUntil = Math.max(this.rateLimitedUntil, Date.now() + penaltyMs);
       this.saveCompsCache();
     }
     return second;
@@ -801,6 +824,14 @@ export class PriceFeedService {
     const parsed = parseItemText(itemText);
     const baseQuery = buildCompsQuery(parsed);
     if (!baseQuery) return { ok: false, error: "The item has no searchable base type." };
+    // The league before the cache: a cached sample only prices the league
+    // it came from (an ambiguous "auto" refuses here, cache or no cache).
+    let league: string;
+    try {
+      league = await this.cacheLeague();
+    } catch (error) {
+      return { ok: false, error: this.recordError(error) };
+    }
 
     const ourMods = parsed.mods.filter((mod) => !mod.implicit).map((mod) => mod.text);
     const learnedTiers = this.learnedTiers();
@@ -831,7 +862,7 @@ export class PriceFeedService {
       summary: summarize(entry.listings, entry.basis),
     });
     const fresh = (entry: CachedComps | undefined): entry is CachedComps =>
-      entry !== undefined && Date.now() - entry.at < compsTtl(entry.basis);
+      this.cacheHit(entry, league);
 
     const statKey = statQuery ? JSON.stringify(statQuery.body) : undefined;
     const statCached = statKey ? this.compsCache.get(statKey) : undefined;
@@ -853,8 +884,6 @@ export class PriceFeedService {
     }
 
     try {
-      const league = await this.resolveLeague();
-      this.resolvedLeague = league;
       const remember = (key: string, basis: CompsQuery["basis"], listings: CompListing[]) => {
         this.compsCache.set(key, { at: Date.now(), league, basis, listings });
         this.saveCompsCache();
@@ -898,15 +927,35 @@ export class PriceFeedService {
    */
   peekComps(itemText: string): CompsSummary | undefined {
     if (!looksLikePoeItemText(itemText)) return undefined;
+    // Only a league known offline counts: the pinned one, or "auto" once
+    // the candidates were read. Until then nothing in the cache is a price.
+    const league = this.resolvedLeague;
+    if (!league) return undefined;
     const parsed = parseItemText(itemText);
     const query = buildCompsQuery(parsed);
     if (!query) return undefined;
-    const cached = this.compsCache.get(JSON.stringify(query.body));
-    if (!cached || Date.now() - cached.at >= compsTtl(cached.basis)) return undefined;
     const ourMods = parsed.mods.filter((mod) => !mod.implicit).map((mod) => mod.text);
-    return summarizeComps(ourMods, cached.listings, query.basis, {
-      priceTable: this.options.getPriceTable(),
-      itemClass: parsed.itemClass,
-    });
+    const learnedTiers = this.learnedTiers();
+    const statIds = this.statCatalogue;
+    const summarize = (entry: CachedComps): CompsSummary =>
+      summarizeComps(ourMods, entry.listings, entry.basis, {
+        priceTable: this.options.getPriceTable(),
+        itemClass: parsed.itemClass,
+        learnedTiers,
+        ...(statIds ? { statIds } : {}),
+        ...(entry.basis === "stat-filtered" ? { minSimilarity: 0 } : {}),
+      });
+    // The stat-filtered stage's sample first, as fetchComps serves it — but
+    // only with the catalogue already in memory: a peek loads nothing.
+    if (statIds && query.basis === "base-type" && ourMods.length > 0) {
+      const appraisal = appraiseItem(itemText, { parsed, learnedTiers, statIds });
+      const statQuery = buildStatFilteredQuery(parsed, appraisal, statIds);
+      const statCached = statQuery ? this.compsCache.get(JSON.stringify(statQuery.body)) : undefined;
+      if (this.cacheHit(statCached, league) && statCached.listings.length >= STAT_STAGE_MIN_IDS) {
+        return summarize(statCached);
+      }
+    }
+    const cached = this.compsCache.get(JSON.stringify(query.body));
+    return this.cacheHit(cached, league) ? summarize(cached) : undefined;
   }
 }

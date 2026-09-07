@@ -56,6 +56,7 @@ import { PriceFeedService } from "../src/main/priceFeedService.js";
 import { loadTriageExport } from "../src/adapters/triageLoader.js";
 import { bucketTabs, parseShopConfig } from "../src/core/shopListings.js";
 import { DEFAULT_TRIAGE_ROUTING } from "../src/core/bagTriage.js";
+import { HOUSE_LOOKUPS_PER_WINDOW } from "../src/core/tradePacing.js";
 import type { PriceTable } from "../src/core/priceTable.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -70,7 +71,9 @@ const live = flag("--live");
 const stepMode = flag("--step");
 const dryRun = !live;
 const noComps = flag("--no-comps");
-const compsLimit = Number(value("--comps-limit") ?? 15);
+// Clamped to what trade2's house rules allow in one five-minute window
+// (core/tradePacing.ts); the keeper clamps again, this keeps the banner true.
+const compsLimit = Math.min(Number(value("--comps-limit") ?? 15), HOUSE_LOOKUPS_PER_WINDOW);
 const bucketsArg = value("--buckets");
 const leagueArg = value("--league");
 const noRefresh = flag("--no-refresh");

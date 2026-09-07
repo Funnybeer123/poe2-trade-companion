@@ -139,6 +139,34 @@ describe("valueItemLocally", () => {
     expect(valuation.marketTimestamp).toBe(NOW.toISOString());
   });
 
+  it("treats a rarity-only floor row as no price-table evidence (exact names/bases only)", () => {
+    // The starter table's "any unique = 1 ex" floor: a triage floor, not a price.
+    const priceTable = table([
+      { id: "any-unique", match: { rarity: "Unique" }, value: 1, note: "Floor for unreviewed uniques." },
+    ]);
+    const parsed = parseItemText(WIDOWHAIL);
+    const withComps = valueItemLocally({
+      parsed,
+      priceTable,
+      verdict: verdictFor(WIDOWHAIL, priceTable),
+      comps: comps([3, 4, 5, 6, 7, 8, 9, 10, 11]),
+      now: NOW,
+    });
+    expect(withComps.providerName).toBe("trade2-comps");
+    expect(withComps.fair).toBe(7);
+    const alone = valueItemLocally({ parsed, priceTable, verdict: verdictFor(WIDOWHAIL, priceTable), now: NOW });
+    expect(alone.providerName).not.toBe("price-table");
+    expect(alone.confidence).not.toBe("high");
+    // A base-type row is real evidence, graded below a name match.
+    const byBase = valueItemLocally({
+      parsed,
+      priceTable: table([{ id: "crude-bows", match: { baseType: "Crude Bow" }, value: 2 }]),
+      now: NOW,
+    });
+    expect(byBase).toMatchObject({ providerName: "price-table", fair: 2, confidence: "medium" });
+    expect(byBase.lowConfidenceReason).toContain("base type");
+  });
+
   it("builds a band from trade2 comps: lowest / median / max, confidence by sample size", () => {
     const parsed = parseItemText(GREAT_RARE);
     const valuation = valueItemLocally({

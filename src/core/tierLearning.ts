@@ -315,9 +315,11 @@ function parseStatMap(value: unknown): Record<string, LearnedStat> {
     const tiers: Record<string, LearnedTierRange> = {};
     for (const [tier, range] of Object.entries(tiersRaw as Record<string, unknown>)) {
       if (!/^\d+$/.test(tier) || !isRange(range)) continue;
+      // A hand-edited or torn file may hold the bounds the wrong way round;
+      // tierForValue's ceiling and floor tests assume min ≤ max.
       tiers[tier] = {
-        min: range.min,
-        max: range.max,
+        min: Math.min(range.min, range.max),
+        max: Math.max(range.min, range.max),
         count: range.count,
         ...(range.level !== undefined ? { level: range.level } : {}),
       };

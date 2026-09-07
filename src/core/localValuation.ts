@@ -96,6 +96,11 @@ function fromPriceTable(input: LocalValuationInput): ValuationResult | undefined
     rarity: parsed.rarity,
   });
   if (!hit) return undefined;
+  // "Exact names/bases only": a rarity- or class-wide row (the starter's
+  // "any unique = 1 ex") is a triage floor, not this item's price — leave
+  // the item to its comps and appraisal instead of a confident 1 ex.
+  const byName = hit.entry.match.name !== undefined;
+  if (!byName && hit.entry.match.baseType === undefined) return undefined;
   const count = /currency/i.test(parsed.itemClass) ? stackCount(parsed) : undefined;
   const amount = round2(hit.value * (count ?? 1));
   return {
@@ -106,7 +111,8 @@ function fromPriceTable(input: LocalValuationInput): ValuationResult | undefined
     fair: amount,
     high: amount,
     recommendedListing: amount,
-    confidence: "high",
+    confidence: byName ? "high" : "medium",
+    ...(byName ? {} : { lowConfidenceReason: "price table matched the base type, not this item" }),
   };
 }
 
