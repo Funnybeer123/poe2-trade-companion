@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { bmpToGray } from "../src/adapters/bmp.js";
 import type { StashItem } from "../src/core/bagPack.js";
@@ -10,6 +8,9 @@ import {
   reconcileTransfer,
 } from "../src/core/transferReconciler.js";
 import { perceiveUi, type OccupiedCell, type UiFacts } from "../src/core/uiPerception.js";
+import { LIVE_CALIBRATION, LIVE_WAND_BMP, missingLiveFixture, TEMPLATE_DIR } from "./liveFixtures.js";
+
+const missingLive = missingLiveFixture("tests/transfer-reconciler.test.ts", [LIVE_CALIBRATION, LIVE_WAND_BMP]);
 
 function cells(entries: Array<[number, number]>, bag?: string): OccupiedCell[] {
   return entries.map(([row, col]) => ({ row, col, x: col * 10 + 5, y: row * 10 + 5, bag }));
@@ -169,15 +170,15 @@ describe("transfer reconciliation", () => {
     expect(classifyFillOutcome(facts(cells([[0, 0]]), []), { eligibleRemaining: 3, noMoreAutoFit: true })).toBe("no-more-auto-fit");
     expect(classifyFillOutcome(facts([], []), { eligibleRemaining: 0, filtered: true })).toBe("filter-exhausted");
   });
+});
 
+describe.skipIf(Boolean(missingLive))("transfer reconciliation on the live wand capture", () => {
   it("does not classify the recorded top-right wand as an empty bag", () => {
-    const bmp = path.resolve("fixtures/perception/live/deposit-1787705758242.bmp");
-    if (!existsSync(bmp)) return;
     const observed = perceiveUi(
-      bmpToGray(bmp),
+      bmpToGray(LIVE_WAND_BMP),
       { left: 0, top: 0, width: 3840, height: 2160 },
       {},
-      loadProfile(path.resolve("fixtures/perception/templates")),
+      loadProfile(TEMPLATE_DIR),
     );
 
     expect(observed.occupiedBag.some((cell) => cell.col === 11 && cell.row <= 2)).toBe(true);

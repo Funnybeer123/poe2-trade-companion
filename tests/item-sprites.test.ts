@@ -1,5 +1,3 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { bmpToGray } from "../src/adapters/bmp.js";
 import { planFillMoves } from "../src/core/bagPack.js";
@@ -15,9 +13,11 @@ import {
 } from "../src/core/itemSprites.js";
 import { fillRect } from "../src/core/grayImage.js";
 import { perceiveUi } from "../src/core/uiPerception.js";
+import { LIVE_CALIBRATION, LIVE_WAND_BMP, missingLiveFixture, TEMPLATE_DIR } from "./liveFixtures.js";
 import { paintGridSprite, stashAndBagFrame, TEST_CLIENT } from "./perceptionFixtures.js";
 
 const STASH = { x: 80, y: 144, w: 736, h: 630 };
+const missingLive = missingLiveFixture("tests/item-sprites.test.ts", [LIVE_CALIBRATION, LIVE_WAND_BMP]);
 
 describe("sprite item sizing", () => {
   it("reads each painted stash sprite as its own bag size", () => {
@@ -82,15 +82,15 @@ describe("sprite item sizing", () => {
     expect(occupied.some((cell) => cell.col === 11 && cell.row <= 2)).toBe(true);
     expect(occupied.every((cell) => cell.col === 11)).toBe(true);
   });
+});
 
+describe.skipIf(Boolean(missingLive))("sprite sizing on the live wand capture", () => {
   it("sees the leftover wand on the live empty-looking bag dump", () => {
-    const bmp = path.resolve("fixtures/perception/live/deposit-1787705758242.bmp");
-    if (!existsSync(bmp)) return;
     const facts = perceiveUi(
-      bmpToGray(bmp),
+      bmpToGray(LIVE_WAND_BMP),
       { left: 0, top: 0, width: 3840, height: 2160 },
       {},
-      loadProfile(path.resolve("fixtures/perception/templates")),
+      loadProfile(TEMPLATE_DIR),
     );
     expect(facts.occupiedBag.some((cell) => cell.col === 11 && cell.row <= 2)).toBe(true);
   });

@@ -1,7 +1,9 @@
 import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { resolveWinHostScript } from "../src/adapters/winHost.js";
 import { clampToRect } from "../src/core/screenLayout.js";
+import { REPO_ROOT } from "./liveFixtures.js";
 
 describe("live click protocol", () => {
   it("host must reject coordinates outside the reported client", () => {
@@ -33,9 +35,13 @@ describe("live click protocol", () => {
     expect(source).toContain("hwnd = $script:PinnedPoeHwnd");
   });
 
-  it("resolves the Windows input host from the repo, not the parent folder", () => {
+  it("resolves the Windows input host from this checkout, not a parent folder or another clone", () => {
     const host = resolveWinHostScript();
     expect(existsSync(host)).toBe(true);
-    expect(host.replaceAll("\\", "/")).toMatch(/poe2-trade-companion\/scripts\/win-input-host\.ps1$/i);
+    // Windows paths compare case-insensitively; the shell and the module URL
+    // can differ in case for the same directory.
+    const canonical = (file: string) =>
+      process.platform === "win32" ? path.resolve(file).toLowerCase() : path.resolve(file);
+    expect(canonical(host)).toBe(canonical(path.join(REPO_ROOT, "scripts", "win-input-host.ps1")));
   });
 });

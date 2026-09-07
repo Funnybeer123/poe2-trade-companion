@@ -15,6 +15,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFil
 import { fileURLToPath } from "node:url";
 import { WindowsSpeechRecognizer } from "../adapters/windowsSpeechRecognizer.js";
 import { KillSwitch } from "../core/killSwitch.js";
+import { memoizeAsync } from "../core/memoizeAsync.js";
 import { looksLikePoeItemText, parseItemText } from "../core/parseItem.js";
 import { enrichItemSize, itemSizeDatabasePath, loadItemSizeDatabase } from "../core/itemSizeStore.js";
 import { FixtureMarketProvider } from "../core/market.js";
@@ -465,10 +466,22 @@ function clipboardPollTick(): void {
   setTimeout(clipboardPollTick, nextMs);
 }
 
-async function listPoeProcesses(): Promise<Array<{ name: string; title: string }>> {
-  const rows = await listPoeProcessesUncached();
-  if (rows.length > 0) lastPoeWindowSeenAt = Date.now();
-  return rows;
+// Enumerating processes costs a PowerShell launch, and the renderer asks every
+// 2.5–5 s for the app's lifetime, so answers are memoized for 4 s and
+// concurrent asks share one in-flight query. The seen-stamp above is still
+// written only when a query really observed a Path of Exile row.
+const POE_WINDOW_LIST_TTL_MS = 4_000;
+const listPoeProcessesMemoized = memoizeAsync(
+  async () => {
+    const rows = await listPoeProcessesUncached();
+    if (rows.length > 0) lastPoeWindowSeenAt = Date.now();
+    return rows;
+  },
+  { ttlMs: POE_WINDOW_LIST_TTL_MS },
+);
+
+function listPoeProcesses(): Promise<Array<{ name: string; title: string }>> {
+  return listPoeProcessesMemoized();
 }
 
 async function listPoeProcessesUncached(): Promise<Array<{ name: string; title: string }>> {

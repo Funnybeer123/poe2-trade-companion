@@ -13,6 +13,7 @@ import { DrainKit } from "../adapters/drainKit.js";
 import { StashTabKit, type StripEntry } from "../adapters/stashTabKit.js";
 import { startWinHost } from "../adapters/winHost.js";
 import { labelsSimilar } from "../core/tabList.js";
+import { resolveTsxLaunch } from "../core/tsxLauncher.js";
 import {
   buildGearTabPlan,
   isRemoveOnlyTabLabel,
@@ -100,9 +101,13 @@ export class StashTabAdminService {
     const args = SCRIPT_ARGS[kind];
     if (!args) return { started: false, reason: `unknown-script:${kind}` };
     this.setPhase("applying");
-    const child = spawn("npx", ["--yes", "tsx", ...args], {
+    // With tsx installed under root the script starts directly on the system
+    // node (Electron's own execPath is not a plain node); otherwise this is
+    // the npx launch it always was. See src/core/tsxLauncher.ts.
+    const launch = resolveTsxLaunch(this.options.root, args, { node: "node" });
+    const child = spawn(launch.command, launch.args, {
       cwd: this.options.root,
-      shell: true,
+      shell: launch.shell,
       stdio: ["ignore", "pipe", "pipe"],
       // Live crafting is double-gated: the script demands this env var on top
       // of --live, so only the explicit craft-gear kind can ever arm it.
