@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { starterPriceTable } from "../src/core/priceTable.js";
+import { starterPriceTable, type PriceTable } from "../src/core/priceTable.js";
 import { bucketTabs, defaultShopConfig, type ActiveListing, type ShopConfig } from "../src/core/shopListings.js";
 import { bucketOfPrice, planBucketLadder, type PriceSuggestion } from "../src/core/shopPricing.js";
 
@@ -10,7 +10,15 @@ import { bucketOfPrice, planBucketLadder, type PriceSuggestion } from "../src/co
  * never move.
  */
 
-const TABLE = starterPriceTable(); // divine = 40 ex
+const TABLE: PriceTable = {
+  ...starterPriceTable(),
+  entries: [
+    ...starterPriceTable().entries,
+    // Pinned explicitly: the starter table no longer ships placeholder rates.
+    { id: "test-divine", match: { name: "Divine Orb" }, value: 40 },
+    { id: "test-chaos", match: { name: "Chaos Orb" }, value: 0.5 },
+  ],
+};
 const BUCKETS = bucketTabs(["1Ex", "5Ex", "10Ex", "1D", "2D"], TABLE); // 1, 5, 10, 40, 80 ex
 const NOW = Date.parse("2026-09-07T10:00:00.000Z");
 const daysAgo = (days: number): string => new Date(NOW - days * 86_400_000).toISOString();

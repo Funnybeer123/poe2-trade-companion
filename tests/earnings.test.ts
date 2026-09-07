@@ -7,7 +7,7 @@ import type { GearSorter } from "../src/adapters/gearSorter.js";
 import type { SortHarness } from "../src/adapters/sortHarness.js";
 import type { StashTabKit, StripEntry } from "../src/adapters/stashTabKit.js";
 import { isRemoveOnlyTabLabel } from "../src/core/stashTabAdmin.js";
-import { starterPriceTable } from "../src/core/priceTable.js";
+import { starterPriceTable, type PriceTable } from "../src/core/priceTable.js";
 import {
   buildShopSnapshot,
   currencyUnitExalted,
@@ -27,7 +27,15 @@ import {
  * evidence behind a "sold" row. The heuristic stays the fallback.
  */
 
-const TABLE = starterPriceTable(); // divine = 40 ex, exalted = 1, chaos = 0.5
+const TABLE: PriceTable = {
+  ...starterPriceTable(),
+  entries: [
+    ...starterPriceTable().entries,
+    // Pinned explicitly: the starter table no longer ships placeholder rates.
+    { id: "test-divine", match: { name: "Divine Orb" }, value: 40 },
+    { id: "test-chaos", match: { name: "Chaos Orb" }, value: 0.5 },
+  ],
+};
 
 function snap(at: string, stacks: Array<[string, number]>): EarningsSnapshot {
   return { at, stacks: stacks.map(([name, count]) => ({ name, count })) };

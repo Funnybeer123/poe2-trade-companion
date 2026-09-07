@@ -28,7 +28,11 @@ function table(): PriceTable {
   const base = starterPriceTable();
   return {
     ...base,
-    entries: base.entries.map((entry) => (entry.id === "chaos-orb" ? { ...entry, value: 0.26 } : entry)),
+    entries: [
+      ...base.entries,
+      { id: "test-chaos", match: { name: "Chaos Orb" }, value: 0.26 },
+      { id: "test-divine", match: { name: "Divine Orb" }, value: 40 },
+    ],
   };
 }
 
