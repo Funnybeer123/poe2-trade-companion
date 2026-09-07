@@ -5,6 +5,7 @@
  *   npx tsx scripts/shop.ts [--record] [--live] [--list] [--step]
  *                           [--no-comps] [--comps-limit=N] [--max-actions=N]
  *                           [--shop-tab=NAME] [--report] [--from-scan=FILE]
+ *                           [--no-earnings] [--collect-earnings] [--full-verify]
  *
  * DEFAULT (no flags): DRY-RUN — scan the shop tab (Ctrl+C ground truth,
  * read-only), diff it against the listings ledger (sold/hand-listed/
@@ -13,8 +14,21 @@
  * navigation + hovering; no dialog opens, nothing moves, nothing is written
  * to the ledger. Artifacts: artifacts/tab-admin/shop-scan.json + shop-plan.json.
  *
+ * Every scan reads the Merchant's "Earnings (Remove-only)" sub-tab FIRST:
+ * sale proceeds land there as currency stacks, and the delta since the last
+ * recorded scan (artifacts/tab-admin/earnings-snapshot.json) upgrades the
+ * presumed-sold rows it accounts for to VERIFIED. When the sub-tab cannot
+ * be read the gone-from-tab heuristic stands and the report says so.
+ *
  *   --record   append the reconcile events (sold detection!) to
- *              artifacts/tab-admin/listings.jsonl after the scan.
+ *              artifacts/tab-admin/listings.jsonl after the scan, and save
+ *              the Earnings snapshot as the next baseline.
+ *   --no-earnings      skip the Earnings sub-tab (heuristic sold detection only).
+ *   --collect-earnings (with --live) click every Earnings stack to move it to
+ *              the bag, verified by a bag Ctrl+C read; anything unexpected
+ *              captures a screenshot and stops. Default off.
+ *   --full-verify      verify bag listings with the whole-tab rescan instead
+ *              of the targeted landing-cell diff.
  *   --live     execute the plan: reprices via the item price dialog
  *              (Note-verified), delists via verified withdraw → return tab.
  *              Implies --record. FIRST LIVE RUN: pass --step too — the
@@ -50,6 +64,7 @@ import {
   parseShopConfig,
   parseListingEvents,
   reconcileShopScan,
+  type EarningsDelta,
   type ShopConfig,
   type ShopSnapshot,
 } from "../src/core/shopListings.js";
@@ -83,6 +98,13 @@ const fromScan = value("--from-scan");
 const noComps = flag("--no-comps");
 const compsLimit = Number(value("--comps-limit") ?? 20);
 const dryRun = !live;
+const noEarnings = flag("--no-earnings");
+const collectEarnings = flag("--collect-earnings");
+const fullVerify = flag("--full-verify");
+if (collectEarnings && !live) {
+  console.error("--collect-earnings moves stacks to the bag — it needs --live");
+  process.exit(1);
+}
 
 /* ---------------- config + triage-exported prices ---------------- */
 
@@ -249,6 +271,7 @@ const keeper = new ShopKeeper(host, harness, kit, sorter, {
   dryRun,
   stepMode,
   priceTable,
+  ...(fullVerify ? { fullVerify: true } : {}),
   ...(feed
     ? {
         comps: async (itemText: string) => {
@@ -271,13 +294,48 @@ try {
   await host.send({ op: "focus" });
   harness.startKeyListener();
   console.log(
-    `shop ${dryRun ? "DRY-RUN" : "LIVE"}${stepMode ? " STEP" : ""}${record ? " RECORD" : ""}${list ? " +LIST(bag)" : ""} ` +
+    `shop ${dryRun ? "DRY-RUN" : "LIVE"}${stepMode ? " STEP" : ""}${record ? " RECORD" : ""}${list ? " +LIST(bag)" : ""}${collectEarnings ? " +COLLECT-EARNINGS" : ""} ` +
       `tab="${config.shopTab}" return="${config.returnTab}" max-actions=${config.maxActionsPerRun} — ` +
       "numpad: 8 good · 9 wrong · 5 pause · 0 stop",
   );
 
+  // Earnings first: the sub-tab's delta since the last recorded scan is the
+  // only ground truth for "sold". Its snapshot becomes the next baseline
+  // only on a --record run (a dry-run must not move the baseline).
+  let earningsDelta: EarningsDelta | undefined;
+  if (!noEarnings) {
+    const earnings = await keeper.scanEarnings();
+    for (const line of earnings.report) console.log(`  · ${line}`);
+    if (earnings.found && earnings.snapshot && earnings.delta) {
+      earningsDelta = earnings.delta;
+      let baseline = earnings.snapshot;
+      if (collectEarnings && earnings.items.length > 0) {
+        const collected = await keeper.collectEarnings(earnings.items);
+        for (const line of collected.report) console.log(`  · ${line}`);
+        const taken = new Set(collected.collected.map((stack) => `${stack.name}:${stack.count}`));
+        baseline = {
+          at: earnings.snapshot.at,
+          stacks: earnings.snapshot.stacks.filter((stack) => !taken.delete(`${stack.name}:${stack.count}`)),
+        };
+      } else if (collectEarnings) {
+        console.log("  · nothing to collect — Earnings is empty");
+      }
+      if (record) {
+        keeper.saveEarningsSnapshot(baseline);
+        console.log(`  · earnings snapshot saved (${baseline.stacks.length} stack(s) remain as the baseline)`);
+      } else {
+        console.log("  · earnings snapshot NOT saved (dry-run — pass --record)");
+      }
+    } else {
+      console.log("  · Earnings tab not found — sold detection falls back to the gone-from-tab heuristic");
+    }
+  }
+
   const { snapshot, items, freeCells } = await keeper.scan();
-  const { state, report: reconcileReport } = keeper.reconcile(snapshot, { record });
+  const { state, report: reconcileReport } = keeper.reconcile(snapshot, {
+    record,
+    ...(earningsDelta ? { earningsDelta } : {}),
+  });
   mkdirSync(outDir, { recursive: true });
   writeFileSync(
     path.join(outDir, "shop-scan.json"),

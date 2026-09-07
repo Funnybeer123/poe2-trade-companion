@@ -54,7 +54,9 @@ export type StashTabScriptKind =
   | "shop-list-dry"
   | "shop-list"
   | "shop-buckets-dry"
-  | "shop-buckets";
+  | "shop-buckets"
+  | "shop-ladder-dry"
+  | "shop-ladder";
 
 const SCRIPT_ARGS: Record<StashTabScriptKind, string[]> = {
   renumber: ["scripts/stash-tab-admin.ts", "--renumber"],
@@ -76,6 +78,10 @@ const SCRIPT_ARGS: Record<StashTabScriptKind, string[]> = {
   // Price-bucket tabs: the one-key flow (also Num4 in the action daemon).
   "shop-buckets-dry": ["scripts/shop-buckets.ts"],
   "shop-buckets": ["scripts/shop-buckets.ts", "--live"],
+  // Bucket ladder: stale app listings move to a cheaper bucket tab. The dry
+  // kind is offline (ledger + shop.json); live delists + relists per move.
+  "shop-ladder-dry": ["scripts/shop-ladder.ts"],
+  "shop-ladder": ["scripts/shop-ladder.ts", "--live"],
 };
 
 export class StashTabAdminService {

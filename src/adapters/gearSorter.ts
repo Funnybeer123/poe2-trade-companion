@@ -3468,6 +3468,44 @@ export class GearSorter {
     return this.currentBagCells();
   }
 
+  /**
+   * Occupied cells of the ACTIVE stash/merchant grid by pixel scoring alone
+   * — no hover, no Ctrl+C. The same baseline-plus-bright-block rule indexTab
+   * sweeps with, over the geometry the last index established (or the one
+   * given), so a diff between two reads is exactly "which cells filled".
+   * The shop flow's cheap landing-spot probe between a listing click and
+   * its targeted verification (docs/HANDOFF-shop-listings.md).
+   */
+  async occupiedStashCellsNow(
+    geometry?: { region: { x: number; y: number; w: number; h: number }; cols: number; rows: number },
+    topLevel = false,
+  ): Promise<GridCell[]> {
+    const geo = geometry ?? this.lastGoodStashGeometry;
+    if (!geo) return [];
+    const raw = await this.captureRaw();
+    const { region, cols, rows } = geo;
+    const scores = scoreGridCells(raw.gray, raw.client, region, cols, rows);
+    const emptyKeys = emptyCellKeysByBaseline(scores);
+    const cells: GridCell[] = [];
+    for (let r = 0; r < rows; r += 1) {
+      for (let c = 0; c < cols; c += 1) {
+        if (
+          emptyKeys.has(`${r},${c}`) &&
+          !brightestCellPoint(raw.gray, raw.client, region, cols, rows, { row: r, col: c })
+        ) {
+          continue;
+        }
+        cells.push({
+          row: r,
+          col: c,
+          x: Math.round(region.x + ((c + 0.5) * region.w) / cols),
+          y: Math.round(region.y + ((r + 0.5) * region.h) / rows),
+        });
+      }
+    }
+    return clampToArea(cells, topLevel ? STASH_AREA_TOP_LEVEL : STASH_AREA);
+  }
+
   /** Identify every occupied bag cell by Ctrl+C — phase 2's item source. */
   async identifyBagItems(): Promise<{
     items: IdentifiedItem[];

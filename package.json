@@ -81,7 +81,9 @@
     "teach:record": "npx --yes tsx scripts/record-teach.ts",
     "shop:buckets": "npx --yes tsx scripts/shop-buckets.ts",
     "shop:buckets:live": "npx --yes tsx scripts/shop-buckets.ts --live --step",
-    "shop:tab": "npx --yes tsx scripts/shop-list-bag.ts"
+    "shop:tab": "npx --yes tsx scripts/shop-list-bag.ts",
+    "shop:ladder": "npx --yes tsx scripts/shop-ladder.ts",
+    "shop:ladder:live": "npx --yes tsx scripts/shop-ladder.ts --live --step"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

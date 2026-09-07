@@ -1169,6 +1169,10 @@ export interface ShopConfigView {
   maxActionsPerRun: number;
   /** Price-bucket merchant tabs ("1Ex", "5D" …) — the one-key listing flow. */
   bucketTabs: string[];
+  /** Bucket ladder: age alone moves a stale listing when no comps are available. */
+  ladderWithoutComps: boolean;
+  /** How SET ITEM PRICE prices a currency stack (unverified live): whole stack or per unit. */
+  stackPricing: "whole" | "per-unit";
 }
 
 export interface ShopOverviewView {

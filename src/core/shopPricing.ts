@@ -18,12 +18,17 @@
 import { orbCosts } from "./crafting.js";
 import {
   ageDays,
+  bucketFor,
   maxAutoListExalted,
+  normalizeNoteCurrency,
   type ActiveListing,
+  type BucketTab,
   type CompsSnapshot,
   type ListingEvent,
   type ShopConfig,
+  type StackPricingMode,
 } from "./shopListings.js";
+import type { EstimatedValue } from "./appraisal.js";
 import type { CompsSummary } from "./tradeComps.js";
 import type { ItemAppraisal } from "./appraisal.js";
 import type { PriceTable } from "./priceTable.js";
@@ -274,6 +279,189 @@ export function repriceDecision(args: {
     `stale ${age.toFixed(1)}d (step -${step.stepPercent}% after ${step.afterDays}d): ${current} → ${display.exalted} ex`,
   );
   return { action: "reprice", to: display, badges, reasons };
+}
+
+// ---------------------------------------------------------------------------
+// Bucket reprice ladder: the tab name IS the price, so a stale listing steps
+// DOWN by moving to a cheaper bucket tab (delist + relist), never by typing
+// a new amount (docs/HANDOFF-shop-listings.md, PRICE-BUCKET TABS).
+// ---------------------------------------------------------------------------
+
+export interface BucketLadderMove {
+  listing: ActiveListing;
+  from: BucketTab;
+  to: BucketTab;
+  /** Days since the listing was (re)priced. */
+  ageDays: number;
+  reasons: string[];
+}
+
+export interface BucketLadderHold {
+  listing: ActiveListing;
+  badges: ListingBadge[];
+  reasons: string[];
+}
+
+export interface BucketLadderPlan {
+  moves: BucketLadderMove[];
+  holds: BucketLadderHold[];
+  /** One line per listing — every hold and every move is reported. */
+  report: string[];
+}
+
+/** The bucket a ledger price sits in (amount + currency must both match). */
+export function bucketOfPrice(
+  price: { amount: number; currency: string } | undefined,
+  buckets: readonly BucketTab[],
+): BucketTab | undefined {
+  if (!price) return undefined;
+  const currency = normalizeNoteCurrency(price.currency);
+  return buckets.find(
+    (bucket) => bucket.amount === price.amount && normalizeNoteCurrency(bucket.currency) === currency,
+  );
+}
+
+/**
+ * Plan the bucket ladder over the ledger's active listings. Only app-priced
+ * listings whose price matches a bucket move; the first ladder step moves
+ * one bucket down, later steps snap the stepped-down value to the dearest
+ * bucket it still clears. Comps, when supplied, hold a listing whose price
+ * they still support (the reprice ladder's "market did not move" rule) and
+ * floor the target; without comps, age alone moves it when
+ * `ladderWithoutComps` allows. User-priced listings never move.
+ */
+export function planBucketLadder(args: {
+  listings: readonly ActiveListing[];
+  buckets: readonly BucketTab[];
+  config: ShopConfig;
+  nowMs: number;
+  compsFor?: (listing: ActiveListing) => PriceSuggestion | PriceRefusal | undefined;
+}): BucketLadderPlan {
+  const { config, nowMs } = args;
+  const buckets = [...args.buckets].sort((a, b) => a.exalted - b.exalted);
+  const moves: BucketLadderMove[] = [];
+  const holds: BucketLadderHold[] = [];
+  const report: string[] = [];
+  const hold = (listing: ActiveListing, badges: ListingBadge[], reason: string): void => {
+    holds.push({ listing, badges, reasons: [reason] });
+    report.push(`hold ${listing.count}x ${listing.name}: ${reason}`);
+  };
+  const cheapest = buckets[0];
+  for (const listing of args.listings) {
+    const age = ageDays(listing.pricedAt, nowMs);
+    const badges: ListingBadge[] = age >= config.staleDays ? ["STALE"] : [];
+    if (listing.by !== "app") {
+      hold(listing, [...badges, "USER-PRICED"], "priced by hand — the ladder never moves it");
+      continue;
+    }
+    const current = bucketOfPrice(listing.price, buckets);
+    if (!listing.price) {
+      hold(listing, [...badges, "UNPRICED"], "no price on the ledger record — scan the tab before laddering");
+      continue;
+    }
+    if (!current || !cheapest) {
+      hold(
+        listing,
+        badges,
+        `${listing.price.amount} ${listing.price.currency} is not a bucket price (${buckets.map((b) => b.label).join(", ") || "no buckets"})`,
+      );
+      continue;
+    }
+    const steps = config.ladder.filter((step) => age >= step.afterDays);
+    if (steps.length === 0) {
+      hold(
+        listing,
+        badges,
+        `in ${current.label} for ${age.toFixed(1)}d — before the first ladder step (${config.ladder[0]?.afterDays ?? "?"}d)`,
+      );
+      continue;
+    }
+    const currentIndex = buckets.indexOf(current);
+    if (currentIndex === 0) {
+      hold(listing, badges, `already in the cheapest bucket (${current.label}) after ${age.toFixed(1)}d`);
+      continue;
+    }
+    const suggestion = args.compsFor?.(listing);
+    let floor = 0;
+    if (suggestion && !isPriceRefusal(suggestion)) {
+      if (suggestion.targetExalted >= current.exalted) {
+        hold(
+          listing,
+          badges,
+          `stale at ${age.toFixed(1)}d but comps (${suggestion.targetExalted} ex) still support ${current.label} — market did not move`,
+        );
+        continue;
+      }
+      floor = suggestion.targetExalted;
+    } else if (!config.ladderWithoutComps) {
+      hold(
+        listing,
+        badges,
+        suggestion
+          ? `stale, comps unusable (${suggestion.detail}) and ladderWithoutComps is off — holding`
+          : "stale, no comps and ladderWithoutComps is off — holding",
+      );
+      continue;
+    }
+    const step = steps[steps.length - 1]!;
+    const cut = Math.round(current.exalted * (1 - step.stepPercent / 100) * 100) / 100;
+    const want = Math.max(cut, floor);
+    const snapped = bucketFor(want, buckets) ?? cheapest;
+    const nextCheaper = buckets[currentIndex - 1]!;
+    // One step passed: exactly one bucket down. Several: the % target, but
+    // never further than the snap of the cut (a comps floor can only hold
+    // it dearer, never push it cheaper).
+    const to = steps.length === 1 && snapped.exalted < nextCheaper.exalted ? nextCheaper : snapped;
+    if (to.exalted >= current.exalted) {
+      hold(listing, badges, `the ladder step lands back in ${current.label} — nothing to cut`);
+      continue;
+    }
+    const reason =
+      `stale ${age.toFixed(1)}d (step -${step.stepPercent}% after ${step.afterDays}d): ` +
+      `${current.label} (${current.exalted} ex) → ${to.label} (${to.exalted} ex)` +
+      (floor > 0 ? ` — comps floor ${floor} ex` : suggestion ? "" : " — no comps, age alone");
+    moves.push({ listing, from: current, to, ageDays: Math.round(age * 10) / 10, reasons: [reason] });
+    report.push(`move ${listing.count}x ${listing.name}: ${reason}`);
+  }
+  if (moves.length > config.maxActionsPerRun) {
+    report.push(
+      `${moves.length} move(s) planned, capped at ${config.maxActionsPerRun} per run — rerun for the rest`,
+    );
+    moves.length = config.maxActionsPerRun;
+  }
+  return { moves, holds, report };
+}
+
+// ---------------------------------------------------------------------------
+// Stack pricing: does SET ITEM PRICE price the whole stack or each unit?
+// Unverified live — the config picks the mode; the first live stack listing
+// is step-gated so the user reads the tooltip (docs/HANDOFF-shop-listings.md).
+// ---------------------------------------------------------------------------
+
+export interface StackBucketValue {
+  /** The value the bucket is chosen from, in the estimate's currency. */
+  value: number;
+  count: number;
+  unitValue: number;
+  mode: StackPricingMode;
+  /** The plan-line marker: "STACK ×20 (whole)". */
+  label: string;
+}
+
+/**
+ * The bucketing value of a stack under each pricing mode: "whole" lists the
+ * stack at unit × count (the amount buys everything), "per-unit" lists it at
+ * the unit value (the amount is per orb). Non-stacks come back unchanged.
+ */
+export function stackBucketValue(
+  estimate: Pick<EstimatedValue, "amount" | "unitValue" | "stackCount">,
+  mode: StackPricingMode,
+): StackBucketValue | undefined {
+  const count = estimate.stackCount;
+  if (count === undefined || count <= 1) return undefined;
+  const unitValue = Math.round(estimate.unitValue * 100) / 100;
+  const value = mode === "whole" ? Math.round(unitValue * count * 100) / 100 : unitValue;
+  return { value, count, unitValue, mode, label: `STACK ×${count} (${mode})` };
 }
 
 // ---------------------------------------------------------------------------
