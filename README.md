@@ -74,6 +74,12 @@ The companion now keeps item-finding work in five connected workspaces:
 - **Rules** uses one OR-of-AND rule parser/evaluator for editing, validation,
   matching, and near-miss explanations.
 - **Scans** reviews imported or QA-generated scan sessions and slot outcomes.
+- **Wealth** totals the stash from the sorter's inventory ledger (net worth
+  by tab, top items, a 1–5 ex sell list).
+- **Market** (Tools) ranks three-day movers, gives hold/sell advice on
+  currency stacks, and lists what is worth farming from poe2scout's daily
+  price history; **Deals** (Tools) watches saved trade2 searches for
+  underpriced listings and copies the whisper, never sending it.
 
 Item, build, rule, and scan state is stored in a local SQLite database under
 the Electron user-data directory. Legacy scan history, regex history, trade

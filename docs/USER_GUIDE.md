@@ -328,6 +328,28 @@ message on your clipboard. The app never sends the whisper, buys, or lists.
   `artifacts\tab-admin\watchlist.json`; the alert history is the append-only
   `artifacts\tab-admin\deal-alerts.jsonl`.
 
+### Market trends
+
+**Tools & QA → Market** turns poe2scout's daily price history into three
+answers. **Refresh** pulls seven days of daily prices per currency category
+for the pricing league (about a dozen paced requests; the result is cached
+for twelve hours in `artifacts	ab-admin\price-trends.json`, and the tool
+refuses while the league is ambiguous, like everything else that prices).
+
+- **Rising / Falling · 3 d** — the biggest three-day movers with their
+  one-, three-, and seven-day change, seven-day volume, and a volatility
+  hint, so a spike on thin volume reads differently from a broad move.
+- **Stack advice** — for every currency the price table knows: **hold**
+  when the price is rising, **sell** when it is falling, otherwise neutral,
+  with the numbers that decided it. It is advice about timing, not a
+  guarantee; the exchange and trade site set the price you actually get.
+- **What to farm** — price × seven-day volume, scaled to the leader: what
+  is both valuable and liquid right now. A price-table row for the item
+  wins over the feed price when you have one.
+
+The same trend appears as a **Trend 3 d** column on the feed rows of
+**Sort → Prices**, read from the cache only (that column never fetches).
+
 ### Loot filter
 
 Builds a Path of Exile 2 item filter from the price table, so refresh market
