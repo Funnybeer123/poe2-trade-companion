@@ -21,65 +21,63 @@ const RARE_RING = [
   "+35% to Cold Resistance",
 ].join("\n");
 
-test("companion build exposes transfers and scanner controls", async ({}, testInfo) => {
+/** Every primary workspace, in rail order, with its page heading and route. */
+const WORKSPACES = [
+  ["Sort", "Sort & triage", "/sort"],
+  ["Shop", "Shop", "/shop"],
+  ["Wealth", "Wealth", "/wealth"],
+  ["Item log", "Item log", "/items"],
+  ["Search", "Search & rules", "/search"],
+  ["Builds", "Build profiles", "/builds"],
+] as const;
+
+/** Tools & QA sections added by the 2026-09 roadmap, with their headings. */
+const TOOLS = [
+  ["Market", "Trends, stacks & farming", "/tools/market"],
+  ["Deals", "Deals watchlist", "/tools/deals"],
+  ["Loot filter", "Loot filter generator", "/tools/filter"],
+] as const;
+
+test("companion shell exposes every workspace with the e-stop armed", async ({}, testInfo) => {
   await withPackagedElectron("public-companion", testInfo, async ({ page }) => {
-    await expect(page.getByText("Automation on", { exact: true })).toBeVisible();
     await expect(
       page.getByText("E-stop ready · Ctrl+Shift+Esc", { exact: true }),
     ).toBeVisible();
 
-    const routes = [
-      ["Items", "Item intelligence", "/items"],
-      ["Finder", "Stash query finder", "/finder"],
-      ["Builds", "Build profiles", "/builds"],
-      ["Rules", "Rule studio", "/rules"],
-      ["Scans", "Scan sessions", "/scans"],
-    ] as const;
-    for (const [label, heading, route] of routes) {
+    for (const [label, heading, route] of WORKSPACES) {
       await navigatePrimary(page, label, heading, route);
+      if (label === "Wealth") {
+        // A fresh user-data dir has no inventory ledger: the empty state must render.
+        await expect(page.getByText(/Nothing in the ledger yet/)).toBeVisible();
+      }
     }
-    const scannerControls = page.locator(".scanner-controls");
-    await expect(scannerControls).toHaveCount(1);
-    await scannerControls.locator("summary").click();
-    await expect(
-      page.getByRole("button", {
-        name: "Run live scan",
-        exact: true,
-      }),
-    ).toBeEnabled();
 
-    await navigatePrimary(page, "Tools & QA", "Tools & QA", "/tools/overview");
-    const tools = page.getByRole("navigation", {
-      name: "Tools and QA sections",
-    });
-    await tools.getByRole("link", { name: /QA dashboard/ }).click();
-    await expect(page).toHaveURL(/#\/tools\/qa$/);
-    await expect(
-      page.getByRole("heading", { name: "Automation dashboard", exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", {
-        name: "Stage selected modules",
-        exact: true,
-      }),
-    ).toBeEnabled();
-    await expect(
-      page.getByRole("checkbox", { name: /Dry-run default/i }),
-    ).not.toBeChecked();
+    await navigatePrimary(page, "Tools & QA", "Tools & QA", "/tools");
+    const tools = page.getByRole("navigation", { name: "Tools and QA sections" });
+    for (const [link, heading, route] of TOOLS) {
+      await tools.getByRole("link", { name: new RegExp(`^${link}`) }).click();
+      await expect(page).toHaveURL(new RegExp(`#${route}$`));
+      await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
+    }
+    // The loot filter previews from the local price table without any network.
+    await expect(page.locator(".filter-output")).toContainText(
+      "# PoE2 Trade Companion loot filter",
+    );
   });
 });
 
-test("public item intelligence evaluates, imports, and persists locally", async (
+test("item intelligence evaluates, searches, imports, and persists locally", async (
   {},
   testInfo,
 ) => {
   await withPackagedElectron("public-companion", testInfo, async ({ page }) => {
+    await navigatePrimary(page, "Item log", "Item log", "/items");
     await page.getByLabel("Path of Exile item text").fill(RARE_RING);
     await page.getByRole("button", { name: "Evaluate text", exact: true }).click();
+    await expect(page.getByRole("heading", { name: "Doom Turn", exact: true })).toBeVisible();
     await expect(
-      page.getByRole("heading", { name: "Doom Turn", exact: true }),
+      page.getByRole("heading", { name: "Estimated value", exact: true }),
     ).toBeVisible();
-    await expect(page.getByText("Estimated value", { exact: true })).toBeVisible();
     await expect(
       page.getByText(
         "This is an estimate, not a guaranteed sale price. Confirm current listings before acting.",
@@ -87,13 +85,13 @@ test("public item intelligence evaluates, imports, and persists locally", async 
       ),
     ).toBeVisible();
 
-    await navigatePrimary(page, "Finder", "Stash query finder", "/finder");
+    await navigatePrimary(page, "Search", "Search & rules", "/search");
     await page
       .getByRole("button", { name: "Generate validated queries", exact: true })
       .click();
     await expect(page.locator(".query-card code").first()).toContainText("Ruby Ring");
 
-    await navigatePrimary(page, "Rules", "Rule studio", "/rules");
+    await page.getByText("Rule studio", { exact: true }).first().click();
     await page.getByLabel("Rule-set name").fill("E2E life rules");
     await page.getByRole("button", { name: "Save rule set", exact: true }).click();
     await expect(page.getByText(/^Saved /)).toBeVisible();
@@ -124,7 +122,8 @@ test("public item intelligence evaluates, imports, and persists locally", async 
     await expect(page.getByText("1 added · 0 updated", { exact: true })).toBeVisible();
     await expect(page.getByText("E2E ring build", { exact: true }).first()).toBeVisible();
 
-    await navigatePrimary(page, "Scans", "Scan sessions", "/scans");
+    await navigatePrimary(page, "Item log", "Item log", "/items");
+    await page.getByText("Scan sessions", { exact: true }).first().click();
     await page.getByText("Import offline JSONL", { exact: true }).click();
     await page
       .getByLabel("Scan JSONL")
@@ -144,13 +143,17 @@ test("public item intelligence evaluates, imports, and persists locally", async 
     await expect(page.getByText("inventory:0,0", { exact: true })).toBeVisible();
   });
 
+  // A second launch on the same user-data dir must show everything persisted.
   await withPackagedElectron("public-companion", testInfo, async ({ page }) => {
+    await navigatePrimary(page, "Item log", "Item log", "/items");
     await expect(page.getByText("Doom Turn", { exact: true }).first()).toBeVisible();
-    await navigatePrimary(page, "Rules", "Rule studio", "/rules");
+    await navigatePrimary(page, "Search", "Search & rules", "/search");
+    await page.getByText("Rule studio", { exact: true }).first().click();
     await expect(page.getByText("E2E life rules", { exact: true }).first()).toBeVisible();
     await navigatePrimary(page, "Builds", "Build profiles", "/builds");
     await expect(page.getByText("E2E ring build", { exact: true }).first()).toBeVisible();
-    await navigatePrimary(page, "Scans", "Scan sessions", "/scans");
+    await navigatePrimary(page, "Item log", "Item log", "/items");
+    await page.getByText("Scan sessions", { exact: true }).first().click();
     await expect(page.getByText("legacy-jsonl", { exact: true }).first()).toBeVisible();
   });
 });
