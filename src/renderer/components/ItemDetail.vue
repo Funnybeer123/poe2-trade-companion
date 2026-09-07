@@ -16,7 +16,47 @@ const props = defineProps<{
   compact?: boolean;
 }>();
 
+/** Bundled fixture quotes (tests/replay, browser preview) — never market data. */
 const demoPrices = computed(() => props.valuation?.providerName === "fixture");
+
+const PROVIDER_CHIPS: Record<string, { label: string; title: string; tone: string }> = {
+  "price-table": {
+    label: "price table",
+    title: "Exact match in your price table (poe2scout feed or a manual row).",
+    tone: "safe",
+  },
+  "trade2-comps": {
+    label: "trade listings",
+    title: "Real trade2 listings for this item, filtered to comparable mods.",
+    tone: "safe",
+  },
+  appraisal: {
+    label: "appraisal",
+    title: "Mod-tier heuristic only — no price entry or listings were available.",
+    tone: "warning",
+  },
+  none: {
+    label: "no data",
+    title: "Nothing priced this item: no table entry, listings, or appraisal evidence.",
+    tone: "neutral",
+  },
+};
+
+const providerChip = computed(() => {
+  const provider = props.valuation?.providerName;
+  if (!provider || provider === "fixture") return undefined;
+  return PROVIDER_CHIPS[provider] ?? { label: provider, title: `Valued by ${provider}.`, tone: "neutral" };
+});
+
+/**
+ * The non-demo sentence is asserted verbatim by the packaged e2e run, so
+ * provider-specific caveats travel in the chip title and lowConfidenceReason.
+ */
+const valuationDisclaimer = computed(() =>
+  demoPrices.value
+    ? "These are bundled demo numbers, not market data. Use the Sort screen's price table for real values."
+    : "This is an estimate, not a guaranteed sale price. Confirm current listings before acting.",
+);
 
 const appraisal = computed(() => props.tier?.appraisal);
 const notableMods = computed(
@@ -162,8 +202,16 @@ const orderedProperties = computed(() =>
           <span class="confidence-badge" :class="valuation.confidence">
             {{ valuation.confidence }} confidence
           </span>
-          <span v-if="demoPrices" class="pill warning" title="The live trade provider is disabled; these numbers come from bundled fixture data and are not market prices.">
+          <span v-if="demoPrices" class="pill warning" title="Bundled fixture data for tests and the browser preview — not market prices.">
             demo prices
+          </span>
+          <span
+            v-else-if="providerChip"
+            class="pill provider-chip"
+            :class="providerChip.tone"
+            :title="providerChip.title"
+          >
+            {{ providerChip.label }}
           </span>
         </div>
 
@@ -194,13 +242,7 @@ const orderedProperties = computed(() =>
         <p v-if="valuation.lowConfidenceReason" class="inline-notice warning" role="note">
           {{ valuation.lowConfidenceReason }}
         </p>
-        <p class="disclaimer">
-          {{
-            demoPrices
-              ? "These are bundled demo numbers, not market data. Use the Sort screen's price table for real values."
-              : "This is an estimate, not a guaranteed sale price. Confirm current listings before acting."
-          }}
-        </p>
+        <p class="disclaimer">{{ valuationDisclaimer }}</p>
       </section>
 
       <section v-if="desirability" class="desirability-panel" aria-labelledby="desirability-title">
@@ -275,6 +317,9 @@ const orderedProperties = computed(() =>
 
 <style scoped>
 .tier-pill { text-transform: capitalize; }
+.provider-chip.safe { border-color: #4fa84f; color: #7dd87d; }
+.provider-chip.warning { border-color: #c9a227; color: #e0c46a; }
+.provider-chip.neutral { opacity: 0.75; }
 .tier-line { border-left: 3px solid rgba(140, 140, 160, 0.4); padding: 0.4rem 0.7rem; border-radius: 0.3rem; margin: 0; }
 .tier-keep { border-left-color: #4fa84f; }
 .tier-sell { border-left-color: #c9a227; }

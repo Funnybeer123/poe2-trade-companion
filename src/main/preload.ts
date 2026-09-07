@@ -13,6 +13,7 @@ import type {
   ScannerRuntimeEvent,
   ScannerStartRequest,
 } from "../shared/ipc.js";
+import type { LootFilterRequest } from "../core/lootFilter.js";
 import type { PriceTable } from "../core/priceTable.js";
 import type { SearchRegexRequest } from "../core/searchRegex.js";
 
@@ -47,8 +48,9 @@ contextBridge.exposeInMainWorld("poe2", {
     flaskCalibrate: (globe: "life" | "mana") => ipcRenderer.invoke("flask:calibrate", globe),
     flaskProbe: () => ipcRenderer.invoke("flask:probe"),
   },
-  generateFilter: (options: { hideBelowScore: number; highlightUniques: boolean; name: string }) =>
-    ipcRenderer.invoke("filter:generate", options),
+  generateFilter: (request: LootFilterRequest) => ipcRenderer.invoke("filter:generate", request),
+  saveFilter: (payload: { text: string; name?: string }) =>
+    ipcRenderer.invoke("filter:save", payload),
   onItem: (callback: (payload: ItemIntelligenceEventContract["item:evaluated"]) => void) =>
     subscribe("item:evaluated", callback),
   intelligence: {

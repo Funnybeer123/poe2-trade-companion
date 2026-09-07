@@ -1,6 +1,6 @@
 # How to use PoE2 Trade Companion
 
-Windows-first Electron app for Path of Exile 2 item intelligence. The default app includes parsing, stash queries, builds, and stash automation. Prices shown today come from bundled fixture quotes, not live listings. Emergency stop is **Ctrl+Shift+Esc**.
+Windows-first Electron app for Path of Exile 2 item intelligence. The default app includes parsing, stash queries, builds, and stash automation. Prices come from the poe2scout feed in your price table, on-demand trade2 listings, and a local appraisal heuristic — every number is an estimate, never a guaranteed sale (see [Market prices](#market-prices-live-feed--comps)). Emergency stop is **Ctrl+Shift+Esc**.
 
 ## Install and launch
 
@@ -65,10 +65,11 @@ value logic that pulls winners aside automatically.
    `"ANY_RESIST >= 2"`, `"TOTAL_ELE_RES >= 70"`). Anything that matches no
    bucket files normally by class. Unidentified or unreadable items are
    **never** dumped — they always route to Review or the normal flow.
-3. Edit the **Price table** — the only price signal automation trusts (live
-   market data is disabled). A matching entry outranks tier rules: at or above
-   the *keep* threshold the item detours to Review, at or above *sell* it goes
-   to the Sell tab.
+3. Edit the **Price table** — the only price signal automation trusts. Live
+   market data flows *into* it: **Refresh market prices** on the Prices tab
+   adds read-only poe2scout rows next to your own (yours always win). A
+   matching entry outranks tier rules: at or above the *keep* threshold the
+   item detours to Review, at or above *sell* it goes to the Sell tab.
 4. Click **Sort gear** to run (with the top-bar **Dry-run** switch on, the
    button becomes **Preview gear sort** and only overlays — no clicks).
    Value tiers and the price table live on the **Value tiers** and **Prices**
@@ -134,7 +135,28 @@ tab (formerly the Scans page) lives here too.
 5. The item is stored in the left **Catalog**. Search by name, class, location, recommendation, or modifier text.
 6. Click a catalog row to reopen it. Click **×** then **✓** to delete.
 
-Treat every number as an estimate. The bundled market provider is deterministic demo/test data — valuations now carry an explicit **demo prices** badge. Confirm current listings in-game or on official trade before you buy or sell. When a value-tier verdict applies, the item header shows a **tier** chip (keep / sell / dump) with the reason.
+Treat every number as an estimate and confirm current listings in-game or on
+official trade before you buy or sell. The **Estimated value** panel carries a
+provider chip that says where the number came from, in the order the app
+trusts them:
+
+| Chip | Source |
+| --- | --- |
+| **price table** | An exact name/base entry in your price table (poe2scout feed row or your own). Stack-aware for currency: 12 Exalted Orbs = 12 × the unit price. Confidence high. |
+| **trade listings** | Real trade2 listings for this item (cached comps): low = cheapest comparable, fair = median, high = dearest comparable, suggested listing from the shop pricing policy. Confidence follows the sample size (8+ high, 4+ medium, fewer low) and carries the troll-floor caution when the cheapest ask sits far under the median. |
+| **appraisal** | No entry and no listings — the mod-tier heuristic's value score mapped onto the crafting value curve, with a deliberately wide 0.6×–1.6× band and at most medium confidence. |
+| **no data** | Nothing could price it: zeros, confidence none. |
+
+**Ctrl+D**, **Read clipboard**, and **Evaluate text** are deliberate price
+checks: they value the item instantly from the table, any cached comps, and
+the appraisal, then — if no comps are cached — fire one trade2 lookup in the
+background and update the panel again when listings arrive (only while the
+same item is still on screen). The passive clipboard watcher (which picks up
+anything you copy in-game) and stash scans value items locally only and never
+touch the network. The **demo prices** badge appears only in the browser-only
+preview and test runs, where bundled fixture quotes stand in for market data.
+
+When a value-tier verdict applies, the item header shows a **tier** chip (keep / sell / dump) with the reason.
 
 ## Search & rules — Query builder
 
@@ -198,21 +220,27 @@ The price table stays the only signal automation trusts — live data flows
 *into* it, tagged with its source, and your manual rows are never overwritten.
 
 - **Sort → Prices → Refresh market prices** pulls the current league's
-  currency and unique prices from poe2scout (one request, ~800 entries,
-  24h-averaged). Feed rows show read-only under "Market prices from the
-  feed"; a manual row for the same item always wins. Crafting orb costs
-  (chaos, annulment, divine…) update automatically through the table.
+  currency, stackable, and unique prices from poe2scout (one or two requests,
+  never more often than every five minutes; uniques under 2 ex are skipped).
+  Feed rows show read-only under "Market prices from the feed"; a manual row
+  for the same item always wins. Crafting orb costs (chaos, annulment,
+  divine…) update automatically through the table.
 - **Item log → Market comps** searches the official trade site for listings
   like the evaluated item, converts asks to exalted, keeps only listings
   sharing its notable mod families, and shows the lowest/median comparable
-  ask. One polite request pair per lookup, cached ten minutes. Works without
-  login; a `POESESSID` in Settings is optional.
-- **Tools → Settings → Market data**: league ("auto" follows the current
-  softcore league; when poe2scout lists more than one current league — it
-  keeps the previous league "current" for a while — pricing is blocked until
-  you pick one from the list, shown with each league's divine rate), optional
-  daily auto-refresh while the app runs, optional session cookie. Nothing
-  touches the network until you refresh, check leagues, or enable
+  ask. One search + one fetch per lookup, serialized and paced from the
+  server's own rate-limit headers (the pacing log is shared with the CLI
+  flows); raw listings are cached on disk — six hours for base-type
+  searches, one hour for unique-name searches — and re-scored for each item,
+  so one fetch prices every item of that base. A 429 is remembered and the
+  penalty window reported instead of retried. Works without login; a
+  `POESESSID` in Settings is optional and only ever sent to pathofexile.com.
+- **Tools → Settings → Market data**: the **league** picker lists poe2scout's
+  current leagues. `auto` follows the current softcore league but is refused
+  when poe2scout lists more than one current league — pick one explicitly so
+  prices never come from the wrong economy. Also: optional daily auto-refresh
+  while the app runs, optional session cookie. Nothing touches the network
+  until you refresh, run a deliberate price check, fetch comps, or enable
   auto-refresh.
 
 ## Tools & QA
@@ -228,13 +256,38 @@ warnings. It never whispers, buys, or lists.
 
 ### Loot filter
 
-Generates local filter text from a hide-below threshold and unique highlight option. Copy it yourself into your filter file. The app does not write game files or talk to an account API.
+Builds a Path of Exile 2 item filter from the price table, so refresh market
+prices first. The preview rebuilds as you type:
+
+- **Chase / Valuable / Pickup** thresholds in exalted (defaults 50 / 5 / 1)
+  decide how loudly a base is shown: font size, border, alert sound, beam,
+  and minimap icon per tier.
+- **Uniques are rated per base type** — a filter cannot see a unique's name,
+  so each base glows at the most valuable unique that drops on it ("Silk Robe"
+  lights up because Temporalis might). Every other unique stays visible
+  unless you untick **Always show every unique**.
+- **Currency and stackables** match by exact name at their per-unit value.
+  Time-Lost, Timeless, and Diamond jewel bases are always shown at the
+  valuable tier whatever their mods.
+- The only **Hide** rule targets Normal gear below an item level (default 65;
+  0 = never), optionally Magic gear too. Currency, waystones, gems, jewels,
+  tablets, and anything the table does not mention are never hidden — the
+  file ends with a default Show.
+- The summary counts highlighted bases per tier and the table rows a filter
+  cannot express (rarity-only floors, named rares).
+
+**Copy** puts the text on the clipboard; **Save…** opens a file dialog that
+defaults to `Documents\My Games\Path of Exile 2\` with a `.filter` name. The
+app never writes game files without that pick. Select the file in-game under
+Options → Game → Item Filter (or reload with `/itemfilter`).
 
 ### Settings
 
 - Automation defaults shared by every transfer, sort, and scan: process
   allowlist and actions-per-minute rates (stored locally). The **Dry-run**
   switch itself lives in the top bar and applies everywhere at once.
+- Market data: league picker, daily auto-refresh, optional `POESESSID` (see
+  [Market prices](#market-prices-live-feed--comps)).
 - Runtime: mode, e-stop, detected PoE windows.
 - Reminder: **Ctrl+D** price-check, **Ctrl+Shift+Esc** e-stop, **Ctrl+Alt+V** voice transfer.
 
@@ -263,7 +316,8 @@ Path of Exile 2 is the foreground window and runs one game action at a time:
 | Num1 | **Stash** — verify stash + inventory are open (reopens the stash via its world nameplate if needed), then deposit the bag |
 | Num2 | **Sort** — run the class-routed stash sorter |
 | Num3 | **Fill** — stash → bag |
-| Num4 | **Vendor** — quick-sell the bag to ZELINA (opening her window is wired; the sell click is not yet, see `docs/HANDOFF-hotkey-actions.md`) |
+| Num4 | **Shop** — price every bag item for the current league (price-table feed + trade2 comps through the lookup screen, which only spends lookups on items with notable mods or unpriced uniques), then list each in its price-bucket merchant tab (1Ex, 5Ex, 10Ex, 1D …) via Ange's Manage Shop. Num0 stops. Rehearse with `npm run shop` (dry-run); `npm run shop:apply` is the live flow, see `docs/HANDOFF-shop-listings.md` |
+| — | **Vendor** — quick-sell the bag to ZELINA (opening her window is wired; the sell click is not yet, see `docs/HANDOFF-hotkey-actions.md`). Unbound by default; bind it under **Tools → Hotkeys** |
 | Num6 | **Identify (map)** — with a Scroll of Wisdom stack parked in the very top-left bag cell, identify all unidentified gear in the bag, evaluate each against your value-tier regex rules, and drop the not-good ones on the ground |
 | Num7 | **Vendor cycle (map)** — /hideout, sell every identified junk item to ZELINA (same verdicts as Num6's drops; currency/maps/unidentified never offered), then re-enter the same map through its portal. Test first with `npm run vendor:cycle` (dry-run) |
 
@@ -341,7 +395,10 @@ Local-first. Typical Windows path:
 
 | File | Contents |
 | --- | --- |
-| `item-intelligence.sqlite` | Catalog, builds, rules, scan sessions |
+| `item-intelligence.sqlite` | Catalog, builds, rules, scan sessions, value tiers, price table |
+| `price-feed.json` | Market data settings (league, auto-refresh, optional session cookie) |
+| `comps-cache.json` | Raw trade2 listings per query (6h / 1h) and any remembered rate-limit window |
+| `trade-pacing.json` | trade2 rate-limit pacing log shared by the app and the CLI flows |
 | `scan-sessions.jsonl` | Scanner journal |
 | `assistive-artifacts/` | QA traces and capture artifacts |
 | `fixtures/benchmarks/occupancy-labels.jsonl` | Dry-run overlay Right/Wrong occupancy labels |
@@ -350,8 +407,12 @@ No account telemetry is sent by default. Do not commit this folder, cookies, or 
 
 ## What this build will not do
 
-- Call undocumented GGG Trade2 APIs or scrape Mobalytics.
-- Treat fixture quotes as live guaranteed sale prices.
+- Bulk-scan the trade API or scrape build sites: trade2 lookups are
+  on-demand, one search + one fetch per item, paced from the server's
+  rate-limit headers, and cached; poe2scout is read at most every five minutes.
+- Treat any estimate — feed row, comps band, or appraisal — as a guaranteed
+  sale price.
+- Write a loot filter or any other game file without your explicit file pick.
 - Send input from a browser preview.
 - Click windows that are not on the Path of Exile process allowlist.
 
@@ -363,7 +424,8 @@ No account telemetry is sent by default. Do not commit this folder, cookies, or 
 | Native module / sqlite error | `npm run rebuild:native:host`, then restart. Electron and host Node use different ABIs. |
 | Item will not parse | Clipboard must include `Item Class:`. Re-copy from the game tooltip. |
 | Finder is empty | Evaluate or select a catalog item first. |
-| Prices look fake or stale | They are fixture data. Confirm on official trade. |
+| Prices look wrong or stale | Check the provider chip: **appraisal** / **no data** mean no feed row or listings matched — refresh market prices (Sort → Prices) or fetch **Market comps**; **demo prices** means the browser preview. Confirm on official trade. |
+| Comps say rate limited | trade2 put us in a penalty window; the message shows when it lifts. Cached comps keep working meanwhile. |
 | Transfer buttons disabled | Calibrate stash + bag + search, unlock the e-stop, and keep Path of Exile in the allowlist. |
 | Input will not stop | **Ctrl+Shift+Esc**, then confirm the chip says **Emergency stop latched**. |
 

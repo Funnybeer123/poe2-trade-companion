@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { FollowController, LootController, TradeController } from "../src/core/controllers.js";
 import { generateLootFilter } from "../src/core/lootFilter.js";
+import { starterPriceTable } from "../src/core/priceTable.js";
 import { planSort, searchCatalog } from "../src/core/catalog.js";
 import { PRESET_SCENARIOS } from "../src/core/scenarios.js";
 import type { PerceptionFrame } from "../src/core/types.js";
@@ -60,9 +61,15 @@ describe("controllers and catalog", () => {
     expect(planSort(items, { sell: "sale" })[0]?.destinationTab).toBe("sale");
   });
 
-  it("generates a local loot filter", () => {
-    const filter = generateLootFilter({ hideBelowScore: 40, highlightUniques: true, name: "qa" });
-    expect(filter).toContain("Rarity Unique");
-    expect(filter).toContain("Hide");
+  it("generates a local loot filter from the starter price table", () => {
+    const filter = generateLootFilter({
+      name: "qa",
+      priceTable: starterPriceTable(),
+      hideNormalBelowItemLevel: 40,
+    });
+    expect(filter.text).toContain("Rarity Unique");
+    expect(filter.text).toContain("Hide");
+    expect(filter.text).toContain("ItemLevel < 40");
+    expect(filter.summary.currencyRows).toBeGreaterThan(0);
   });
 });

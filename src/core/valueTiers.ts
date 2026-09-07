@@ -1,7 +1,7 @@
 /**
  * Value tiers: the decision layer that says what an item is worth doing
- * something about, without trusting market numbers (the live provider is
- * disabled — see market.ts).
+ * something about, without trusting ValuationResult numbers — only the
+ * user-owned price table (fed by poe2scout) and explicit rules.
  *
  * Three rule buckets drive triage:
  *   keep  — pull aside for review/selling (high value);

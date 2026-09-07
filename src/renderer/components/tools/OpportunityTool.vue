@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
+import { VALUATION_PROVIDER_LABELS } from "@core/localValuation";
 import { analyzeMarketOpportunity } from "@core/marketOpportunity";
 import { useIntelligenceStore } from "../../composables/useIntelligenceStore";
 import { formatAmount, formatDate } from "../../utils/intelligence";
@@ -8,6 +9,13 @@ import { formatAmount, formatDate } from "../../utils/intelligence";
 const store = useIntelligenceStore();
 const acquisitionPrice = ref(0);
 const feeRatePercent = ref(0);
+
+const providerLabel = computed(() => {
+  const provider = store.currentEvaluation.value?.valuation.providerName ?? "none";
+  return (
+    (VALUATION_PROVIDER_LABELS as Record<string, string>)[provider] ?? provider
+  );
+});
 
 const opportunity = computed(() => {
   const valuation = store.currentEvaluation.value?.valuation;
@@ -97,8 +105,9 @@ watch(store.currentEvaluation, () => {
           <li v-for="warning in opportunity.warnings" :key="warning">{{ warning }}</li>
         </ul>
         <p class="disclaimer">
-          Confidence {{ opportunity.confidence }} · market data
-          {{ formatDate(opportunity.marketTimestamp) }}. Resale value is estimated, never guaranteed.
+          Confidence {{ opportunity.confidence }} · resale estimate from {{ providerLabel }} ·
+          {{ formatDate(opportunity.marketTimestamp) }}. Resale value is estimated, never
+          guaranteed — a heuristic appraisal or demo data is not a market price.
         </p>
       </div>
       <p v-else class="empty-copy">Enter a positive asking price to calculate the signal.</p>

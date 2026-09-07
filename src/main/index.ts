@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, globalShortcut, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, globalShortcut, ipcMain, shell } from "electron";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import path from "node:path";
@@ -6,10 +6,14 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFil
 import { fileURLToPath } from "node:url";
 import { WindowsSpeechRecognizer } from "../adapters/windowsSpeechRecognizer.js";
 import { KillSwitch } from "../core/killSwitch.js";
-import { parseItemText } from "../core/parseItem.js";
+import { looksLikePoeItemText, parseItemText } from "../core/parseItem.js";
 import { enrichItemSize, itemSizeDatabasePath, loadItemSizeDatabase } from "../core/itemSizeStore.js";
 import { FixtureMarketProvider } from "../core/market.js";
 import { valueItem } from "../core/valuation.js";
+import { valueItemLocally } from "../core/localValuation.js";
+import { starterPriceTable, type PriceTable } from "../core/priceTable.js";
+import type { CompsSummary } from "../core/tradeComps.js";
+import type { ParsedItem, ValuationResult } from "../core/types.js";
 import { scoreBuildAwareDesirability } from "../core/gearTargetMatcher.js";
 import { compileRules, type ScanHistoryItem } from "../core/scanRules.js";
 import { resolveBuildMode } from "../core/capabilities.js";
@@ -22,7 +26,7 @@ import {
   parseShopConfig,
 } from "../core/shopListings.js";
 import { salesStats } from "../core/shopPricing.js";
-import { generateLootFilter } from "../core/lootFilter.js";
+import { generateLootFilter, type LootFilterRequest } from "../core/lootFilter.js";
 import {
   normalizeVoiceTransferConfig,
   type VoiceTransferConfig,
@@ -97,10 +101,45 @@ function sizeDatabaseFile(): string {
   return candidates.find((file) => existsSync(file)) ?? candidates[0];
 }
 
+/**
+ * Fixture quotes are test/replay data only. They drive a valuation solely
+ * when POE2_FIXTURE_MARKET=1 (deterministic e2e/replay runs); a normal
+ * session never sees them.
+ */
+function useFixtureMarket(): boolean {
+  return process.env.POE2_FIXTURE_MARKET === "1";
+}
+
+async function fixtureValuation(parsed: ParsedItem): Promise<ValuationResult> {
+  const quotes = JSON.parse(readFileSync(quotesFile(), "utf8")) as Record<
+    string,
+    Array<{ listingId: string; priceAmount: number; priceCurrency: string }>
+  >;
+  const quote = await new FixtureMarketProvider(quotes).quote(parsed, {
+    league: "Standard",
+    currency: "exalted",
+  });
+  return valueItem(parsed, quote);
+}
+
+/**
+ * Fingerprint of the evaluation the renderer currently shows. A background
+ * comps fetch only republishes when its item is still the one on screen.
+ */
+let latestPublishedFingerprint = "";
+
 async function evaluateItemText(
   text: string,
   source: "clipboard" | "paste" | "scan" = "clipboard",
   publishEvaluation = true,
+  options: {
+    /**
+     * Fetch trade2 comps in the background when none are cached. Only set by
+     * user-initiated checks (Ctrl+D, Read clipboard, Evaluate text); the
+     * passive clipboard poller and scans never touch the network.
+     */
+    fetchComps?: boolean;
+  } = {},
 ) {
   if (!text.trim()) {
     return {
@@ -118,36 +157,77 @@ async function evaluateItemText(
       reason: "not-item-text" as const,
     };
   }
-  const quotes = JSON.parse(readFileSync(quotesFile(), "utf8")) as Record<
-    string,
-    Array<{ listingId: string; priceAmount: number; priceCurrency: string }>
-  >;
-  const item = enrichItemSize(parseItemText(text), loadItemSizeDatabase(sizeDatabaseFile()));
-  const quote = await new FixtureMarketProvider(quotes).quote(item, { league: "Standard", currency: "exalted" });
-  const valuation = valueItem(item, quote);
-  const { desirability } = scoreBuildAwareDesirability(
-    item,
-    valuation,
-    localPersistence?.buildProfiles.list() ?? [],
-  );
+  const parsed = parseItemText(text);
+  const item = enrichItemSize(parsed, loadItemSizeDatabase(sizeDatabaseFile()));
   let tier: ParsedItemEvaluation["tier"];
   try {
     tier = itemIntelligenceService?.evaluateTier(text);
   } catch {
     // Tier config problems must never block a plain evaluation.
   }
-  const payload: ParsedItemEvaluation = {
-    schemaVersion: ITEM_INTELLIGENCE_IPC_VERSION,
-    raw: text,
-    parsed: true,
-    item,
-    valuation,
-    desirability,
-    ...(tier ? { tier } : {}),
+  let priceTable: PriceTable | undefined;
+  try {
+    priceTable = itemIntelligenceService?.getPriceTable();
+  } catch {
+    // A corrupt table just means no price-table evidence this time.
+  }
+  const fixture = useFixtureMarket();
+  // Cached comps only here: a price check must never block on the network.
+  const cachedComps = fixture ? undefined : priceFeedService?.peekComps(text);
+  const valueWith = async (comps: CompsSummary | undefined): Promise<ValuationResult> =>
+    fixture
+      ? fixtureValuation(parsed)
+      : valueItemLocally({
+          parsed,
+          ...(priceTable ? { priceTable } : {}),
+          ...(tier ? { verdict: tier } : {}),
+          ...(comps ? { comps } : {}),
+          now: new Date(),
+        });
+  const assemble = (valuation: ValuationResult): ParsedItemEvaluation => {
+    const { desirability } = scoreBuildAwareDesirability(
+      item,
+      valuation,
+      localPersistence?.buildProfiles.list() ?? [],
+    );
+    return {
+      schemaVersion: ITEM_INTELLIGENCE_IPC_VERSION,
+      raw: text,
+      parsed: true,
+      item,
+      valuation,
+      desirability,
+      ...(tier ? { tier } : {}),
+    };
   };
+  const payload = assemble(await valueWith(cachedComps));
   itemIntelligenceService?.recordEvaluation(payload, source);
   if (publishEvaluation) {
+    latestPublishedFingerprint = item.fingerprint;
     mainWindow?.webContents.send("item:evaluated", payload);
+  }
+
+  const userInitiated = source === "clipboard" || source === "paste";
+  if (
+    options.fetchComps &&
+    userInitiated &&
+    !fixture &&
+    !cachedComps &&
+    priceFeedService &&
+    looksLikePoeItemText(text)
+  ) {
+    const feed = priceFeedService;
+    void feed
+      .fetchComps(text)
+      .then(async (result) => {
+        if (!result.ok || !result.summary || result.summary.sampleSize < 1) return;
+        // Only re-publish while the same item is still on screen.
+        if (publishEvaluation && latestPublishedFingerprint !== item.fingerprint) return;
+        const refreshed = assemble(await valueWith(result.summary));
+        itemIntelligenceService?.recordEvaluation(refreshed, source);
+        if (publishEvaluation) mainWindow?.webContents.send("item:evaluated", refreshed);
+      })
+      .catch(() => undefined);
   }
   return payload;
 }
@@ -217,11 +297,16 @@ function exportTriageSnapshot(): void {
   }
 }
 
-async function evaluateClipboard() {
+/**
+ * `explicit` marks a deliberate price check (Ctrl+D, Items → Read clipboard)
+ * that may spend a trade2 lookup; the 750ms poller passes false so copying
+ * items for any other reason (sorting, listing) stays offline.
+ */
+async function evaluateClipboard(explicit = false) {
   const text = clipboard.readText();
   if (!text || text === lastClipboard) return null;
   lastClipboard = text;
-  return evaluateItemText(text, "clipboard");
+  return evaluateItemText(text, "clipboard", true, { fetchComps: explicit });
 }
 
 // Clipboard polling is gated on relevance: every 750 ms while the app window
@@ -519,7 +604,7 @@ app.whenReady().then(() => {
   });
   globalShortcut.register("CommandOrControl+D", () => {
     lastClipboard = "";
-    void evaluateClipboard();
+    void evaluateClipboard(true);
   });
   try {
     installVoiceHotkey(voiceConfig);
@@ -735,14 +820,46 @@ app.whenReady().then(() => {
   );
   ipcMain.handle("item:from-clipboard", () => {
     lastClipboard = "";
-    return evaluateClipboard();
+    return evaluateClipboard(true);
   });
   ipcMain.handle("item:evaluate-text", (_event, text: string) => {
     lastClipboard = "";
-    return evaluateItemText(String(text ?? ""), "paste");
+    return evaluateItemText(String(text ?? ""), "paste", true, { fetchComps: true });
   });
   ipcMain.handle("poe:windows", () => listPoeProcesses());
-  ipcMain.handle("filter:generate", (_event, options) => generateLootFilter(options));
+  // Loot filter: the main process supplies the live price table and league;
+  // the renderer only chooses thresholds. Saving goes through the OS save
+  // dialog to a path the user picks — the app never writes game files silently.
+  ipcMain.handle("filter:generate", (_event, request: LootFilterRequest) => {
+    const status = priceFeedService?.status();
+    const league =
+      status?.resolvedLeague ??
+      (status && status.config.league !== "auto" ? status.config.league : undefined);
+    return generateLootFilter({
+      ...(request ?? {}),
+      priceTable: itemIntelligenceService?.getPriceTable() ?? starterPriceTable(),
+      ...(league ? { league } : {}),
+    });
+  });
+  ipcMain.handle(
+    "filter:save",
+    async (_event, payload: { text: string; name?: string }) => {
+      const text = String(payload?.text ?? "");
+      if (!text.trim()) return { saved: false as const, reason: "empty" };
+      const fileName = `${(payload?.name ?? "poe2-companion").replace(/[^\w.-]+/g, "-") || "poe2-companion"}.filter`;
+      const documents = app.getPath("documents");
+      const gameDir = path.join(documents, "My Games", "Path of Exile 2");
+      const defaultDir = existsSync(gameDir) ? gameDir : documents;
+      const result = await dialog.showSaveDialog({
+        title: "Save loot filter",
+        defaultPath: path.join(defaultDir, fileName),
+        filters: [{ name: "Path of Exile item filter", extensions: ["filter"] }],
+      });
+      if (result.canceled || !result.filePath) return { saved: false as const, reason: "canceled" };
+      writeFileSync(result.filePath, text, "utf8");
+      return { saved: true as const, path: result.filePath };
+    },
+  );
   ipcMain.handle("runtime:mode", () => buildMode);
   registerCalibrationIpc();
   // Auto-flask guard config + click calibration; same root as the hotkey bindings.

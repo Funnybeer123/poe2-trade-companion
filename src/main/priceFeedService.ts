@@ -619,4 +619,23 @@ export class PriceFeedService {
       return { ok: false, error: this.recordError(error) };
     }
   }
+
+  /**
+   * The comps summary for this item from the in-memory/disk cache ONLY —
+   * never touches the network and never waits. Price checks use it so a
+   * repeat Ctrl+D prices instantly and scan-sourced evaluations stay offline.
+   */
+  peekComps(itemText: string): CompsSummary | undefined {
+    if (!looksLikePoeItemText(itemText)) return undefined;
+    const parsed = parseItemText(itemText);
+    const query = buildCompsQuery(parsed);
+    if (!query) return undefined;
+    const cached = this.compsCache.get(JSON.stringify(query.body));
+    if (!cached || Date.now() - cached.at >= compsTtl(cached.basis)) return undefined;
+    const ourMods = parsed.mods.filter((mod) => !mod.implicit).map((mod) => mod.text);
+    return summarizeComps(ourMods, cached.listings, query.basis, {
+      priceTable: this.options.getPriceTable(),
+      itemClass: parsed.itemClass,
+    });
+  }
 }

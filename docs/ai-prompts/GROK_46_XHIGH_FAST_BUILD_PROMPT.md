@@ -26,10 +26,10 @@ Before changing code, read:
 
 - `AGENTS.md`
 - `README.md`
-- `SOL_MAX_PLAN_ONLY_PROMPT.md`
+- `docs/ai-prompts/SOL_MAX_PLAN_ONLY_PROMPT.md`
 - `plans/IMPLEMENTATION_PLAN.md`
-- `GROK_BOT_START_HERE.md`
-- `GROK_BOT_QA_PROMPT.md`
+- `docs/ai-prompts/GROK_BOT_START_HERE.md`
+- `docs/ai-prompts/GROK_BOT_QA_PROMPT.md`
 - `docs/AI_DEVELOPMENT_WORKFLOW.md`
 - `docs/AI_REVIEW_CHECKLIST.md`
 - all product/architecture/QA/compliance/test docs
@@ -205,7 +205,7 @@ Keep commits phase-scoped and reviewable.
 
 Because Grok is the implementation agent, run a separate review pass before declaring each phase complete.
 
-Use `docs/AI_REVIEW_CHECKLIST.md` and `GROK_BOT_QA_PROMPT.md` as a second-pass checklist.
+Use `docs/AI_REVIEW_CHECKLIST.md` and `docs/ai-prompts/GROK_BOT_QA_PROMPT.md` as a second-pass checklist.
 
 During the review pass:
 

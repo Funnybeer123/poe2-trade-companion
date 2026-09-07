@@ -12,7 +12,7 @@ Do not use Sol Max to broadly implement this repository under the current workfl
 
 Use:
 
-`SOL_MAX_PLAN_ONLY_PROMPT.md`
+`docs/ai-prompts/SOL_MAX_PLAN_ONLY_PROMPT.md`
 
 Sol Max must inspect the repository and create/update:
 
@@ -24,7 +24,7 @@ Then Sol Max stops and hands the plan off.
 
 Use:
 
-`GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
+`docs/ai-prompts/GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
 
 Configure Grok as:
 
@@ -38,4 +38,4 @@ Grok then implements the Sol Max plan phase-by-phase, adds tests/replay coverage
 
 For the complete workflow, start with:
 
-`GROK_BOT_START_HERE.md`
+`docs/ai-prompts/GROK_BOT_START_HERE.md`
