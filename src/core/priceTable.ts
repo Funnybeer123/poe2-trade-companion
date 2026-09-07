@@ -61,14 +61,18 @@ export function emptyPriceTable(currency = "exalted"): PriceTable {
  * A deliberately small starter set: entries whose value is stable in kind
  * (currency, obviously-good bases) rather than league-priced numbers. The
  * user is expected to edit everything here.
+ *
+ * Divine and chaos are deliberately ABSENT: the crafting engine matches orbs
+ * by exact name, so a placeholder divine (40) silently outranked the
+ * accurate defaults (crafting.ts DEFAULT_ORB_COSTS) until the feed merged.
+ * Those rates come from the price feed, or from DEFAULT_ORB_COSTS until it
+ * has run.
  */
 export function starterPriceTable(): PriceTable {
   const entries: Array<{ id: string; match: PriceEntryMatch; value: number; note?: string }> = [
-    { id: "divine-orb", match: { name: "Divine Orb" }, value: 40, note: "Edit to the current rate." },
     { id: "perfect-jewellers-orb", match: { name: "Perfect Jeweller's Orb" }, value: 20 },
     { id: "greater-jewellers-orb", match: { name: "Greater Jeweller's Orb" }, value: 2 },
     { id: "exalted-orb", match: { name: "Exalted Orb" }, value: 1 },
-    { id: "chaos-orb", match: { name: "Chaos Orb" }, value: 0.5 },
     { id: "any-unique", match: { rarity: "Unique" }, value: 1, note: "Floor for unreviewed uniques." },
   ];
   return {
@@ -76,6 +80,29 @@ export function starterPriceTable(): PriceTable {
     currency: "exalted",
     entries,
   };
+}
+
+/**
+ * Placeholder rows older starter tables shipped (divine 40, chaos 0.5). A
+ * row still at its placeholder value was never edited by the user and only
+ * hides the accurate crafting defaults, so loaders drop it; an edited row
+ * (any other value) is the user's number and stays.
+ */
+const STARTER_PLACEHOLDERS: ReadonlyArray<{ id: string; value: number }> = [
+  { id: "divine-orb", value: 40 },
+  { id: "chaos-orb", value: 0.5 },
+];
+
+export function isStarterPlaceholder(entry: PriceEntry): boolean {
+  return STARTER_PLACEHOLDERS.some(
+    (placeholder) => placeholder.id === entry.id && placeholder.value === entry.value,
+  );
+}
+
+/** Returns the same table object when nothing needed stripping. */
+export function stripStarterPlaceholders(table: PriceTable): PriceTable {
+  if (!table.entries.some(isStarterPlaceholder)) return table;
+  return { ...table, entries: table.entries.filter((entry) => !isStarterPlaceholder(entry)) };
 }
 
 function ciEquals(left: string | undefined, right: string | undefined): boolean {

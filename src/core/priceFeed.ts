@@ -64,18 +64,68 @@ interface ScoutLeague {
   DivinePrice?: unknown;
 }
 
-/** Pick the current softcore trade league from /poe2/Leagues. */
+export interface ScoutLeagueCandidate {
+  /** League name as the APIs spell it (the trade2 URL segment too). */
+  value: string;
+  /** Divine Orb rate in exalted, when the feed reports one. */
+  divinePrice?: number;
+}
+
+/**
+ * Every current softcore trade league from /poe2/Leagues, in API order.
+ * poe2scout keeps a league "current" past its end while a new one runs
+ * (2026-09-07: "Forbidden Rites" AND "Runes of Aldur"), so a caller must
+ * not assume one — see currentScoutLeague / AmbiguousLeagueError.
+ */
+export function currentScoutLeagues(payload: unknown): ScoutLeagueCandidate[] {
+  if (!Array.isArray(payload)) return [];
+  const candidates: ScoutLeagueCandidate[] = [];
+  for (const raw of payload as ScoutLeague[]) {
+    if (typeof raw !== "object" || raw === null) continue;
+    if (raw.IsCurrent !== true || typeof raw.Value !== "string") continue;
+    const value = raw.Value.trim();
+    if (!value || /^HC /i.test(value) || /hardcore/i.test(value)) continue;
+    const divinePrice =
+      typeof raw.DivinePrice === "number" && Number.isFinite(raw.DivinePrice) && raw.DivinePrice > 0
+        ? round(raw.DivinePrice)
+        : undefined;
+    candidates.push({ value, ...(divinePrice !== undefined ? { divinePrice } : {}) });
+  }
+  return candidates;
+}
+
+/**
+ * The current softcore trade league when exactly one exists; undefined when
+ * there is none OR more than one (an ambiguity the caller must surface, not
+ * a coin flip).
+ */
 export function currentScoutLeague(payload: unknown): string | undefined {
-  if (!Array.isArray(payload)) return undefined;
-  const leagues = payload as ScoutLeague[];
-  const current = leagues.filter(
-    (league) =>
-      league.IsCurrent === true &&
-      typeof league.Value === "string" &&
-      !/^HC /i.test(league.Value) &&
-      !/hardcore/i.test(league.Value),
+  const candidates = currentScoutLeagues(payload);
+  return candidates.length === 1 ? candidates[0]!.value : undefined;
+}
+
+function describeCandidate(candidate: ScoutLeagueCandidate): string {
+  return candidate.divinePrice !== undefined
+    ? `${candidate.value} (divine ≈ ${Math.round(candidate.divinePrice)} ex)`
+    : candidate.value;
+}
+
+export function formatAmbiguousLeagueMessage(candidates: readonly ScoutLeagueCandidate[]): string {
+  return (
+    `more than one current league: ${candidates.map(describeCandidate).join(", ")} — ` +
+    "pick one in Tools → Settings → Market data or pass --league=NAME"
   );
-  return (current[0]?.Value as string | undefined) ?? undefined;
+}
+
+/** Thrown when league "auto" cannot pick between several current leagues. */
+export class AmbiguousLeagueError extends Error {
+  readonly candidates: ScoutLeagueCandidate[];
+
+  constructor(candidates: readonly ScoutLeagueCandidate[]) {
+    super(formatAmbiguousLeagueMessage(candidates));
+    this.name = "AmbiguousLeagueError";
+    this.candidates = [...candidates];
+  }
 }
 
 function slug(text: string): string {
@@ -250,4 +300,103 @@ export function feedAgeHours(
   }
   if (newest === undefined) return undefined;
   return Math.max(0, (now.getTime() - newest) / 3_600_000);
+}
+
+// ---------------------------------------------------------------------------
+// Persisted snapshot (configDir/feed-snapshot.json)
+// ---------------------------------------------------------------------------
+
+const FEED_SOURCES: readonly PriceFeedSource[] = ["poe2scout", "poe-ninja", "exchange-ocr"];
+
+/**
+ * Validate a snapshot read back from disk (unknown JSON). Prices that would
+ * not have passed normalization are dropped; a snapshot missing its
+ * envelope is rejected outright.
+ */
+export function parseFeedSnapshot(value: unknown): PriceFeedSnapshot | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const raw = value as Partial<Record<keyof PriceFeedSnapshot, unknown>>;
+  if (!FEED_SOURCES.includes(raw.source as PriceFeedSource)) return undefined;
+  if (typeof raw.league !== "string" || !raw.league.trim()) return undefined;
+  if (typeof raw.fetchedAt !== "string" || !Number.isFinite(Date.parse(raw.fetchedAt))) {
+    return undefined;
+  }
+  if (!Array.isArray(raw.prices)) return undefined;
+  const prices: FeedPrice[] = [];
+  for (const entry of raw.prices) {
+    if (typeof entry !== "object" || entry === null) continue;
+    const price = entry as Partial<FeedPrice>;
+    if (typeof price.key !== "string" || !price.key) continue;
+    if (typeof price.name !== "string" || !price.name.trim()) continue;
+    if (typeof price.value !== "number" || !Number.isFinite(price.value) || price.value <= 0) continue;
+    prices.push({
+      key: price.key,
+      name: price.name.trim(),
+      value: price.value,
+      ...(typeof price.baseType === "string" && price.baseType.trim()
+        ? { baseType: price.baseType.trim() }
+        : {}),
+      ...(typeof price.quantity === "number" && price.quantity > 0
+        ? { quantity: Math.floor(price.quantity) }
+        : {}),
+      ...(price.unique === true ? { unique: true } : {}),
+    });
+  }
+  return {
+    source: raw.source as PriceFeedSource,
+    league: raw.league.trim(),
+    fetchedAt: raw.fetchedAt,
+    prices,
+  };
+}
+
+export interface ApplySnapshotOptions {
+  now?: Date;
+  /**
+   * The configured league ("auto" or a name). A snapshot for a different
+   * pinned league is not applied — its prices are for another economy.
+   */
+  league?: string;
+}
+
+export interface ApplySnapshotResult extends MergeResult {
+  /** False when the table already had feed data at least as fresh. */
+  applied: boolean;
+  /** True when the merge changed at least one entry (worth saving). */
+  changed: boolean;
+}
+
+/**
+ * Merge a persisted snapshot into the table only when it is fresher than
+ * what the table already carries from the same source. Lets a process that
+ * never refreshes (a CLI, the app on a cold start) price off the newest
+ * fetch any process made, without a network round trip.
+ */
+export function applyFeedSnapshotIfNewer(
+  table: PriceTable,
+  snapshot: PriceFeedSnapshot,
+  options: ApplySnapshotOptions = {},
+): ApplySnapshotResult {
+  const skip: ApplySnapshotResult = { table, added: 0, updated: 0, removed: 0, applied: false, changed: false };
+  if (snapshot.prices.length === 0) return skip;
+  if (options.league && options.league !== "auto" && options.league !== snapshot.league) return skip;
+  const now = options.now ?? new Date();
+  const fetchedAt = Date.parse(snapshot.fetchedAt);
+  if (!Number.isFinite(fetchedAt)) return skip;
+  const snapshotAgeHours = Math.max(0, (now.getTime() - fetchedAt) / 3_600_000);
+  const tableAgeHours = feedAgeHours(table, snapshot.source, now);
+  if (tableAgeHours !== undefined && snapshotAgeHours >= tableAgeHours) return skip;
+  const merged = mergeFeedSnapshot(table, snapshot);
+  // Same values on a newer day still change the notes' date stamps (what
+  // feedAgeHours reads), so a day change counts as a change too.
+  const tableDay =
+    tableAgeHours === undefined
+      ? undefined
+      : new Date(now.getTime() - tableAgeHours * 3_600_000).toISOString().slice(0, 10);
+  const dayChanged = tableDay !== snapshot.fetchedAt.slice(0, 10);
+  return {
+    ...merged,
+    applied: true,
+    changed: dayChanged || merged.added + merged.updated + merged.removed > 0,
+  };
 }

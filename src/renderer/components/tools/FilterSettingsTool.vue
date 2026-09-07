@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onMounted, ref } from "vue";
+import { formatAmbiguousLeagueMessage } from "@core/priceFeed";
 import { useRendererPreferences } from "../../composables/useRendererPreferences";
 import { useRuntimeState } from "../../composables/useRuntimeState";
 import {
@@ -31,6 +32,8 @@ const feedLeague = ref("auto");
 const feedAutoRefresh = ref(false);
 const feedSessid = ref("");
 const feedSaved = ref("");
+const feedError = ref("");
+const feedChecking = ref(false);
 
 onMounted(async () => {
   if (!feedApi) return;
@@ -39,9 +42,60 @@ onMounted(async () => {
   feedAutoRefresh.value = feedStatus.value.config.autoRefreshDaily;
 });
 
+/**
+ * League picker rows: every current league poe2scout listed (with its
+ * divine rate, the quickest tell between an old and a new league) plus the
+ * saved pick when it is not among them, so the select never shows blank.
+ */
+const feedLeagueOptions = computed(() => {
+  const options = (feedStatus.value?.leagueCandidates ?? []).map((candidate) => ({
+    value: candidate.value,
+    label:
+      candidate.divinePrice !== undefined
+        ? `${candidate.value} (divine ≈ ${Math.round(candidate.divinePrice)} ex)`
+        : candidate.value,
+  }));
+  const saved = feedLeague.value.trim();
+  if (saved && saved !== "auto" && !options.some((option) => option.value === saved)) {
+    options.push({ value: saved, label: `${saved} (saved)` });
+  }
+  return options;
+});
+
+const feedAmbiguityMessage = computed(() =>
+  feedStatus.value?.leagueAmbiguous
+    ? formatAmbiguousLeagueMessage(feedStatus.value.leagueCandidates)
+    : "",
+);
+
+const feedResolvedLine = computed(() => {
+  const status = feedStatus.value;
+  if (!status || status.leagueAmbiguous) return "";
+  if (status.resolvedLeague) {
+    return `Pricing league: ${status.resolvedLeague}${status.config.league === "auto" ? " (auto)" : ""}`;
+  }
+  return "Pricing league: not resolved yet — check leagues or refresh market prices.";
+});
+
+/** One small poe2scout read so the picker can list the current leagues. */
+async function checkLeagues(): Promise<void> {
+  if (!feedApi) return;
+  feedChecking.value = true;
+  feedError.value = "";
+  try {
+    await feedApi.leagues();
+    feedStatus.value = await feedApi.status();
+  } catch (reason) {
+    feedError.value = reason instanceof Error ? reason.message : "League check failed.";
+  } finally {
+    feedChecking.value = false;
+  }
+}
+
 async function saveFeedConfig(): Promise<void> {
   if (!feedApi) return;
   feedSaved.value = "";
+  feedError.value = "";
   feedStatus.value = await feedApi.configure({
     league: feedLeague.value.trim() || "auto",
     autoRefreshDaily: feedAutoRefresh.value,
@@ -171,14 +225,24 @@ async function copyFilter(): Promise<void> {
         </p>
         <div class="form-grid">
           <label>
-            League <span class="optional">("auto" tracks the current league)</span>
-            <input v-model="feedLeague" placeholder="auto" />
+            League <span class="optional">("auto" follows the single current league)</span>
+            <select v-model="feedLeague">
+              <option value="auto">auto</option>
+              <option v-for="option in feedLeagueOptions" :key="option.value" :value="option.value">
+                {{ option.label }}
+              </option>
+            </select>
           </label>
           <label>
             POESESSID <span class="optional">(optional{{ feedStatus?.config.poesessid ? " · saved" : "" }})</span>
             <input v-model="feedSessid" type="password" autocomplete="off" placeholder="leave blank to keep current" />
           </label>
         </div>
+        <p v-if="feedAmbiguityMessage" class="inline-notice danger" role="alert">
+          {{ feedAmbiguityMessage }}
+        </p>
+        <p v-else-if="feedResolvedLine" class="muted">{{ feedResolvedLine }}</p>
+        <p v-if="feedError" class="inline-notice danger" role="alert">{{ feedError }}</p>
         <label class="toggle-field">
           <input v-model="feedAutoRefresh" type="checkbox" />
         <span>Refresh market prices daily while the app is open</span>
@@ -186,6 +250,15 @@ async function copyFilter(): Promise<void> {
         <div class="button-row">
           <button type="button" class="button secondary" @click="saveFeedConfig">
             Save market settings
+          </button>
+          <button
+            type="button"
+            class="button ghost compact"
+            :disabled="feedChecking"
+            title="One small poe2scout request listing the current leagues"
+            @click="checkLeagues"
+          >
+            {{ feedChecking ? "Checking…" : "Check leagues" }}
           </button>
           <button
             v-if="feedStatus?.config.poesessid"

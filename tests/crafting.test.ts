@@ -10,7 +10,12 @@ import {
   orbCosts,
   planCraft,
 } from "../src/core/crafting.js";
-import { PRICE_TABLE_SCHEMA_VERSION, type PriceTable } from "../src/core/priceTable.js";
+import {
+  PRICE_TABLE_SCHEMA_VERSION,
+  starterPriceTable,
+  stripStarterPlaceholders,
+  type PriceTable,
+} from "../src/core/priceTable.js";
 
 function item(lines: string[]): string {
   return lines.join("\n");
@@ -112,6 +117,45 @@ const CORRUPTED_RARE = item([
 ]);
 
 describe("crafting economy", () => {
+  it("prices orbs at the verified defaults straight off the starter table", () => {
+    // The starter table used to ship divine = 40 / chaos = 0.5 placeholders
+    // that outranked the accurate defaults by exact-name match.
+    expect(orbCosts(starterPriceTable())).toEqual(DEFAULT_ORB_COSTS);
+    expect(starterPriceTable().entries.map((entry) => entry.id)).not.toContain("divine-orb");
+    expect(starterPriceTable().entries.map((entry) => entry.id)).not.toContain("chaos-orb");
+  });
+
+  it("strips untouched legacy placeholders and keeps edited rows", () => {
+    const legacy: PriceTable = {
+      schemaVersion: PRICE_TABLE_SCHEMA_VERSION,
+      currency: "exalted",
+      entries: [
+        { id: "divine-orb", match: { name: "Divine Orb" }, value: 40, note: "Edit to the current rate." },
+        { id: "exalted-orb", match: { name: "Exalted Orb" }, value: 1 },
+        { id: "chaos-orb", match: { name: "Chaos Orb" }, value: 0.5 },
+        { id: "any-unique", match: { rarity: "Unique" }, value: 1 },
+      ],
+    };
+    expect(orbCosts(legacy).divine).toBe(40);
+    const stripped = stripStarterPlaceholders(legacy);
+    expect(stripped.entries.map((entry) => entry.id)).toEqual(["exalted-orb", "any-unique"]);
+    expect(orbCosts(stripped)).toEqual(DEFAULT_ORB_COSTS);
+
+    const edited: PriceTable = {
+      ...legacy,
+      entries: [
+        { id: "divine-orb", match: { name: "Divine Orb" }, value: 500 },
+        { id: "chaos-orb", match: { name: "Chaos Orb" }, value: 0.5 },
+      ],
+    };
+    const kept = stripStarterPlaceholders(edited);
+    expect(kept.entries.map((entry) => entry.id)).toEqual(["divine-orb"]);
+    expect(orbCosts(kept).divine).toBe(500);
+
+    // Nothing to strip returns the very same table object.
+    expect(stripStarterPlaceholders(stripped)).toBe(stripped);
+  });
+
   it("prices every orb and lets the user's price table override by name", () => {
     const table: PriceTable = {
       schemaVersion: PRICE_TABLE_SCHEMA_VERSION,

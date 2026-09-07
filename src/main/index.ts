@@ -353,8 +353,26 @@ app.whenReady().then(() => {
       }
     },
   });
+  // One market-data config dir for the app AND the CLIs (artifacts/tab-admin,
+  // where the triage export already lives): the trade2 pacing log, the comps
+  // cache, the league config and the feed snapshot are shared, so the two
+  // never double-spend the rate budget or disagree on the league. Files the
+  // app used to keep under userData move over once, never overwriting.
+  const feedConfigDir = path.join(process.cwd(), "artifacts", "tab-admin");
+  for (const name of ["price-feed.json", "comps-cache.json", "trade-pacing.json"]) {
+    try {
+      const from = path.join(memoryRoot, name);
+      const to = path.join(feedConfigDir, name);
+      if (existsSync(from) && !existsSync(to)) {
+        mkdirSync(feedConfigDir, { recursive: true });
+        writeFileSync(to, readFileSync(from));
+      }
+    } catch {
+      // A failed migration only means a cold cache in the new home.
+    }
+  }
   priceFeedService = new PriceFeedService({
-    configDir: memoryRoot,
+    configDir: feedConfigDir,
     getPriceTable: () => itemIntelligenceService!.getPriceTable(),
     savePriceTable: (table) => itemIntelligenceService!.savePriceTable(table),
   });
@@ -580,6 +598,7 @@ app.whenReady().then(() => {
     return stashSortService?.status;
   });
   ipcMain.handle("price-feed:status", () => priceFeedService?.status());
+  ipcMain.handle("price-feed:leagues", () => priceFeedService?.leagues());
   ipcMain.handle("price-feed:refresh", () => priceFeedService?.refresh());
   ipcMain.handle("price-feed:configure", (_event, partial: Partial<PriceFeedConfig>) =>
     priceFeedService?.configure(partial ?? {}),

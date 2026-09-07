@@ -73,7 +73,11 @@ describe("price table", () => {
   it("ships a starter table the user can edit", () => {
     const table = starterPriceTable();
     expect(validatePriceTable(table).valid).toBe(true);
-    expect(lookupPrice(table, { name: "Divine Orb" })?.value).toBeGreaterThan(0);
+    expect(lookupPrice(table, { name: "Exalted Orb" })?.value).toBe(1);
+    // No divine/chaos placeholders: by exact-name match they would outrank
+    // the accurate crafting defaults until the feed priced them.
+    expect(lookupPrice(table, { name: "Divine Orb" })).toBeUndefined();
+    expect(lookupPrice(table, { name: "Chaos Orb" })).toBeUndefined();
   });
 });
 

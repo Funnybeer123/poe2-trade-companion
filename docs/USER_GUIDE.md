@@ -207,9 +207,12 @@ The price table stays the only signal automation trusts — live data flows
   sharing its notable mod families, and shows the lowest/median comparable
   ask. One polite request pair per lookup, cached ten minutes. Works without
   login; a `POESESSID` in Settings is optional.
-- **Tools → Settings → Market data**: league ("auto" tracks the current
-  softcore league), optional daily auto-refresh while the app runs, optional
-  session cookie. Nothing touches the network until you refresh or enable
+- **Tools → Settings → Market data**: league ("auto" follows the current
+  softcore league; when poe2scout lists more than one current league — it
+  keeps the previous league "current" for a while — pricing is blocked until
+  you pick one from the list, shown with each league's divine rate), optional
+  daily auto-refresh while the app runs, optional session cookie. Nothing
+  touches the network until you refresh, check leagues, or enable
   auto-refresh.
 
 ## Tools & QA

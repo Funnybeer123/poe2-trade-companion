@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { orbCosts } from "../src/core/crafting.js";
 import {
+  AmbiguousLeagueError,
+  applyFeedSnapshotIfNewer,
   currentScoutLeague,
+  currentScoutLeagues,
   feedAgeHours,
   feedEntryId,
+  formatAmbiguousLeagueMessage,
   isFeedEntry,
   mergeFeedSnapshot,
   normalizeScoutCurrencies,
   normalizeScoutItems,
+  parseFeedSnapshot,
   type PriceFeedSnapshot,
 } from "../src/core/priceFeed.js";
 import { PRICE_TABLE_SCHEMA_VERSION, lookupPrice, type PriceTable } from "../src/core/priceTable.js";
@@ -57,11 +62,49 @@ function snapshot(prices: PriceFeedSnapshot["prices"]): PriceFeedSnapshot {
   return { source: "poe2scout", league: "Runes of Aldur", fetchedAt: "2026-08-30T12:00:00Z", prices };
 }
 
+// Live 2026-09-07: poe2scout still flags the previous league as current
+// alongside the new one; only the divine rate tells them apart.
+const TWO_CURRENT_LEAGUES = [
+  { Value: "Standard", IsCurrent: false, DivinePrice: 230.6 },
+  { Value: "Forbidden Rites", IsCurrent: true, DivinePrice: 97.93 },
+  { Value: "HC Forbidden Rites", IsCurrent: true, DivinePrice: 80.1 },
+  { Value: "Runes of Aldur", IsCurrent: true, DivinePrice: 623.76 },
+  { Value: "Runes of Aldur Hardcore", IsCurrent: true, DivinePrice: 164.4 },
+];
+
 describe("poe2scout normalization", () => {
   it("picks the current softcore league, never hardcore", () => {
     expect(currentScoutLeague(SCOUT_LEAGUES)).toBe("Runes of Aldur");
     expect(currentScoutLeague([])).toBeUndefined();
     expect(currentScoutLeague("nope")).toBeUndefined();
+  });
+
+  it("lists every current softcore league with its divine rate", () => {
+    expect(currentScoutLeagues(SCOUT_LEAGUES)).toEqual([{ value: "Runes of Aldur", divinePrice: 404.6 }]);
+    expect(currentScoutLeagues(TWO_CURRENT_LEAGUES)).toEqual([
+      { value: "Forbidden Rites", divinePrice: 97.93 },
+      { value: "Runes of Aldur", divinePrice: 623.76 },
+    ]);
+    expect(currentScoutLeagues([{ Value: "No Rate", IsCurrent: true }])).toEqual([{ value: "No Rate" }]);
+    expect(currentScoutLeagues("nope")).toEqual([]);
+  });
+
+  it("never coin-flips between two current leagues", () => {
+    expect(currentScoutLeague(TWO_CURRENT_LEAGUES)).toBeUndefined();
+    const error = new AmbiguousLeagueError(currentScoutLeagues(TWO_CURRENT_LEAGUES));
+    expect(error).toBeInstanceOf(Error);
+    expect(error.name).toBe("AmbiguousLeagueError");
+    expect(error.candidates.map((candidate) => candidate.value)).toEqual([
+      "Forbidden Rites",
+      "Runes of Aldur",
+    ]);
+    expect(error.message).toBe(
+      "more than one current league: Forbidden Rites (divine ≈ 98 ex), Runes of Aldur (divine ≈ 624 ex) — " +
+        "pick one in Tools → Settings → Market data or pass --league=NAME",
+    );
+    expect(formatAmbiguousLeagueMessage([{ value: "A" }, { value: "B" }])).toContain(
+      "more than one current league: A, B —",
+    );
   });
 
   it("keeps cheap currency but floors cheap uniques", () => {
@@ -207,6 +250,65 @@ function listing(overrides: Partial<CompListing>): CompListing {
     ...overrides,
   };
 }
+
+describe("persisted feed snapshot", () => {
+  const divine = { key: "divine", name: "Divine Orb", value: 404.62 };
+  const chaos = { key: "chaos", name: "Chaos Orb", value: 35.91 };
+
+  it("round-trips through JSON and rejects anything that is not a snapshot", () => {
+    const original = snapshot([
+      { ...divine, quantity: 1200 },
+      { key: "temporalis-silk-robe", name: "Temporalis", baseType: "Silk Robe", value: 1602665, unique: true },
+    ]);
+    expect(parseFeedSnapshot(JSON.parse(JSON.stringify(original)))).toEqual(original);
+    expect(parseFeedSnapshot({})).toBeUndefined();
+    expect(parseFeedSnapshot({ ...original, source: "guessed" })).toBeUndefined();
+    expect(parseFeedSnapshot({ ...original, fetchedAt: "yesterday-ish" })).toBeUndefined();
+    // Prices that normalization would have refused are dropped, not kept.
+    const parsed = parseFeedSnapshot({
+      ...original,
+      prices: [divine, { key: "free", name: "Free Orb", value: 0 }, { name: "No key", value: 3 }, "junk"],
+    });
+    expect(parsed?.prices).toEqual([divine]);
+  });
+
+  it("applies a snapshot only when it is fresher than the table's feed data", () => {
+    const now = new Date("2026-09-01T12:00:00Z");
+    const older = { ...snapshot([divine]), fetchedAt: "2026-08-30T12:00:00Z" };
+    const newer = { ...snapshot([{ ...divine, value: 623.76 }, chaos]), fetchedAt: "2026-08-31T18:00:00Z" };
+
+    const cold = applyFeedSnapshotIfNewer(emptyTable(), older, { now });
+    expect(cold.applied).toBe(true);
+    expect(cold.changed).toBe(true);
+    expect(orbCosts(cold.table).divine).toBe(404.62);
+
+    const upgraded = applyFeedSnapshotIfNewer(cold.table, newer, { now });
+    expect(upgraded.applied).toBe(true);
+    expect(upgraded.changed).toBe(true);
+    expect(orbCosts(upgraded.table).divine).toBe(623.76);
+    expect(orbCosts(upgraded.table).chaos).toBe(35.91);
+
+    const downgrade = applyFeedSnapshotIfNewer(upgraded.table, older, { now });
+    expect(downgrade.applied).toBe(false);
+    expect(downgrade.table).toBe(upgraded.table);
+    expect(orbCosts(downgrade.table).divine).toBe(623.76);
+
+    // Same day, same numbers: applied (nothing fresher exists) but nothing to save.
+    const sameDay = applyFeedSnapshotIfNewer(upgraded.table, { ...newer, fetchedAt: "2026-08-31T20:00:00Z" }, { now });
+    expect(sameDay.applied).toBe(true);
+    expect(sameDay.changed).toBe(false);
+
+    expect(applyFeedSnapshotIfNewer(emptyTable(), snapshot([]), { now }).applied).toBe(false);
+  });
+
+  it("ignores a snapshot for a different pinned league", () => {
+    const now = new Date("2026-09-01T12:00:00Z");
+    const aldur = snapshot([divine]); // league: Runes of Aldur
+    expect(applyFeedSnapshotIfNewer(emptyTable(), aldur, { now, league: "Standard" }).applied).toBe(false);
+    expect(applyFeedSnapshotIfNewer(emptyTable(), aldur, { now, league: "Runes of Aldur" }).applied).toBe(true);
+    expect(applyFeedSnapshotIfNewer(emptyTable(), aldur, { now, league: "auto" }).applied).toBe(true);
+  });
+});
 
 describe("trade comps", () => {
   it("builds a base-type query with an ilvl floor for high-level rares", () => {

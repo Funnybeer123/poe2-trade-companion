@@ -43,15 +43,9 @@ import { SortHarness, SortStop } from "../src/adapters/sortHarness.js";
 import { GearSorter } from "../src/adapters/gearSorter.js";
 import { ShopKeeper } from "../src/adapters/shopKeeper.js";
 import { PriceFeedService } from "../src/main/priceFeedService.js";
-import { evaluateWithAppraisal } from "../src/core/appraisal.js";
+import { loadTriageExport } from "../src/adapters/triageLoader.js";
 import { bucketTabs, parseShopConfig } from "../src/core/shopListings.js";
-import { starterPriceTable, validatePriceTable, type PriceTable } from "../src/core/priceTable.js";
-import {
-  DEFAULT_TIER_THRESHOLDS,
-  starterValueTierRules,
-  type ValueTierRules,
-  type ValueTierThresholds,
-} from "../src/core/valueTiers.js";
+import type { PriceTable } from "../src/core/priceTable.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const templateDir = path.join(root, "fixtures", "perception", "templates");
@@ -71,36 +65,9 @@ const leagueArg = value("--league");
 const noRefresh = flag("--no-refresh");
 const noVendor = flag("--no-vendor");
 
-function loadTriageExport(): {
-  priceTable: PriceTable;
-  evaluate: (itemText: string) => ReturnType<typeof evaluateWithAppraisal>;
-} {
-  let rules: ValueTierRules = starterValueTierRules();
-  let thresholds: ValueTierThresholds = { ...DEFAULT_TIER_THRESHOLDS };
-  let priceTable: PriceTable = starterPriceTable();
-  const file = path.join(outDir, "triage.json");
-  if (existsSync(file)) {
-    try {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as {
-        rules?: ValueTierRules;
-        thresholds?: ValueTierThresholds;
-        priceTable?: unknown;
-      };
-      if (parsed.rules?.keep && parsed.rules.sell && parsed.rules.dump) rules = parsed.rules;
-      if (parsed.thresholds) thresholds = parsed.thresholds;
-      const tableCheck = validatePriceTable(parsed.priceTable);
-      if (tableCheck.valid && tableCheck.table) priceTable = tableCheck.table;
-    } catch (error) {
-      console.log(`triage.json unreadable (${String(error)}) — starter tiers/prices`);
-    }
-  }
-  return {
-    priceTable,
-    evaluate: (itemText) => evaluateWithAppraisal(itemText, { rules, priceTable, thresholds }),
-  };
-}
-
-const triage = loadTriageExport();
+// The app's triage export (tiers + price table), placeholders stripped and
+// the newest feed snapshot merged — src/adapters/triageLoader.ts.
+const triage = loadTriageExport(root);
 // The feed refresh merges live prices into this table for the whole run.
 let priceTable: PriceTable = triage.priceTable;
 const evaluate = triage.evaluate;
@@ -154,26 +121,36 @@ const keeper = new ShopKeeper(host, harness, kit, sorter, {
 
 let exitCode = 0;
 try {
-  const rect = await host.send({ op: "rect" });
-  if (!rect.ok) throw new Error("poe-window-not-found");
-  await host.send({ op: "focus" });
-  harness.startKeyListener();
   console.log(
     `shop-buckets ${dryRun ? "DRY-RUN" : "LIVE"}${stepMode ? " STEP" : ""}${noComps ? " no-comps" : ` comps≤${compsLimit}`} — numpad: 8 good · 9 wrong · 5 pause · 0 stop`,
   );
 
   // Live prices first: the divine rate and every feed-priced unique/currency
   // come from poe2scout for the configured league; comps are per item later.
+  // This runs BEFORE the game is touched: when poe2scout lists more than one
+  // current league and none is pinned, every price would be for a coin-flip
+  // economy, so the run aborts here instead.
   if (feed && !noRefresh) {
     const status = await feed.refresh();
+    if (status.leagueAmbiguous) throw new Error(status.lastError ?? "league ambiguous");
     console.log(
       status.lastError
         ? `price feed: refresh FAILED (${status.lastError}) — pricing off the exported table`
         : `price feed: ${status.resolvedLeague ?? status.config.league} league, ${status.feedEntryCount} entries, refreshed ${status.lastRefreshAt ?? "now"}`,
     );
   } else if (feed) {
-    console.log(`price feed: ${feed.status().resolvedLeague ?? feed.status().config.league} league (no refresh)`);
+    // No price refresh, but the league still has to be unambiguous for comps.
+    if (feed.status().config.league === "auto") await feed.leagues().catch(() => []);
+    const status = feed.status();
+    if (status.leagueAmbiguous) throw new Error(status.lastError ?? "league ambiguous");
+    console.log(`price feed: ${status.resolvedLeague ?? status.config.league} league (no refresh)`);
   }
+
+  const rect = await host.send({ op: "rect" });
+  if (!rect.ok) throw new Error("poe-window-not-found");
+  await host.send({ op: "focus" });
+  harness.startKeyListener();
+
   if (feed && !noComps) {
     const budget = feed.tradeBudget();
     console.log(

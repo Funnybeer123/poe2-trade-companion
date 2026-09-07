@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { appraiseItem } from "../src/core/appraisal.js";
-import { starterPriceTable } from "../src/core/priceTable.js";
+import { starterPriceTable, type PriceTable } from "../src/core/priceTable.js";
 import { defaultShopConfig, type ActiveListing, type ListingEvent } from "../src/core/shopListings.js";
 import {
   denominatePrice,
@@ -16,6 +16,19 @@ import {
   type PriceSuggestion,
 } from "../src/core/shopPricing.js";
 import type { CompsSummary } from "../src/core/tradeComps.js";
+
+/**
+ * The starter table no longer ships a divine placeholder (the crafting
+ * defaults apply until the feed prices it); these assertions assume an
+ * explicit 40-exalted divine rate, so pin one.
+ */
+function tableWithDivine(rate = 40): PriceTable {
+  const table = starterPriceTable();
+  return {
+    ...table,
+    entries: [...table.entries, { id: "test-divine", match: { name: "Divine Orb" }, value: rate }],
+  };
+}
 
 /**
  * The pricing policy behind docs/HANDOFF-shop-listings.md: low-percentile
@@ -74,7 +87,7 @@ describe("percentile anchor", () => {
 
 describe("denomination", () => {
   it("prices in whole exalted below the divine rate and divines above", () => {
-    const table = starterPriceTable(); // divine = 40 exalted
+    const table = tableWithDivine(); // divine pinned at 40 exalted
     expect(denominatePrice(7.4, table)).toEqual({ amount: 7, currency: "exalted", exalted: 7 });
     expect(denominatePrice(85, table)).toEqual({ amount: 2, currency: "divine", exalted: 80 });
     expect(denominatePrice(0.4, table)).toEqual({ amount: 1, currency: "exalted", exalted: 1 });
@@ -215,7 +228,7 @@ describe("auto-list gate", () => {
     "--------",
     "Stack Size: 1/20",
   ].join("\n");
-  const strongAppraisal = appraiseItem(CURRENCY_TEXT, { priceTable: starterPriceTable() });
+  const strongAppraisal = appraiseItem(CURRENCY_TEXT, { priceTable: tableWithDivine() });
 
   it("demands BOTH appraisal confidence and usable comps", () => {
     expect(strongAppraisal.confidence).toBeGreaterThanOrEqual(60);
@@ -242,7 +255,7 @@ describe("auto-list gate", () => {
       comps: comps([10, 11, 12, 13]),
       config: config(),
       at: AT,
-      priceTable: starterPriceTable(),
+      priceTable: tableWithDivine(),
     });
     expect(both.ok).toBe(true);
   });
@@ -265,9 +278,9 @@ describe("auto-list gate", () => {
       appraisal: strongAppraisal,
       tier: "sell",
       comps: comps([100, 110, 120, 130]),
-      config: config(), // cap = 1 divine = 40 exalted in the starter table
+      config: config(), // cap = 1 divine = 40 exalted with the pinned rate
       at: AT,
-      priceTable: starterPriceTable(),
+      priceTable: tableWithDivine(),
     });
     expect(result.ok).toBe(true);
     if (result.ok) expect(result.needsConfirmation).toMatch(/cap/);

@@ -7,7 +7,7 @@
  */
 
 import path from "node:path";
-import { existsSync, readFileSync, rmSync } from "node:fs";
+import { rmSync } from "node:fs";
 import { bgrToGray, readBmpBgr } from "./bmp.js";
 import type { WinReply } from "./winHost.js";
 import { occupiedFromRgbScores, scoreGridCellsRgb } from "../core/cellOccupancy.js";
@@ -17,13 +17,13 @@ import type { GridMark } from "../core/calibrationProfile.js";
 import { resolvePhysicalClient, type ScreenRect } from "../core/screenLayout.js";
 import type { OcrLine } from "../core/tabList.js";
 import type { TriageSprite } from "../core/mapTriage.js";
-import { starterPriceTable, validatePriceTable, type PriceTable } from "../core/priceTable.js";
-import {
-  DEFAULT_TIER_THRESHOLDS,
-  starterValueTierRules,
-  type ValueTierRules,
-  type ValueTierThresholds,
-} from "../core/valueTiers.js";
+
+/**
+ * The value-tier config loader moved to triageLoader.ts (one loader for
+ * every CLI, with placeholder stripping + feed-snapshot merge); these names
+ * stay for scripts/vendor-cycle.ts.
+ */
+export { loadTriageExport as loadTriageConfig, type TriageExport as TriageConfig } from "./triageLoader.js";
 
 export interface KitHost {
   send(payload: Record<string, unknown>): Promise<WinReply>;
@@ -142,41 +142,4 @@ export async function findOcrLines(host: KitHost, holdAlt = false): Promise<OcrL
 
 export function lineCenter(line: OcrLine, clickOffsetY = 0): { x: number; y: number } {
   return { x: Math.round(line.x + line.w / 2), y: Math.round(line.y + line.h / 2 + clickOffsetY) };
-}
-
-export interface TriageConfig {
-  rules: ValueTierRules;
-  thresholds: ValueTierThresholds;
-  priceTable: PriceTable;
-  routing: { reviewTab: string; dumpTab: string; sellTab?: string };
-  source: string;
-}
-
-/** The same value-tier export the sorter and map-triage use. */
-export function loadTriageConfig(root: string): TriageConfig {
-  let rules = starterValueTierRules();
-  let thresholds: ValueTierThresholds = { ...DEFAULT_TIER_THRESHOLDS };
-  let priceTable = starterPriceTable();
-  let routing: TriageConfig["routing"] = { reviewTab: "Review", dumpTab: "Dump" };
-  let source = "starter tiers (no artifacts/tab-admin/triage.json export)";
-  const file = path.join(root, "artifacts", "tab-admin", "triage.json");
-  if (existsSync(file)) {
-    try {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as {
-        rules?: ValueTierRules;
-        thresholds?: ValueTierThresholds;
-        priceTable?: unknown;
-        routing?: TriageConfig["routing"];
-      };
-      if (parsed.rules?.keep && parsed.rules.sell && parsed.rules.dump) rules = parsed.rules;
-      if (parsed.thresholds) thresholds = { ...thresholds, ...parsed.thresholds };
-      const tableCheck = validatePriceTable(parsed.priceTable);
-      if (tableCheck.valid && tableCheck.table) priceTable = tableCheck.table;
-      if (parsed.routing?.reviewTab && parsed.routing.dumpTab) routing = parsed.routing;
-      source = "artifacts/tab-admin/triage.json";
-    } catch {
-      // starter tiers on an unreadable export
-    }
-  }
-  return { rules, thresholds, priceTable, routing, source };
 }

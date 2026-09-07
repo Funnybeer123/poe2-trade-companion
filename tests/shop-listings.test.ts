@@ -19,7 +19,21 @@ import {
   type ListingEvent,
   type ShopSnapshot,
 } from "../src/core/shopListings.js";
-import { starterPriceTable } from "../src/core/priceTable.js";
+import { starterPriceTable, type PriceTable } from "../src/core/priceTable.js";
+
+
+/**
+ * The starter table no longer ships a divine placeholder (the crafting
+ * defaults apply until the feed prices it); these assertions assume an
+ * explicit 40-exalted divine rate, so pin one.
+ */
+function tableWithDivine(rate = 40): PriceTable {
+  const table = starterPriceTable();
+  return {
+    ...table,
+    entries: [...table.entries, { id: "test-divine", match: { name: "Divine Orb" }, value: rate }],
+  };
+}
 
 /**
  * Pure ground truth behind docs/HANDOFF-shop-listings.md: the Note line is
@@ -63,7 +77,7 @@ function snapshotOf(items: Array<{ text: string; cells?: Array<{ row: number; co
       text: item.text,
       cells: (item.cells ?? [{ row: 0, col: index }]).map((cell) => ({ ...cell, x: 0, y: 0 })),
     })),
-    { at, tab: "Shop", priceTable: starterPriceTable() },
+    { at, tab: "Shop", priceTable: tableWithDivine() },
   );
 }
 
@@ -96,7 +110,7 @@ describe("price-note ground truth", () => {
   });
 
   it("values notes in exalted through the crafting economy", () => {
-    const table = starterPriceTable(); // divine = 40 exalted in the starter set
+    const table = tableWithDivine(); // divine pinned at 40 exalted
     expect(noteExalted(parsePriceNote(RING_TEXT), table)).toBe(5);
     expect(noteExalted(parsePriceNote("Note: ~price 2 divine"), table)).toBe(80);
     expect(noteExalted(parsePriceNote("Note: gibberish"), table)).toBeUndefined();
@@ -150,7 +164,7 @@ describe("shop config", () => {
 
   it("converts the auto-list cap to exalted at the live rate", () => {
     const { config } = parseShopConfig({ shopTab: "Shop" });
-    expect(maxAutoListExalted(config, starterPriceTable())).toBe(40);
+    expect(maxAutoListExalted(config, tableWithDivine())).toBe(40);
   });
 });
 
@@ -366,14 +380,14 @@ describe("price-bucket tabs", () => {
   it("orders the user's buckets cheapest first at the live rate", () => {
     const buckets = bucketTabs(
       ["1Ex", "5Ex", "10Ex", "1D", "2D", "3D", "5D", "8", "9"],
-      starterPriceTable(), // divine = 40 exalted
+      tableWithDivine(), // divine pinned at 40 exalted
     );
     expect(buckets.map((bucket) => bucket.label)).toEqual(["1Ex", "5Ex", "10Ex", "1D", "2D", "3D", "5D"]);
     expect(buckets.map((bucket) => bucket.exalted)).toEqual([1, 5, 10, 40, 80, 120, 200]);
   });
 
   it("snaps an estimate DOWN to the dearest bucket it clears", () => {
-    const buckets = bucketTabs(["1Ex", "5Ex", "10Ex", "1D", "2D"], starterPriceTable());
+    const buckets = bucketTabs(["1Ex", "5Ex", "10Ex", "1D", "2D"], tableWithDivine());
     expect(bucketFor(7, buckets)?.label).toBe("5Ex");
     expect(bucketFor(45, buckets)?.label).toBe("1D");
     expect(bucketFor(1, buckets)?.label).toBe("1Ex");

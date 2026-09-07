@@ -1,8 +1,21 @@
 import { describe, expect, it } from "vitest";
 import { currencyFromLabel, isAskingPriceLabel, parseAskingPrice } from "../src/adapters/shopKeeper.js";
 import { buildShopSnapshot } from "../src/core/shopListings.js";
-import { starterPriceTable } from "../src/core/priceTable.js";
+import { starterPriceTable, type PriceTable } from "../src/core/priceTable.js";
 import type { OcrLine } from "../src/adapters/stashTabKit.js";
+
+/**
+ * The starter table no longer ships a divine placeholder (the crafting
+ * defaults apply until the feed prices it); these assertions assume an
+ * explicit 40-exalted divine rate, so pin one.
+ */
+function tableWithDivine(rate = 40): PriceTable {
+  const table = starterPriceTable();
+  return {
+    ...table,
+    entries: [...table.entries, { id: "test-divine", match: { name: "Divine Orb" }, value: rate }],
+  };
+}
 
 /**
  * The merchant's price ground truth (docs/HANDOFF-shop-listings.md, GROUND
@@ -144,7 +157,7 @@ describe("snapshot from tooltip prices", () => {
   it("prefers the asking price over the (absent) Note line", () => {
     const snapshot = buildShopSnapshot(
       [{ text: TEXT, cells: [{ row: 0, col: 0 }], askingPrice: { amount: 2, currency: "divine" } }],
-      { at: "2026-09-02T05:00:00.000Z", tab: "Shop", priceTable: starterPriceTable() },
+      { at: "2026-09-02T05:00:00.000Z", tab: "Shop", priceTable: tableWithDivine() },
     );
     expect(snapshot.items[0]!.note).toMatchObject({ kind: "price", amount: 2, currency: "divine" });
     expect(snapshot.items[0]!.priceExalted).toBe(80);
