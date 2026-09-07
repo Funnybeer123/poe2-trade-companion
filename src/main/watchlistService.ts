@@ -6,7 +6,9 @@
  * Budget etiquette (the shop flow and price checks share the same trade2
  * budget through priceFeedService):
  *   - ticks every 30 s while the master switch is on, never more than ONE
- *     scan per tick (one search + one fetch);
+ *     scan per tick (one search + one fetch), scheduled scans at least
+ *     60 s apart and at most 5 per rolling 5 minutes (unlisted trade2
+ *     lockout layer — see MAX_SCANS_PER_5_MIN);
  *   - scans only when the pacer has at least 3 spare lookups, so a bag
  *     listing run always has headroom;
  *   - a global cap of 20 scans per hour (persisted, so a restart cannot
@@ -61,6 +63,17 @@ const TICK_MS = 30_000;
 const MIN_SPARE_LOOKUPS = 3;
 const MAX_SCANS_PER_HOUR = 20;
 const HOUR_MS = 60 * 60_000;
+/**
+ * trade2 has an unlisted lockout layer above the advertised rules (a 429
+ * with Retry-After 600 landed around 25 calls in 5 minutes on 2026-09-07,
+ * with the advertised windows far from full). A scan is one search + one
+ * fetch, so five scans per five minutes keeps the watchlist at ten calls
+ * and leaves room for the shop flow and manual price checks.
+ */
+const MAX_SCANS_PER_5_MIN = 5;
+const FIVE_MIN_MS = 5 * 60_000;
+/** Scheduled scans never run back to back; a manual "Scan now" may. */
+const MIN_SCHEDULED_GAP_MS = 60_000;
 /** Alerts the overview returns, newest first. */
 const OVERVIEW_ALERTS = 50;
 
@@ -180,6 +193,16 @@ export class WatchlistService {
     this.state.scanLog = this.state.scanLog.filter((at) => at <= nowMs && nowMs - at < HOUR_MS);
   }
 
+  private scansInLast(windowMs: number): number {
+    const nowMs = this.now().getTime();
+    return this.state.scanLog.filter((at) => at <= nowMs && nowMs - at < windowMs).length;
+  }
+
+  private msSinceLastScan(): number | undefined {
+    if (this.state.scanLog.length === 0) return undefined;
+    return this.now().getTime() - Math.max(...this.state.scanLog);
+  }
+
   private scansThisHour(): number {
     this.pruneScanLog(this.now().getTime());
     return this.state.scanLog.length;
@@ -199,6 +222,13 @@ export class WatchlistService {
     }
     if (this.scansThisHour() >= MAX_SCANS_PER_HOUR) {
       return this.skip(`hourly cap reached (${MAX_SCANS_PER_HOUR} scans)`);
+    }
+    if (this.scansInLast(FIVE_MIN_MS) >= MAX_SCANS_PER_5_MIN) {
+      return this.skip(`5-minute cap reached (${MAX_SCANS_PER_5_MIN} scans) — trade2 locks out above ~25 calls per 5 min`);
+    }
+    const sinceLast = this.msSinceLastScan();
+    if (sinceLast !== undefined && sinceLast < MIN_SCHEDULED_GAP_MS) {
+      return this.skip(`last scan ${Math.round(sinceLast / 1000)}s ago — scheduled scans stay ${MIN_SCHEDULED_GAP_MS / 1000}s apart`);
     }
     const budget = this.options.feed.tradeBudget();
     if (budget.lookups < MIN_SPARE_LOOKUPS) {
@@ -230,6 +260,9 @@ export class WatchlistService {
     }
     if (this.scansThisHour() >= MAX_SCANS_PER_HOUR) {
       return this.skip(`hourly cap reached (${MAX_SCANS_PER_HOUR} scans)`);
+    }
+    if (this.scansInLast(FIVE_MIN_MS) >= MAX_SCANS_PER_5_MIN) {
+      return this.skip(`5-minute cap reached (${MAX_SCANS_PER_5_MIN} scans) — trade2 locks out above ~25 calls per 5 min`);
     }
     if (this.options.feed.tradeBudget().lookups < 1) return this.skip("no trade2 lookup spare right now");
     const watch = watchId

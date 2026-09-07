@@ -58,6 +58,7 @@ describe("preload API exposure", () => {
         "shop",
         "stashSort",
         "stashTabs",
+        "watchlist",
         "windows",
       ].sort(),
     );

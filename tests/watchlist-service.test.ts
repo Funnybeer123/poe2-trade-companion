@@ -186,15 +186,39 @@ describe("WatchlistService scheduling gates", () => {
       watches: [uniqueWatch({ id: "first", query: { name: "A" } }), uniqueWatch({ id: "second", query: { name: "B" } })],
     });
     expect((await h.service.tick()).watchId).toBe("first");
+    // Scheduled scans keep 60 s apart (unlisted trade2 lockout layer).
+    expect((await h.service.tick()).skipped).toContain("scheduled scans stay 60s apart");
+    h.advance(60_000);
     expect((await h.service.tick()).watchId).toBe("second");
+    h.advance(60_000);
     expect((await h.service.tick()).skipped).toBe("no watch is due");
-    expect(h.service.overview().nextScanEtaMs).toBe(10 * 60_000);
+    expect(h.service.overview().nextScanEtaMs).toBe(8 * 60_000);
     h.advance(10 * 60_000 + 1);
     expect((await h.service.tick()).watchId).toBe("first");
     expect(h.feed.searchListings).toHaveBeenCalledTimes(3);
     // The button ignores the interval.
     expect((await h.service.scanNow("second")).watchId).toBe("second");
     expect((await h.service.scanNow()).watchId).toBe("first"); // most overdue enabled watch
+  });
+
+  it("caps scheduled and manual scans at five per rolling five minutes", async () => {
+    const h = harness({
+      watches: Array.from({ length: 7 }, (_, index) =>
+        uniqueWatch({ id: `w${index}`, query: { name: `Item ${index}` } }),
+      ),
+    });
+    for (let scan = 0; scan < 5; scan += 1) {
+      expect((await h.service.tick()).ok).toBe(true);
+      h.advance(60_000);
+    }
+    // Five scans in the last five minutes (t = 0, 60, 120, 180, 240 s; now 300 s
+    // — the first one is exactly five minutes old and has left the window).
+    h.advance(-1);
+    expect((await h.service.tick()).skipped).toContain("5-minute cap");
+    expect((await h.service.scanNow("w6")).skipped).toContain("5-minute cap");
+    h.advance(60_000);
+    expect((await h.service.tick()).ok).toBe(true);
+    expect(h.feed.searchListings).toHaveBeenCalledTimes(6);
   });
 });
 
@@ -277,6 +301,7 @@ describe("WatchlistService alerts", () => {
     expect(outcome.error).toContain("HTTP 400");
     expect(h.service.overview().lastError).toContain("HTTP 400");
     // Stamped, so the next tick does not hammer the same failing search.
+    h.advance(60_000);
     expect((await h.service.tick()).skipped).toBe("no watch is due");
   });
 
