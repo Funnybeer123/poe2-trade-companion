@@ -114,4 +114,4 @@ Return only:
 - summary of phases;
 - highest-risk assumptions;
 - blockers that Grok must verify first;
-- exact instruction: `Hand implementation to Grok 4.6 xhigh Fast using GROK_46_XHIGH_FAST_BUILD_PROMPT.md`.
+- exact instruction: `Hand implementation to Grok 4.6 xhigh Fast using docs/ai-prompts/GROK_46_XHIGH_FAST_BUILD_PROMPT.md`.

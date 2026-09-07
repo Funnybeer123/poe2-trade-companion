@@ -17,7 +17,7 @@ Do not revert to the old workflow where Sol Max broadly implements production co
 
 Before Grok implementation begins, Sol Max must follow:
 
-`SOL_MAX_PLAN_ONLY_PROMPT.md`
+`docs/ai-prompts/SOL_MAX_PLAN_ONLY_PROMPT.md`
 
 Sol Max must inspect the entire repository and create/update:
 
@@ -31,7 +31,7 @@ If that plan does not exist yet, do not invent a competing architecture. Ask the
 
 After the Sol Max plan exists, Grok must follow:
 
-`GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
+`docs/ai-prompts/GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
 
 Use:
 
@@ -58,10 +58,10 @@ At minimum read:
 
 - `AGENTS.md`
 - `README.md`
-- `SOL_MAX_PLAN_ONLY_PROMPT.md`
+- `docs/ai-prompts/SOL_MAX_PLAN_ONLY_PROMPT.md`
 - `plans/IMPLEMENTATION_PLAN.md`
-- `GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
-- `GROK_BOT_QA_PROMPT.md`
+- `docs/ai-prompts/GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
+- `docs/ai-prompts/GROK_BOT_QA_PROMPT.md`
 - `docs/AI_DEVELOPMENT_WORKFLOW.md`
 - `docs/AI_REVIEW_CHECKLIST.md`
 - `docs/PRODUCT_SPEC.md`
@@ -147,7 +147,7 @@ Grok is now the primary implementer, so perform a separate review pass before ea
 
 Use:
 
-- `GROK_BOT_QA_PROMPT.md`
+- `docs/ai-prompts/GROK_BOT_QA_PROMPT.md`
 - `docs/AI_REVIEW_CHECKLIST.md`
 
 Review the actual diff, not only your intentions. Fix confirmed problems before completion.
@@ -166,4 +166,4 @@ Keep commits phase-scoped. Do not force-push unrelated history.
 
 ## Immediate assignment when given this link
 
-> Read this file and all referenced repository instructions. Confirm `plans/IMPLEMENTATION_PLAN.md` was created by the Sol Max planning step. Then follow `GROK_46_XHIGH_FAST_BUILD_PROMPT.md` as the primary implementation agent. Create/update `grok/IMPLEMENTATION_STATE.md`, establish the baseline, and begin the first incomplete phase. Continue phase-by-phase with tests, deterministic replay coverage, self-review, and commits until the plan is complete or a genuine external blocker prevents further work.
+> Read this file and all referenced repository instructions. Confirm `plans/IMPLEMENTATION_PLAN.md` was created by the Sol Max planning step. Then follow `docs/ai-prompts/GROK_46_XHIGH_FAST_BUILD_PROMPT.md` as the primary implementation agent. Create/update `grok/IMPLEMENTATION_STATE.md`, establish the baseline, and begin the first incomplete phase. Continue phase-by-phase with tests, deterministic replay coverage, self-review, and commits until the plan is complete or a genuine external blocker prevents further work.

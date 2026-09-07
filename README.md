@@ -80,10 +80,51 @@ the Electron user-data directory. Legacy scan history, regex history, trade
 presets, and scan JSONL can be imported idempotently and exported through the
 versioned item-intelligence contract.
 
-The bundled fixture market provider is deterministic test/demo data, not live
-market data and not a guaranteed sale price. The undocumented Trade2 provider
-is disabled; a live provider must use a documented API or explicit service
-authorization.
+## Market data and valuation
+
+Every number the app shows is an estimate, never a guaranteed sale price. The
+signals, in the order a price check trusts them:
+
+- **Price table** (`Sort → Prices`). The single price source automation is
+  allowed to act on. **Refresh market prices** pulls the current league's
+  currency, stackables, and unique prices from poe2scout into read-only
+  `feed:*` rows (one or two requests per refresh, never more often than every
+  five minutes; optional daily auto-refresh). Manual rows are never overwritten and
+  outrank a feed row for the same item.
+- **Trade2 comps** (`Item log → Market comps`). On-demand listings for one
+  item from the official trade site: one search + one fetch, serialized and
+  paced from the server's own `X-Rate-Limit` headers (the pacing log is shared
+  across the app and the CLI), raw listings cached on disk — six hours for
+  base-type searches, one hour for unique-name searches — and re-scored per
+  item by mod-family similarity. Works without a session cookie; `POESESSID`
+  is optional. Never bulk scans.
+- **Appraisal** — the mod-tier heuristic in `src/core/appraisal.ts` (value
+  score + confidence), used when neither of the above knows the item.
+
+**Ctrl+D / Read clipboard / Evaluate text** builds the valuation from those
+signals (`src/core/localValuation.ts`): a price-table hit wins, then cached
+comps, then the appraisal; otherwise the item is marked **no data**. A
+deliberate check with no cached comps fires one trade2 lookup in the
+background and re-publishes the evaluation when listings arrive; the passive
+clipboard watcher and stash scans never touch the network. The Item log shows
+which provider produced the number as a chip (price table / trade listings /
+appraisal / no data).
+
+The **league** is set under `Tools → Settings → Market data`. The picker lists
+poe2scout's current leagues; `auto` is accepted only while exactly one current
+softcore league exists and is refused when poe2scout lists more than one, so a
+new league never silently prices against the wrong economy.
+
+The bundled fixture quotes (`fixtures/market/quotes.json`) remain for tests,
+replay, and the browser-only preview; the Electron app uses them only with
+`POE2_FIXTURE_MARKET=1`, and the UI badges them **demo prices**.
+
+**Loot filter** (`Tools → Loot filter`): generates a PoE2 item filter from the
+price table — chase / valuable / pickup tiers in exalted, unique prices rated
+per base type (filters cannot see names), currency by unit value, a Hide rule
+only for low-level Normal (optionally Magic) gear, and nothing else ever
+hidden. **Save…** opens the OS file dialog; the app never writes game files on
+its own.
 
 ## Preferred stack
 - Electron
@@ -105,7 +146,7 @@ This repo uses two distinct AI roles.
 
 Open the repo in Cursor with Sol Max and use:
 
-`SOL_MAX_PLAN_ONLY_PROMPT.md`
+`docs/ai-prompts/SOL_MAX_PLAN_ONLY_PROMPT.md`
 
 Sol Max should inspect the repository, create/update `plans/IMPLEMENTATION_PLAN.md`, identify risks, define phase acceptance criteria, then stop.
 
@@ -113,11 +154,11 @@ Sol Max should inspect the repository, create/update `plans/IMPLEMENTATION_PLAN.
 
 Hand the repo/plan to Grok using:
 
-`GROK_BOT_START_HERE.md`
+`docs/ai-prompts/GROK_BOT_START_HERE.md`
 
 and:
 
-`GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
+`docs/ai-prompts/GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
 
 Preferred Grok configuration:
 
@@ -131,10 +172,10 @@ Do not click Build in Sol Max under the current workflow. Sol Max is planning-on
 
 ## Key documents
 
-- `SOL_MAX_PLAN_ONLY_PROMPT.md` — authoritative Sol Max planning instructions.
-- `GROK_BOT_START_HERE.md` — authoritative Grok bootstrap/handoff instructions.
-- `GROK_46_XHIGH_FAST_BUILD_PROMPT.md` — authoritative Grok implementation instructions.
-- `GROK_BOT_QA_PROMPT.md` — Grok per-phase self-review gate.
+- `docs/ai-prompts/SOL_MAX_PLAN_ONLY_PROMPT.md` — authoritative Sol Max planning instructions.
+- `docs/ai-prompts/GROK_BOT_START_HERE.md` — authoritative Grok bootstrap/handoff instructions.
+- `docs/ai-prompts/GROK_46_XHIGH_FAST_BUILD_PROMPT.md` — authoritative Grok implementation instructions.
+- `docs/ai-prompts/GROK_BOT_QA_PROMPT.md` — Grok per-phase self-review gate.
 - `docs/AI_DEVELOPMENT_WORKFLOW.md` — shared AI ownership/workflow.
 - `docs/AI_REVIEW_CHECKLIST.md` — implementation review checklist.
 - `AGENTS.md` — persistent project instructions.
@@ -147,7 +188,7 @@ Do not click Build in Sol Max under the current workflow. Sol Max is planning-on
 - `docs/IMPLEMENTATION_PHASES.md` — implementation order.
 - `docs/TEST_PLAN.md` — test strategy.
 
-`CURSOR_PLAN_PROMPT.md` remains available as legacy planning context, but the current handoff starts with `SOL_MAX_PLAN_ONLY_PROMPT.md`.
+`docs/ai-prompts/CURSOR_PLAN_PROMPT.md` remains available as legacy planning context (as does the deprecated `docs/ai-prompts/SOL_MAX_BUILD_PROMPT.md`), but the current handoff starts with `docs/ai-prompts/SOL_MAX_PLAN_ONLY_PROMPT.md`.
 
 ## Current official API limitation
 
@@ -165,6 +206,8 @@ npm run dev
 ```
 
 Hover an item in Path of Exile 2, copy it (`Ctrl+C`), then press **Ctrl+D** in the companion or use **Items → Read clipboard**. To empty the bag into stash, calibrate under Tools, open stash and inventory in-game, then use **Tools → Transfers → Empty**. **Ctrl+Shift+Esc** stops generated input.
+
+Numpad hotkeys (via `npm run actions:daemon`, editable under **Tools → Hotkeys**): Num1 Stash, Num2 Sort, Num3 Fill, **Num4 Shop** (price the bag from the live feed + trade2 comps and list it in price-bucket merchant tabs through Ange's Manage Shop), Num6 Identify & drop (in map), Num7 Vendor cycle (in map). Num0 stops, Num5 pauses, Num8/9 are step-mode verdicts.
 
 ## Develop
 ```

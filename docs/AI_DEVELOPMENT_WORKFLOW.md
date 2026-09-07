@@ -26,7 +26,7 @@ Sol Max then stops. It is not the primary implementation agent under the current
 
 Use:
 
-`SOL_MAX_PLAN_ONLY_PROMPT.md`
+`docs/ai-prompts/SOL_MAX_PLAN_ONLY_PROMPT.md`
 
 ### Grok 4.6 xhigh Fast — Implementation authority
 
@@ -51,7 +51,7 @@ Preferred configuration:
 
 Use:
 
-`GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
+`docs/ai-prompts/GROK_46_XHIGH_FAST_BUILD_PROMPT.md`
 
 ## Shared workflow
 
