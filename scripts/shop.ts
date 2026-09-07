@@ -56,8 +56,8 @@ import { StashTabKit } from "../src/adapters/stashTabKit.js";
 import { SortHarness, SortStop } from "../src/adapters/sortHarness.js";
 import { GearSorter } from "../src/adapters/gearSorter.js";
 import { ShopKeeper, type ShopAction } from "../src/adapters/shopKeeper.js";
+import { loadTriageExport } from "../src/adapters/triageLoader.js";
 import { PriceFeedService } from "../src/main/priceFeedService.js";
-import { evaluateWithAppraisal } from "../src/core/appraisal.js";
 import {
   defaultShopConfig,
   deriveShopState,
@@ -69,17 +69,6 @@ import {
   type ShopSnapshot,
 } from "../src/core/shopListings.js";
 import { salesStats } from "../src/core/shopPricing.js";
-import {
-  starterPriceTable,
-  validatePriceTable,
-  type PriceTable,
-} from "../src/core/priceTable.js";
-import {
-  DEFAULT_TIER_THRESHOLDS,
-  starterValueTierRules,
-  type ValueTierRules,
-  type ValueTierThresholds,
-} from "../src/core/valueTiers.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const templateDir = path.join(root, "fixtures", "perception", "templates");
@@ -133,37 +122,12 @@ function loadShopConfig(): ShopConfig {
   return config;
 }
 
-function loadTriageExport(): {
-  priceTable: PriceTable;
-  evaluate: (itemText: string) => ReturnType<typeof evaluateWithAppraisal>;
-} {
-  let rules: ValueTierRules = starterValueTierRules();
-  let thresholds: ValueTierThresholds = { ...DEFAULT_TIER_THRESHOLDS };
-  let priceTable: PriceTable = starterPriceTable();
-  const file = path.join(outDir, "triage.json");
-  if (existsSync(file)) {
-    try {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as {
-        rules?: ValueTierRules;
-        thresholds?: ValueTierThresholds;
-        priceTable?: unknown;
-      };
-      if (parsed.rules?.keep && parsed.rules.sell && parsed.rules.dump) rules = parsed.rules;
-      if (parsed.thresholds) thresholds = parsed.thresholds;
-      const tableCheck = validatePriceTable(parsed.priceTable);
-      if (tableCheck.valid && tableCheck.table) priceTable = tableCheck.table;
-    } catch (error) {
-      console.log(`triage.json unreadable (${String(error)}) — starter tiers/prices`);
-    }
-  }
-  return {
-    priceTable,
-    evaluate: (itemText) => evaluateWithAppraisal(itemText, { rules, priceTable, thresholds }),
-  };
-}
-
 const config = loadShopConfig();
-const { priceTable, evaluate } = loadTriageExport();
+// The app's triage export (tiers + price table), placeholders stripped and
+// the newest feed snapshot merged — the one loader every CLI uses
+// (src/adapters/triageLoader.ts). An unreadable file is logged to the
+// console, as the private copy here used to.
+const { priceTable, evaluate } = loadTriageExport(root);
 
 /* ---------------- offline modes (no game) ---------------- */
 

@@ -87,11 +87,12 @@ if (sourceArg !== "bag" && sourceArg !== "review") {
 const reviewSource = sourceArg === "review";
 
 // The app's triage export (tiers + price table), placeholders stripped and
-// the newest feed snapshot merged — src/adapters/triageLoader.ts.
-const triage = loadTriageExport(root);
+// the newest feed snapshot merged — src/adapters/triageLoader.ts. Reloaded
+// after the feed refresh so the appraisal prices off the refreshed table.
+let triage = loadTriageExport(root);
 // The feed refresh merges live prices into this table for the whole run.
 let priceTable: PriceTable = triage.priceTable;
-const evaluate = triage.evaluate;
+const evaluate = (itemText: string) => triage.evaluate(itemText);
 const configFile = path.join(outDir, "shop.json");
 const { config } = parseShopConfig(
   existsSync(configFile) ? (JSON.parse(readFileSync(configFile, "utf8")) as unknown) : undefined,
@@ -127,6 +128,10 @@ const keeper = new ShopKeeper(host, harness, kit, sorter, {
   dryRun,
   stepMode,
   priceTable,
+  // The feed refresh replaces the table object (mergeFeedSnapshot builds a
+  // new one): read it live, or every divine bucket would be valued at the
+  // pre-refresh rate while the comps arrive at the live one.
+  getPriceTable: () => priceTable,
   evaluate,
   ...(fullVerify ? { fullVerify: true } : {}),
   ...(feed
@@ -173,6 +178,10 @@ try {
         ? `price feed: refresh FAILED (${status.lastError}) — pricing off the exported table`
         : `price feed: ${status.resolvedLeague ?? status.config.league} league, ${status.feedEntryCount} entries, refreshed ${status.lastRefreshAt ?? "now"}`,
     );
+    // The refresh wrote feed-snapshot.json: reload the export so the
+    // appraisal's price-table hits (uniques, currency) use the same numbers
+    // the buckets and comps now do.
+    if (!status.lastError) triage = loadTriageExport(root, { log: () => undefined });
   } else if (feed) {
     // No price refresh, but the league still has to be unambiguous for comps.
     if (feed.status().config.league === "auto") await feed.leagues().catch(() => []);

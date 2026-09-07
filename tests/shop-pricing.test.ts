@@ -92,6 +92,14 @@ describe("denomination", () => {
     expect(denominatePrice(85, table)).toEqual({ amount: 2, currency: "divine", exalted: 80 });
     expect(denominatePrice(0.4, table)).toEqual({ amount: 1, currency: "exalted", exalted: 1 });
   });
+
+  it("never rounds a sub-divine value up to a whole divine", () => {
+    // 0.6 divine stays in exalted at any rate.
+    expect(denominatePrice(0.6 * 40, tableWithDivine(40))).toEqual({ amount: 24, currency: "exalted", exalted: 24 });
+    expect(denominatePrice(0.6 * 624, tableWithDivine(624))).toEqual({ amount: 374, currency: "exalted", exalted: 374 });
+    expect(denominatePrice(39.9, tableWithDivine(40))).toMatchObject({ currency: "exalted", amount: 40 });
+    expect(denominatePrice(40, tableWithDivine(40))).toEqual({ amount: 1, currency: "divine", exalted: 40 });
+  });
 });
 
 describe("suggestListingPrice", () => {

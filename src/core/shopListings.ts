@@ -818,9 +818,13 @@ export function verifySalesWithEarnings(args: {
   const delta = args.earningsDelta;
   const total = delta.totalExalted;
   const sold = args.events.filter((event) => event.kind === "sold" && event.certainty === "heuristic");
-  const valueOf = (event: ListingEvent): number | undefined => {
+  /** The per-copy price a sold row was listed at: its own realized estimate, else the gone listing's. */
+  const priceOf = (event: ListingEvent): ListingPrice | undefined => {
     const gone = args.goneListings.find((entry) => entry.fingerprint === event.fingerprint);
-    const price = event.realized ?? gone?.price;
+    return event.realized ?? gone?.price;
+  };
+  const valueOf = (event: ListingEvent): number | undefined => {
+    const price = priceOf(event);
     return price?.exalted !== undefined ? price.exalted * event.count : undefined;
   };
   const upgrade = (event: ListingEvent, realized: ListingPrice, reason: string): ListingEvent => ({
@@ -829,6 +833,16 @@ export function verifySalesWithEarnings(args: {
     realized,
     reason,
   });
+  /** `realized` is PER COPY (salesStats multiplies by count): a delta that
+   * covers several copies of one listing is split across them. */
+  const perCopy = (price: ListingPrice, count: number): ListingPrice =>
+    count > 1
+      ? {
+          amount: Math.round((price.amount / count) * 10_000) / 10_000,
+          currency: price.currency,
+          ...(price.exalted !== undefined ? { exalted: Math.round((price.exalted / count) * 100) / 100 } : {}),
+        }
+      : price;
 
   if (sold.length === 0) {
     if (total > 0) {
@@ -853,11 +867,11 @@ export function verifySalesWithEarnings(args: {
   // 1. One gone listing whose price IS the delta.
   const exact = priced.find((event) => within(valueOf(event)!, total, EXACT_TOLERANCE));
   if (exact && sold.length === 1) {
-    verified.set(exact, upgrade(exact, exact.realized!, `verified by the Earnings tab: +${total} ex arrived`));
+    verified.set(exact, upgrade(exact, priceOf(exact)!, `verified by the Earnings tab: +${total} ex arrived`));
   } else if (sold.length === 1) {
     // 2. Exactly one listing gone, delta says something else: that IS the sale.
     const only = sold[0]!;
-    const realized = realizedFromDelta(delta);
+    const realized = perCopy(realizedFromDelta(delta), only.count);
     verified.set(
       only,
       upgrade(
@@ -871,7 +885,7 @@ export function verifySalesWithEarnings(args: {
     // 3. Several gone: an exact single match first, else the subset whose
     //    sum lands within 5% (small n — the ledger's gone set is a handful).
     if (exact) {
-      verified.set(exact, upgrade(exact, exact.realized!, `verified by the Earnings tab: +${total} ex arrived`));
+      verified.set(exact, upgrade(exact, priceOf(exact)!, `verified by the Earnings tab: +${total} ex arrived`));
     } else {
       const pool = priced.slice(0, 14);
       let best: { subset: ListingEvent[]; error: number } | undefined;
@@ -894,7 +908,7 @@ export function verifySalesWithEarnings(args: {
             event,
             upgrade(
               event,
-              event.realized!,
+              priceOf(event)!,
               `verified by the Earnings tab: ${best.subset.length} sale(s) sum to ≈${total} ex`,
             ),
           );
@@ -943,6 +957,10 @@ export function priceFromTabLabel(label: string): BucketPrice | undefined {
   );
   const match = BUCKET_LABEL.exec(folded);
   if (!match) return undefined;
+  // A leading zero can only come from letters folded to digits ("Old" →
+  // "01d", which would read as a 1-divine bucket): no bucket is named
+  // "01Ex", so refuse rather than price a plain word tab.
+  if (/^0\d/.test(match[1]!)) return undefined;
   const amount = Number(match[1]!.replace(",", "."));
   if (!Number.isFinite(amount) || amount <= 0) return undefined;
   const unit = match[2]!.toLowerCase();

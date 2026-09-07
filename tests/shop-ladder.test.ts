@@ -158,6 +158,30 @@ describe("planBucketLadder", () => {
     expect(plan.moves[0]!.reasons[0]).toMatch(/comps floor 8 ex/);
   });
 
+  it("holds when the comps target sits nearer the current bucket than the next one down", () => {
+    // 1D (40 ex) with comps at 30 ex: the market moved, but the only bucket
+    // below is 10Ex — 20 ex given away versus 10 ex over the market. Hold.
+    const stale = listing({ price: { amount: 1, currency: "divine", exalted: 40 } });
+    const held = planBucketLadder({
+      listings: [stale],
+      buckets: BUCKETS,
+      config: config(),
+      nowMs: NOW,
+      compsFor: () => suggestionAt(30),
+    });
+    expect(held.moves).toHaveLength(0);
+    expect(held.holds[0]!.reasons[0]).toMatch(/no bucket in between/);
+    // Comps at 12 ex: 10Ex is the nearer bucket — the move stands.
+    const moved = planBucketLadder({
+      listings: [stale],
+      buckets: BUCKETS,
+      config: config(),
+      nowMs: NOW,
+      compsFor: () => suggestionAt(12),
+    });
+    expect(moved.moves[0]).toMatchObject({ from: { label: "1D" }, to: { label: "10Ex" } });
+  });
+
   it("with ladderWithoutComps off, no comps (or unusable comps) means hold", () => {
     const off = config({ ladderWithoutComps: false });
     const noComps = planBucketLadder({ listings: [listing()], buckets: BUCKETS, config: off, nowMs: NOW });

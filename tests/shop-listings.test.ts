@@ -415,4 +415,11 @@ describe("bucket labels under OCR", () => {
     expect(priceFromTabLabel("lEx")).toMatchObject({ amount: 1, currency: "exalted" });
     expect(priceFromTabLabel("5D")).toMatchObject({ amount: 5, currency: "divine" });
   });
+
+  it("never turns a word tab into a bucket through the digit fold (Old → 01d)", () => {
+    for (const label of ["Old", "Ol Ex", "Ideas", "Odd"]) {
+      expect(priceFromTabLabel(label), label).toBeUndefined();
+    }
+    expect(priceFromTabLabel("IOEx")?.amount).toBe(10);
+  });
 });

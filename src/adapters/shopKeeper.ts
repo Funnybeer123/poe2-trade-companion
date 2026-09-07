@@ -92,6 +92,13 @@ function compsBudgetFor(limit: number | undefined, fallback: number): number {
   return Math.max(0, Math.min(Math.floor(wanted), HOUSE_LOOKUPS_PER_WINDOW));
 }
 
+/** Currency by Ctrl+C ground truth: the class line, else the rarity line. */
+function isCurrencyItem(item: Pick<IdentifiedItem, "text" | "itemClass">): boolean {
+  if (/currency/i.test(item.itemClass ?? "")) return true;
+  const parsed = parseItemText(item.text);
+  return /currency/i.test(parsed.itemClass) || /currency/i.test(parsed.rarity);
+}
+
 /** The item's display name: the first copy line after the class/rarity header. */
 function itemNameOf(text: string): string {
   return (
@@ -445,6 +452,13 @@ export interface ShopKeeperOptions {
   stepMode: boolean;
   priceTable?: PriceTable;
   /**
+   * The LIVE price table when a feed refresh can replace it mid-run: the
+   * merge builds a new table object, so a keeper holding the pre-refresh
+   * one valued every divine bucket at a stale rate while comps arrived at
+   * the live one. Read on every use; `priceTable` is the fallback.
+   */
+  getPriceTable?: () => PriceTable;
+  /**
    * Rate-limited comps provider (the caller owns pacing and caching).
    * "rate-limited" ends comps lookups for the rest of the run — the
    * remaining items are held with that reason instead of stalling a
@@ -488,6 +502,11 @@ export class ShopKeeper {
     return this.options.now?.() ?? new Date();
   }
 
+  /** The price table as of NOW (a feed refresh may have replaced it). */
+  private get table(): PriceTable | undefined {
+    return this.options.getPriceTable?.() ?? this.options.priceTable;
+  }
+
   private get outDir(): string {
     return path.join(this.options.root, "artifacts", "tab-admin");
   }
@@ -511,7 +530,9 @@ export class ShopKeeper {
    * never stash navigation, so scanTab runs with navigate:false.
    */
   source(): SourceTab {
-    return { label: this.options.config.shopTab, occurrence: 0 };
+    // shop: true pins the merchant grid to 12x12 (a crowded tab read as
+    // 24x24 live on 2026-09-03) and keeps cleanTab refusing it.
+    return { label: this.options.config.shopTab, occurrence: 0, shop: true };
   }
 
   /**
@@ -588,6 +609,14 @@ export class ShopKeeper {
    */
   async ensureMerchantOpen(): Promise<boolean> {
     if (await this.merchantOpen()) return true;
+    // The stash panel sits where the Merchant does: Ange cannot be clicked
+    // through it, and a stray "Ange" OCR hit behind it would click into the
+    // panel. The Review source closes the stash itself (closeStashPanel);
+    // anything else must close it by hand.
+    if ((await panelsViaOcr(this.host)).stash) {
+      this.log("  ! the stash panel is open — close it before the Merchant can be opened");
+      return false;
+    }
     await this.host.send({ op: "focus" });
     await this.harness.sleep(200, false);
     await this.park();
@@ -664,7 +693,7 @@ export class ShopKeeper {
     const strip = await this.kit.readStrip();
     const zoomed = await this.readStripZoomed();
     const labels = [...strip.folder, ...strip.top, ...zoomed].map((entry) => entry.label);
-    const buckets = bucketTabs(labels, this.options.priceTable);
+    const buckets = bucketTabs(labels, this.table);
     const seen = new Set<string>();
     return buckets.filter((bucket) => {
       const key = `${bucket.amount}:${bucket.currency}`;
@@ -790,7 +819,7 @@ export class ShopKeeper {
     const parsed = parseItemText(item.text);
     const name = parsed.name || parsed.baseType || itemNameOf(item.text);
     const count = stackCountOf(parsed) ?? 1;
-    const unit = currencyUnitExalted(name, this.options.priceTable);
+    const unit = currencyUnitExalted(name, this.table);
     return {
       name,
       count,
@@ -831,10 +860,21 @@ export class ShopKeeper {
     await this.requirePanel("merchant");
     const scan = await this.sorter.scanTab(this.earningsSource(), { navigate: false });
     if (!scan.ok) throw new Error(`earnings-scan-failed:${scan.reason}`);
+    // Sale proceeds are currency by construction (the price dialog offers
+    // nothing else). A non-currency read means the sub-tab click did not
+    // land and this is some bucket tab: a snapshot of it would become a
+    // false baseline and every later delta a false "verified" sale.
+    const foreign = scan.modelItems.find((item) => !isCurrencyItem(item));
+    if (foreign) {
+      throw await this.captureAndStop(
+        "earnings-scan",
+        `the Earnings scan read "${itemNameOf(foreign.text)}" (${foreign.itemClass ?? parseItemText(foreign.text).itemClass}) — not currency, so the sub-tab click did not land; nothing recorded`,
+      );
+    }
     const stacks = scan.modelItems.map((item) => this.stackOf(item));
     const snapshot: EarningsSnapshot = { at: this.now().toISOString(), stacks };
     const previous = this.loadEarningsSnapshot();
-    const delta = diffEarnings(previous, snapshot, this.options.priceTable);
+    const delta = diffEarnings(previous, snapshot, this.table);
     report.push(
       `Earnings: ${stacks.length} stack(s)` +
         (stacks.length > 0
@@ -978,7 +1018,7 @@ export class ShopKeeper {
         at: this.now().toISOString(),
         tab: config.shopTab,
         unreadCells: result.unread.length,
-        ...(this.options.priceTable ? { priceTable: this.options.priceTable } : {}),
+        ...(this.table ? { priceTable: this.table } : {}),
       },
     );
     const usedCells = result.modelItems.reduce((sum, item) => sum + item.cells.length, 0);
@@ -1011,7 +1051,7 @@ export class ShopKeeper {
       state: prior,
       snapshot,
       ...(options.knownElsewhere ? { knownElsewhere: options.knownElsewhere } : {}),
-      ...(this.options.priceTable ? { priceTable: this.options.priceTable } : {}),
+      ...(this.table ? { priceTable: this.table } : {}),
     });
     let events = reconciled.events;
     const report = [...reconciled.report];
@@ -1063,13 +1103,15 @@ export class ShopKeeper {
       if (!comps || comps === "rate-limited") return undefined;
       return suggestListingPrice(comps, config, {
         at,
-        ...(this.options.priceTable ? { priceTable: this.options.priceTable } : {}),
+        ...(this.table ? { priceTable: this.table } : {}),
       });
     };
 
     for (const item of snapshot.items) {
       const listing = byPrint.get(item.fingerprint);
       if (!listing) continue; // reconcile handles unknown items
+      // Comps are paced seconds apart: Numpad 0 must land between them.
+      await this.harness.checkpoint(`plan: ${item.name}`);
       const priced = item.note && item.note.kind !== "other";
       if (!priced && !config.tabWidePrice) {
         const suggestion = await suggestionFor(item);
@@ -1107,7 +1149,7 @@ export class ShopKeeper {
         ...(rawSuggestion ? { suggestion: rawSuggestion } : {}),
         config,
         nowMs,
-        ...(this.options.priceTable ? { priceTable: this.options.priceTable } : {}),
+        ...(this.table ? { priceTable: this.table } : {}),
       });
       if (decision.action === "hold") {
         holds.push({
@@ -1382,18 +1424,31 @@ export class ShopKeeper {
     return result;
   }
 
-  /** Right-click with the marker overlay (mirrors StashTabKit.pointer). */
-  private async rightClick(x: number, y: number, why: string): Promise<void> {
+  /**
+   * Right-click with the marker overlay (mirrors StashTabKit.pointer). It
+   * opens the price dialog, so in step mode it waits for Numpad 8 like
+   * every other gesture; Numpad 9 skips it (false — nothing was sent).
+   */
+  private async rightClick(x: number, y: number, why: string): Promise<boolean> {
     await this.harness.checkpoint(`before right-click: ${why}`);
-    await this.host
-      .send({
-        op: "marks",
-        rects: [{ x: Math.round(x) - 22, y: Math.round(y) - 22, w: 44, h: 44, kind: "click", label: why }],
-      })
-      .catch(() => undefined);
-    await this.harness.sleep(400, false);
+    if (this.options.stepMode) {
+      const verdict = await this.harness.confirmPlan(
+        [{ x: Math.round(x) - 22, y: Math.round(y) - 22, w: 44, h: 44, kind: "click" }],
+        `right-click: ${why}`,
+      );
+      if (verdict === "wrong") return false;
+    } else {
+      await this.host
+        .send({
+          op: "marks",
+          rects: [{ x: Math.round(x) - 22, y: Math.round(y) - 22, w: 44, h: 44, kind: "click", label: why }],
+        })
+        .catch(() => undefined);
+      await this.harness.sleep(400, false);
+    }
     await this.host.send({ op: "rightclick", x: Math.round(x), y: Math.round(y) });
     await this.host.send({ op: "hidemark" }).catch(() => undefined);
+    return true;
   }
 
   private async park(): Promise<void> {
@@ -1428,8 +1483,12 @@ export class ShopKeeper {
     for (let attempt = 0; attempt < 2; attempt += 1) {
       const outcome = await this.tryPriceDialog(point, price, name, attempt);
       if (outcome.ok) return outcome;
-      if (outcome.reason === "dialog-not-taught" || outcome.reason === "currency-not-taught") {
-        return outcome; // teaching is a user action, not a retry
+      if (
+        outcome.reason === "dialog-not-taught" ||
+        outcome.reason === "currency-not-taught" ||
+        outcome.reason === "right-click-rejected"
+      ) {
+        return outcome; // teaching and a step-mode refusal are user actions, not retries
       }
       this.log(
         `  · ${name}: price write attempt ${attempt + 1} failed (${outcome.reason}${outcome.readBack ? `; tooltip read "${outcome.readBack}"` : "; no tooltip read"})`,
@@ -1446,7 +1505,9 @@ export class ShopKeeper {
   ): Promise<PriceWriteOutcome> {
     await this.host.send({ op: "focus" });
     await this.harness.sleep(200, false);
-    await this.rightClick(point.x, point.y, `price dialog: ${name}`);
+    if (!(await this.rightClick(point.x, point.y, `price dialog: ${name}`))) {
+      return { ok: false, reason: "right-click-rejected" };
+    }
     await this.park();
     const filled = await this.fillOpenPriceDialog(price, name, attempt);
     if (!filled.ok) return filled;
@@ -1619,7 +1680,7 @@ export class ShopKeeper {
           // OCR failed then) — adopt it now rather than leave a gap.
           const exalted = noteExalted(
             { kind: "price", amount: price.amount, currency: price.currency, raw: current.raw },
-            this.options.priceTable,
+            this.table,
           );
           events.push({
             at: this.now().toISOString(),
@@ -1652,7 +1713,7 @@ export class ShopKeeper {
       report.push(`${name}: ${current ? `"${current.raw}"` : "unpriced"} → ${outcome.readBack}`);
       const exalted = noteExalted(
         { kind: "price", amount: price.amount, currency: price.currency, raw: outcome.readBack ?? "" },
-        this.options.priceTable,
+        this.table,
       );
       events.push({
         at: this.now().toISOString(),
@@ -1669,7 +1730,15 @@ export class ShopKeeper {
         reason: "reprice pass",
       });
     }
-    this.appendEvents(events);
+    // A dry-run reads and reports; the ledger is written by live passes
+    // only (adoptions included — the tooltip read is real, the run is not).
+    if (this.options.dryRun) {
+      if (events.length > 0) {
+        report.push(`${events.length} adoption(s) NOT recorded (dry-run — a --live reprice pass records them)`);
+      }
+    } else {
+      this.appendEvents(events);
+    }
     return { repriced, skipped, failed, report };
   }
 
@@ -1763,6 +1832,8 @@ export class ShopKeeper {
           continue;
         }
         compsBudget -= 1;
+        // Comps are paced seconds apart: Numpad 0 must land between them.
+        await this.harness.checkpoint(`pricing ${name}`);
         const comps = await this.options.comps(item.text);
         if (comps === "rate-limited") {
           compsBudget = 0;
@@ -1779,7 +1850,7 @@ export class ShopKeeper {
         if (comps) {
           const suggestion = suggestListingPrice(comps, config, {
             at,
-            ...(this.options.priceTable ? { priceTable: this.options.priceTable } : {}),
+            ...(this.table ? { priceTable: this.table } : {}),
           });
           if (isPriceRefusal(suggestion)) {
             if (suggestion.refusal === "below-floor") {
@@ -2048,7 +2119,7 @@ export class ShopKeeper {
       }
       const exalted = noteExalted(
         { kind: "price", amount: asking.amount, currency: asking.currency, raw: asking.raw },
-        this.options.priceTable,
+        this.table,
       );
       events.push({
         at: this.now().toISOString(),
@@ -2109,8 +2180,19 @@ export class ShopKeeper {
       await this.harness.sleep(800, false);
       const filled = await this.fillOpenPriceDialog(entry.price, entry.name);
       if (!filled.ok) {
+        // Still in its bag cell = the game refused (runes never open the
+        // dialog) or nothing happened: safe to go on. Gone from the bag
+        // without a verified listing = unpriced in the tab, or on the
+        // cursor — the next ctrl-click would act on top of it. Stop.
+        const bagAfterFailure = await this.sorter.bagCellsNow();
+        if (!bagAfterFailure.some((other) => other.row === cell.row && other.col === cell.col)) {
+          throw await this.captureAndStop(
+            "list-dialog",
+            `${entry.name} left bag ${cell.row},${cell.col} but the price dialog failed (${filled.reason}) — it may sit unpriced in "${tabLabel}" or on the cursor; check the game`,
+          );
+        }
         failed += 1;
-        report.push(`${entry.name}: price dialog failed (${filled.reason}) — check whether it moved`);
+        report.push(`${entry.name}: price dialog failed (${filled.reason}) — still in the bag`);
         continue;
       }
       await this.harness.sleep(500, false);
@@ -2345,7 +2427,7 @@ export class ShopKeeper {
         ...(comps ? { comps } : {}),
         config,
         at,
-        ...(this.options.priceTable ? { priceTable: this.options.priceTable } : {}),
+        ...(this.table ? { priceTable: this.table } : {}),
       });
       if (!gate.ok) {
         report.push(`hold (Review): ${item.itemClass ?? "item"} — ${gate.reason}`);
@@ -2523,15 +2605,27 @@ export class ShopKeeper {
         const landed = bagAfter.filter((entry) => !known.has(`${entry.row},${entry.col}`));
         let bagText = landed.length > 0 ? await this.sorter.copyAt(landed[0]!.x, landed[0]!.y) : "";
         if (landed.length === 0 || !bagText || fingerprintOf(bagText) !== listing.fingerprint) {
-          // The item may be on the cursor: put it back where it was, then stop.
+          const seen =
+            landed.length === 0
+              ? `the bag did not grow after ctrl-clicking ${name}`
+              : `bag cell ${landed[0]!.row},${landed[0]!.col} reads ${bagText ? `"${itemNameOf(bagText)}"` : "nothing"} after ctrl-clicking ${name}`;
+          // Only click the cell when the item can actually be on the cursor:
+          // if Ctrl+C still reads it IN its cell, nothing moved and a plain
+          // click there would pick it up — the very hazard the click exists
+          // to undo. An empty cell means it left without reaching the bag.
+          const stillThere = await this.sorter.copyAt(cell.x, cell.y);
+          if (stillThere && fingerprintOf(stillThere) === listing.fingerprint) {
+            throw await this.captureAndStop(
+              "ladder-delist",
+              `${seen} — it is still in ${fromLabel} ${cell.row},${cell.col} (Ctrl+C), so the ctrl-click did nothing; the delist gesture is something else. Nothing moved`,
+            );
+          }
           await this.harness.click(cell.x, cell.y, `put ${name} back (delist unverified)`);
           await this.park();
           await this.harness.sleep(600, false);
           throw await this.captureAndStop(
             "ladder-delist",
-            landed.length === 0
-              ? `the bag did not grow after ctrl-clicking ${name} — clicked its cell once to put a held item back; check the game`
-              : `bag cell ${landed[0]!.row},${landed[0]!.col} reads ${bagText ? `"${itemNameOf(bagText)}"` : "nothing"} after ctrl-clicking ${name} — clicked its cell once to put a held item back; check the game`,
+            `${seen} and its cell copies empty — clicked the cell once to put a held item back; check the game (a price dialog may have opened)`,
           );
         }
         bagText = bagText || item.text;
