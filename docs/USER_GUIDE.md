@@ -15,7 +15,7 @@ npm run dev
 
 `npm run dev` starts Vite and opens the Electron window titled **Item Intelligence · PoE2 Intelligence**.
 
-If `better-sqlite3` fails after a Node or Electron version change:
+If `better-sqlite3` fails after a Node or Electron version change, `npm install` (its `postinstall`) rebuilds it for Electron; the manual equivalent is `npm run rebuild:native:electron`. Only when a script must use sqlite under plain Node:
 
 ```powershell
 npm run rebuild:native:host

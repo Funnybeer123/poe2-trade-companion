@@ -157,6 +157,25 @@ clean. Tests now run under Electron-as-Node (see "Tooling").
   `npm run pack:public:dir` / `pack:qa:dir` then `npx playwright test`.
 - `AGENTS.md` carries a "Current practice" section with the tooling facts.
 
+### Second-pass review (same day, after the merge to main)
+Four review agents re-read the new code; each was cut off by the session
+limit and finished by hand. What landed:
+- Pricing: HOUSE trade2 rate rules (10 searches + 10 fetches per 300 s,
+  18 combined) enforced on top of the advertised headers; comps cache hits
+  require the entry's league; the pacing log is saved even on timeouts; a
+  long Retry-After is remembered, never retried inline; rarity-only price
+  rows no longer yield a confident price.
+- Shop: live price table during a run, stash-open guard before Ange,
+  Earnings scan sanity check, step-gated right-click, no ledger writes in
+  dry-run reprice passes, failed-listing bag check, safer ladder put-back;
+  `shop.ts` on the shared loader.
+- Renderer: typed stash-tabs/market bridges (no casts), loading/empty/error
+  states, inventory superseding fix, host close wait, craft-gear arg guard.
+- Tooling: `npm run check`, worktree-agnostic tests with visible skips, local
+  tsx launch for scripts, memoized process poll, CI on Node 24 with the
+  Electron test runner plus the packaged e2e smoke, and a `postinstall`
+  that rebuilds better-sqlite3 for Electron after every `npm install`.
+
 ## First live checks, in order (all in `--step` / dry-run first)
 
 1. `npx tsx scripts/shop-buckets.ts` (dry-run) — must abort with the
