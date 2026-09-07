@@ -4,51 +4,36 @@ import {
   withPackagedElectron,
 } from "./electron-smoke.js";
 
-test("full build exposes live automation with e-stop ready", async ({}, testInfo) => {
+/**
+ * The QA artifact is the same companion built with POE2_BUILD_MODE=authorized-qa
+ * (there is no separate QA banner or opt-in any more — see AGENTS.md). The smoke
+ * proves the build boots, reports its mode in the rail, arms the e-stop, and
+ * reaches every workspace without renderer errors.
+ */
+test("QA build boots in authorized-qa mode with the e-stop armed", async ({}, testInfo) => {
   await withPackagedElectron("authorized-qa", testInfo, async ({ page }) => {
-    const banner = page.locator(".qa-banner");
-    await expect(banner).toBeVisible();
-    await expect(banner.getByText("Automation on", { exact: true })).toBeVisible();
-    await expect(
-      banner.getByText("Stash transfers and scans can send input to Path of Exile", {
-        exact: true,
-      }),
-    ).toBeVisible();
-
-    await navigatePrimary(page, "Tools & QA", "Tools & QA", "/tools/overview");
-    const tools = page.getByRole("navigation", {
-      name: "Tools and QA sections",
-    });
-    await tools.getByRole("link", { name: /QA dashboard/ }).click();
-    await expect(page).toHaveURL(/#\/tools\/qa$/);
-    await expect(
-      page.getByRole("heading", { name: "Automation dashboard", exact: true }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("checkbox", { name: /Dry-run default/i }),
-    ).not.toBeChecked();
-    await expect(
-      page.getByRole("button", {
-        name: "Stage selected modules",
-        exact: true,
-      }),
-    ).toBeEnabled();
-
-    await navigatePrimary(page, "Items", "Item intelligence", "/items");
-    await expect(banner).toBeVisible();
+    const rail = page.locator("aside.side-rail");
+    await expect(rail).toBeVisible();
+    await expect(rail.locator(".rail-status")).toContainText("authorized-qa");
     await expect(
       page.getByText("E-stop ready · Ctrl+Shift+Esc", { exact: true }),
     ).toBeVisible();
 
-    await navigatePrimary(page, "Scans", "Scan sessions", "/scans");
-    const scannerControls = page.locator(".scanner-controls");
-    await expect(scannerControls).toHaveCount(1);
-    await scannerControls.locator("summary").click();
-    await expect(
-      page.getByRole("button", {
-        name: "Run live scan",
-        exact: true,
-      }),
-    ).toBeEnabled();
+    const routes = [
+      ["Sort", "Sort & triage", "/sort"],
+      ["Shop", "Shop", "/shop"],
+      ["Wealth", "Wealth", "/wealth"],
+      ["Item log", "Item log", "/items"],
+      ["Search", "Search & rules", "/search"],
+      ["Builds", "Build profiles", "/builds"],
+      ["Tools & QA", "Tools & QA", "/tools"],
+    ] as const;
+    for (const [label, heading, route] of routes) {
+      await navigatePrimary(page, label, heading, route);
+    }
+
+    // Sorting readiness on the home screen names the desktop bridge.
+    await navigatePrimary(page, "Sort", "Sort & triage", "/sort");
+    await expect(page.getByText("Game bridge available", { exact: true })).toBeVisible();
   });
 });

@@ -143,6 +143,20 @@ clean. Tests now run under Electron-as-Node (see "Tooling").
   cached position first, full-screen fallback. Used for Stash, ZELINA
   (daemon, vendor-cycle, shop keeper).
 
+### Later the same day
+- **Parser**: `(rune)` and `(desecrated)` mod tags are recognised
+  (`ItemModKind` gained `rune` / `desecrated`; `isAffixMod` in
+  `parseItem.ts`). Runes no longer consume an open-affix slot in the
+  crafting planner. Other consumers (appraisal craft hint, comps
+  similarity, stat filters, lookup screen) still count every parsed mod —
+  next step is to route them through `isAffixMod` as well.
+- **End-to-end smoke revived**: both Playwright projects were stale since
+  the navigation merge; they now walk every workspace (incl. Wealth,
+  Market, Deals, Loot filter), evaluate an item with the real valuation,
+  save rules/builds/scans, and verify persistence across a relaunch.
+  `npm run pack:public:dir` / `pack:qa:dir` then `npx playwright test`.
+- `AGENTS.md` carries a "Current practice" section with the tooling facts.
+
 ## First live checks, in order (all in `--step` / dry-run first)
 
 1. `npx tsx scripts/shop-buckets.ts` (dry-run) — must abort with the
