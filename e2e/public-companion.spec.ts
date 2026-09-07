@@ -46,6 +46,13 @@ test("companion shell exposes every workspace with the e-stop armed", async ({},
 
     for (const [label, heading, route] of WORKSPACES) {
       await navigatePrimary(page, label, heading, route);
+      if (label === "Sort") {
+        // The pricing half of readiness: league, feed age, trade2 budget.
+        const readiness = page.getByRole("list", { name: "Sorting readiness" });
+        for (const check of ["Pricing league", "Price feed", "trade2 budget"]) {
+          await expect(readiness.getByText(check, { exact: true })).toBeVisible();
+        }
+      }
       if (label === "Wealth") {
         // A fresh user-data dir has no inventory ledger: the empty state must render.
         await expect(page.getByText(/Nothing in the ledger yet/)).toBeVisible();

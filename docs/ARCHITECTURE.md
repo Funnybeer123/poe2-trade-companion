@@ -172,3 +172,85 @@ Implement provider interfaces so live services can be replaced with fixtures:
 - `Clock`: real vs deterministic test clock.
 
 This should let Cursor build most bot behavior against deterministic replay before running against a live client.
+
+
+## Current layout (2026-09-07)
+
+The sections above are the original target design. This is what exists now
+and where it lives; `docs/HANDOFF-roadmap-2026-09.md` records what changed
+on 2026-09-07 and which live paths are still unverified.
+
+### Processes
+
+- **Electron main** (`src/main/index.ts`) — window, global hotkeys (Ctrl+D
+  price check, Ctrl+Shift+Esc e-stop, Ctrl+Alt+V voice), clipboard poll
+  (focus-gated), SQLite persistence (`persistence/`), item intelligence
+  (`itemIntelligenceService.ts`: catalog, rules, builds, value tiers, price
+  table; mirrors tiers + prices to `artifacts/tab-admin/triage.json` for the
+  CLIs), price feed + trade2 comps (`priceFeedService.ts`), market trends
+  (`marketTrendsService.ts`), deals watchlist (`watchlistService.ts`), the
+  packaged script runner (`stashTabAdminService.ts`), assistive transfers and
+  the stash sorter services, the dry-run overlay window.
+- **Renderer** (`src/renderer`, Vue 3 + hash router) — Sort (home: run,
+  value tiers, prices), Shop, Wealth, Item log (evaluate + catalog + scan
+  sessions), Search (query builder + rule studio), Builds, and Tools & QA
+  (calibration, transfers, sort stash, stash tabs, hotkeys, diagnostics,
+  loot filter, settings, market, deals). `services/rendererApi.ts` is the
+  typed bridge with a browser-preview fallback; bridge shapes are declared
+  once in `src/shared/ipc.ts`.
+- **CLI flows** (`scripts/*.ts`, run with the local `tsx`) — the live game
+  drivers: `sort-gear`, `shop-buckets`, `shop-ladder`, `shop`, `shop-list-bag`,
+  `craft-gear`, `map-triage`, `vendor-cycle`, `stash-tab-admin`, the numpad
+  `action-daemon` (with the auto-flask guard), and the clean/rebuild tools.
+  Every CLI loads tiers and prices through `src/adapters/triageLoader.ts`.
+- **Input host** (`scripts/win-input-host.ps1`) — the one PowerShell process
+  that captures the screen, OCRs (Windows.Media.Ocr), and sends input; every
+  adapter talks to it through `src/adapters/winHost.ts`. It pins the Path of
+  Exile window and refuses every op without it.
+
+### Core (pure, `src/core`)
+
+- Item text: `parseItem.ts` (Ctrl+C text incl. `(rune)`/`(desecrated)`
+  tags, `isAffixMod`), `itemFingerprint.ts`.
+- Valuation: `priceTable.ts` (the single price authority automation trusts),
+  `priceFeed.ts` (poe2scout feed merge, league candidates, feed snapshot),
+  `tradeComps.ts` (trade2 queries incl. stat-filtered stage, listing parsing,
+  similarity), `tradePacing.ts` (header-driven pacer plus HOUSE rules),
+  `statIds.ts` (trade2 stat catalogue), `tierLearning.ts` (tiers learned
+  from listings), `modKnowledge.ts` (mod families), `appraisal.ts` (value
+  score + confidence), `localValuation.ts` (the Ctrl+D valuation),
+  `lookupScreen.ts` (which bag items deserve a trade2 lookup),
+  `priceTrends.ts`, `exchangeArbitrage.ts`, `lootFilter.ts`.
+- Decisions: `valueTiers.ts` (keep/sell/dump rules), `sortTriage.ts`
+  (detours incl. the craft tab), `bagTriage.ts`, `crafting.ts` (planner),
+  `shopListings.ts` + `shopPricing.ts` (ledger, buckets, ladder, gates),
+  `watchlist.ts`, `inventoryLedger.ts` (Wealth), `mapTriage.ts`.
+- Perception: `uiPerception.ts`, `cellOccupancy.ts`, `itemSprites.ts`,
+  `nameplates.ts`, `nameplateCache.ts`, `calibrationProfile.ts`.
+
+### Adapters (`src/adapters`, game-driving)
+
+`gearSorter.ts` (orchestrator) with `gearSorter/{context,stashPerception,
+tabNavigation,itemIdentification,transfers}.ts`; `shopKeeper.ts` (Ange's
+Merchant panel); `drainKit.ts`, `bagKit.ts`, `stashTabKit.ts`,
+`tabNavigator.ts`; `sortHarness.ts` (every click goes through it: overlays,
+step gating, Numpad 0 stop, pacing, bench log); `nameplateFinder.ts`;
+`flaskGuardRunner.ts`.
+
+### Data on disk
+
+Per-user (`%APPDATA%/poe2-trade-companion`): the SQLite database, the
+optional session cookie, scanner journal, capture artifacts. Shared with the
+CLIs (`artifacts/tab-admin`, gitignored): price-feed config, feed snapshot,
+comps cache, pacing log, stat catalogue, learned tiers, trends cache,
+triage export, inventory ledger, shop ledger and settings, watchlist and
+alerts. Recordings under `artifacts/teach` are irreplaceable.
+
+### Safety rails that hold everywhere
+
+Dry-run never sends input; every mutating click goes through the harness
+(step mode on Numpad 8/9, Numpad 0 stops within ~100 ms); unknown UI is
+capture-and-stop, never guessed; unidentified or unreadable items are never
+dumped; heuristics may promote an item up but never to dump; the vendor's
+accept click is the human's; trade2 traffic is paced and budgeted; the
+league must be unambiguous before anything prices.
