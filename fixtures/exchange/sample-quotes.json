@@ -1,0 +1,21 @@
+{
+  "league": "Runes of Aldur",
+  "capturedAt": "2026-09-07T12:00:00Z",
+  "note": "Hand-captured shape for Ange → Currency Exchange. `ratio` is WANT received per 1 HAVE as the panel shows it; `quantity` is the WANT stock at that ratio; `feeGoldPerTrade` is the gold the panel charges per trade. Numbers are illustrative — market prices are from the 2026-09-07 poe2scout feed, the exchange ratios are made up to show two direct edges and one 3-cycle (Chaos → Annulment → Exalted → Chaos, stock-capped by the Annulment → Exalted hop).",
+  "goldPerExalted": 5000,
+  "prices": {
+    "Divine Orb": 649,
+    "Chaos Orb": 44.8,
+    "Orb of Annulment": 256,
+    "Exalted Orb": 1
+  },
+  "quotes": [
+    { "have": "Divine Orb", "want": "Exalted Orb", "ratio": 640, "quantity": 12000, "feeGoldPerTrade": 1200 },
+    { "have": "Exalted Orb", "want": "Divine Orb", "ratio": 0.00152, "quantity": 30, "feeGoldPerTrade": 1200 },
+    { "have": "Divine Orb", "want": "Chaos Orb", "ratio": 15.2, "quantity": 400, "feeGoldPerTrade": 900 },
+    { "have": "Chaos Orb", "want": "Exalted Orb", "ratio": 43.5, "quantity": 9000, "feeGoldPerTrade": 300 },
+    { "have": "Exalted Orb", "want": "Chaos Orb", "ratio": 0.0225, "quantity": 800, "feeGoldPerTrade": 300 },
+    { "have": "Chaos Orb", "want": "Orb of Annulment", "ratio": 0.185, "quantity": 60, "feeGoldPerTrade": 500 },
+    { "have": "Orb of Annulment", "want": "Exalted Orb", "ratio": 252, "quantity": 5000, "feeGoldPerTrade": 900 }
+  ]
+}
