@@ -1255,3 +1255,26 @@ export const hotkeysApi = {
     return { exists: false };
   },
 };
+
+/** Market trends (poe2scout daily price logs) — src/main/marketTrendsService.ts. */
+export interface MarketTrendsView {
+  ok: boolean;
+  league?: string;
+  fetchedAt?: string;
+  stale: boolean;
+  refreshing: boolean;
+  source: "cache" | "network" | "none";
+  categories: string[];
+  trends: Array<import("@core/priceTrends").TrendReport>;
+  error?: string;
+}
+
+export interface MarketApi {
+  /** Cache when fresh, else a fetch; `cachedOnly` never touches the network. */
+  trends: (query?: { refresh?: boolean; cachedOnly?: boolean }) => Promise<MarketTrendsView>;
+  refresh: () => Promise<MarketTrendsView>;
+}
+
+export function getMarketApi(): MarketApi | undefined {
+  return nativeBridge()?.market as unknown as MarketApi | undefined;
+}

@@ -1,0 +1,471 @@
+{
+  "CurrentPage": 1,
+  "Pages": 2,
+  "Total": 38,
+  "Items": [
+    {
+      "CurrencyItemId": 18,
+      "ItemId": 295,
+      "CurrencyCategoryId": 21,
+      "ApiId": "mirror",
+      "BaseItemTypeId": "Metadata/Items/Currency/CurrencyDuplicate",
+      "Text": "Mirror of Kalandra",
+      "CategoryApiId": "currency",
+      "PriceLogs": [
+        {
+          "Price": 4443777,
+          "Time": "2026-09-07T00:00:00.0000000Z",
+          "Quantity": 10
+        },
+        {
+          "Price": 4124024.5,
+          "Time": "2026-09-06T00:00:00.0000000Z",
+          "Quantity": 77
+        },
+        {
+          "Price": 3873452,
+          "Time": "2026-09-05T00:00:00.0000000Z",
+          "Quantity": 27
+        },
+        {
+          "Price": 3408285.8,
+          "Time": "2026-09-04T00:00:00.0000000Z",
+          "Quantity": 125
+        },
+        {
+          "Price": 2753999.5,
+          "Time": "2026-09-03T00:00:00.0000000Z",
+          "Quantity": 128
+        },
+        {
+          "Price": 2486878.8,
+          "Time": "2026-09-02T00:00:00.0000000Z",
+          "Quantity": 148
+        },
+        {
+          "Price": 2530537.5,
+          "Time": "2026-09-01T00:00:00.0000000Z",
+          "Quantity": 156
+        }
+      ],
+      "CurrentPrice": 4786000.5,
+      "CurrentQuantity": 3
+    },
+    {
+      "CurrencyItemId": 14,
+      "ItemId": 291,
+      "CurrencyCategoryId": 21,
+      "ApiId": "divine",
+      "BaseItemTypeId": "Metadata/Items/Currency/CurrencyModValues",
+      "Text": "Divine Orb",
+      "CategoryApiId": "currency",
+      "PriceLogs": [
+        {
+          "Price": 588.7654,
+          "Time": "2026-09-07T00:00:00.0000000Z",
+          "Quantity": 265648
+        },
+        {
+          "Price": 558.79535,
+          "Time": "2026-09-06T00:00:00.0000000Z",
+          "Quantity": 1373284
+        },
+        {
+          "Price": 513.952,
+          "Time": "2026-09-05T00:00:00.0000000Z",
+          "Quantity": 1072377
+        },
+        {
+          "Price": 462.76874,
+          "Time": "2026-09-04T00:00:00.0000000Z",
+          "Quantity": 3198997
+        },
+        {
+          "Price": 410.45456,
+          "Time": "2026-09-03T00:00:00.0000000Z",
+          "Quantity": 3995750
+        },
+        {
+          "Price": 387.3555,
+          "Time": "2026-09-02T00:00:00.0000000Z",
+          "Quantity": 4349636
+        },
+        {
+          "Price": 368.9009,
+          "Time": "2026-09-01T00:00:00.0000000Z",
+          "Quantity": 4827458
+        }
+      ],
+      "CurrentPrice": 649.44824,
+      "CurrentQuantity": 58900
+    },
+    {
+      "CurrencyItemId": 10,
+      "ItemId": 287,
+      "CurrencyCategoryId": 21,
+      "ApiId": "chaos",
+      "BaseItemTypeId": "Metadata/Items/Currency/CurrencyRerollRare",
+      "Text": "Chaos Orb",
+      "CategoryApiId": "currency",
+      "PriceLogs": [
+        {
+          "Price": 41.289497,
+          "Time": "2026-09-07T00:00:00.0000000Z",
+          "Quantity": 209478
+        },
+        {
+          "Price": 38.748676,
+          "Time": "2026-09-06T00:00:00.0000000Z",
+          "Quantity": 851261
+        },
+        {
+          "Price": 45.14804,
+          "Time": "2026-09-05T00:00:00.0000000Z",
+          "Quantity": 930281
+        },
+        {
+          "Price": 46.071907,
+          "Time": "2026-09-04T00:00:00.0000000Z",
+          "Quantity": 2678506
+        },
+        {
+          "Price": 41.83933,
+          "Time": "2026-09-03T00:00:00.0000000Z",
+          "Quantity": 4454294
+        },
+        {
+          "Price": 38.615154,
+          "Time": "2026-09-02T00:00:00.0000000Z",
+          "Quantity": 5492624
+        },
+        {
+          "Price": 37.217506,
+          "Time": "2026-09-01T00:00:00.0000000Z",
+          "Quantity": 6349890
+        }
+      ],
+      "CurrentPrice": 44.81818,
+      "CurrentQuantity": 38350
+    },
+    {
+      "CurrencyItemId": 15,
+      "ItemId": 292,
+      "CurrencyCategoryId": 21,
+      "ApiId": "annul",
+      "BaseItemTypeId": "Metadata/Items/Currency/CurrencyRemoveMod",
+      "Text": "Orb of Annulment",
+      "CategoryApiId": "currency",
+      "PriceLogs": [
+        {
+          "Price": 234.3659,
+          "Time": "2026-09-07T00:00:00.0000000Z",
+          "Quantity": 4715
+        },
+        {
+          "Price": 224.62906,
+          "Time": "2026-09-06T00:00:00.0000000Z",
+          "Quantity": 25648
+        },
+        {
+          "Price": 211.28339,
+          "Time": "2026-09-05T00:00:00.0000000Z",
+          "Quantity": 22081
+        },
+        {
+          "Price": 193.84824,
+          "Time": "2026-09-04T00:00:00.0000000Z",
+          "Quantity": 78287
+        },
+        {
+          "Price": 174.8067,
+          "Time": "2026-09-03T00:00:00.0000000Z",
+          "Quantity": 115212
+        },
+        {
+          "Price": 168.89172,
+          "Time": "2026-09-02T00:00:00.0000000Z",
+          "Quantity": 122300
+        },
+        {
+          "Price": 149.383,
+          "Time": "2026-09-01T00:00:00.0000000Z",
+          "Quantity": 123898
+        }
+      ],
+      "CurrentPrice": 256.34167,
+      "CurrentQuantity": 552
+    },
+    {
+      "CurrencyItemId": 207,
+      "ItemId": 4015,
+      "CurrencyCategoryId": 21,
+      "ApiId": "perfect-jewellers-orb",
+      "BaseItemTypeId": "Metadata/Items/Currency/CurrencyAddSkillGemSocket5",
+      "Text": "Perfect Jeweller's Orb",
+      "CategoryApiId": "currency",
+      "PriceLogs": [
+        {
+          "Price": 211.85123,
+          "Time": "2026-09-07T00:00:00.0000000Z",
+          "Quantity": 1353
+        },
+        {
+          "Price": 210.89034,
+          "Time": "2026-09-06T00:00:00.0000000Z",
+          "Quantity": 6062
+        },
+        {
+          "Price": 189.17567,
+          "Time": "2026-09-05T00:00:00.0000000Z",
+          "Quantity": 5775
+        },
+        {
+          "Price": 155.42422,
+          "Time": "2026-09-04T00:00:00.0000000Z",
+          "Quantity": 18155
+        },
+        {
+          "Price": 153.2237,
+          "Time": "2026-09-03T00:00:00.0000000Z",
+          "Quantity": 27700
+        },
+        {
+          "Price": 120.56636,
+          "Time": "2026-09-02T00:00:00.0000000Z",
+          "Quantity": 28421
+        },
+        {
+          "Price": 94.48629,
+          "Time": "2026-09-01T00:00:00.0000000Z",
+          "Quantity": 30705
+        }
+      ],
+      "CurrentPrice": 238.29948,
+      "CurrentQuantity": 194
+    },
+    {
+      "CurrencyItemId": 265,
+      "ItemId": 4275,
+      "CurrencyCategoryId": 21,
+      "ApiId": "greater-chaos-orb",
+      "BaseItemTypeId": "Metadata/Items/Currency/CurrencyRerollRare2",
+      "Text": "Greater Chaos Orb",
+      "CategoryApiId": "currency",
+      "PriceLogs": [
+        {
+          "Price": 110.14401,
+          "Time": "2026-09-07T00:00:00.0000000Z",
+          "Quantity": 4224
+        },
+        {
+          "Price": 90.58159,
+          "Time": "2026-09-06T00:00:00.0000000Z",
+          "Quantity": 15996
+        },
+        {
+          "Price": 123.886215,
+          "Time": "2026-09-05T00:00:00.0000000Z",
+          "Quantity": 21123
+        },
+        {
+          "Price": 132.54388,
+          "Time": "2026-09-04T00:00:00.0000000Z",
+          "Quantity": 73462
+        },
+        {
+          "Price": 119.980995,
+          "Time": "2026-09-03T00:00:00.0000000Z",
+          "Quantity": 94986
+        },
+        {
+          "Price": 113.52861,
+          "Time": "2026-09-02T00:00:00.0000000Z",
+          "Quantity": 101468
+        },
+        {
+          "Price": 113.53941,
+          "Time": "2026-09-01T00:00:00.0000000Z",
+          "Quantity": 94551
+        }
+      ],
+      "CurrentPrice": 109.75448,
+      "CurrentQuantity": 372
+    },
+    {
+      "CurrencyItemId": 11,
+      "ItemId": 288,
+      "CurrencyCategoryId": 21,
+      "ApiId": "vaal",
+      "BaseItemTypeId": "Metadata/Items/Currency/CurrencyCorrupt",
+      "Text": "Vaal Orb",
+      "CategoryApiId": "currency",
+      "PriceLogs": [
+        {
+          "Price": 6.390693,
+          "Time": "2026-09-07T00:00:00.0000000Z",
+          "Quantity": 11841
+        },
+        {
+          "Price": 6.5668364,
+          "Time": "2026-09-06T00:00:00.0000000Z",
+          "Quantity": 51358
+        },
+        {
+          "Price": 5.660155,
+          "Time": "2026-09-05T00:00:00.0000000Z",
+          "Quantity": 54332
+        },
+        {
+          "Price": 4.308202,
+          "Time": "2026-09-04T00:00:00.0000000Z",
+          "Quantity": 167304
+        },
+        {
+          "Price": 3.195207,
+          "Time": "2026-09-03T00:00:00.0000000Z",
+          "Quantity": 227362
+        },
+        {
+          "Price": 3.000401,
+          "Time": "2026-09-02T00:00:00.0000000Z",
+          "Quantity": 302757
+        },
+        {
+          "Price": 3.1387298,
+          "Time": "2026-09-01T00:00:00.0000000Z",
+          "Quantity": 283315
+        }
+      ],
+      "CurrentPrice": 4.084463,
+      "CurrentQuantity": 1566
+    },
+    {
+      "CurrencyItemId": 23,
+      "ItemId": 300,
+      "CurrencyCategoryId": 21,
+      "ApiId": "gcp",
+      "BaseItemTypeId": "Metadata/Items/Currency/CurrencyGemQuality",
+      "Text": "Gemcutter's Prism",
+      "CategoryApiId": "currency",
+      "PriceLogs": [
+        {
+          "Price": 15.495203,
+          "Time": "2026-09-07T00:00:00.0000000Z",
+          "Quantity": 4620
+        },
+        {
+          "Price": 12.630252,
+          "Time": "2026-09-06T00:00:00.0000000Z",
+          "Quantity": 19895
+        },
+        {
+          "Price": 13.609009,
+          "Time": "2026-09-05T00:00:00.0000000Z",
+          "Quantity": 16840
+        },
+        {
+          "Price": 15.241289,
+          "Time": "2026-09-04T00:00:00.0000000Z",
+          "Quantity": 63104
+        },
+        {
+          "Price": 9.186406,
+          "Time": "2026-09-03T00:00:00.0000000Z",
+          "Quantity": 97765
+        },
+        {
+          "Price": 8.34547,
+          "Time": "2026-09-02T00:00:00.0000000Z",
+          "Quantity": 122991
+        },
+        {
+          "Price": 8.9812,
+          "Time": "2026-09-01T00:00:00.0000000Z",
+          "Quantity": 103247
+        }
+      ],
+      "CurrentPrice": 14.979914,
+      "CurrentQuantity": 874
+    },
+    {
+      "CurrencyItemId": 1,
+      "ItemId": 278,
+      "CurrencyCategoryId": 21,
+      "ApiId": "transmutation-shard",
+      "BaseItemTypeId": "Metadata/Items/Currency/CurrencyUpgradeToMagicShard",
+      "Text": "Transmutation Shard",
+      "CategoryApiId": "currency",
+      "PriceLogs": [
+        null,
+        {
+          "Price": 8,
+          "Time": "2026-09-06T00:00:00.0000000Z",
+          "Quantity": 1
+        },
+        {
+          "Price": 1,
+          "Time": "2026-09-05T00:00:00.0000000Z",
+          "Quantity": 35
+        },
+        {
+          "Price": 29.833334,
+          "Time": "2026-09-04T00:00:00.0000000Z",
+          "Quantity": 6
+        },
+        {
+          "Price": 28.62633,
+          "Time": "2026-09-03T00:00:00.0000000Z",
+          "Quantity": 149
+        },
+        null,
+        {
+          "Price": 8,
+          "Time": "2026-09-01T00:00:00.0000000Z",
+          "Quantity": 4
+        }
+      ],
+      "CurrentPrice": 8,
+      "CurrentQuantity": 1
+    },
+    {
+      "CurrencyItemId": 4,
+      "ItemId": 281,
+      "CurrencyCategoryId": 21,
+      "ApiId": "artificers-shard",
+      "BaseItemTypeId": "Metadata/Items/Currency/CurrencyAddEquipmentSocketShard",
+      "Text": "Artificer's Shard",
+      "CategoryApiId": "currency",
+      "PriceLogs": [
+        null,
+        null,
+        {
+          "Price": 2,
+          "Time": "2026-09-05T00:00:00.0000000Z",
+          "Quantity": 14
+        },
+        {
+          "Price": 2,
+          "Time": "2026-09-04T00:00:00.0000000Z",
+          "Quantity": 1
+        },
+        {
+          "Price": 3.3652298,
+          "Time": "2026-09-03T00:00:00.0000000Z",
+          "Quantity": 135
+        },
+        {
+          "Price": 1.0685099,
+          "Time": "2026-09-02T00:00:00.0000000Z",
+          "Quantity": 43
+        },
+        {
+          "Price": 0.9382716,
+          "Time": "2026-09-01T00:00:00.0000000Z",
+          "Quantity": 49
+        }
+      ],
+      "CurrentPrice": 2,
+      "CurrentQuantity": 14
+    }
+  ]
+}

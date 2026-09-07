@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { PRICE_TABLE_SCHEMA_VERSION, type PriceEntry, type PriceTable } from "@core/priceTable";
-import { isFeedEntry } from "@core/priceFeed";
+import { feedEntryId, isFeedEntry } from "@core/priceFeed";
+import { formatPercent, type TrendReport } from "@core/priceTrends";
 import {
+  getMarketApi,
   getPriceFeedApi,
   rendererApi,
   type PriceFeedStatusView,
@@ -60,6 +62,34 @@ async function refreshFeed(): Promise<void> {
   } finally {
     feedBusy.value = false;
   }
+  void loadTrends();
+}
+
+/**
+ * Trend arrows for feed rows, from the market cache only — decorating the
+ * table never costs a request (Tools → Market fetches and refreshes).
+ */
+const marketApi = getMarketApi();
+const FEED_KEY_PREFIX = feedEntryId("poe2scout", "");
+const trendsByKey = ref<Map<string, TrendReport>>(new Map());
+
+async function loadTrends(): Promise<void> {
+  if (!marketApi) return;
+  try {
+    const view = await marketApi.trends({ cachedOnly: true });
+    trendsByKey.value = new Map(view.trends.map((trend) => [trend.key, trend] as const));
+  } catch {
+    trendsByKey.value = new Map();
+  }
+}
+
+function feedTrend(entry: PriceEntry): TrendReport | undefined {
+  if (!entry.id.startsWith(FEED_KEY_PREFIX)) return undefined;
+  return trendsByKey.value.get(entry.id.slice(FEED_KEY_PREFIX.length));
+}
+
+function trendArrow(trend: TrendReport): string {
+  return trend.trend === "rising" ? "▲" : trend.trend === "falling" ? "▼" : "▸";
 }
 
 let unsubscribe: (() => void) | undefined;
@@ -107,6 +137,7 @@ onMounted(async () => {
   }
   unsubscribe = rendererApi.intelligence.prices.onChanged(applyTable);
   void refreshFeedStatus();
+  void loadTrends();
 });
 
 onBeforeUnmount(() => unsubscribe?.());
@@ -263,13 +294,22 @@ async function save(): Promise<void> {
         <div class="price-table-scroll">
           <table class="price-table">
             <thead>
-              <tr><th>Name</th><th>Base type</th><th>Value</th><th>Source</th></tr>
+              <tr><th>Name</th><th>Base type</th><th>Value</th><th>Trend 3 d</th><th>Source</th></tr>
             </thead>
             <tbody>
               <tr v-for="entry in visibleFeedEntries" :key="entry.id">
                 <td>{{ entry.match.name }}</td>
                 <td>{{ entry.match.baseType ?? "—" }}</td>
                 <td>{{ entry.value }}</td>
+                <td
+                  v-if="feedTrend(entry)"
+                  class="trend-cell"
+                  :class="feedTrend(entry)!.trend"
+                  :title="`${feedTrend(entry)!.liquidity} market · 7 d ${formatPercent(feedTrend(entry)!.change7d)}`"
+                >
+                  {{ trendArrow(feedTrend(entry)!) }} {{ formatPercent(feedTrend(entry)!.change3d) }}
+                </td>
+                <td v-else class="muted">—</td>
                 <td class="muted">{{ entry.note }}</td>
               </tr>
             </tbody>
@@ -291,4 +331,7 @@ async function save(): Promise<void> {
 .price-table { border-collapse: collapse; width: 100%; min-width: 40rem; }
 .price-table th, .price-table td { text-align: left; padding: 0.25rem 0.35rem; border-bottom: 1px solid rgba(140, 140, 160, 0.2); }
 .price-table input { width: 100%; min-width: 4rem; }
+.trend-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
+.trend-cell.rising { color: #3aa76d; }
+.trend-cell.falling { color: #d9534f; }
 </style>

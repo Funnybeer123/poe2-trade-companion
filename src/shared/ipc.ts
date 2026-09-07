@@ -474,6 +474,7 @@ export interface Poe2Bridge {
   assistive: Record<string, unknown>;
   calibration: Record<string, (...args: never[]) => unknown>;
   hotkeys?: HotkeysBridge;
+  market?: Record<string, (...args: never[]) => unknown>;
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {

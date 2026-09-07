@@ -191,4 +191,8 @@ contextBridge.exposeInMainWorld("poe2", {
     stamp: (payload: unknown) => ipcRenderer.invoke("cal:stamp", payload),
     walkNpc: (npc: unknown) => ipcRenderer.invoke("cal:walk-npc", npc),
   },
+  market: {
+    trends: (query?: unknown) => ipcRenderer.invoke("market:trends", query),
+    refresh: () => ipcRenderer.invoke("market:trends-refresh"),
+  },
 });
