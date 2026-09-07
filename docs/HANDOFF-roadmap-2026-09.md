@@ -178,6 +178,16 @@ limit and finished by hand. What landed:
   Electron test runner plus the packaged e2e smoke, and a `postinstall`
   that rebuilds better-sqlite3 for Electron after every `npm install`.
 
+### Also later the same day
+- **Pricing readiness** on the Sort home and the Shop hero: league resolved
+  or ambiguous (with the fix), poe2scout feed age, trade2 lookups spare or
+  the penalty window (`src/renderer/utils/readiness.ts`; the feed status now
+  carries `tradeBudget`).
+- **Session cookie relocated**: the optional POESESSID lives in
+  `%APPDATA%\poe2-trade-companion\price-feed.secret.json`, not in the
+  repo's `artifacts/tab-admin/price-feed.json`; an old cookie migrates on
+  first load. The app and the CLIs share the same default path.
+
 ## First live checks, in order (all in `--step` / dry-run first)
 
 1. `npx tsx scripts/shop-buckets.ts` (dry-run) — must abort with the

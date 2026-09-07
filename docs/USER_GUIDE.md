@@ -485,21 +485,31 @@ into chat.
 
 ## Where data lives
 
-Local-first. Typical Windows path:
-
-`%APPDATA%\poe2-trade-companion\`
+Local-first, in two places. Per-user data under `%APPDATA%\poe2-trade-companion\`:
 
 | File | Contents |
 | --- | --- |
 | `item-intelligence.sqlite` | Catalog, builds, rules, scan sessions, value tiers, price table |
-| `price-feed.json` | Market data settings (league, auto-refresh, optional session cookie) |
-| `comps-cache.json` | Raw trade2 listings per query (6h / 1h) and any remembered rate-limit window |
-| `trade-pacing.json` | trade2 rate-limit pacing log shared by the app and the CLI flows |
-| `artifacts\tab-admin\watchlist.json` | Deals watchlist: watches, master switch, notification setting, dismissed alerts, hourly scan log |
-| `artifacts\tab-admin\deal-alerts.jsonl` | Append-only deal alert history (the dedupe source) |
+| `price-feed.secret.json` | The optional `POESESSID`, alone — never under the repo folder |
 | `scan-sessions.jsonl` | Scanner journal |
 | `assistive-artifacts/` | QA traces and capture artifacts |
-| `fixtures/benchmarks/occupancy-labels.jsonl` | Dry-run overlay Right/Wrong occupancy labels |
+
+Shared with the CLI flows under the repo's `artifacts\tab-admin\` (gitignored;
+keep it out of cloud sync if you can):
+
+| File | Contents |
+| --- | --- |
+| `price-feed.json` | Market data settings (league, auto-refresh) |
+| `feed-snapshot.json` | The newest poe2scout snapshot any process fetched |
+| `comps-cache.json` | Raw trade2 listings per query (6h / 1h) and any remembered rate-limit window |
+| `trade-pacing.json` | trade2 rate-limit pacing log shared by the app and the CLI flows |
+| `trade-stats.json`, `mod-tiers.json` | trade2 stat catalogue and the mod tiers learned from listings |
+| `price-trends.json` | Market trends cache (12h) |
+| `triage.json` | The app's value tiers + price table mirrored for the scripts |
+| `inventory.jsonl` | The sorter's inventory ledger (Wealth) |
+| `listings.jsonl`, `earnings-snapshot.json`, `shop.json` | Shop ledger, Earnings baseline, shop settings |
+| `watchlist.json`, `deal-alerts.jsonl` | Deals watchlist and its append-only alert history |
+| `fixtures/benchmarks/occupancy-labels.jsonl` | Dry-run overlay Right/Wrong occupancy labels (repo) |
 
 No account telemetry is sent by default. Do not commit this folder, cookies, or session files.
 
