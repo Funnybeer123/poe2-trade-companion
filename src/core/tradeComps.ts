@@ -191,6 +191,13 @@ export interface CompListing {
   priceCurrency: string;
   accountName?: string;
   indexed?: string;
+  /**
+   * The ready-to-paste whisper trade2 attaches to every fetch row
+   * (`listing.whisper`, verified live 2026-09-07): "@Seller Hi, I would
+   * like to buy your … listed for 1 exalted in Standard (stash tab …)".
+   * The app only ever copies it to the clipboard; it never sends it.
+   */
+  whisper?: string;
 }
 
 /** trade currency ids (and note-currency words) → the crafting economy's orb ids. */
@@ -276,6 +283,7 @@ export function parseCompListings(payload: unknown): CompListing[] {
         indexed?: unknown;
         account?: { name?: unknown };
         price?: { amount?: unknown; currency?: unknown };
+        whisper?: unknown;
       };
     };
     const amount = row.listing?.price?.amount;
@@ -298,6 +306,9 @@ export function parseCompListings(payload: unknown): CompListing[] {
         ? { accountName: row.listing.account.name }
         : {}),
       ...(typeof row.listing?.indexed === "string" ? { indexed: row.listing.indexed } : {}),
+      ...(typeof row.listing?.whisper === "string" && row.listing.whisper.trim()
+        ? { whisper: row.listing.whisper.trim() }
+        : {}),
     });
   }
   return listings;

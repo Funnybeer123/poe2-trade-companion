@@ -41,6 +41,7 @@ import type {
   ValueTierRules,
   ValueTierThresholds,
 } from "../core/valueTiers.js";
+import type { DealAlert, Watch } from "../core/watchlist.js";
 
 export const ITEM_INTELLIGENCE_IPC_VERSION = 1 as const;
 export const SCANNER_IPC_VERSION = 1 as const;
@@ -524,6 +525,55 @@ export interface InventoryBridge {
   refresh: (query?: InventoryOverviewQuery) => Promise<InventoryOverviewView>;
 }
 
+/** The Deals tool's data: src/main/watchlistService.ts overview(). */
+export interface WatchlistOverviewView {
+  enabled: boolean;
+  notifications: boolean;
+  watches: Watch[];
+  /** Newest first, dismissed ones hidden. */
+  alerts: DealAlert[];
+  budget: { lookups: number; restrictedUntilIso?: string };
+  lastError?: string;
+  /** Why the last tick did not scan (budget, cap, penalty). */
+  lastSkip?: string;
+  lastScanAt?: string;
+  /** ms until the next enabled watch is due; absent when none is enabled. */
+  nextScanEtaMs?: number;
+  scansThisHour: number;
+  maxScansPerHour: number;
+  scanning: boolean;
+  files: { watchlist: string; alerts: string };
+}
+
+export interface WatchlistSaveRequest {
+  enabled?: boolean;
+  notifications?: boolean;
+  /** The whole list; sanitized in the main process. */
+  watches?: unknown;
+}
+
+export interface WatchlistScanOutcome {
+  ok: boolean;
+  watchId?: string;
+  label?: string;
+  sample?: number;
+  total?: number;
+  referenceExalted?: number;
+  referenceBasis?: string;
+  newAlerts: number;
+  error?: string;
+  skipped?: string;
+}
+
+export interface WatchlistBridge {
+  overview: () => Promise<WatchlistOverviewView>;
+  save: (request: WatchlistSaveRequest) => Promise<WatchlistOverviewView>;
+  scanNow: (watchId?: string) => Promise<WatchlistScanOutcome>;
+  /** Puts the alert's whisper on the clipboard; the app never sends it. */
+  copyWhisper: (alertId: string) => Promise<{ ok: boolean; error?: string }>;
+  dismiss: (alertId: string) => Promise<WatchlistOverviewView>;
+}
+
 export interface Poe2Bridge {
   mode: () => Promise<RuntimeMode>;
   fromClipboard: () => Promise<ItemEvaluation | null>;
@@ -549,6 +599,7 @@ export interface Poe2Bridge {
   hotkeys?: HotkeysBridge;
   inventory?: InventoryBridge;
   market?: Record<string, (...args: never[]) => unknown>;
+  watchlist?: WatchlistBridge;
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {

@@ -157,6 +157,16 @@ export interface CompsResult {
   basis?: CompsQuery["basis"];
 }
 
+/** One raw trade2 search + fetch (searchListings): listings, uncached. */
+export interface SearchListingsResult {
+  ok: boolean;
+  listings: CompListing[];
+  league?: string;
+  error?: string;
+  /** The search's own match count (before the fetch cap). */
+  total?: number;
+}
+
 interface PriceFeedServiceOptions {
   configDir: string;
   getPriceTable: () => PriceTable;
@@ -683,24 +693,41 @@ export class PriceFeedService {
   }
 
   /**
-   * One search (+ one fetch of up to 10 listings when the search finds at
-   * least `minIds`). Every fetch teaches the learned-tier store.
+   * One search (+ one fetch of up to `limit` (≤ 10) listings when the
+   * search finds at least `minIds`). Every fetch teaches the learned-tier
+   * store. `total` is the search's own match count.
    */
   private async runCompsQuery(
     league: string,
     query: CompsQuery,
     itemClass: string | undefined,
     minIds: number,
-  ): Promise<{ kind: "ok"; listings: CompListing[] } | { kind: "rate-limited" }> {
+    limit = 10,
+  ): Promise<
+    { kind: "ok"; listings: CompListing[]; total: number } | { kind: "rate-limited" }
+  > {
     const searchResponse = await this.tradeRequestWithBackoff(
       `${TRADE_BASE}/search/poe2/${encodeURIComponent(league)}`,
       { method: "POST", body: JSON.stringify(query.body) },
     );
     if (searchResponse.status === 429) return { kind: "rate-limited" };
     if (!searchResponse.ok) throw new Error(`trade2 search → HTTP ${searchResponse.status}`);
-    const search = (await searchResponse.json()) as { id?: string; result?: string[] };
-    const ids = Array.isArray(search.result) ? search.result.slice(0, 10) : [];
-    if (!search.id || ids.length === 0 || ids.length < minIds) return { kind: "ok", listings: [] };
+    const search = (await searchResponse.json()) as {
+      id?: string;
+      result?: string[];
+      total?: number;
+    };
+    const cap = Math.max(1, Math.min(10, Math.floor(limit)));
+    const ids = Array.isArray(search.result) ? search.result.slice(0, cap) : [];
+    const total =
+      typeof search.total === "number" && Number.isFinite(search.total)
+        ? search.total
+        : Array.isArray(search.result)
+          ? search.result.length
+          : 0;
+    if (!search.id || ids.length === 0 || ids.length < minIds) {
+      return { kind: "ok", listings: [], total };
+    }
     const fetchResponse = await this.tradeRequestWithBackoff(
       `${TRADE_BASE}/fetch/${ids.join(",")}?query=${encodeURIComponent(search.id)}`,
       { method: "GET" },
@@ -709,7 +736,51 @@ export class PriceFeedService {
     if (!fetchResponse.ok) throw new Error(`trade2 fetch → HTTP ${fetchResponse.status}`);
     const payload = await fetchResponse.json();
     this.learnFromFetch(payload, itemClass);
-    return { kind: "ok", listings: parseCompListings(payload) };
+    return { kind: "ok", listings: parseCompListings(payload), total };
+  }
+
+  /**
+   * One paced trade2 search for an arbitrary body (the deals watchlist),
+   * plus ONE fetch of the first `limit` (≤ 10) ids. Same league
+   * resolution, pacing and 429 handling as fetchComps, but nothing here
+   * reads or writes the comps cache — a watch is a fresh look at the
+   * market every time, and its sample must not be served to a price check.
+   * A penalty window is reported, never waited out.
+   */
+  async searchListings(
+    body: Record<string, unknown>,
+    options: { limit?: number } = {},
+  ): Promise<SearchListingsResult> {
+    const until = this.rateLimitedUntilIso();
+    if (until) {
+      return {
+        ok: false,
+        listings: [],
+        error: `trade2 rate limited until ${new Date(until).toLocaleTimeString()} — try again then`,
+      };
+    }
+    try {
+      const league = await this.resolveLeague();
+      this.resolvedLeague = league;
+      const stage = await this.runCompsQuery(
+        league,
+        { basis: "base-type", body },
+        undefined,
+        1,
+        options.limit ?? 10,
+      );
+      if (stage.kind === "rate-limited") {
+        return {
+          ok: false,
+          listings: [],
+          league,
+          error: "trade2 rate limit hit — wait a minute and try again.",
+        };
+      }
+      return { ok: true, listings: stage.listings, league, total: stage.total };
+    } catch (error) {
+      return { ok: false, listings: [], error: this.recordError(error) };
+    }
   }
 
   /**

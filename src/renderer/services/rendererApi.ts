@@ -102,6 +102,7 @@ import {
   type ScanSessionDetail,
   type ScanSessionView,
   type ScanSlotView,
+  type WatchlistBridge,
 } from "../../shared/ipc.js";
 import {
   defaultHotkeyBindings,
@@ -1360,4 +1361,12 @@ export interface MarketApi {
 
 export function getMarketApi(): MarketApi | undefined {
   return nativeBridge()?.market as unknown as MarketApi | undefined;
+}
+
+/** Deals watchlist (src/main/watchlistService.ts). Desktop only: it needs trade2 and the clipboard. */
+export type WatchlistApi = WatchlistBridge;
+export type { WatchlistOverviewView, WatchlistScanOutcome } from "../../shared/ipc.js";
+
+export function getWatchlistApi(): WatchlistApi | undefined {
+  return nativeBridge()?.watchlist;
 }

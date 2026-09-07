@@ -290,6 +290,44 @@ analysis** under the item detail and enter the seller asking price and optional
 fee/slippage. You get estimated margin, return, confidence, and stale-data
 warnings. It never whispers, buys, or lists.
 
+### Deals watchlist
+
+**Tools & QA → Deals** re-runs saved trade2 searches on a timer and flags
+listings priced well under the going rate. It is decision support only: an
+alert shows the ask, the reference price, the discount and the seller, and
+**Copy whisper** puts the seller's own "@Name Hi, I would like to buy your …"
+message on your clipboard. The app never sends the whisper, buys, or lists.
+
+- **Add a watch** with one of three presets: **Unique by name** (name + base
+  type), **Base type** (base or item class, optional minimum item level, rare
+  and magic listings only), or **Stat-filtered rare** (a base plus up to three
+  mod families at a minimum roll, resolved to trade2 stat ids from the same
+  catalogue the comps use). Each watch has its own threshold (alert at or
+  under this share of the reference, default 60 %), minimum sample (priced
+  listings the search must return before an alert is trusted, default 4) and
+  interval (default 10 minutes). **Watch this item** on the Item log page
+  builds the watch from the evaluated item — a unique by name, a rare from its
+  top notable mods — and opens the Deals tool.
+- **Reference price**: for a unique the poe2scout feed row for that name and
+  base when the price table has one; otherwise the median of the priced
+  sample. The sample is the cheapest listings the search found, so alerts are
+  asks that sit well under even that floor band — read the listing before you
+  whisper (bait, bad rolls and corruption all look like deals).
+- **Budget**: one search plus one fetch per scan, paced from the server's own
+  rate-limit headers and shared with price checks and the shop flow. At most
+  one scan every 30 seconds, only while at least three lookups are spare (so a
+  bag listing run always has headroom), never more than 20 scans an hour, and
+  nothing at all inside a trade2 penalty window. The budget line shows what is
+  spare and when the next scan is due; **Scan now** runs one watch immediately
+  (ignoring its interval, never the penalty window or hourly cap).
+- **Alerts** appear newest first with a discount badge; an alert for a listing
+  is raised once and only again if its ask drops further. **Dismiss** hides
+  it. With **Desktop notification** on, each new alert also raises a Windows
+  notification ("Deal: Temporalis 120 exalted (−45%)").
+- Watches, the master switch and dismissals live in
+  `artifacts\tab-admin\watchlist.json`; the alert history is the append-only
+  `artifacts\tab-admin\deal-alerts.jsonl`.
+
 ### Loot filter
 
 Builds a Path of Exile 2 item filter from the price table, so refresh market
@@ -435,6 +473,8 @@ Local-first. Typical Windows path:
 | `price-feed.json` | Market data settings (league, auto-refresh, optional session cookie) |
 | `comps-cache.json` | Raw trade2 listings per query (6h / 1h) and any remembered rate-limit window |
 | `trade-pacing.json` | trade2 rate-limit pacing log shared by the app and the CLI flows |
+| `artifacts\tab-admin\watchlist.json` | Deals watchlist: watches, master switch, notification setting, dismissed alerts, hourly scan log |
+| `artifacts\tab-admin\deal-alerts.jsonl` | Append-only deal alert history (the dedupe source) |
 | `scan-sessions.jsonl` | Scanner journal |
 | `assistive-artifacts/` | QA traces and capture artifacts |
 | `fixtures/benchmarks/occupancy-labels.jsonl` | Dry-run overlay Right/Wrong occupancy labels |
