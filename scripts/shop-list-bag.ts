@@ -31,7 +31,7 @@ import { SortHarness, SortStop } from "../src/adapters/sortHarness.js";
 import { GearSorter } from "../src/adapters/gearSorter.js";
 import { ShopKeeper } from "../src/adapters/shopKeeper.js";
 import { normalizeNoteCurrency, parseShopConfig, priceFromTabLabel } from "../src/core/shopListings.js";
-import { starterPriceTable, validatePriceTable, type PriceTable } from "../src/core/priceTable.js";
+import { loadTriageExport } from "../src/adapters/triageLoader.js";
 import { orbCosts, type OrbId } from "../src/core/crafting.js";
 import { tradeCurrencyToOrb } from "../src/core/tradeComps.js";
 
@@ -70,19 +70,10 @@ if (amount === undefined || currency === undefined) {
 }
 const max = Number(value("--max") ?? Number.POSITIVE_INFINITY);
 
-function loadPriceTable(): PriceTable {
-  const file = path.join(outDir, "triage.json");
-  if (!existsSync(file)) return starterPriceTable();
-  try {
-    const parsed = JSON.parse(readFileSync(file, "utf8")) as { priceTable?: unknown };
-    const check = validatePriceTable(parsed.priceTable);
-    return check.valid && check.table ? check.table : starterPriceTable();
-  } catch {
-    return starterPriceTable();
-  }
-}
-
-const priceTable = loadPriceTable();
+// The app's price table export, placeholders stripped and the newest feed
+// snapshot merged (src/adapters/triageLoader.ts) — the bucket's exalted
+// rate comes from it.
+const priceTable = loadTriageExport(root, { log: () => undefined }).priceTable;
 const orb = tradeCurrencyToOrb(currency);
 const rate = orb ? orbCosts(priceTable)[orb as OrbId] : undefined;
 const price = { amount, currency, exalted: rate ? Math.round(amount * rate * 100) / 100 : amount };

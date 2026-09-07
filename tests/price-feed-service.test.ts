@@ -1,8 +1,9 @@
-import { mkdtempSync, readFileSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { PriceFeedService } from "../src/main/priceFeedService.js";
+import { parseFeedSnapshot } from "../src/core/priceFeed.js";
 import {
   PRICE_TABLE_SCHEMA_VERSION,
   type PriceTable,
@@ -12,6 +13,14 @@ const LEAGUES = [
   { Value: "HC Runes of Aldur", IsCurrent: true },
   { Value: "Runes of Aldur", IsCurrent: true },
   { Value: "Standard", IsCurrent: false },
+];
+
+// Live 2026-09-07: the previous league stays "current" next to the new one.
+const TWO_LEAGUES = [
+  { Value: "Standard", IsCurrent: false, DivinePrice: 230.6 },
+  { Value: "Forbidden Rites", IsCurrent: true, DivinePrice: 97.93 },
+  { Value: "HC Forbidden Rites", IsCurrent: true, DivinePrice: 80.1 },
+  { Value: "Runes of Aldur", IsCurrent: true, DivinePrice: 623.76 },
 ];
 
 const ITEMS = [
@@ -174,10 +183,111 @@ describe("PriceFeedService refresh", () => {
   it("honours a manually configured league", async () => {
     const { service, calls } = makeService();
     disposers.push(() => service.dispose());
-    service.configure({ league: "Standard" });
+    const configured = service.configure({ league: "Standard" });
+    expect(configured.resolvedLeague).toBe("Standard");
     await service.refresh();
     expect(calls.some((call) => call.url.includes("/Leagues/Standard/Items"))).toBe(true);
     expect(calls.some((call) => call.url.endsWith("/Leagues"))).toBe(false);
+  });
+
+  it("refuses to guess between two current leagues until one is pinned", async () => {
+    const { service, calls, table } = makeService({
+      respond: (url) => {
+        if (url.endsWith("/Leagues")) return jsonResponse(TWO_LEAGUES);
+        if (url.includes("/Items")) return jsonResponse(ITEMS);
+        if (url.includes("/search/")) return jsonResponse(SEARCH_RESULT);
+        if (url.includes("/fetch/")) return jsonResponse(FETCH_RESULT);
+        return jsonResponse({}, 404);
+      },
+    });
+    disposers.push(() => service.dispose());
+    expect(service.status().leagueCandidates).toEqual([]);
+    expect(service.status().leagueAmbiguous).toBe(false);
+
+    const status = await service.refresh();
+    expect(status.lastError).toBe(
+      "more than one current league: Forbidden Rites (divine ≈ 98 ex), Runes of Aldur (divine ≈ 624 ex) — " +
+        "pick one in Tools → Settings → Market data or pass --league=NAME",
+    );
+    expect(status.leagueAmbiguous).toBe(true);
+    expect(status.leagueCandidates).toEqual([
+      { value: "Forbidden Rites", divinePrice: 97.93 },
+      { value: "Runes of Aldur", divinePrice: 623.76 },
+    ]);
+    expect(status.resolvedLeague).toBeUndefined();
+    expect(calls.some((call) => call.url.includes("/Items"))).toBe(false);
+    expect(table().entries).toHaveLength(1); // table untouched
+
+    // Comps refuse too, before any trade2 traffic.
+    const comps = await service.fetchComps(RARE_RING);
+    expect(comps.ok).toBe(false);
+    expect(comps.error).toContain("more than one current league");
+    expect(calls.some((call) => call.url.includes("/search/"))).toBe(false);
+
+    // Pinning one league unblocks both, without another /Leagues read.
+    const leagueCalls = calls.filter((call) => call.url.endsWith("/Leagues")).length;
+    const pinned = service.configure({ league: "Runes of Aldur" });
+    expect(pinned.leagueAmbiguous).toBe(false);
+    expect(pinned.resolvedLeague).toBe("Runes of Aldur");
+    expect(pinned.leagueCandidates).toHaveLength(2); // still listed for the picker
+    const refreshed = await service.refresh();
+    expect(refreshed.lastError).toBeUndefined();
+    expect(refreshed.feedEntryCount).toBe(3);
+    expect(calls.some((call) => call.url.includes("/Leagues/Runes%20of%20Aldur/Items"))).toBe(true);
+    expect(calls.filter((call) => call.url.endsWith("/Leagues")).length).toBe(leagueCalls);
+  });
+
+  it("caches the league list for ten minutes", async () => {
+    let now = new Date("2026-09-07T10:00:00Z");
+    const { service, calls } = makeService({ now: () => now });
+    disposers.push(() => service.dispose());
+    const first = await service.leagues();
+    expect(first).toEqual([{ value: "Runes of Aldur" }]);
+    expect(service.status().resolvedLeague).toBe("Runes of Aldur"); // one candidate, auto
+    await service.leagues();
+    expect(calls.filter((call) => call.url.endsWith("/Leagues"))).toHaveLength(1);
+    now = new Date("2026-09-07T10:11:00Z");
+    await service.leagues();
+    expect(calls.filter((call) => call.url.endsWith("/Leagues"))).toHaveLength(2);
+  });
+});
+
+describe("PriceFeedService snapshot", () => {
+  it("persists the fetched snapshot and a fresh process merges it without the network", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "pfs-snapshot-"));
+    const first = makeService({ configDir });
+    disposers.push(() => first.service.dispose());
+    const status = await first.service.refresh();
+    expect(status.lastError).toBeUndefined();
+    const file = path.join(configDir, "feed-snapshot.json");
+    expect(existsSync(file)).toBe(true);
+    const snapshot = parseFeedSnapshot(JSON.parse(readFileSync(file, "utf8")));
+    expect(snapshot?.league).toBe("Runes of Aldur");
+    expect(snapshot?.prices.map((price) => price.name)).toEqual(["Divine Orb", "Chaos Orb", "Temporalis"]);
+
+    // A second process (a CLI, the app after a restart) starts with a table
+    // that has no feed data: the snapshot fills it in at construction.
+    const second = makeService({ configDir });
+    disposers.push(() => second.service.dispose());
+    expect(second.calls).toHaveLength(0);
+    const entries = second.table().entries;
+    expect(entries.find((entry) => entry.id === "manual-1")?.value).toBe(9);
+    expect(entries.find((entry) => entry.match.name === "Divine Orb")?.value).toBe(404.62);
+    expect(second.service.status().feedEntryCount).toBe(3);
+    expect(second.service.status().feedAgeHours).toBeLessThan(24);
+  });
+
+  it("skips a snapshot for another pinned league", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "pfs-snapshot-pinned-"));
+    const first = makeService({ configDir });
+    disposers.push(() => first.service.dispose());
+    await first.service.refresh();
+    first.service.configure({ league: "Standard" });
+    const second = makeService({ configDir });
+    disposers.push(() => second.service.dispose());
+    expect(second.service.status().config.league).toBe("Standard");
+    expect(second.table().entries).toHaveLength(1);
+    expect(second.service.status().feedEntryCount).toBe(0);
   });
 });
 

@@ -15,6 +15,7 @@ import { importTradeQueries } from "../core/tradeQueryImport.js";
 import { DEFAULT_TRIAGE_ROUTING, type TriageRouting } from "../core/bagTriage.js";
 import {
   starterPriceTable,
+  stripStarterPlaceholders,
   validatePriceTable,
   type PriceTable,
 } from "../core/priceTable.js";
@@ -615,7 +616,9 @@ export class ItemIntelligenceService {
     );
     if (stored) {
       const validation = validatePriceTable(stored.value);
-      if (validation.valid && validation.table) return validation.table;
+      // Legacy placeholder rows (divine 40 / chaos 0.5) hide the accurate
+      // crafting defaults; drop them on read unless the user edited them.
+      if (validation.valid && validation.table) return stripStarterPlaceholders(validation.table);
     }
     const seeded: PriceTable = { ...starterPriceTable(), updatedAt: this.now() };
     this.options.persistence.settings.set({

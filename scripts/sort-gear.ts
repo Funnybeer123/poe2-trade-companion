@@ -60,20 +60,7 @@ import {
   parseCorrections,
   summarizeCorrections,
 } from "../src/core/gearSort.js";
-import { DEFAULT_TRIAGE_ROUTING, type TriageRouting } from "../src/core/bagTriage.js";
-import {
-  starterPriceTable,
-  validatePriceTable,
-  type PriceTable,
-} from "../src/core/priceTable.js";
-import {
-  DEFAULT_TIER_THRESHOLDS,
-  starterValueTierRules,
-  type ValueTierRules,
-  type ValueTierThresholds,
-} from "../src/core/valueTiers.js";
-import { evaluateWithAppraisal } from "../src/core/appraisal.js";
-import { DEFAULT_MIN_DETOUR_CONFIDENCE } from "../src/core/sortTriage.js";
+import { loadTriageExport } from "../src/adapters/triageLoader.js";
 import type { GearSorterTriageOptions } from "../src/adapters/gearSorter.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -172,44 +159,18 @@ sweepOrphanHosts();
  */
 function loadTriage(): GearSorterTriageOptions | undefined {
   if (argv.includes("--no-triage")) return undefined;
-  let rules: ValueTierRules = starterValueTierRules();
-  let thresholds: ValueTierThresholds = { ...DEFAULT_TIER_THRESHOLDS };
-  let routing: TriageRouting = { ...DEFAULT_TRIAGE_ROUTING };
-  let priceTable: PriceTable = starterPriceTable();
-  let minDetourConfidence = DEFAULT_MIN_DETOUR_CONFIDENCE;
-  const file = path.join(outDir, "triage.json");
-  if (existsSync(file)) {
-    try {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as {
-        rules?: ValueTierRules;
-        thresholds?: ValueTierThresholds;
-        routing?: TriageRouting;
-        priceTable?: unknown;
-        minDetourConfidence?: number;
-      };
-      if (parsed.rules?.keep && parsed.rules.sell && parsed.rules.dump) rules = parsed.rules;
-      if (parsed.thresholds) thresholds = parsed.thresholds;
-      if (parsed.routing?.reviewTab && parsed.routing.dumpTab) routing = parsed.routing;
-      const tableCheck = validatePriceTable(parsed.priceTable);
-      if (tableCheck.valid && tableCheck.table) priceTable = tableCheck.table;
-      if (
-        typeof parsed.minDetourConfidence === "number" &&
-        Number.isFinite(parsed.minDetourConfidence)
-      ) {
-        minDetourConfidence = Math.max(0, Math.min(100, parsed.minDetourConfidence));
-      }
-    } catch (error) {
-      console.log(`triage.json unreadable (${String(error)}) — using starter tiers`);
-    }
-  }
+  // One loader for every CLI (src/adapters/triageLoader.ts): the export's
+  // tiers + price table, legacy placeholders stripped, newest feed snapshot
+  // merged.
+  const triage = loadTriageExport(root);
   const findsFile = path.join(outDir, "finds.jsonl");
   return {
     // The appraisal engine scores every item (0-100 value, 0-100 confidence)
     // and may promote a high-scoring unknown to keep/sell; explicit rules
     // and the price table still outrank it, and nothing heuristic ever dumps.
-    evaluate: (itemText) => evaluateWithAppraisal(itemText, { rules, priceTable, thresholds }),
-    routing,
-    minDetourConfidence,
+    evaluate: triage.evaluate,
+    routing: triage.routing,
+    minDetourConfidence: triage.minDetourConfidence,
     onFind: (record) => {
       try {
         appendFileSync(findsFile, `${JSON.stringify(record)}\n`);

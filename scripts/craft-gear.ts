@@ -23,7 +23,7 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { appendFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { startWinHost } from "../src/adapters/winHost.js";
 import { SortHarness, SortStop } from "../src/adapters/sortHarness.js";
@@ -40,7 +40,7 @@ import {
   type OrbId,
 } from "../src/core/crafting.js";
 import { parseItemText } from "../src/core/parseItem.js";
-import { starterPriceTable, validatePriceTable, type PriceTable } from "../src/core/priceTable.js";
+import { loadTriageExport } from "../src/adapters/triageLoader.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const templateDir = path.join(root, "fixtures", "perception", "templates");
@@ -88,21 +88,10 @@ function otherHostRunning(): boolean {
   }
 }
 
-function loadPriceTable(): PriceTable {
-  const file = path.join(root, "artifacts", "tab-admin", "triage.json");
-  if (existsSync(file)) {
-    try {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as { priceTable?: unknown };
-      const check = validatePriceTable(parsed.priceTable);
-      if (check.valid && check.table) return check.table;
-    } catch {
-      // fall through to the starter table
-    }
-  }
-  return starterPriceTable();
-}
-
-const priceTable = loadPriceTable();
+// The app's price table export (artifacts/tab-admin/triage.json) with the
+// legacy placeholders stripped and the newest feed snapshot merged, so orb
+// costs are the real rates — src/adapters/triageLoader.ts.
+const priceTable = loadTriageExport(root, { log: () => undefined }).priceTable;
 
 function describePlan(label: string, plan: CraftPlan): string {
   const head =

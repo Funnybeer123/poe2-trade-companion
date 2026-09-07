@@ -120,6 +120,7 @@ contextBridge.exposeInMainWorld("poe2", {
   },
   priceFeed: {
     status: () => ipcRenderer.invoke("price-feed:status"),
+    leagues: () => ipcRenderer.invoke("price-feed:leagues"),
     refresh: () => ipcRenderer.invoke("price-feed:refresh"),
     configure: (partial: unknown) => ipcRenderer.invoke("price-feed:configure", partial),
     comps: (itemText: string) => ipcRenderer.invoke("price-feed:comps", itemText),

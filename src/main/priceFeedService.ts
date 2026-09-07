@@ -17,12 +17,16 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import {
-  currentScoutLeague,
+  AmbiguousLeagueError,
+  applyFeedSnapshotIfNewer,
+  currentScoutLeagues,
   feedAgeHours,
   isFeedEntry,
   mergeFeedSnapshot,
   normalizeScoutItems,
+  parseFeedSnapshot,
   type PriceFeedSnapshot,
+  type ScoutLeagueCandidate,
 } from "../core/priceFeed.js";
 import {
   buildCompsQuery,
@@ -46,6 +50,8 @@ const SCOUT_BASE = "https://api.poe2scout.com/poe2";
 const TRADE_BASE = "https://www.pathofexile.com/api/trade2";
 const USER_AGENT = "poe2-trade-companion/0.1 (local desktop tool)";
 const REFRESH_MIN_INTERVAL_MS = 5 * 60_000;
+/** /Leagues barely changes; status() reads this cache, never the network. */
+const LEAGUES_CACHE_MS = 10 * 60_000;
 /** Courtesy gap between trade2 requests on top of the rate-limit pacing. */
 const TRADE_MIN_GAP_MS = 750;
 /** Base-type searches return the base's floor listings: slow-moving. */
@@ -98,7 +104,12 @@ export interface PriceFeedConfig {
 
 export interface PriceFeedStatus {
   config: PriceFeedConfig;
+  /** The league requests use: the pinned one, or the single current league. */
   resolvedLeague?: string;
+  /** Current softcore leagues poe2scout listed on the last /Leagues read. */
+  leagueCandidates: ScoutLeagueCandidate[];
+  /** League is "auto" and more than one candidate exists: pricing is blocked. */
+  leagueAmbiguous: boolean;
   lastRefreshAt?: string;
   lastError?: string;
   feedEntryCount: number;
@@ -146,12 +157,52 @@ export class PriceFeedService {
   private readonly pacer: TradePacer;
   /** trade2 penalty window (epoch ms); persisted with the comps cache. */
   private rateLimitedUntil = 0;
+  private leagueCandidates: ScoutLeagueCandidate[] = [];
+  private leaguesFetchedAt = 0;
 
   constructor(private readonly options: PriceFeedServiceOptions) {
     this.config = this.loadConfig();
+    this.syncResolvedLeague();
     this.pacer = new TradePacer(this.loadPacing());
     this.loadCompsCache();
+    this.applyStoredSnapshot();
     this.armDailyTimer();
+  }
+
+  /**
+   * The last successful fetch, whichever process made it
+   * (configDir/feed-snapshot.json): a fresh process merges it into the
+   * table when it is newer than the feed data the table carries, so the
+   * CLIs and a cold-started app price off the latest numbers without a
+   * network round trip.
+   */
+  private snapshotFile(): string {
+    return path.join(this.options.configDir, "feed-snapshot.json");
+  }
+
+  private saveSnapshot(snapshot: PriceFeedSnapshot): void {
+    try {
+      mkdirSync(this.options.configDir, { recursive: true });
+      writeFileSync(this.snapshotFile(), JSON.stringify(snapshot));
+    } catch {
+      // Best effort; this process already merged the snapshot.
+    }
+  }
+
+  private applyStoredSnapshot(): void {
+    try {
+      const file = this.snapshotFile();
+      if (!existsSync(file)) return;
+      const snapshot = parseFeedSnapshot(JSON.parse(readFileSync(file, "utf8")));
+      if (!snapshot) return;
+      const result = applyFeedSnapshotIfNewer(this.options.getPriceTable(), snapshot, {
+        now: this.now(),
+        league: this.config.league,
+      });
+      if (result.applied && result.changed) this.options.savePriceTable(result.table);
+    } catch {
+      // An unreadable snapshot is just a cold table until the next refresh.
+    }
   }
 
   /**
@@ -287,8 +338,26 @@ export class PriceFeedService {
       poesessid: typeof partial.poesessid === "string" ? partial.poesessid : this.config.poesessid,
     };
     this.persistConfig();
+    this.syncResolvedLeague();
     this.armDailyTimer();
     return this.status();
+  }
+
+  /**
+   * What the next request will use: a pinned league as-is; "auto" only when
+   * the cached candidates leave exactly one choice.
+   */
+  private syncResolvedLeague(): void {
+    if (this.config.league !== "auto") {
+      this.resolvedLeague = this.config.league;
+      return;
+    }
+    this.resolvedLeague =
+      this.leagueCandidates.length === 1 ? this.leagueCandidates[0]!.value : undefined;
+  }
+
+  private leagueAmbiguous(): boolean {
+    return this.config.league === "auto" && this.leagueCandidates.length > 1;
   }
 
   status(): PriceFeedStatus {
@@ -297,6 +366,8 @@ export class PriceFeedService {
     return {
       config: { ...this.config, poesessid: this.config.poesessid ? "(set)" : "" },
       ...(this.resolvedLeague ? { resolvedLeague: this.resolvedLeague } : {}),
+      leagueCandidates: this.leagueCandidates.map((candidate) => ({ ...candidate })),
+      leagueAmbiguous: this.leagueAmbiguous(),
       ...(this.lastRefreshAt ? { lastRefreshAt: this.lastRefreshAt } : {}),
       ...(this.lastError ? { lastError: this.lastError } : {}),
       feedEntryCount: feedEntries.length,
@@ -339,12 +410,34 @@ export class PriceFeedService {
     }
   }
 
+  /**
+   * The current softcore leagues poe2scout lists, cached for ten minutes.
+   * The one network call a league picker needs; refresh/comps go through
+   * it too, so the cache is warm whenever pricing has run.
+   */
+  async leagues(): Promise<ScoutLeagueCandidate[]> {
+    const now = this.now().getTime();
+    if (this.leaguesFetchedAt > 0 && now - this.leaguesFetchedAt < LEAGUES_CACHE_MS) {
+      return this.leagueCandidates.map((candidate) => ({ ...candidate }));
+    }
+    const payload = await this.getJson(`${SCOUT_BASE}/Leagues`);
+    this.leagueCandidates = currentScoutLeagues(payload);
+    this.leaguesFetchedAt = now;
+    this.syncResolvedLeague();
+    return this.leagueCandidates.map((candidate) => ({ ...candidate }));
+  }
+
   private async resolveLeague(): Promise<string> {
     if (this.config.league !== "auto") return this.config.league;
-    const leagues = await this.getJson(`${SCOUT_BASE}/Leagues`);
-    const current = currentScoutLeague(leagues);
-    if (!current) throw new Error("poe2scout returned no current softcore league");
-    return current;
+    const candidates = await this.leagues();
+    if (candidates.length === 0) throw new Error("poe2scout returned no current softcore league");
+    if (candidates.length > 1) throw new AmbiguousLeagueError(candidates);
+    return candidates[0]!.value;
+  }
+
+  private recordError(error: unknown): string {
+    if (error instanceof AmbiguousLeagueError) this.resolvedLeague = undefined;
+    return error instanceof Error ? error.message : String(error);
   }
 
   /** Pull the full price snapshot and merge it into the price table. */
@@ -371,9 +464,10 @@ export class PriceFeedService {
       }
       const merged = mergeFeedSnapshot(this.options.getPriceTable(), snapshot);
       this.options.savePriceTable(merged.table);
+      this.saveSnapshot(snapshot);
       this.lastRefreshAt = snapshot.fetchedAt;
     } catch (error) {
-      this.lastError = error instanceof Error ? error.message : String(error);
+      this.lastError = this.recordError(error);
     } finally {
       this.refreshing = false;
     }
@@ -522,10 +616,7 @@ export class PriceFeedService {
       if (!fetchResponse.ok) throw new Error(`trade2 fetch → HTTP ${fetchResponse.status}`);
       return remember(parseCompListings(await fetchResponse.json()));
     } catch (error) {
-      return {
-        ok: false,
-        error: error instanceof Error ? error.message : String(error),
-      };
+      return { ok: false, error: this.recordError(error) };
     }
   }
 }

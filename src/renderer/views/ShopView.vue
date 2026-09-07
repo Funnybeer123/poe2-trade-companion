@@ -1,10 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { StashTabAdminEvent, StashTabAdminStatus } from "@core/stashTabAdmin";
+import { formatAmbiguousLeagueMessage } from "@core/priceFeed";
 import { useGameActions } from "../composables/useGameActions";
 import {
+  getPriceFeedApi,
   getShopApi,
   getStashTabAdminApi,
+  type PriceFeedStatusView,
   type ShopConfigView,
   type ShopOverviewView,
 } from "../services/rendererApi";
@@ -12,7 +15,22 @@ import {
 const { dryRun } = useGameActions();
 const shopApi = getShopApi();
 const tabsApi = getStashTabAdminApi();
+const feedApi = getPriceFeedApi();
 const available = computed(() => shopApi !== undefined && tabsApi !== undefined);
+
+/** Every listing price is for ONE league; the hero says which. */
+const feedStatus = ref<PriceFeedStatusView | null>(null);
+const feedLeagueLabel = computed(() => {
+  const status = feedStatus.value;
+  if (!status) return "—";
+  if (status.leagueAmbiguous) return "ambiguous";
+  return status.resolvedLeague ?? (status.config.league === "auto" ? "auto (unresolved)" : status.config.league);
+});
+const feedAmbiguityMessage = computed(() =>
+  feedStatus.value?.leagueAmbiguous
+    ? formatAmbiguousLeagueMessage(feedStatus.value.leagueCandidates)
+    : "",
+);
 
 const overview = ref<ShopOverviewView>({});
 const status = ref<StashTabAdminStatus>({ running: false, phase: "idle" });
@@ -35,6 +53,7 @@ async function refresh(): Promise<void> {
 }
 
 onMounted(async () => {
+  if (feedApi) feedStatus.value = await feedApi.status().catch(() => null);
   if (!available.value) return;
   unsubscribe = tabsApi!.onEvent((event: StashTabAdminEvent) => {
     if (event.kind === "phase") {
@@ -133,8 +152,15 @@ async function saveConfig(): Promise<void> {
         <li><strong>{{ listings.length }}</strong><small>active listings</small></li>
         <li><strong>{{ overview.scan?.freeCells ?? "—" }}</strong><small>free cells</small></li>
         <li><strong>≈{{ realizedTotal }}</strong><small>ex realized (ledger)</small></li>
+        <li :class="{ 'league-ambiguous': feedStatus?.leagueAmbiguous }">
+          <strong>{{ feedLeagueLabel }}</strong><small>pricing league</small>
+        </li>
       </ul>
     </section>
+
+    <p v-if="feedAmbiguityMessage" class="inline-notice danger" role="alert">
+      Pricing is blocked: {{ feedAmbiguityMessage }}
+    </p>
 
     <p v-if="!available" class="inline-notice warning">
       The shop needs the desktop app — the browser preview has no game bridge.
@@ -365,6 +391,7 @@ async function saveConfig(): Promise<void> {
 .shop-summary li { display: flex; flex-direction: column; align-items: center; }
 .shop-summary strong { font-size: 1.4rem; }
 .shop-summary small { opacity: 0.65; }
+.shop-summary .league-ambiguous strong { color: #e4aaa5; }
 .shop-run { display: flex; flex-direction: column; gap: 0.75rem; }
 .phase-chip { font-variant: small-caps; opacity: 0.75; }
 .step-toggle { display: flex; gap: 0.5rem; align-items: center; font-size: 0.85rem; opacity: 0.85; }

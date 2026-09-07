@@ -50,13 +50,7 @@ import {
   type MapTriageOps,
   type TriageSprite,
 } from "../src/core/mapTriage.js";
-import { starterPriceTable, validatePriceTable, type PriceTable } from "../src/core/priceTable.js";
-import {
-  DEFAULT_TIER_THRESHOLDS,
-  starterValueTierRules,
-  type ValueTierRules,
-  type ValueTierThresholds,
-} from "../src/core/valueTiers.js";
+import { loadTriageExport, type TriageExport } from "../src/adapters/triageLoader.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const templateDir = path.join(root, "fixtures", "perception", "templates");
@@ -152,37 +146,6 @@ function recordBenchmark(entry: BenchmarkEntry): void {
   }
 }
 
-/** Same triage export the sorter uses; starter tiers when no export exists. */
-function loadTriageConfig(): {
-  rules: ValueTierRules;
-  thresholds: ValueTierThresholds;
-  priceTable: PriceTable;
-  source: string;
-} {
-  let rules = starterValueTierRules();
-  let thresholds: ValueTierThresholds = { ...DEFAULT_TIER_THRESHOLDS };
-  let priceTable = starterPriceTable();
-  let source = "starter tiers (no artifacts/tab-admin/triage.json export)";
-  const file = path.join(root, "artifacts", "tab-admin", "triage.json");
-  if (existsSync(file)) {
-    try {
-      const parsed = JSON.parse(readFileSync(file, "utf8")) as {
-        rules?: ValueTierRules;
-        thresholds?: ValueTierThresholds;
-        priceTable?: unknown;
-      };
-      if (parsed.rules?.keep && parsed.rules.sell && parsed.rules.dump) rules = parsed.rules;
-      if (parsed.thresholds) thresholds = { ...thresholds, ...parsed.thresholds };
-      const tableCheck = validatePriceTable(parsed.priceTable);
-      if (tableCheck.valid && tableCheck.table) priceTable = tableCheck.table;
-      source = "artifacts/tab-admin/triage.json";
-    } catch (error) {
-      console.log(`triage.json unreadable (${String(error)}) — using starter tiers`);
-    }
-  }
-  return { rules, thresholds, priceTable, source };
-}
-
 async function resolveClient(): Promise<ScreenRect> {
   const rect = await host.send({ op: "rect" });
   if (!rect.ok) throw new Error("poe-window-not-found — is Path of Exile 2 running?");
@@ -272,7 +235,7 @@ async function sweepBag(client: ScreenRect): Promise<BagCellRead[]> {
 /* Careful mode (--careful): the original per-cell, per-click-verified flow. */
 /* ------------------------------------------------------------------------ */
 
-async function runCareful(client: ScreenRect, triage: ReturnType<typeof loadTriageConfig>): Promise<void> {
+async function runCareful(client: ScreenRect, triage: TriageExport): Promise<void> {
   const reads = await sweepBag(client);
   const plan = planMapTriage(reads);
   for (const issue of plan.issues) console.log(`! ${issue}`);
@@ -785,7 +748,7 @@ async function clickAt(x: number, y: number, why: string, shift = false): Promis
   if (!reply.ok) throw new Error(`click-failed(${why}):${reply.error}`);
 }
 
-async function runFast(triage: ReturnType<typeof loadTriageConfig>): Promise<void> {
+async function runFast(triage: TriageExport): Promise<void> {
   const t0 = Date.now();
 
   // 1. One screenshot resolves the client AND segments the bag into items.
@@ -1226,7 +1189,8 @@ let exitCode = 0;
 try {
   await host.send({ op: "focus" });
   harness.startKeyListener();
-  const triage = loadTriageConfig();
+  // Same triage export the sorter uses; starter tiers when no export exists.
+  const triage = loadTriageExport(root);
   console.log(
     `map-triage ${live ? "LIVE" : "DRY-RUN"}${careful ? " CAREFUL" : " FAST"} · rules from ${triage.source}` +
       `${keepUnknown ? " · keep-unknown" : ""} · max drops ${maxDrops} — numpad: 5 pause · 0 stop`,

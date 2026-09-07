@@ -1073,9 +1073,20 @@ export interface StashTabAdminApi {
   onEvent: (callback: (payload: StashTabAdminEvent) => void) => () => void;
 }
 
+export interface LeagueCandidateView {
+  value: string;
+  /** Divine Orb rate in exalted, when poe2scout reports one. */
+  divinePrice?: number;
+}
+
 export interface PriceFeedStatusView {
   config: { league: string; autoRefreshDaily: boolean; poesessid: string };
+  /** The league requests use: the pinned one, or the single current league. */
   resolvedLeague?: string;
+  /** Current softcore leagues from the last /Leagues read (cached 10 min). */
+  leagueCandidates: LeagueCandidateView[];
+  /** League is "auto" and more than one candidate exists: pricing is blocked. */
+  leagueAmbiguous: boolean;
   lastRefreshAt?: string;
   lastError?: string;
   feedEntryCount: number;
@@ -1104,6 +1115,8 @@ export interface CompsResultView {
 
 export interface PriceFeedApi {
   status: () => Promise<PriceFeedStatusView>;
+  /** One small poe2scout read (cached 10 min) listing the current leagues. */
+  leagues: () => Promise<LeagueCandidateView[]>;
   refresh: () => Promise<PriceFeedStatusView>;
   configure: (partial: {
     league?: string;
