@@ -299,6 +299,46 @@ describe("tierForValue", () => {
     expect(tierForValue(byClass, life, 160, "Gloves")).toBe(1);
   });
 
+  it("resolves a value inside overlapping ranges to the better tier, whatever the key order", () => {
+    const overlapping = {
+      "2": { min: 80, max: 120, count: 2, level: 60 },
+      "1": { min: 100, max: 150, count: 2, level: 80 },
+    };
+    const forward = store({ [life]: overlapping });
+    const reversed = store({ [life]: { "1": overlapping["1"], "2": overlapping["2"] } });
+    for (const candidate of [forward, reversed]) {
+      expect(tierForValue(candidate, life, 110)).toBe(1); // in both ranges → tier 1
+      expect(tierForValue(candidate, life, 100)).toBe(1); // exactly tier 1's floor
+      expect(tierForValue(candidate, life, 99)).toBe(2); // tier 2 only
+      expect(tierForValue(candidate, life, 160)).toBe(1); // above every range
+    }
+  });
+
+  it("never serves one class's ranges to another class", () => {
+    const byClass = store(
+      {},
+      {
+        Rings: { [life]: { tiers: { "1": { min: 60, max: 70, count: 2 } } } },
+        Gloves: { [life]: { tiers: { "1": { min: 120, max: 140, count: 2 } } } },
+      },
+    );
+    expect(tierForValue(byClass, life, 65, "Rings")).toBe(1);
+    expect(tierForValue(byClass, life, 65, "Gloves")).toBeUndefined(); // under Gloves' tier 1, no tier ≥ 3
+    expect(tierForValue(byClass, life, 130, "Gloves")).toBe(1);
+    // A class the store never saw (and no class-less entry): nothing, not a neighbour's answer.
+    expect(tierForValue(byClass, life, 65, "Boots")).toBeUndefined();
+    expect(tierForValue(byClass, life, 65)).toBeUndefined();
+  });
+
+  it("parses swapped bounds the right way round so a mid roll is not promoted past the ceiling", () => {
+    const parsed = parseLearnedTiers({
+      stats: { [life]: { tiers: { "2": { min: 149, max: 120, count: 2 }, "3": { min: 90, max: 119, count: 2 } } } },
+    });
+    expect(parsed.stats[life]!.tiers["2"]).toEqual({ min: 120, max: 149, count: 2 });
+    expect(tierForValue(parsed, life, 130)).toBe(2);
+    expect(tierForValue(parsed, life, 160)).toBe(1);
+  });
+
   it("honours an ascending numbering when the levels say so", () => {
     const asc = store({
       [life]: {

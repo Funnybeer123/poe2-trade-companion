@@ -71,6 +71,7 @@ import {
   type PriceSuggestion,
 } from "../core/shopPricing.js";
 import { tradeCurrencyToOrb, type CompsSummary } from "../core/tradeComps.js";
+import { HOUSE_LOOKUPS_PER_WINDOW } from "../core/tradePacing.js";
 import type { PriceTable } from "../core/priceTable.js";
 import type { TierVerdict } from "../core/valueTiers.js";
 
@@ -79,6 +80,17 @@ interface ShopHost {
 }
 
 const PARK = { x: 660, y: 1900 } as const;
+
+/**
+ * Comps lookups one run may spend: the caller's limit (or the default),
+ * never more than trade2's house rules allow in a five-minute window
+ * (core/tradePacing.ts) — past that the pacer would stall the run for
+ * minutes mid-bag, and the remaining items list at the floor anyway.
+ */
+function compsBudgetFor(limit: number | undefined, fallback: number): number {
+  const wanted = typeof limit === "number" && Number.isFinite(limit) ? limit : fallback;
+  return Math.max(0, Math.min(Math.floor(wanted), HOUSE_LOOKUPS_PER_WINDOW));
+}
 
 /** The item's display name: the first copy line after the class/rarity header. */
 function itemNameOf(text: string): string {
@@ -1038,7 +1050,7 @@ export class ShopKeeper {
     const actions: ShopAction[] = [];
     const holds: ShopHold[] = [];
     const report: string[] = [];
-    let compsBudget = options.compsLimit ?? 20;
+    let compsBudget = compsBudgetFor(options.compsLimit, 20);
 
     const byPrint = new Map(state.map((listing) => [listing.fingerprint, listing]));
     const suggestionFor = async (
@@ -1676,7 +1688,7 @@ export class ShopKeeper {
     if (buckets.length === 0) throw new Error("no-bucket-tabs");
     const config = this.options.config;
     const at = this.now().toISOString();
-    let compsBudget = options.compsLimit ?? 15;
+    let compsBudget = compsBudgetFor(options.compsLimit, 15);
     await this.requirePanel("inventory");
     const { items, unread } = await this.sorter.identifyBagItems();
     const held: string[] = [];
@@ -2301,7 +2313,7 @@ export class ShopKeeper {
     if (!this.options.evaluate) throw new Error("shop-list-needs-evaluator");
     const report: string[] = [];
     const at = this.now().toISOString();
-    let compsBudget = options.compsLimit ?? 15;
+    let compsBudget = compsBudgetFor(options.compsLimit, 15);
 
     const { items, unread } = await this.sorter.identifyBagItems();
     if (unread.length > 0) report.push(`${unread.length} bag cell(s) unreadable — left alone`);

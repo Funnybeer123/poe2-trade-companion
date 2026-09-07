@@ -81,11 +81,13 @@ interface FetchCall {
   init?: RequestInit;
 }
 
-function jsonResponse(payload: unknown, status = 200): Response {
+function jsonResponse(payload: unknown, status = 200, headers: Record<string, string> = {}): Response {
+  const lower = Object.fromEntries(Object.entries(headers).map(([k, v]) => [k.toLowerCase(), v]));
   return {
     ok: status >= 200 && status < 300,
     status,
     json: async () => payload,
+    headers: { get: (name: string) => lower[name.toLowerCase()] ?? null },
   } as unknown as Response;
 }
 
@@ -368,6 +370,40 @@ describe("PriceFeedService comps", () => {
     expect(calls.filter((call) => call.url.includes("/search/")).length).toBe(2);
   });
 
+  it("remembers the server's full Retry-After, and a fresh process reads it from the pacing log", async () => {
+    // 2026-09-07: 429 + Retry-After 600 with no rate headers at all.
+    const configDir = mkdtempSync(path.join(tmpdir(), "pfs-retry-after-"));
+    const before = Date.now();
+    const { service, calls } = makeService({
+      configDir,
+      respond: (url) => {
+        if (url.endsWith("/Leagues")) return jsonResponse(LEAGUES);
+        if (url.includes("/search/")) return jsonResponse({}, 429, { "Retry-After": "600" });
+        return jsonResponse({}, 404);
+      },
+    });
+    disposers.push(() => service.dispose());
+    const result = await service.fetchComps(RARE_RING);
+    expect(result.ok).toBe(false);
+    const until = Date.parse(service.tradeBudget().restrictedUntilIso!);
+    expect(until).toBeGreaterThanOrEqual(before + 599_000); // not shortened to the 300 s cap
+    expect(service.tradeBudget().lookups).toBe(0);
+
+    // Another process (a CLI) sees the window from trade-pacing.json alone
+    // and reports it instead of stalling on its first request.
+    const next = makeService({ configDir });
+    disposers.push(() => next.service.dispose());
+    expect(next.service.rateLimitedUntilIso()).toBeDefined();
+    expect(Date.parse(next.service.rateLimitedUntilIso()!)).toBe(until);
+    const refused = await next.service.fetchComps(RARE_RING);
+    expect(refused.ok).toBe(false);
+    expect(refused.error).toContain("rate limited until");
+    expect(next.calls.filter((call) => call.url.includes("/search/"))).toHaveLength(0);
+    // A 600 s Retry-After is never retried inline, even with the test seam's
+    // zero backoff: one search, then the window is remembered.
+    expect(calls.filter((call) => call.url.includes("/search/"))).toHaveLength(1);
+  });
+
   it("returns an empty summary when the search finds nothing", async () => {
     const { service } = makeService({
       respond: (url) => {
@@ -404,6 +440,92 @@ describe("PriceFeedService comps", () => {
     expect(peeked?.sampleSize).toBe(1);
     expect(peeked?.lowest).toBe(3);
     expect(calls.length).toBe(requestCount);
+  });
+
+  it("never prices with another league's cached comps", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "pfs-league-cache-"));
+    const first = makeService({ configDir });
+    disposers.push(() => first.service.dispose());
+    first.service.configure({ league: "Runes of Aldur" });
+    const primed = await first.service.fetchComps(RARE_RING);
+    expect(primed.ok).toBe(true);
+    expect(primed.league).toBe("Runes of Aldur");
+
+    // Same cache file, another pinned league: the cache is not a hit.
+    const second = makeService({ configDir });
+    disposers.push(() => second.service.dispose());
+    second.service.configure({ league: "Standard" });
+    expect(second.service.peekComps(RARE_RING)).toBeUndefined();
+    const result = await second.service.fetchComps(RARE_RING);
+    expect(result.ok).toBe(true);
+    expect(result.cached).toBeUndefined();
+    expect(result.league).toBe("Standard");
+    expect(second.calls.some((call) => call.url.includes("/search/poe2/Standard"))).toBe(true);
+
+    // "auto" while poe2scout lists two leagues: refused, cache or no cache.
+    const ambiguous = makeService({
+      configDir,
+      respond: (url) => (url.endsWith("/Leagues") ? jsonResponse(TWO_LEAGUES) : jsonResponse({}, 404)),
+    });
+    disposers.push(() => ambiguous.service.dispose());
+    ambiguous.service.configure({ league: "auto" }); // the shared config file still says Standard
+    expect(ambiguous.service.peekComps(RARE_RING)).toBeUndefined();
+    const refused = await ambiguous.service.fetchComps(RARE_RING);
+    expect(refused.ok).toBe(false);
+    expect(refused.error).toContain("more than one current league");
+    expect(ambiguous.calls.some((call) => call.url.includes("/search/"))).toBe(false);
+  });
+
+  it("peekComps serves the stat-filtered sample the way fetchComps does", async () => {
+    const { service, calls } = makeService({ respond: twoStageResponder(["aaa", "bbb", "ccc"]) });
+    disposers.push(() => service.dispose());
+    const fetched = await service.fetchComps(RARE_RING);
+    expect(fetched.basis).toBe("stat-filtered");
+    const requestCount = calls.length;
+    const peeked = service.peekComps(RARE_RING);
+    expect(peeked?.basis).toBe("stat-filtered");
+    expect(peeked?.sampleSize).toBe(fetched.summary?.sampleSize);
+    expect(peeked?.lowest).toBe(3);
+    expect(calls.length).toBe(requestCount);
+  });
+
+  it("keeps the shared pacing log even when a trade2 request throws", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "pfs-pacing-throw-"));
+    const { service } = makeService({
+      configDir,
+      respond: (url) => {
+        if (url.endsWith("/Leagues")) return jsonResponse(LEAGUES);
+        if (url.includes("/search/")) throw new Error("socket hang up");
+        return jsonResponse({}, 404);
+      },
+    });
+    disposers.push(() => service.dispose());
+    const result = await service.fetchComps(RARE_RING);
+    expect(result.ok).toBe(false);
+    expect(result.error).toContain("socket hang up");
+    const pacing = JSON.parse(readFileSync(path.join(configDir, "trade-pacing.json"), "utf8")) as {
+      "trade-search"?: { hits: number[] };
+    };
+    expect(pacing["trade-search"]?.hits).toHaveLength(1);
+  });
+
+  it("budgets lookups by the house rules, not just the advertised windows", async () => {
+    const configDir = mkdtempSync(path.join(tmpdir(), "pfs-house-"));
+    const now = Date.now();
+    const generous = [{ max: 60, periodSec: 10, penaltySec: 60 }];
+    writeFileSync(
+      path.join(configDir, "trade-pacing.json"),
+      JSON.stringify({
+        "trade-search": { rules: generous, hits: Array.from({ length: 9 }, (_, i) => now - 60_000 - i * 1000), restrictedUntil: 0 },
+        "trade-fetch": { rules: generous, hits: Array.from({ length: 8 }, (_, i) => now - 60_000 - i * 1000), restrictedUntil: 0 },
+      }),
+    );
+    const { service } = makeService({ configDir });
+    disposers.push(() => service.dispose());
+    expect(service.tradeBudget().lookups).toBe(0);
+    const fresh = makeService();
+    disposers.push(() => fresh.service.dispose());
+    expect(fresh.service.tradeBudget().lookups).toBeGreaterThan(0);
   });
 
   it("peekComps ignores an expired cache entry", async () => {

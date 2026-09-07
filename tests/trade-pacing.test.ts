@@ -2,6 +2,9 @@ import { describe, expect, it } from "vitest";
 import {
   DEFAULT_RULES,
   FETCH_POLICY,
+  HOUSE_COMBINED_RULE,
+  HOUSE_LOOKUPS_PER_WINDOW,
+  HOUSE_RULES,
   SEARCH_POLICY,
   TradePacer,
   parseRateRules,
@@ -123,10 +126,15 @@ describe("TradePacer", () => {
 
   it("honours a server restriction and Retry-After", () => {
     const pacer = new TradePacer();
-    pacer.observe(SEARCH_POLICY, { state: "9:10:45" }, T0);
+    pacer.observe(SEARCH_POLICY, { state: "3:10:45" }, T0);
     expect(pacer.restrictedUntil(SEARCH_POLICY, T0)).toBe(T0 + 45_000);
     expect(pacer.delayFor(SEARCH_POLICY, T0 + 1000)).toBe(44_000);
     expect(pacer.available(SEARCH_POLICY, T0 + 1000)).toBe(0);
+    // Nine server-counted hits fill the five-minute house window as well:
+    // foreign traffic counts toward the unlisted lockout like our own.
+    const busy = new TradePacer();
+    busy.observe(SEARCH_POLICY, { state: "9:10:45" }, T0);
+    expect(busy.delayFor(SEARCH_POLICY, T0 + 1000)).toBe(300_000 - 1 - 1000 + 250);
     pacer.observe(FETCH_POLICY, { retryAfter: "120" }, T0);
     expect(pacer.restrictedUntil(undefined, T0)).toBe(T0 + 120_000);
     expect(pacer.restrictedUntil(undefined, T0 + 121_000)).toBe(0);
@@ -140,5 +148,94 @@ describe("TradePacer", () => {
     const revived = new TradePacer(JSON.parse(JSON.stringify(pacer.toJSON())) as never);
     expect(revived.delayFor(SEARCH_POLICY, T0 + 700)).toBeGreaterThan(9_000);
     expect(new TradePacer({ bad: { nope: true } } as never).delayFor(SEARCH_POLICY, T0)).toBe(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// House rules: the unlisted lockout layer (2026-09-07: 429 + Retry-After 600
+// with no rate headers at 17/300 searches + 14/300 fetches).
+// ---------------------------------------------------------------------------
+
+/** The rules trade2 advertised on 2026-09-07 (artifacts/tab-admin/trade-pacing.json). */
+const LIVE_SEARCH_RULES = "5:10:60,15:60:300,30:300:1800,600:21600:3600";
+const LIVE_FETCH_RULES = "12:4:10,16:12:300,50:300:300,1000:21600:1800";
+
+describe("house rules", () => {
+  it("are ten per policy and eighteen combined per five minutes, nine and seventeen usable", () => {
+    expect(HOUSE_RULES[SEARCH_POLICY]).toEqual([{ max: 10, periodSec: 300, penaltySec: 600 }]);
+    expect(HOUSE_RULES[FETCH_POLICY]).toEqual([{ max: 10, periodSec: 300, penaltySec: 600 }]);
+    expect(HOUSE_COMBINED_RULE).toEqual({ max: 18, periodSec: 300, penaltySec: 600 });
+    // 9 searches, 9 fetches, 17 combined → 8 search+fetch pairs per window.
+    expect(HOUSE_LOOKUPS_PER_WINDOW).toBe(8);
+  });
+
+  it("cap a policy at nine per five minutes even when the server advertises thirty", () => {
+    const pacer = new TradePacer();
+    pacer.observe(SEARCH_POLICY, { rules: LIVE_SEARCH_RULES }, T0 - 1);
+    // Nine searches spread over 160 s: every advertised window has room.
+    for (let i = 0; i < 9; i += 1) pacer.record(SEARCH_POLICY, T0 + i * 20_000);
+    const at = T0 + 170_000;
+    expect(pacer.rules(SEARCH_POLICY).map((rule) => rule.max)).toEqual([5, 15, 30, 600]);
+    expect(pacer.available(SEARCH_POLICY, at)).toBe(0);
+    // The oldest hit leaves the five-minute window at T0 + 300 s.
+    expect(pacer.delayFor(SEARCH_POLICY, at)).toBe(300_000 - 170_000 + 250);
+    expect(pacer.available(SEARCH_POLICY, T0 + 301_000)).toBe(1);
+    expect(pacer.delayFor(SEARCH_POLICY, T0 + 301_000)).toBe(0);
+  });
+
+  it("guard searches and fetches together", () => {
+    const pacer = new TradePacer();
+    pacer.observe(SEARCH_POLICY, { rules: LIVE_SEARCH_RULES }, T0 - 1);
+    pacer.observe(FETCH_POLICY, { rules: LIVE_FETCH_RULES }, T0 - 1);
+    for (let i = 0; i < 9; i += 1) pacer.record(SEARCH_POLICY, T0 + i * 20_000);
+    for (let i = 0; i < 8; i += 1) pacer.record(FETCH_POLICY, T0 + 10_000 + i * 20_000);
+    const at = T0 + 170_000;
+    // Fetch has one house slot left, but the combined guard (17) is full.
+    expect(pacer.available(FETCH_POLICY, at)).toBe(0);
+    expect(pacer.delayFor(FETCH_POLICY, at)).toBe(300_000 - 170_000 + 250);
+    expect(pacer.lookupsAvailable(at)).toBe(0);
+    // A policy outside the guard is untouched by it.
+    expect(pacer.available("other", at)).toBeGreaterThan(0);
+  });
+
+  it("count lookups as search+fetch pairs under the combined guard", () => {
+    const pacer = new TradePacer();
+    // Generous advertised windows so only the house rules bind.
+    pacer.observe(SEARCH_POLICY, { rules: "60:10:60" }, T0 - 1);
+    pacer.observe(FETCH_POLICY, { rules: "60:4:10" }, T0 - 1);
+    expect(pacer.lookupsAvailable(T0)).toBe(HOUSE_LOOKUPS_PER_WINDOW);
+    for (let i = 0; i < 4; i += 1) {
+      pacer.record(SEARCH_POLICY, T0 + i * 2_000);
+      pacer.record(FETCH_POLICY, T0 + i * 2_000 + 1_000);
+    }
+    expect(pacer.lookupsAvailable(T0 + 10_000)).toBe(4);
+    for (let i = 4; i < 8; i += 1) {
+      pacer.record(SEARCH_POLICY, T0 + i * 2_000);
+      pacer.record(FETCH_POLICY, T0 + i * 2_000 + 1_000);
+    }
+    // One search and one fetch slot remain, but the combined guard has one.
+    expect(pacer.available(SEARCH_POLICY, T0 + 20_000)).toBe(1);
+    expect(pacer.lookupsAvailable(T0 + 20_000)).toBe(0);
+  });
+
+  it("keep five minutes of hits in the snapshot even when the advertised windows are short", () => {
+    const pacer = new TradePacer();
+    pacer.observe(FETCH_POLICY, { rules: "12:4:10,16:12:300" }, T0 - 1);
+    for (let i = 0; i < 9; i += 1) pacer.record(FETCH_POLICY, T0 + i * 2_000);
+    expect(pacer.available(FETCH_POLICY, T0 + 100_000)).toBe(0);
+    const snapshot = JSON.parse(JSON.stringify(pacer.toJSON())) as { [k: string]: { hits: number[] } };
+    expect(snapshot[FETCH_POLICY]!.hits).toHaveLength(9);
+    const revived = new TradePacer(snapshot as never);
+    expect(revived.available(FETCH_POLICY, T0 + 100_000)).toBe(0);
+    // The last of the nine (T0 + 16 s) leaves the five-minute window at T0 + 316 s.
+    expect(revived.available(FETCH_POLICY, T0 + 301_000)).toBe(1);
+    expect(revived.available(FETCH_POLICY, T0 + 317_000)).toBe(9);
+  });
+
+  it("are never lifted by a later header read", () => {
+    const pacer = new TradePacer();
+    for (let i = 0; i < 9; i += 1) pacer.record(SEARCH_POLICY, T0 + i * 20_000);
+    pacer.observe(SEARCH_POLICY, { rules: "100:300:1", state: "9:300:0" }, T0 + 161_000);
+    expect(pacer.available(SEARCH_POLICY, T0 + 170_000)).toBe(0);
   });
 });

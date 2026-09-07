@@ -1,5 +1,8 @@
-import { readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
+import { LEARNED_TIERS_FILE, loadLearnedTiers, loadTierKnowledge } from "../src/adapters/learnedTiersStore.js";
 import { appraiseItem, evaluateWithAppraisal } from "../src/core/appraisal.js";
 import { MOD_FAMILIES, matchModFamily } from "../src/core/modKnowledge.js";
 import { parseItemText } from "../src/core/parseItem.js";
@@ -111,6 +114,30 @@ describe("learned tiers in mod matching", () => {
     const summary = summarizeComps(ours, [theirs], "stat-filtered", { itemClass: "Rings", minSimilarity: 0 });
     expect(summary).toMatchObject({ basis: "stat-filtered", sampleSize: 1, lowest: 3 });
     expect(summary.comps[0]?.similarity).toBe(0);
+  });
+});
+
+describe("corrupt mod-tiers.json", () => {
+  const CORRUPT: Array<[string, string]> = [
+    ["not json", "{not json"],
+    ["an array", "[]"],
+    ["null", "null"],
+    ["stats not an object", JSON.stringify({ stats: 5, classes: "x" })],
+    ["junk ranges", JSON.stringify({ stats: { [LIFE]: { tiers: { "1": { min: "a", max: null, count: "2" } } } } })],
+    ["swapped bounds", JSON.stringify({ stats: { [LIFE]: { tiers: { "1": { min: 200, max: 180, count: 2 } } } } })],
+    ["empty tiers", JSON.stringify({ stats: { [LIFE]: { tiers: {} } }, classes: { Rings: null } })],
+  ];
+
+  it.each(CORRUPT)("never throws into the appraisal path (%s)", (_label, text) => {
+    const dir = mkdtempSync(path.join(tmpdir(), "learned-tiers-corrupt-"));
+    writeFileSync(path.join(dir, LEARNED_TIERS_FILE), text);
+    expect(() => loadLearnedTiers(dir)).not.toThrow();
+    const knowledge = loadTierKnowledge(dir);
+    const text2 = ring("Doom Loop", ["+190 to maximum Life", "+38% to Fire Resistance"]);
+    const appraisal = appraiseItem(text2, { ...knowledge, statIds });
+    expect(appraisal.mods[0]).toMatchObject({ familyId: "life" });
+    expect(appraisal.mods[0]!.tier).toBeGreaterThanOrEqual(1);
+    expect(() => evaluateWithAppraisal(text2, { rules: emptyValueTierRules(), ...knowledge, statIds })).not.toThrow();
   });
 });
 
