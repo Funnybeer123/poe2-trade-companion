@@ -184,6 +184,13 @@ export interface TriageRouting {
   dumpTab: string;
   /** Where sell-tier items go; defaults to the review tab. */
   sellTab?: string;
+  /**
+   * Crafting stock (optional): a rare with open affixes and at least one
+   * strong roll (appraisal.craftHint) whose verdict is unknown or sell
+   * detours here instead of its class/sell tab. Never a source for cleaning;
+   * `scripts/craft-gear.ts --from-tab=<label>` drains it into the bag.
+   */
+  craftTab?: string;
 }
 
 export const DEFAULT_TRIAGE_ROUTING: TriageRouting = {

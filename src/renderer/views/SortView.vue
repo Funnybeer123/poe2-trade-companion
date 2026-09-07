@@ -210,6 +210,15 @@ const readiness = computed(() => [
         and corruption are always left as printed recommendations.
         {{ dryRun ? "Dry-run prints each item's plan without touching the game." : "Live mode applies orbs from the bag one step at a time." }}
       </p>
+      <p class="muted craft-loop-hint">
+        Craft-to-sell loop: set a <strong>Craft tab</strong> under Value tiers
+        and the sorter parks sparse rares with a strong roll there. From the
+        CLI, <code>npx tsx scripts/craft-gear.ts --from-tab=Craft</code> pulls
+        that tab into the bag before crafting, and <code>--then-list</code>
+        hands the bag to <code>shop-buckets</code> afterwards (dry-run unless
+        the craft run itself is live, and only when no other input host is
+        running).
+      </p>
       <div class="button-row">
         <button
           type="button"
@@ -289,6 +298,7 @@ const readiness = computed(() => [
 .sort-run { display: flex; flex-direction: column; gap: 0.75rem; }
 .phase-chip { font-variant: small-caps; opacity: 0.75; }
 .sort-log { max-height: 16rem; overflow: auto; background: rgba(10, 10, 16, 0.65); padding: 0.6rem; border-radius: 0.4rem; font-size: 0.8em; }
+.craft-loop-hint code { font-size: 0.85em; }
 .finds-card { display: flex; flex-direction: column; gap: 0.7rem; }
 .finds-heading-right { display: flex; align-items: center; gap: 0.7rem; }
 .finds-total { font-size: 0.85rem; opacity: 0.85; }

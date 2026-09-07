@@ -21,6 +21,13 @@ import { loadHotkeyBindings, saveHotkeyBindings } from "../core/hotkeyBindings.j
 import { HOTKEY_ACTIONS, RESERVED_CONTROL_KEYS } from "../shared/hotkeyActions.js";
 import { parseFindRecords } from "../core/sortTriage.js";
 import {
+  latestObservations,
+  locationStaleness,
+  netWorth,
+  parseInventoryRecords,
+  sellCandidates,
+} from "../core/inventoryLedger.js";
+import {
   deriveShopState,
   parseListingEvents,
   parseShopConfig,
@@ -49,7 +56,12 @@ import {
   loadVoiceTransferConfig,
   saveVoiceTransferConfig,
 } from "./voiceTransferSettings.js";
-import { ITEM_INTELLIGENCE_IPC_VERSION, type ParsedItemEvaluation } from "../shared/ipc.js";
+import {
+  ITEM_INTELLIGENCE_IPC_VERSION,
+  type InventoryOverviewQuery,
+  type InventoryOverviewView,
+  type ParsedItemEvaluation,
+} from "../shared/ipc.js";
 import { openLocalPersistence, type LocalPersistenceDatabase } from "./persistence/index.js";
 import { ItemIntelligenceService } from "./itemIntelligenceService.js";
 import { PriceFeedService, type PriceFeedConfig } from "./priceFeedService.js";
@@ -294,6 +306,108 @@ function exportTriageSnapshot(): void {
   } catch {
     // The snapshot is a convenience mirror; failing to write it must not
     // break the app. The script falls back to starter tiers.
+  }
+}
+
+/**
+ * Stash net worth (docs/USER_GUIDE.md "Wealth"): the sorter's inventory
+ * ledger reduced to current whereabouts and priced with the app's table.
+ * `persist` mirrors the observations into the SQLite catalog so the Item log
+ * shows where everything is — inside try/catch, because a missing native
+ * module must never take the Wealth page down with it.
+ */
+function inventoryOverview(
+  query: InventoryOverviewQuery | undefined,
+  persist: boolean,
+): InventoryOverviewView {
+  const generatedAt = new Date().toISOString();
+  const file = path.join(process.cwd(), "artifacts", "tab-admin", "inventory.jsonl");
+  try {
+    const records = existsSync(file) ? parseInventoryRecords(readFileSync(file, "utf8")) : [];
+    const observations = latestObservations(records);
+    const priceTable = itemIntelligenceService?.getPriceTable() ?? starterPriceTable();
+    const worth = netWorth(observations, priceTable);
+    const candidates = sellCandidates(observations, {
+      priceTable,
+      minExalted: query?.minExalted ?? 1,
+      maxExalted: query?.maxExalted ?? 5,
+      excludeLocations: query?.excludeLocations ?? [],
+    });
+    const topItems = [...worth.valued]
+      .filter((entry) => entry.valueExalted !== undefined)
+      .sort((a, b) => (b.valueExalted ?? 0) - (a.valueExalted ?? 0))
+      .slice(0, 25);
+    const view: InventoryOverviewView = {
+      generatedAt,
+      file,
+      recordCount: records.length,
+      observationCount: observations.length,
+      worth,
+      topItems,
+      sellCandidates: candidates,
+      staleness: locationStaleness(records, generatedAt),
+    };
+    if (persist && localPersistence) {
+      try {
+        const persistence = localPersistence;
+        let upserts = 0;
+        persistence.transaction(() => {
+          for (const entry of worth.valued) {
+            const { observation } = entry;
+            const existing = persistence.catalogItems.getByFingerprint(observation.fingerprint);
+            const previous =
+              existing && typeof existing.payload === "object" && existing.payload !== null
+                ? (existing.payload as Record<string, unknown>)
+                : {};
+            persistence.catalogItems.upsert({
+              fingerprint: observation.fingerprint,
+              name: observation.name,
+              baseType: observation.baseType || observation.name,
+              itemClass: observation.itemClass,
+              currentLocation: observation.location,
+              ...(observation.tier ? { recommendation: observation.tier } : {}),
+              ...(entry.valueExalted !== undefined ? { fairValue: entry.valueExalted } : {}),
+              payload: {
+                ...previous,
+                inventory: {
+                  at: observation.at,
+                  runId: observation.runId,
+                  location: observation.location,
+                  cells: observation.cells,
+                  count: observation.count ?? 1,
+                  ...(observation.stackCount !== undefined
+                    ? { stackCount: observation.stackCount }
+                    : {}),
+                  ...(observation.estimate ? { estimate: observation.estimate } : {}),
+                  ...(entry.valueExalted !== undefined
+                    ? { valueExalted: entry.valueExalted, valueSource: entry.source }
+                    : {}),
+                },
+              },
+            });
+            upserts += 1;
+          }
+        });
+        view.catalogUpserts = upserts;
+        if (itemIntelligenceService) {
+          mainWindow?.webContents.send("catalog:changed", itemIntelligenceService.listCatalog());
+        }
+      } catch (error) {
+        view.catalogError = error instanceof Error ? error.message : String(error);
+      }
+    }
+    return view;
+  } catch (error) {
+    return {
+      error: error instanceof Error ? error.message : String(error),
+      generatedAt,
+      file,
+      recordCount: 0,
+      observationCount: 0,
+      topItems: [],
+      sellCandidates: [],
+      staleness: [],
+    };
   }
 }
 
@@ -861,6 +975,13 @@ app.whenReady().then(() => {
     },
   );
   ipcMain.handle("runtime:mode", () => buildMode);
+  // Stash net worth: the sorter's inventory ledger, priced and reduced.
+  ipcMain.handle("inventory:overview", (_event, query?: InventoryOverviewQuery) =>
+    inventoryOverview(query, false),
+  );
+  ipcMain.handle("inventory:refresh", (_event, query?: InventoryOverviewQuery) =>
+    inventoryOverview(query, true),
+  );
   registerCalibrationIpc();
   // Auto-flask guard config + click calibration; same root as the hotkey bindings.
   registerFlaskGuardIpc(process.cwd());

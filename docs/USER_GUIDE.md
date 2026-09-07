@@ -121,7 +121,43 @@ decide.
 Every detoured keep/sell is logged to `artifacts/tab-admin/finds.jsonl` with
 its score, confidence, origin tab, and destination. The Sort screen's
 **Recent finds** card lists the latest finds and totals their estimated
-value — a running "what did the sorter earn me" ledger.
+value — a running "what did the sorter earn me" ledger. A craft-tab detour
+(below) logs with tier **craft** and the craft hint as its reason.
+
+### Craft tab (craft-to-sell loop)
+
+Set an optional **Craft tab** under Value tiers. A rare whose verdict is
+unknown or sell, with at most four affixes and at least one strong roll
+(the appraisal's craft hint), detours there instead of its class or Sell
+tab — keep and dump verdicts are never overridden, and the confidence gate
+still applies. The craft tab is never cleaned as a source. To work the tab:
+
+```
+npx tsx scripts/craft-gear.ts --from-tab=Craft              # dry-run: what would be withdrawn + each plan
+POE2_CRAFT_LIVE=1 npx tsx scripts/craft-gear.ts --live --from-tab=Craft --then-list
+```
+
+`--from-tab` pulls the tab into the bag by the sorter's own verified-serial
+withdraw before the crafting sweep; `--then-list` hands the bag to
+`scripts/shop-buckets.ts` afterwards (dry-run unless the craft run is live),
+but only once the crafting host has closed and no other input host is
+running. Neither flag has had a live run yet.
+
+## Wealth
+
+The **Wealth** page is the stash net worth. Every sort run journals each
+item it identified by Ctrl+C — tab, cell, fingerprint, and the appraisal's
+estimate — to `artifacts/tab-admin/inventory.jsonl`. The page reduces that
+ledger to current whereabouts (a tab's latest scan defines its contents; a
+later sighting elsewhere means the item moved; currency stacks coexist per
+tab) and prices it with the local price table, stack-aware, falling back to
+the sorter's estimate. It shows the total in exalted and divine (at the
+table's Divine Orb rate), a per-location table with last-scan age, the top
+25 items, a sell list for a value band (1–5 ex by default, with **Copy
+names**), and a search box. **Refresh** re-reads the file and mirrors the
+observations into the Item log's catalog with their current location.
+Items last seen in the bag show as *bag (in transit)* until their tabs are
+scanned again. Estimates are never guaranteed sale prices.
 
 ## Item log
 

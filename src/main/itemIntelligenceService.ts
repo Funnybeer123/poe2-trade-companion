@@ -542,6 +542,9 @@ export class ItemIntelligenceService {
         ...(typeof value.sellTab === "string" && value.sellTab.trim()
           ? { sellTab: value.sellTab.trim() }
           : {}),
+        ...(typeof value.craftTab === "string" && value.craftTab.trim()
+          ? { craftTab: value.craftTab.trim() }
+          : {}),
       };
     }
     return { ...DEFAULT_TRIAGE_ROUTING };

@@ -46,6 +46,7 @@ describe("preload API exposure", () => {
         "generateFilter",
         "hotkeys",
         "intelligence",
+        "inventory",
         "killLatched",
         "mode",
         "onItem",

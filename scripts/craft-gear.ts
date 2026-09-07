@@ -10,6 +10,15 @@
  * Flags: --budget=N (ex per item), --min-confidence=N, --max-steps=N,
  *        --json (machine-readable plans on stdout)
  *
+ * Craft-to-sell loop (docs/CRAFTING.md "Craft-to-sell loop"):
+ *   --from-tab=<label>  withdraw that stash tab (the sorter's Craft tab) into
+ *                       the bag first — indexed by Ctrl+C ground truth,
+ *                       withdrawn verified-serial; dry-run only reports.
+ *   --then-list         after the crafting pass, hand the bag to
+ *                       scripts/shop-buckets.ts (dry-run unless THIS run is
+ *                       live) — only once this script's input host is closed
+ *                       and no other host is running.
+ *
  * Safety model (see docs/CRAFTING.md):
  *   - Dry-run is the default. Live mode needs BOTH --live and
  *     POE2_CRAFT_LIVE=1, and refuses to start while another input host is
@@ -27,6 +36,10 @@ import { appendFileSync, mkdirSync, readFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { startWinHost } from "../src/adapters/winHost.js";
 import { SortHarness, SortStop } from "../src/adapters/sortHarness.js";
+import { GearSorter } from "../src/adapters/gearSorter.js";
+import { StashTabKit } from "../src/adapters/stashTabKit.js";
+import { packTripByDest, type IdentifiedItem } from "../src/core/gearSort.js";
+import { labelsEqualFolded } from "../src/core/tabList.js";
 import { loadProfile } from "../src/core/calibrationStore.js";
 import { BAG_CELLS } from "../src/core/calibrationProfile.js";
 import { cellCenterTwoCorner } from "../src/core/gridMath.js";
@@ -54,6 +67,8 @@ const value = (name: string): string | undefined =>
 const liveRequested = flag("--live") && !flag("--dry-run");
 const live = liveRequested && process.env.POE2_CRAFT_LIVE === "1";
 const asJson = flag("--json");
+const fromTab = value("--from-tab")?.trim();
+const thenList = flag("--then-list");
 const maxSteps = Math.max(1, Number(value("--max-steps") ?? 40));
 const policy = {
   ...DEFAULT_CRAFT_POLICY,
@@ -340,6 +355,69 @@ function findOrbStacks(reads: BagRead[]): OrbStack[] {
   return stacks;
 }
 
+/**
+ * --from-tab: pull the sorter's Craft tab into the bag before the sweep,
+ * through the sorter's own public seams — listSources/scanTab index the tab
+ * by Ctrl+C ground truth, packTripByDest keeps the batch to what the bag
+ * places, withdrawItemsSerial ctrl-clicks ONE item at a time and only
+ * continues after the bag pixel-verifiably grew. Dry-run reports the batch
+ * and touches nothing. Every indexed item also lands in the inventory
+ * ledger (artifacts/tab-admin/inventory.jsonl).
+ */
+async function withdrawFromTab(label: string): Promise<void> {
+  const ledgerFile = path.join(root, "artifacts", "tab-admin", "inventory.jsonl");
+  const sorter = new GearSorter(host, harness, new StashTabKit(host), {
+    root,
+    templateDir,
+    dryRun: !live,
+    debug: false,
+    maxChestClicks: 2,
+    runId: `craft-${new Date().toISOString().replace(/[:.]/g, "-")}`,
+    onObservation: (record) => {
+      try {
+        appendFileSync(ledgerFile, `${JSON.stringify(record)}\n`);
+      } catch {
+        // side journal only
+      }
+    },
+  });
+  await sorter.ensureSession();
+  const sources = await sorter.listSources();
+  const source =
+    sources.find((entry) => labelsEqualFolded(entry.label, label)) ?? { label, occurrence: 0 };
+  const scan = await sorter.scanTab(source);
+  if (!scan.ok) {
+    if (!live) {
+      console.log(
+        `--from-tab ${label}: ${scan.reason} — dry-run cannot navigate; open the tab by hand and rerun to preview the batch.`,
+      );
+      return;
+    }
+    throw new Error(`--from-tab ${label}: ${scan.reason}`);
+  }
+  const describe = (item: IdentifiedItem): string => {
+    const parsed = parseItemText(item.text);
+    return `${parsed.name || parsed.baseType} (${parsed.itemClass}, ${item.cells.length} cell${item.cells.length > 1 ? "s" : ""})`;
+  };
+  const candidates = scan.modelItems.filter(
+    (item) => !/currency/i.test(item.itemClass ?? parseItemText(item.text).itemClass),
+  );
+  const batch = packTripByDest(candidates, await sorter.bagCellsNow());
+  console.log(
+    `--from-tab ${label}: ${scan.modelItems.length} item(s) indexed, ${candidates.length} craftable, ` +
+      `${batch.length} fit the bag${scan.unread.length > 0 ? `, ${scan.unread.length} unreadable cell(s)` : ""}`,
+  );
+  for (const item of batch) {
+    console.log(`    ${live ? "withdraw" : "would withdraw"} ${describe(item)}`);
+  }
+  if (!live || batch.length === 0) return;
+  const withdrawn = await sorter.withdrawItemsSerial(batch, label);
+  console.log(`--from-tab ${label}: ${withdrawn.length}/${batch.length} withdrawn (verified serial)`);
+  if (withdrawn.length < batch.length) {
+    console.log("    a withdraw did not commit — crafting continues with what reached the bag");
+  }
+}
+
 async function applyOrb(orb: OrbStack, target: BagRead): Promise<void> {
   // Right-click picks the orb up onto the cursor; left-click applies it.
   await harness.checkpoint(`apply ${ORB_NAMES[orb.id]}`);
@@ -350,6 +428,9 @@ async function applyOrb(orb: OrbStack, target: BagRead): Promise<void> {
 }
 
 let exitCode = 0;
+let stopped = false;
+/** Each candidate's LAST plan action — "sell" means the bag holds a listing. */
+const finalActions = new Map<string, string>();
 try {
   const rect = await host.send({ op: "rect" });
   if (!rect.ok) throw new Error("poe-window-not-found — is Path of Exile 2 running?");
@@ -357,8 +438,12 @@ try {
   harness.startKeyListener();
   console.log(
     `craft-gear ${live ? "LIVE" : "DRY-RUN"} · budget ${policy.perItemBudget} ex/item · ` +
-      `auto gate ≥ ${policy.minAutoConfidence} confidence — numpad: 5 pause · 0 stop`,
+      `auto gate ≥ ${policy.minAutoConfidence} confidence — numpad: 5 pause · 0 stop` +
+      (fromTab ? ` · from-tab ${fromTab}` : "") +
+      (thenList ? " · then-list" : ""),
   );
+
+  if (fromTab) await withdrawFromTab(fromTab);
 
   const grid = await resolveScreenGrid();
   const reads = await sweepBag(grid);
@@ -396,6 +481,7 @@ try {
       const parsed = parseItemText(text);
       const label = `r${candidate.row}c${candidate.col} ${parsed.name || parsed.baseType}`;
       console.log(describePlan(label, plan));
+      finalActions.set(label, plan.action);
       if (!plan.autoEligible || !plan.orb) break;
       const stack = orbStacks.find((entry) => entry.id === plan.orb && entry.count > 0);
       if (!stack) {
@@ -439,12 +525,37 @@ try {
   }
   await harness.dispose({ outcome: "complete", stepsTaken, live });
 } catch (error) {
-  const stopped = error instanceof SortStop;
+  stopped = error instanceof SortStop;
   console.log(String(error instanceof Error ? error.message : error));
   if (!stopped) exitCode = 1;
   await harness.dispose({ outcome: stopped ? "stopped" : "failed" });
 } finally {
   await controlHost.close();
   await host.close();
+}
+
+// --then-list: the crafting host is closed above; shop-buckets starts its
+// own. It lists whatever in the bag clears a bucket (keep/dump tiers hold),
+// so the SELL-final items from this pass are what it picks up. Never while
+// another input host owns the mouse, never after a stop or failure.
+if (thenList && exitCode === 0 && !stopped) {
+  const sells = [...finalActions.entries()].filter(([, action]) => action === "sell");
+  if (otherHostRunning()) {
+    console.error(
+      "--then-list: another win-input-host is still running — not starting shop-buckets. Stop it and run `npx tsx scripts/shop-buckets.ts` yourself.",
+    );
+    exitCode = 1;
+  } else {
+    console.log(
+      `--then-list: ${sells.length} item(s) finished at SELL — handing the bag to shop-buckets (${live ? "--live" : "dry-run"})`,
+    );
+    for (const [label] of sells) console.log(`    ${label}`);
+    const listed = spawnSync("npx", ["--yes", "tsx", "scripts/shop-buckets.ts", ...(live ? ["--live"] : [])], {
+      cwd: root,
+      stdio: "inherit",
+      shell: true,
+    });
+    exitCode = listed.status ?? 1;
+  }
 }
 process.exit(exitCode);

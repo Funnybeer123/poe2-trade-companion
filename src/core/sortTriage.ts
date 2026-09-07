@@ -35,6 +35,8 @@ export interface RoutedItem {
   fallbackDest: string | "junk";
   verdict?: TierVerdict;
   detoured: boolean;
+  /** True when the detour is to the craft tab (crafting stock, not a find by value). */
+  craft?: boolean;
 }
 
 function verdictConfidence(verdict: TierVerdict): number {
@@ -46,14 +48,18 @@ function verdictConfidence(verdict: TierVerdict): number {
 /** The labels cleaning must never treat as sources — triage tabs hold detours. */
 export function triageTabLabels(routing: TriageRouting): Set<string> {
   return new Set(
-    [routing.reviewTab, routing.dumpTab, routing.sellTab]
-      .filter((label): label is string => Boolean(label))
+    [routing.reviewTab, routing.dumpTab, routing.sellTab, routing.craftTab]
+      .filter((label): label is string => Boolean(label && label.trim()))
       .map((label) => label.trim().toLowerCase()),
   );
 }
 
 export function isTriageTabLabel(label: string, routing: TriageRouting): boolean {
   return triageTabLabels(routing).has(label.trim().toLowerCase());
+}
+
+function isRareItemText(text: string): boolean {
+  return /^Rarity:\s*Rare\s*$/im.test(text);
 }
 
 /**
@@ -79,6 +85,18 @@ export function routeIdentifiedItem(
   if (confidence < config.minDetourConfidence) return base;
   if (verdict.tier === "keep") {
     return { ...base, dest: config.routing.reviewTab, detoured: true };
+  }
+  // Crafting stock: an unknown/sell RARE with open affixes and a strong roll
+  // is worth more as a craft base than as a listing. Keep and dump verdicts
+  // are never overridden — a keep is already a winner, a dump is explicit.
+  const craftTab = config.routing.craftTab?.trim();
+  if (
+    craftTab &&
+    (verdict.tier === "unknown" || verdict.tier === "sell") &&
+    verdict.appraisal?.craftHint &&
+    isRareItemText(item.text)
+  ) {
+    return { ...base, dest: craftTab, detoured: true, craft: true };
   }
   if (verdict.tier === "sell") {
     return { ...base, dest: config.routing.sellTab ?? config.routing.reviewTab, detoured: true };
@@ -110,7 +128,7 @@ export interface FindRecord {
   reason?: string;
 }
 
-/** A find worth logging: anything that detoured as keep or sell. */
+/** A find worth logging: anything that detoured as keep, sell, or craft stock. */
 export function findRecordFor(
   routed: RoutedItem,
   location: string,
@@ -118,8 +136,10 @@ export function findRecordFor(
 ): FindRecord | undefined {
   const verdict = routed.verdict;
   if (!verdict || !routed.detoured) return undefined;
-  if (verdict.tier !== "keep" && verdict.tier !== "sell") return undefined;
+  const tier = routed.craft ? "craft" : verdict.tier;
+  if (tier !== "keep" && tier !== "sell" && tier !== "craft") return undefined;
   const appraisal = verdict.appraisal;
+  const reason = routed.craft ? appraisal?.craftHint : verdict.reasons[0];
   const name = routed.item.text.split(/\r?\n/).find(
     (line) =>
       line.trim() &&
@@ -131,7 +151,7 @@ export function findRecordFor(
     location,
     name: name?.trim() ?? "Unknown item",
     itemClass: routed.item.itemClass ?? "Unknown",
-    tier: verdict.tier,
+    tier,
     source: verdict.source,
     ...(appraisal ? { valueScore: appraisal.valueScore, confidence: appraisal.confidence } : {}),
     ...(appraisal?.estimatedValue
@@ -141,7 +161,7 @@ export function findRecordFor(
         }
       : {}),
     routedTo: routed.dest === "junk" ? "T tabs" : routed.dest,
-    ...(verdict.reasons[0] ? { reason: verdict.reasons[0] } : {}),
+    ...(reason ? { reason } : {}),
   };
 }
 
