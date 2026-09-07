@@ -26,6 +26,7 @@ import { screenForLookup, summarizeScreen } from "../core/lookupScreen.js";
 import type { SortHarness } from "./sortHarness.js";
 import { STRIP_ROWS, pickExact, type StashTabKit, type OcrLine, type StripEntry } from "./stashTabKit.js";
 import { copyPoints, findOcrLines, lineCenter, panelsViaOcr } from "./bagKit.js";
+import { defaultNameplateCacheFile, findNameplate } from "./nameplateFinder.js";
 import type { WinReply } from "./winHost.js";
 import {
   bucketFor,
@@ -1834,13 +1835,19 @@ export class ShopKeeper {
     // Open her window: ctrl-click the nameplate (Alt held renders world plates).
     let opened = false;
     for (let attempt = 0; attempt < 2 && !opened; attempt += 1) {
-      const lines = await findOcrLines(this.host, true);
-      const plate = lines.find((line) => /^zelina$/i.test(line.text.trim()));
+      // Cached-position band OCR first, full-screen fallback (nameplateFinder);
+      // the click point is the plate centre +70px, as before.
+      const plate = await findNameplate(this.host, /^zelina$/i, {
+        cacheKey: "zelina",
+        cacheFile: defaultNameplateCacheFile(this.options.root),
+        holdAlt: true,
+        log: (line) => this.log(`  · ${line}`),
+      });
       if (!plate) {
         report.push("ZELINA's nameplate is not on screen — stand near her in the hideout");
         return { sold: 0, failed: entries.length, report };
       }
-      const point = lineCenter(plate, 70);
+      const point = { x: plate.x, y: plate.y };
       await this.harness.checkpoint("open ZELINA");
       if (this.options.stepMode) {
         const verdict = await this.harness.confirmPlan(

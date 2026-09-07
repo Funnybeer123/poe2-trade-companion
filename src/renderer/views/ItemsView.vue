@@ -235,7 +235,9 @@ async function removeCatalogEntry(
           Searches the official trade site for listings like this one
           ({{ store.currentItem.value?.baseType }}), converts asks to exalted,
           and keeps only listings sharing this item's notable mod families.
-          One polite request pair per lookup, cached ten minutes.
+          One search plus one fetch per lookup, paced from the server's own
+          rate-limit headers; raw listings are cached six hours for base-type
+          searches and one hour for unique names.
         </p>
         <div class="button-row">
           <button
