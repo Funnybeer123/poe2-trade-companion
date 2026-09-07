@@ -272,4 +272,34 @@ describe("PriceFeedService comps", () => {
     expect(result.ok).toBe(false);
     expect(calls).toHaveLength(0);
   });
+
+  it("peeks the cache without any network traffic", async () => {
+    const { service, calls } = makeService();
+    disposers.push(() => service.dispose());
+    // Cold cache: nothing, and no request went out.
+    expect(service.peekComps(RARE_RING)).toBeUndefined();
+    expect(service.peekComps("hello world")).toBeUndefined();
+    expect(calls).toHaveLength(0);
+
+    await service.fetchComps(RARE_RING);
+    const requestCount = calls.length;
+    const peeked = service.peekComps(RARE_RING);
+    expect(peeked?.sampleSize).toBe(1);
+    expect(peeked?.lowest).toBe(3);
+    expect(calls.length).toBe(requestCount);
+  });
+
+  it("peekComps ignores an expired cache entry", async () => {
+    let now = Date.parse("2026-09-07T10:00:00.000Z");
+    vi.useFakeTimers();
+    vi.setSystemTime(now);
+    const { service } = makeService({ now: () => new Date(now) });
+    disposers.push(() => service.dispose());
+    await service.fetchComps(RARE_RING);
+    expect(service.peekComps(RARE_RING)).toBeDefined();
+    // Base-type searches live six hours; step past that.
+    now += 7 * 60 * 60_000;
+    vi.setSystemTime(now);
+    expect(service.peekComps(RARE_RING)).toBeUndefined();
+  });
 });

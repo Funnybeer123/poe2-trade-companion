@@ -1,5 +1,10 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
+import {
+  DEFAULT_HIDE_NORMAL_BELOW_ITEM_LEVEL,
+  DEFAULT_LOOT_FILTER_TIERS,
+  type LootFilterSummary,
+} from "@core/lootFilter";
 import { useRendererPreferences } from "../../composables/useRendererPreferences";
 import { useRuntimeState } from "../../composables/useRuntimeState";
 import {
@@ -8,7 +13,7 @@ import {
   type PriceFeedStatusView,
 } from "../../services/rendererApi";
 
-defineProps<{
+const props = defineProps<{
   panel: "filter" | "settings";
 }>();
 
@@ -18,12 +23,100 @@ const {
   transferActionsPerMinute,
   sortActionsPerMinute,
 } = useRendererPreferences();
-const filterName = ref("local-intelligence");
-const hideBelow = ref(40);
-const highlightUniques = ref(true);
+const filterName = ref("poe2-companion");
+const chaseAt = ref(DEFAULT_LOOT_FILTER_TIERS.chaseAtOrAbove);
+const valuableAt = ref(DEFAULT_LOOT_FILTER_TIERS.valuableAtOrAbove);
+const pickupAt = ref(DEFAULT_LOOT_FILTER_TIERS.pickupAtOrAbove);
+const hideNormalBelow = ref(DEFAULT_HIDE_NORMAL_BELOW_ITEM_LEVEL);
+const hideMagicBelow = ref(0);
+const alwaysShowUniques = ref(true);
 const filterText = ref("");
+const filterSummary = ref<LootFilterSummary | null>(null);
 const filterError = ref("");
+const filterBusy = ref(false);
 const copied = ref(false);
+const savedPath = ref("");
+const canSave = rendererApi.canSaveFilter();
+let previewTimer: ReturnType<typeof setTimeout> | undefined;
+
+function positive(value: unknown, fallback: number): number {
+  const num = Number(value);
+  return Number.isFinite(num) && num > 0 ? num : fallback;
+}
+
+const filterRequest = computed(() => ({
+  name: filterName.value.trim() || "poe2-companion",
+  tiers: {
+    chaseAtOrAbove: positive(chaseAt.value, DEFAULT_LOOT_FILTER_TIERS.chaseAtOrAbove),
+    valuableAtOrAbove: positive(valuableAt.value, DEFAULT_LOOT_FILTER_TIERS.valuableAtOrAbove),
+    pickupAtOrAbove: positive(pickupAt.value, DEFAULT_LOOT_FILTER_TIERS.pickupAtOrAbove),
+  },
+  hideNormalBelowItemLevel: Math.max(0, Math.floor(Number(hideNormalBelow.value) || 0)),
+  hideMagicBelowItemLevel: Math.max(0, Math.floor(Number(hideMagicBelow.value) || 0)),
+  alwaysShowUniques: alwaysShowUniques.value,
+}));
+
+const tierCounts = computed(() => {
+  const tiers = filterSummary.value?.tiers;
+  if (!tiers) return [];
+  return (["chase", "valuable", "pickup"] as const).map((tier) => ({
+    tier,
+    total: tiers[tier].uniqueBases + tiers[tier].currency + tiers[tier].bases,
+    uniqueBases: tiers[tier].uniqueBases,
+    currency: tiers[tier].currency,
+  }));
+});
+
+async function buildFilter(): Promise<void> {
+  filterError.value = "";
+  copied.value = false;
+  savedPath.value = "";
+  filterBusy.value = true;
+  try {
+    const output = await rendererApi.generateFilter(filterRequest.value);
+    filterText.value = output.text;
+    filterSummary.value = output.summary;
+  } catch (reason) {
+    filterError.value =
+      reason instanceof Error ? reason.message : "Filter generation failed.";
+  } finally {
+    filterBusy.value = false;
+  }
+}
+
+function schedulePreview(): void {
+  if (previewTimer) clearTimeout(previewTimer);
+  previewTimer = setTimeout(() => void buildFilter(), 250);
+}
+
+watch(filterRequest, schedulePreview, { deep: true });
+
+onMounted(() => {
+  if (props.panel === "filter") void buildFilter();
+});
+
+onBeforeUnmount(() => {
+  if (previewTimer) clearTimeout(previewTimer);
+});
+
+async function saveFilter(): Promise<void> {
+  filterError.value = "";
+  savedPath.value = "";
+  try {
+    const result = await rendererApi.saveFilter({
+      text: filterText.value,
+      name: filterRequest.value.name,
+    });
+    if (result.saved) {
+      savedPath.value = result.path;
+    } else if (result.reason === "unsupported") {
+      filterError.value = "Saving needs the Electron app; copy the text instead.";
+    }
+  } catch (reason) {
+    filterError.value =
+      reason instanceof Error ? reason.message : "The filter could not be saved.";
+  }
+}
 
 const feedApi = getPriceFeedApi();
 const feedStatus = ref<PriceFeedStatusView | null>(null);
@@ -52,21 +145,6 @@ async function saveFeedConfig(): Promise<void> {
   feedSaved.value = "Market data settings saved.";
 }
 
-async function buildFilter(): Promise<void> {
-  filterError.value = "";
-  copied.value = false;
-  try {
-    filterText.value = await rendererApi.generateFilter({
-      name: filterName.value.trim() || "local-intelligence",
-      hideBelowScore: Math.max(1, Number(hideBelow.value) || 1),
-      highlightUniques: highlightUniques.value,
-    });
-  } catch (reason) {
-    filterError.value =
-      reason instanceof Error ? reason.message : "Filter generation failed.";
-  }
-}
-
 async function copyFilter(): Promise<void> {
   try {
     if (!navigator.clipboard?.writeText) {
@@ -85,14 +163,16 @@ async function copyFilter(): Promise<void> {
   <section v-if="panel === 'filter'" class="card tool-panel filter-tool" aria-labelledby="filter-title">
     <div class="section-heading">
       <div>
-        <span class="eyebrow">Local output</span>
+        <span class="eyebrow">Live prices → item filter</span>
         <h2 id="filter-title">Loot filter generator</h2>
       </div>
       <span class="status-chip neutral">No account sync</span>
     </div>
     <p class="muted">
-      Generate a local text filter from desirability thresholds. This does not access the
-      filesystem or an account API from the renderer.
+      Builds a Path of Exile 2 item filter from the price table (poe2scout feed plus your
+      own rows). Uniques are rated per base type — a filter cannot see names — and
+      currency, waystones, gems and anything unpriced are never hidden. Thresholds are
+      in exalted. Refresh market prices on the Sort → Prices tab first for current values.
     </p>
     <div class="form-grid">
       <label>
@@ -100,31 +180,87 @@ async function copyFilter(): Promise<void> {
         <input v-model="filterName" />
       </label>
       <label>
-        Hide normal items below item level
-        <input v-model.number="hideBelow" type="number" min="1" max="100" />
+        Chase at or above (ex)
+        <input v-model.number="chaseAt" type="number" min="0.01" step="1" />
+      </label>
+      <label>
+        Valuable at or above (ex)
+        <input v-model.number="valuableAt" type="number" min="0.01" step="0.5" />
+      </label>
+      <label>
+        Pickup at or above (ex)
+        <input v-model.number="pickupAt" type="number" min="0.01" step="0.1" />
+      </label>
+      <label>
+        Hide Normal gear below item level <span class="optional">(0 = never)</span>
+        <input v-model.number="hideNormalBelow" type="number" min="0" max="100" />
+      </label>
+      <label>
+        Hide Magic gear below item level <span class="optional">(0 = never)</span>
+        <input v-model.number="hideMagicBelow" type="number" min="0" max="100" />
       </label>
     </div>
     <label class="toggle-field">
-      <input v-model="highlightUniques" type="checkbox" />
-      <span>Highlight unique items with an alert</span>
+      <input v-model="alwaysShowUniques" type="checkbox" />
+      <span>Always show every unique, rated or not</span>
     </label>
     <div class="button-row">
-      <button type="button" class="button primary" @click="buildFilter">Generate filter</button>
+      <button type="button" class="button primary" :disabled="filterBusy" @click="buildFilter">
+        {{ filterBusy ? "Building…" : "Rebuild preview" }}
+      </button>
       <button
         type="button"
         class="button secondary"
         :disabled="!filterText"
         @click="copyFilter"
       >
-        {{ copied ? "Copied" : "Copy filter text" }}
+        {{ copied ? "Copied" : "Copy" }}
       </button>
+      <button
+        v-if="canSave"
+        type="button"
+        class="button secondary"
+        :disabled="!filterText"
+        @click="saveFilter"
+      >
+        Save…
+      </button>
+      <span v-if="savedPath" class="success-text" role="status">Saved to {{ savedPath }}</span>
     </div>
+    <p class="muted">
+      Save… opens a file dialog (defaults to Documents\My Games\Path of Exile 2). Nothing is
+      written without your pick; select the file in the game's Options → Game → Item filter.
+    </p>
     <p v-if="filterError" class="inline-notice danger" role="alert">{{ filterError }}</p>
+    <dl v-if="filterSummary" class="property-list filter-summary" aria-label="Filter summary">
+      <div>
+        <dt>Highlighted bases</dt>
+        <dd>{{ filterSummary.highlightedBases }}</dd>
+      </div>
+      <div v-for="entry in tierCounts" :key="entry.tier">
+        <dt>{{ entry.tier }}</dt>
+        <dd>
+          {{ entry.total }}
+          <small class="muted">({{ entry.uniqueBases }} unique bases · {{ entry.currency }} currency)</small>
+        </dd>
+      </div>
+      <div>
+        <dt>Price rows</dt>
+        <dd>
+          {{ filterSummary.priceRows }}
+          <small class="muted">({{ filterSummary.feedRows }} from the feed · {{ filterSummary.skippedEntries }} not expressible)</small>
+        </dd>
+      </div>
+      <div v-if="filterSummary.league">
+        <dt>League</dt>
+        <dd>{{ filterSummary.league }}</dd>
+      </div>
+    </dl>
     <pre v-if="filterText" class="filter-output" tabindex="0">{{ filterText }}</pre>
     <div v-else class="state-panel compact-state">
       <span class="state-icon" aria-hidden="true">▽</span>
-      <strong>No filter generated</strong>
-      <p>Choose a threshold, then generate copy-ready local filter text.</p>
+      <strong>No filter yet</strong>
+      <p>The preview builds as you change thresholds.</p>
     </div>
   </section>
 

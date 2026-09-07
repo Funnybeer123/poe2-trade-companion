@@ -8,7 +8,11 @@ import {
 } from "@core/buildProfiles";
 import type { CalibrationProfile } from "@core/calibrationProfile";
 import { scoreDesirability } from "@core/desirability";
-import { generateLootFilter } from "@core/lootFilter";
+import {
+  generateLootFilter,
+  type LootFilterOutput,
+  type LootFilterRequest,
+} from "@core/lootFilter";
 import { FixtureMarketProvider } from "@core/market";
 import {
   parseLegacyRegexHistory,
@@ -93,6 +97,7 @@ import {
   type ScannerRuntimeStatus,
   type ScannerStartRequest,
   type HotkeysStatePayload,
+  type LootFilterSaveResult,
   type ScanSessionDetail,
   type ScanSessionView,
   type ScanSlotView,
@@ -555,12 +560,22 @@ export const rendererApi = {
     },
   },
 
-  async generateFilter(options: {
-    hideBelowScore: number;
-    highlightUniques: boolean;
-    name: string;
-  }): Promise<string> {
-    return nativeBridge()?.generateFilter(options) ?? generateLootFilter(options);
+  async generateFilter(request: LootFilterRequest): Promise<LootFilterOutput> {
+    return (
+      nativeBridge()?.generateFilter(request) ??
+      generateLootFilter({ ...request, priceTable: previewPriceTable() })
+    );
+  },
+
+  /** True only in the Electron app, where the OS save dialog exists. */
+  canSaveFilter(): boolean {
+    return typeof nativeBridge()?.saveFilter === "function";
+  },
+
+  async saveFilter(payload: { text: string; name?: string }): Promise<LootFilterSaveResult> {
+    const save = nativeBridge()?.saveFilter;
+    if (!save) return { saved: false, reason: "unsupported" };
+    return save(payload);
   },
 
   intelligence: {

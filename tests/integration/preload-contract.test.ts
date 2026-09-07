@@ -51,6 +51,7 @@ describe("preload API exposure", () => {
         "onItem",
         "priceFeed",
         "rearm",
+        "saveFilter",
         "scanner",
         "shop",
         "stashSort",

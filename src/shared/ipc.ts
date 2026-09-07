@@ -28,6 +28,7 @@ import type {
   ValuationResult,
 } from "../core/types.js";
 import type { TriageRouting } from "../core/bagTriage.js";
+import type { LootFilterOutput, LootFilterRequest } from "../core/lootFilter.js";
 import type { PriceTable } from "../core/priceTable.js";
 import type {
   TierVerdict,
@@ -442,6 +443,10 @@ export interface HotkeysStatePayload {
   source: "file" | "defaults";
 }
 
+export type LootFilterSaveResult =
+  | { saved: true; path: string }
+  | { saved: false; reason: "canceled" | "empty" | "unsupported" };
+
 export interface HotkeysBridge {
   get: () => Promise<HotkeysStatePayload>;
   save: (
@@ -457,11 +462,10 @@ export interface Poe2Bridge {
   windows: () => Promise<Array<{ name: string; title: string }>>;
   killLatched: () => Promise<boolean>;
   rearm: () => Promise<boolean>;
-  generateFilter: (options: {
-    hideBelowScore: number;
-    highlightUniques: boolean;
-    name: string;
-  }) => Promise<string>;
+  /** Builds the filter from the main process's live price table + league. */
+  generateFilter: (request: LootFilterRequest) => Promise<LootFilterOutput>;
+  /** OS save dialog; the user picks the path, the app never writes game files silently. */
+  saveFilter?: (payload: { text: string; name?: string }) => Promise<LootFilterSaveResult>;
   onItem: (
     callback: (payload: ItemEvaluation) => void,
   ) => () => void;

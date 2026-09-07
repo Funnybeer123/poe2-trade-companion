@@ -113,6 +113,31 @@ describe("renderer item intelligence components", () => {
     wrapper.unmount();
   });
 
+  it("labels real valuations with their provider instead of the demo badge", () => {
+    const cases: Array<[string, string]> = [
+      ["price-table", "price table"],
+      ["trade2-comps", "trade listings"],
+      ["appraisal", "appraisal"],
+      ["none", "no data"],
+    ];
+    for (const [providerName, label] of cases) {
+      const wrapper = mount(ItemDetail, {
+        props: { item, valuation: { ...valuation, providerName }, desirability },
+      });
+      expect(wrapper.get(".provider-chip").text()).toBe(label);
+      expect(wrapper.text()).not.toContain("demo prices");
+      expect(wrapper.text()).not.toContain("bundled demo numbers");
+      wrapper.unmount();
+    }
+    const comps = mount(ItemDetail, {
+      props: { item, valuation: { ...valuation, providerName: "trade2-comps" }, desirability },
+    });
+    expect(comps.text()).toContain(
+      "This is an estimate, not a guaranteed sale price. Confirm current listings before acting.",
+    );
+    comps.unmount();
+  });
+
   it("generates copy-ready non-truncated stash query cards", async () => {
     const store = useIntelligenceStore();
     store.currentEvaluation.value = {

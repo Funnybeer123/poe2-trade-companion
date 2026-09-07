@@ -1,10 +1,11 @@
 /**
  * Local, user-editable price table.
  *
- * The live trade provider is deliberately disabled (see market.ts), so any
- * automation that reasons about value must NOT read ValuationResult numbers —
- * those come from fixtures. This table is the only price signal automation is
- * allowed to trust: deterministic, local, and owned by the user.
+ * This table is the only price signal automation is allowed to trust:
+ * deterministic, local, and owned by the user. Live data (the poe2scout feed,
+ * priceFeed.ts) flows INTO it as tagged rows; automation never reads a
+ * ValuationResult directly — those are for the price-check UI
+ * (localValuation.ts), and in tests/replay may still come from fixtures.
  */
 
 export const PRICE_TABLE_SCHEMA_VERSION = 1 as const;
