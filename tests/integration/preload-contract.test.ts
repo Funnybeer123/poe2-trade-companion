@@ -37,10 +37,18 @@ describe("preload API exposure", () => {
       expect.any(Object),
     );
     const bridge = electron.exposeInMainWorld.mock.calls[0]![1] as Poe2Bridge;
+    await bridge.combat!.status();
+    expect(electron.invoke).toHaveBeenLastCalledWith("combat:status");
+    await bridge.combat!.stop();
+    expect(electron.invoke).toHaveBeenLastCalledWith("combat:stop");
+    await bridge.combat!.setGlobalDryRun(true);
+    expect(electron.invoke).toHaveBeenLastCalledWith("combat:global-dry-run", true);
+    electron.invoke.mockClear();
     expect(Object.keys(bridge).sort()).toEqual(
       [
         "assistive",
         "calibration",
+        "combat",
         "evaluateText",
         "fromClipboard",
         "generateFilter",

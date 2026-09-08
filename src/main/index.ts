@@ -58,6 +58,9 @@ import {
   type ScanSession,
 } from "./scanSessionStore.js";
 import { ScannerRuntimeService } from "./scanRuntimeService.js";
+import { CombatAssistService, combatStorage } from "./combatAssistService.js";
+import { defaultCombatConfig } from "../core/combatAssist.js";
+import { startEmergencyStopMonitor } from "../adapters/emergencyStopMonitor.js";
 
 const execFileAsync = promisify(execFile);
 const buildMode = resolveBuildMode(
@@ -79,6 +82,9 @@ let localPersistence: LocalPersistenceDatabase | undefined;
 let itemIntelligenceService: ItemIntelligenceService | undefined;
 let priceFeedService: PriceFeedService | undefined;
 let scannerService: ScannerRuntimeService | undefined;
+let combatService: CombatAssistService | undefined;
+let combatGlobalDryRun = true;
+let emergencyStopMonitor: ReturnType<typeof startEmergencyStopMonitor> | undefined;
 
 function quotesFile(): string {
   const candidates = [
@@ -457,13 +463,52 @@ app.whenReady().then(() => {
       }
     },
   });
-  globalShortcut.register("CommandOrControl+Shift+Escape", () => {
+  const stopAllInput = () => {
+    killSwitch.trip();
+    combatService?.stop("Emergency stop — rearm in the app");
     void voiceService?.cancel("emergency-stop");
     assistiveService?.stop("emergency-stop");
     stashSortService?.stop("emergency-stop");
     scannerService?.stop("emergency-stop");
     mainWindow?.webContents.send("qa:killed");
+  };
+  const emergencyStopRegistered = globalShortcut.register("CommandOrControl+Shift+Escape", stopAllInput);
+  globalShortcut.register("CommandOrControl+Shift+F12", stopAllInput);
+  if (!emergencyStopRegistered) {
+    try { emergencyStopMonitor = startEmergencyStopMonitor(stopAllInput, stopAllInput); }
+    catch { /* Combat stays disarmed until a working stop mechanism exists. */ }
+  }
+  const combatFiles = combatStorage(path.join(memoryRoot, "combat"));
+  let combatConfig = defaultCombatConfig();
+  let combatLoadError = "";
+  try { combatConfig = combatFiles.load(); }
+  catch (error) { combatLoadError = `Combat settings could not be loaded: ${String(error)}`; }
+  let combatHotkeyRegistered = false;
+  combatService = new CombatAssistService({
+    killSwitch, mode: buildMode, config: combatConfig,
+    save: combatFiles.save, audit: combatFiles.audit,
+    blocked: () => {
+      if ((!emergencyStopRegistered && !emergencyStopMonitor?.ready) || !combatHotkeyRegistered) return "Combat hotkeys are starting or unavailable. Wait a moment, or close conflicting apps and restart the companion.";
+      if (combatGlobalDryRun && !combatService?.status.config.dryRun) return "Global Dry-run is on. Use Preview only or turn off global Dry-run for live combat.";
+      if (assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running) return "Paused while another game action is running";
+      return undefined;
+    },
   });
+  if (combatLoadError) combatService.stop(combatLoadError);
+  combatHotkeyRegistered = globalShortcut.register("F8", () => {
+    if (combatService?.status.running) combatService.stop("Paused with F8");
+    else void combatService?.start().catch((error) => combatService?.stop(String(error)));
+  });
+  ipcMain.handle("combat:status", () => combatService!.status);
+  ipcMain.handle("combat:global-dry-run", (_event, enabled: unknown) => {
+    if (typeof enabled !== "boolean") throw new Error("Invalid dry-run setting");
+    combatGlobalDryRun = enabled;
+    if (enabled && !combatService!.status.config.dryRun) combatService!.stop("Global Dry-run enabled");
+  });
+  ipcMain.handle("combat:configure", (_event, config: unknown) => combatService!.configure(config));
+  ipcMain.handle("combat:start", () => combatService!.start());
+  ipcMain.handle("combat:stop", () => combatService!.stop());
+  ipcMain.handle("combat:preview", () => combatService!.preview());
   globalShortcut.register("CommandOrControl+D", () => {
     lastClipboard = "";
     void evaluateClipboard();
@@ -698,6 +743,8 @@ app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  emergencyStopMonitor?.close();
+  combatService?.stop("App closed");
   void voiceService?.cancel("app-closed");
   assistiveService?.stop("app-closed");
   stashSortService?.stop("app-closed");
@@ -711,3 +758,4 @@ app.on("window-all-closed", () => {
   globalShortcut.unregisterAll();
   app.quit();
 });
+app.on("before-quit", () => { combatService?.stop("App exiting"); emergencyStopMonitor?.close(); });

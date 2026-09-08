@@ -1,4 +1,9 @@
 import { expect, test } from "@playwright/test";
+import { combatSmoke } from "./combat-smoke.js";
+
+test("combat controls persist and require HUD calibration", async ({}, testInfo) => {
+  await combatSmoke("public-companion", testInfo);
+});
 import {
   navigatePrimary,
   withPackagedElectron,

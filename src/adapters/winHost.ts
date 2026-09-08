@@ -8,15 +8,16 @@ export type WinReply = Record<string, unknown>;
 
 export interface WinHostOptions {
   requestTimeoutMs?: number;
+  scriptName?: "win-input-host.ps1" | "win-combat-host.ps1";
 }
 
-export function resolveWinHostScript(): string {
+export function resolveWinHostScript(scriptName = "win-input-host.ps1"): string {
   const here = path.dirname(fileURLToPath(import.meta.url));
   const sourceCandidates = [
-    path.resolve(process.cwd(), "scripts", "win-input-host.ps1"),
-    path.resolve(here, "..", "scripts", "win-input-host.ps1"),
-    path.resolve(here, "../..", "scripts", "win-input-host.ps1"),
-    path.resolve(here, "../../..", "scripts", "win-input-host.ps1"),
+    path.resolve(process.cwd(), "scripts", scriptName),
+    path.resolve(here, "..", "scripts", scriptName),
+    path.resolve(here, "../..", "scripts", scriptName),
+    path.resolve(here, "../../..", "scripts", scriptName),
   ];
   const candidates = sourceCandidates.flatMap((file) => {
     const unpacked = file.replace(/app\.asar([\\/])/, "app.asar.unpacked$1");
@@ -24,13 +25,13 @@ export function resolveWinHostScript(): string {
   });
   const found = candidates.find((file) => existsSync(file));
   if (!found) {
-    throw new Error(`win-input-host.ps1 not found. Looked in ${candidates.join("; ")}`);
+    throw new Error(`${scriptName} not found. Looked in ${candidates.join("; ")}`);
   }
   return found;
 }
 
 export function startWinHost(options: WinHostOptions = {}) {
-  const host = resolveWinHostScript();
+  const host = resolveWinHostScript(options.scriptName);
   const child = spawn(
     "powershell.exe",
     ["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-File", host],

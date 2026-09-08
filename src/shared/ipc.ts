@@ -451,6 +451,7 @@ export interface HotkeysBridge {
 }
 
 export interface Poe2Bridge {
+  combat?: import("../core/combatAssist.js").CombatBridge;
   mode: () => Promise<RuntimeMode>;
   fromClipboard: () => Promise<ItemEvaluation | null>;
   evaluateText: (text: string) => Promise<ItemEvaluation>;

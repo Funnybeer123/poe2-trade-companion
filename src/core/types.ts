@@ -1,6 +1,7 @@
 export type RuntimeMode = "public-companion" | "authorized-qa" | "assistive-access";
 
 export type AutomationModule =
+  | "combat"
   | "navigation"
   | "loot"
   | "stash"

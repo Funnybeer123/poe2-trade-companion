@@ -8,10 +8,12 @@ import TransferPanel from "../TransferPanel.vue";
 import FilterSettingsTool from "../components/tools/FilterSettingsTool.vue";
 import HotkeyActionsTool from "../components/tools/HotkeyActionsTool.vue";
 import QaReplayTool from "../components/tools/QaReplayTool.vue";
+import CombatAssistTool from "../components/tools/CombatAssistTool.vue";
 
 const route = useRoute();
 
 const tools = [
+  { id: "combat", label: "Flasks & Unleash", detail: "Health, mana & cooldowns" },
   { id: "calibration", label: "Calibration", detail: "Screen regions" },
   { id: "transfers", label: "Transfers", detail: "Audited stash movement" },
   { id: "sort-stash", label: "Sort stash", detail: "Preview & execute" },
@@ -49,7 +51,8 @@ const selectedTool = computed<ToolId>(() => {
     </nav>
 
     <div class="tool-content">
-      <CalibrationPanel v-if="selectedTool === 'calibration'" />
+      <CombatAssistTool v-if="selectedTool === 'combat'" />
+      <CalibrationPanel v-else-if="selectedTool === 'calibration'" />
       <TransferPanel v-else-if="selectedTool === 'transfers'" />
       <SortStashPanel v-else-if="selectedTool === 'sort-stash'" />
       <StashTabAdminPanel v-else-if="selectedTool === 'stash-tabs'" />

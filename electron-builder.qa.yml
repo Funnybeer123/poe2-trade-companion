@@ -1,11 +1,15 @@
 appId: com.poe2.tradecompanion.qa
 productName: PoE2 QA Trade Bot
 asarUnpack:
+  - scripts/win-emergency-stop.ps1
+  - scripts/win-combat-host.ps1
   - scripts/win-input-host.ps1
 files:
+  - scripts/win-emergency-stop.ps1
   - dist/**
   - dist-electron/**
   - fixtures/market/quotes.json
+  - scripts/win-combat-host.ps1
   - scripts/win-input-host.ps1
 extraMetadata:
   poe2BuildMode: authorized-qa

@@ -32,6 +32,14 @@ const subscribe = (<C extends IpcEventChannel>(
 }) as IpcSubscriber;
 
 contextBridge.exposeInMainWorld("poe2", {
+  combat: {
+    setGlobalDryRun: (enabled: boolean) => ipcRenderer.invoke("combat:global-dry-run", enabled),
+    status: () => ipcRenderer.invoke("combat:status"),
+    configure: (config: import("../core/combatAssist.js").CombatConfig) => ipcRenderer.invoke("combat:configure", config),
+    start: () => ipcRenderer.invoke("combat:start"),
+    stop: () => ipcRenderer.invoke("combat:stop"),
+    preview: () => ipcRenderer.invoke("combat:preview"),
+  },
   mode: () => invoke("runtime:mode"),
   fromClipboard: () => invoke("item:from-clipboard"),
   evaluateText: (text: string) => invoke("item:evaluate-text", text),
