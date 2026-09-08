@@ -52,11 +52,21 @@ export interface CombatBridge {
 }
 export const HUD_NAMES: HudRegionName[] = ["health", "mana", "unleash", "anchor"];
 export const COMBAT_PROCESSES = ["PathOfExile", "PathOfExile_x64", "PathOfExileSteam", "PathOfExile_x64Steam", "PathOfExileEGS", "PathOfExile_x64EGS"];
+export const COMBAT_BINDINGS = [
+  { value: "MOUSE5", label: "Mouse Button 5" },
+  ...Array.from("1234567890ABCDEFGHIJKLMNOPQRSTUVWXYZ", (key) => ({ value: key, label: key })),
+];
+
+export function normalizeCombatBinding(value: unknown): string {
+  const key = typeof value === "string" ? value.trim().toUpperCase().replace(/^MOUSE BUTTON 5$/, "MOUSE5") : "";
+  if (!/^(?:[A-Z0-9]|MOUSE5)$/.test(key)) throw new Error("Choose a letter, digit or Mouse Button 5.");
+  return key;
+}
 
 export function defaultCombatConfig(): CombatConfig {
   return {
     health: { enabled: false, key: "1", threshold: 25, retryMs: 1500 },
-    mana: { enabled: false, key: "2", threshold: 25, retryMs: 1500 },
+    mana: { enabled: false, key: "MOUSE5", threshold: 25, retryMs: 1500 },
     unleash: { enabled: false, key: "R", retryMs: 350 },
     pollMs: 16, dryRun: false, width: 0, height: 0, regions: {},
   };
@@ -83,9 +93,9 @@ export function parseCombatConfig(value: unknown): CombatConfig {
   result.height = bounded(c.height, 0, 16384, "HUD height");
   for (const name of ["health", "mana", "unleash"] as const) {
     const module = c[name];
-    if (!module || typeof module.enabled !== "boolean" || typeof module.key !== "string" || !/^[a-z0-9]$/i.test(module.key)) throw new Error(`Invalid ${name} key or toggle. Use one letter or digit.`);
+    if (!module || typeof module.enabled !== "boolean") throw new Error(`Invalid ${name} toggle.`);
     result[name].enabled = module.enabled;
-    result[name].key = module.key.toUpperCase();
+    result[name].key = normalizeCombatBinding(module.key);
     result[name].retryMs = bounded(module.retryMs, name === "unleash" ? 100 : 250, 30000, `${name} minimum interval`);
     if (name !== "unleash") result[name].threshold = bounded(c[name].threshold, 1, 99, `${name} threshold`);
   }

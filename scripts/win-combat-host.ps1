@@ -19,6 +19,9 @@ public static class CombatWin {
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
   [DllImport("user32.dll")] static extern bool GetClientRect(IntPtr window, out CombatRect rect);
   [DllImport("user32.dll")] static extern bool ClientToScreen(IntPtr window, ref CombatPoint point);
+  [DllImport("user32.dll")] static extern bool GetCursorPos(out CombatPoint point);
+  [DllImport("user32.dll")] static extern IntPtr WindowFromPoint(CombatPoint point);
+  [DllImport("user32.dll")] static extern IntPtr GetAncestor(IntPtr window, uint flags);
   [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
   [DllImport("user32.dll", SetLastError=true)] static extern uint SendInput(uint count, CombatInput[] inputs, int size);
   [DllImport("shcore.dll")] public static extern int SetProcessDpiAwareness(int mode);
@@ -91,18 +94,37 @@ public static class CombatWin {
       using (MemoryStream stream = new MemoryStream()) { bitmap.Save(stream, ImageFormat.Png); return Convert.ToBase64String(stream.ToArray()); }
     }
   }
+  public static int BindingCode(string key) {
+    if (key == "MOUSE5") return 0x06; // VK_XBUTTON2, used only to check held state.
+    if (key == null || key.Length != 1 || !(key[0] >= 'A' && key[0] <= 'Z' || key[0] >= '0' && key[0] <= '9')) throw new Exception("Unsupported combat binding");
+    return key[0];
+  }
+  public static CombatInput[] TapEvents(string key) {
+    int code = BindingCode(key);
+    CombatInput down = new CombatInput();
+    if (key == "MOUSE5") {
+      down.Type = 0; down.Data.Mouse.Data = 2; down.Data.Mouse.Flags = 0x0080; // XBUTTON2 / XDOWN; no movement.
+      CombatInput up = down; up.Data.Mouse.Flags = 0x0100; // XUP
+      return new [] { down, up };
+    }
+    down.Type = 1; down.Data.Key.Vk = (ushort)code;
+    CombatInput keyUp = down; keyUp.Data.Key.Flags = 2;
+    return new [] { down, keyUp };
+  }
   public static void Tap(string key, string expectedWindow) {
-    if (key == null || key.Length != 1 || !(key[0] >= 'A' && key[0] <= 'Z' || key[0] >= '0' && key[0] <= '9')) throw new Exception("Unsupported combat key");
+    CombatInput[] events = TapEvents(key);
     IntPtr window = Foreground();
     if (window.ToInt64().ToString() != expectedWindow || window != sampledWindow) throw new Exception("Game window changed");
     if (Clock.ElapsedMilliseconds - sampledAt > 120 || Bounds(window) != sampledRect) throw new Exception("Stale capture or window moved");
-    if (ModifiersDown() || (GetAsyncKeyState(key[0]) & 0x8000) != 0) throw new Exception("Modifier or action key held");
-    CombatInput down = new CombatInput(); down.Type = 1; down.Data.Key.Vk = key[0];
-    CombatInput up = down; up.Data.Key.Flags = 2;
+    if (key == "MOUSE5") {
+      CombatPoint cursor;
+      if (!GetCursorPos(out cursor) || !sampledRect.Contains(cursor.X, cursor.Y) || GetAncestor(WindowFromPoint(cursor), 2) != window) throw new Exception("Keep the cursor over the game for Mouse Button 5");
+    }
+    if (ModifiersDown() || (GetAsyncKeyState(BindingCode(key)) & 0x8000) != 0) throw new Exception("Modifier or action binding held");
     // Down/up in one OS batch: no held key if the worker is terminated.
-    uint sent = SendInput(2, new [] { down, up }, Marshal.SizeOf(typeof(CombatInput)));
+    uint sent = SendInput(2, events, Marshal.SizeOf(typeof(CombatInput)));
     if (sent != 2) {
-      SendInput(1, new [] { up }, Marshal.SizeOf(typeof(CombatInput)));
+      SendInput(1, new [] { events[1] }, Marshal.SizeOf(typeof(CombatInput)));
       throw new Exception("Windows rejected combat input");
     }
   }

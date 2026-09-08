@@ -4,9 +4,16 @@ Open **Tools & QA → Flasks & Unleash** in the Windows app.
 
 The health and mana modules press their configured flask keys when the visible
 globe falls **below 25%** (25% exactly does not trigger). Defaults are health **1**,
-mana **2**, and Unleash **R**. Each feature has its own toggle. Thresholds and keys
+mana **Mouse Button 5**, and Unleash **R**. Each feature has its own toggle. Thresholds and bindings
 are editable. The flask retry interval defaults to 1500 ms to allow recovery
 without draining charges on every captured frame; adjust it to your flasks.
+
+Choose **Mouse Button 5** in the mana **Key / button** dropdown. It sends the
+second Windows side-button (XBUTTON2) down/up without moving the cursor. Existing
+saved bindings are preserved; change a previously saved mana binding of 2 to
+Mouse Button 5 and click Save settings.
+Mouse input also requires the pointer to be over the unobstructed game client;
+it is blocked if the cursor is over another window.
 
 Unleash casts once when the calibrated skill-bar icon looks ready, then waits
 until it has seen the calibrated cooldown appearance in two consecutive frames

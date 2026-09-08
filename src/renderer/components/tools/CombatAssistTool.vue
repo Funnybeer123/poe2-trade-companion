@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { defaultCombatConfig, HUD_NAMES, type CombatConfig, type CombatPreview, type CombatStatus, type HudRegionName } from "../../../core/combatAssist.js";
+import { COMBAT_BINDINGS, defaultCombatConfig, HUD_NAMES, type CombatConfig, type CombatPreview, type CombatStatus, type HudRegionName } from "../../../core/combatAssist.js";
 
 const api = window.poe2?.combat;
 const draft = ref<CombatConfig>(defaultCombatConfig());
@@ -133,13 +133,13 @@ function recordCooldown() {
       <div class="combat-modules">
         <div v-for="name in (['health', 'mana'] as const)" :key="name" class="combat-module">
           <label><input v-model="draft[name].enabled" type="checkbox"> Auto {{ name }} flask</label>
-          <label>Key <input v-model="draft[name].key" maxlength="1" :aria-label="`${name} flask key`"></label>
+          <label>Key / button <select v-model="draft[name].key" :aria-label="`${name} flask key`"><option v-for="binding in COMBAT_BINDINGS" :key="binding.value" :value="binding.value">{{ binding.label }}</option></select></label>
           <label>Below (%) <input v-model.number="draft[name].threshold" type="number" min="1" max="99" :aria-label="`${name} threshold`"></label>
           <label>Retry after (ms) <input v-model.number="draft[name].retryMs" type="number" min="250" max="30000" :aria-label="`${name} retry interval`"></label>
         </div>
         <div class="combat-module">
           <label><input v-model="draft.unleash.enabled" type="checkbox"> Auto Unleash</label>
-          <label>Key <input v-model="draft.unleash.key" maxlength="1" aria-label="Unleash key"></label>
+          <label>Key / button <select v-model="draft.unleash.key" aria-label="Unleash key"><option v-for="binding in COMBAT_BINDINGS" :key="binding.value" :value="binding.value">{{ binding.label }}</option></select></label>
           <label>Minimum gap (ms) <input v-model.number="draft.unleash.retryMs" type="number" min="100" max="30000"></label>
           <p class="muted">One cast per observed cooldown. If R fails to cast, pause/resume to retry.</p>
         </div>

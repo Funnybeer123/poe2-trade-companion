@@ -8,6 +8,16 @@ try {
 if (-not [CombatWin]::Allowed('PathOfExileSteam')) { throw 'Steam process should be allowed' }
 if ([CombatWin]::Allowed('NotPathOfExileSteam')) { throw 'Process substring must be rejected' }
 if ([System.Runtime.InteropServices.Marshal]::SizeOf([type][CombatInput]) -ne 40) { throw 'Unexpected x64 INPUT layout' }
+$mouseEvents = [CombatWin]::TapEvents('MOUSE5')
+if ($mouseEvents.Length -ne 2 -or $mouseEvents[0].Type -ne 0 -or $mouseEvents[1].Type -ne 0) { throw 'Mouse5 must emit a pair of mouse events' }
+if ($mouseEvents[0].Data.Mouse.Data -ne 2 -or $mouseEvents[1].Data.Mouse.Data -ne 2) { throw 'Mouse5 must target XBUTTON2' }
+if ($mouseEvents[0].Data.Mouse.Flags -ne 0x80 -or $mouseEvents[1].Data.Mouse.Flags -ne 0x100) { throw 'Mouse5 requires XDOWN then XUP, without movement' }
+if ($mouseEvents[0].Data.Mouse.X -ne 0 -or $mouseEvents[0].Data.Mouse.Y -ne 0) { throw 'Mouse5 must not reposition the cursor' }
+if ([CombatWin]::BindingCode('MOUSE5') -ne 6) { throw 'Mouse5 held-state guard must check VK_XBUTTON2' }
+$healthEvents = [CombatWin]::TapEvents('1')
+if ($healthEvents[0].Type -ne 1 -or $healthEvents[0].Data.Key.Vk -ne 0x31 -or $healthEvents[1].Data.Key.Flags -ne 2) { throw 'Health binding must retain keyboard 1 down/up' }
+$digitEvents = [CombatWin]::TapEvents('5')
+if ($digitEvents[0].Type -ne 1 -or $digitEvents[0].Data.Key.Vk -ne 0x35) { throw 'Keyboard 5 must remain distinct from Mouse5' }
 $bitmap = New-Object System.Drawing.Bitmap 5, 100
 try {
   for ($row = 0; $row -lt 100; $row++) {

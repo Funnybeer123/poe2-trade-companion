@@ -340,6 +340,6 @@ No account telemetry is sent by default. Do not commit this folder, cookies, or 
 ## Flasks & Unleash
 
 The new combat controls are under **Tools & QA → Flasks & Unleash**. Defaults are
-health flask **1** below **25%**, mana flask **2** below **25%**, and Unleash **R**
+health flask **1** below **25%**, mana flask **Mouse Button 5** below **25%**, and Unleash **R**
 when its calibrated skill-bar icon becomes ready. Each is independently toggled.
 Follow the [HUD calibration and control guide](COMBAT_ASSIST.md) before starting.

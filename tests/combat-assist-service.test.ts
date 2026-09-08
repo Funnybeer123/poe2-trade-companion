@@ -31,6 +31,14 @@ describe("combat service lifecycle and input interlocks", () => {
     expect(h.service.status.actions).toBe(2);
     h.service.stop();
   });
+  it("routes low mana to Mouse5 through the same audited and guarded input path", async () => {
+    const h = harness();
+    h.frame.samples.mana = fill(h.config.regions.mana!.reference, 24);
+    await h.service.start(); await vi.advanceTimersByTimeAsync(0);
+    expect(h.host.send.mock.calls.filter(([p]) => p.op === "tap").map(([p]) => p.key)).toEqual(["1", "MOUSE5", "R"]);
+    expect(h.audit.mock.calls.flat(2)).toContainEqual(expect.objectContaining({ decisionRule: "combat-mana", input: { kind: "key", key: "MOUSE5" }, result: "emitted" }));
+    h.service.stop();
+  });
   it("decodes compact RGB from the native pipe before making decisions", async () => {
     const h = harness(true);
     h.host.send.mockImplementation(async (p) => p.op === "sample" ? { ok: true, ...h.frame, samples: Object.fromEntries(Object.entries(h.frame.samples).map(([name, rgb]) => [name, Buffer.from(rgb!).toString("base64")])) } : { ok: true });
@@ -107,7 +115,7 @@ describe("combat service lifecycle and input interlocks", () => {
     await expect(sink.emit({ kind: "key", key: "R" })).rejects.toThrow(/stopped/);
     const active = new CombatInputSink(host, () => "123");
     await expect(active.emit({ kind: "click", x: 1, y: 2 })).rejects.toThrow(/Invalid/);
-    await expect(active.emit({ kind: "key", key: "CTRL+R" })).rejects.toThrow(/Invalid/);
+    await expect(active.emit({ kind: "key", key: "CTRL+R" })).rejects.toThrow(/Choose/);
     expect(host.send).not.toHaveBeenCalled();
   });
 });

@@ -3,12 +3,23 @@ import { calibratedCombat, color, combatFrame, fill } from "./combatFixtures.js"
 import { CombatPlanner, defaultCombatConfig, estimateGlobe, parseCombatConfig, readCombatFrame, requireCombatCalibration } from "../src/core/combatAssist.js";
 
 describe("combat HUD perception and configuration", () => {
-  it("defaults to 25%, keys 1/2/R, 16 ms, and opt-in modules", () => {
+  it("defaults to 25%, bindings 1/Mouse5/R, 16 ms, and opt-in modules", () => {
     const config = defaultCombatConfig();
     expect(config.health).toMatchObject({ threshold: 25, key: "1", enabled: false });
-    expect(config.mana).toMatchObject({ threshold: 25, key: "2", enabled: false });
+    expect(config.mana).toMatchObject({ threshold: 25, key: "MOUSE5", enabled: false });
     expect(config.unleash).toMatchObject({ key: "R", enabled: false });
     expect(config.pollMs).toBe(16);
+  });
+  it("accepts Mouse Button 5, preserves old keyboard settings and rejects duplicate mouse bindings", () => {
+    const c = calibratedCombat();
+    c.mana.key = "Mouse Button 5";
+    expect(parseCombatConfig(c).mana.key).toBe("MOUSE5");
+    c.mana.key = "2";
+    expect(parseCombatConfig(c).mana.key).toBe("2");
+    c.mana.key = "mouse5"; c.health.key = "MOUSE5";
+    expect(() => parseCombatConfig(c)).toThrow(/different keys/);
+    c.health.key = "1"; c.mana.key = "MOUSE6";
+    expect(() => parseCombatConfig(c)).toThrow(/Choose/);
   });
   it("reads globe surfaces at threshold boundaries, including empty mana", () => {
     const full = calibratedCombat().regions.mana!.reference;
@@ -64,7 +75,7 @@ describe("combat replay decisions", () => {
     const reading = { valid: true, reason: "fixture", health: 25, mana: 25, unleash: "unknown" as const };
     expect(p.decisions(c, reading, 0)).toEqual([]);
     const decisions = p.decisions(c, { ...reading, health: 24, mana: 0, unleash: "ready" }, 0);
-    expect(decisions.map((d) => d.decision.intended[0].key)).toEqual(["1", "2", "R"]);
+    expect(decisions.map((d) => d.decision.intended[0].key)).toEqual(["1", "MOUSE5", "R"]);
   });
   it("limits flask retries while low, even across threshold flicker", () => {
     const p = new CombatPlanner(), c = calibratedCombat();

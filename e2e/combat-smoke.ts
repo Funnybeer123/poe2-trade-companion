@@ -12,11 +12,16 @@ export async function combatSmoke(mode: SmokeBuildMode, testInfo: TestInfo) {
     expect(await application.evaluate(({ globalShortcut }) => [globalShortcut.isRegistered("F8"), globalShortcut.isRegistered("CommandOrControl+Shift+F12")])).toEqual([true, true]);
     await expect(panel.getByLabel("health threshold")).toHaveValue("25");
     await expect(panel.getByLabel("mana threshold")).toHaveValue("25");
+    await expect(panel.getByLabel("health flask key")).toHaveValue("1");
+    await expect(panel.getByLabel("mana flask key")).toHaveValue("MOUSE5");
+    await panel.getByLabel("mana flask key").selectOption("2");
+    await panel.getByLabel("mana flask key").selectOption("MOUSE5");
     await expect(panel.getByLabel("Unleash key", { exact: true })).toHaveValue("R");
     await panel.getByLabel("Auto health flask").check();
     await panel.getByLabel("Auto Unleash").check();
     await panel.getByRole("button", { name: "Save settings", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.poe2!.combat!.status().then((s) => s.config.health.enabled))).toBe(true);
+    expect((await page.evaluate(() => window.poe2!.combat!.status())).config.mana.key).toBe("MOUSE5");
     await panel.getByRole("button", { name: "Save & start", exact: true }).click();
     await expect(panel.getByRole("alert")).toContainText("Calibrate a fixed HUD ornament");
     expect((await page.evaluate(() => window.poe2!.combat!.status())).running).toBe(false);
