@@ -1,17 +1,16 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { COMBAT_BINDINGS, defaultCombatConfig, HUD_NAMES, type CombatConfig, type CombatPreview, type CombatStatus, type HudRegionName } from "../../../core/combatAssist.js";
+import { COMBAT_BINDINGS, HUD_NAMES, type CombatStatus, type HudRegionName } from "../../../core/combatAssist.js";
+import { useCombatDraft, type CalibrationTab } from "../../composables/useCombatDraft.js";
 
 const api = window.poe2?.combat;
-const draft = ref<CombatConfig>(defaultCombatConfig());
+const session = useCombatDraft(api);
+const { draft, screenshots, activeTab, selection, corner, error } = session;
 const status = ref<CombatStatus>();
-const error = ref("");
 const busy = ref(false);
 const countdown = ref(0);
-const preview = ref<CombatPreview>();
+const preview = computed(() => screenshots.value[activeTab.value]);
 const imageElement = ref<HTMLImageElement>();
-const selection = ref<HudRegionName | "cooldown">("health");
-const corner = ref<{ x: number; y: number }>();
 let poll: ReturnType<typeof setTimeout> | undefined;
 let disposed = false;
 const dirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(status.value?.config));
@@ -20,13 +19,29 @@ const hint = computed(() => ({
   health: "At full health, select a narrow vertical strip through the red liquid, from its top to its bottom. Avoid the frame, reflections and text.",
   mana: "At full mana, select a narrow vertical strip through the blue liquid, from its top to its bottom. Avoid the frame, reflections and text.",
   unleash: "With Unleash ready, select the inside of its purple R skill-bar icon. Exclude the border and key label.",
-  cooldown: "Capture a new screenshot just after YOU cast R. The saved icon region is reused; click Record cooldown below.",
   anchor: "Select a small, distinctive fixed HUD ornament near the globes. Avoid black space, animated effects and numbers. This detects a hidden or covered HUD.",
 }[selection.value]));
+const screenshotMatchesHud = computed(() => preview.value?.width === draft.value.width && preview.value?.height === draft.value.height);
+const iconCropStyle = computed(() => {
+  const shot = preview.value, region = draft.value.regions.unleash;
+  if (!shot || !region || !screenshotMatchesHud.value) return undefined;
+  return {
+    backgroundImage: `url("${shot.image}")`,
+    backgroundSize: `${shot.width / region.width * 128}px ${shot.height / region.height * 128}px`,
+    backgroundPosition: `${-region.x / region.width * 128}px ${-region.y / region.height * 128}px`,
+  };
+});
+function referencePixels(rgb: number[] | undefined) {
+  return rgb ? Array.from({ length: rgb.length / 3 }, (_, i) => ({ x: i % 16, y: Math.floor(i / 16), fill: `rgb(${rgb[i * 3]},${rgb[i * 3 + 1]},${rgb[i * 3 + 2]})` })) : [];
+}
+const readyPixels = computed(() => referencePixels(draft.value.regions.unleash?.reference));
+const cooldownPixels = computed(() => referencePixels(draft.value.regions.unleash?.cooldown));
+function selectTab(tab: CalibrationTab) { activeTab.value = tab; corner.value = undefined; }
 
-async function act(fn: () => Promise<void>) {
+async function act(fn: () => Promise<void>, clearError = true) {
   if (!api || busy.value) return;
-  busy.value = true; error.value = "";
+  busy.value = true;
+  if (clearError) error.value = "";
   try { await fn(); } catch (e) { error.value = e instanceof Error ? e.message : String(e); }
   finally { busy.value = false; }
 }
@@ -37,7 +52,13 @@ async function refresh() {
 }
 onMounted(async () => {
   if (!api) return;
-  await act(async () => { status.value = await api.status(); draft.value = JSON.parse(JSON.stringify(status.value.config)); });
+  await act(async () => {
+    status.value = await api.status();
+    if (!disposed && !session.initialized) {
+      draft.value = JSON.parse(JSON.stringify(status.value.config));
+      session.initialized = true;
+    }
+  }, false);
   if (!disposed) void refresh();
 });
 onUnmounted(() => { disposed = true; clearTimeout(poll); });
@@ -58,6 +79,7 @@ async function rearm() {
   await act(async () => { await window.poe2?.rearm(); status.value = await api!.status(); });
 }
 async function capture() {
+  const target = activeTab.value;
   await act(async () => {
     await api!.stop();
     for (countdown.value = 3; countdown.value > 0; countdown.value--) {
@@ -66,14 +88,20 @@ async function capture() {
     }
     const result = await api!.preview();
     if (disposed) return;
-    if (draft.value.width !== result.width || draft.value.height !== result.height) draft.value.regions = {};
-    draft.value.width = result.width; draft.value.height = result.height;
-    preview.value = result; corner.value = undefined;
+    if (target === "hud") {
+      if (draft.value.width !== result.width || draft.value.height !== result.height) draft.value.regions = {};
+      draft.value.width = result.width; draft.value.height = result.height;
+    }
+    screenshots.value[target] = { ...result, capturedAt: new Date().toISOString() };
+    corner.value = undefined;
   });
 }
-function sampleRegion(region: { x: number; y: number; width: number; height: number }, name: HudRegionName): number[] {
+function sampleRegion(region: { x: number; y: number; width: number; height: number }, name: HudRegionName, source: CalibrationTab): number[] {
+  const shot = screenshots.value[source];
+  if (!shot || activeTab.value !== source) throw new Error(`Capture the ${source === "hud" ? "HUD / ready" : "Unleash cooldown"} screenshot first.`);
+  if (shot.width !== draft.value.width || shot.height !== draft.value.height) throw new Error("Screenshot size differs from the calibrated HUD. Restore the same game resolution and capture again.");
   const img = imageElement.value;
-  if (!img?.complete || !img.naturalWidth) throw new Error("Screenshot still loading.");
+  if (!img?.complete || !img.naturalWidth || img.getAttribute("src") !== shot.image) throw new Error("Screenshot still loading.");
   const canvas = document.createElement("canvas");
   canvas.width = region.width; canvas.height = region.height;
   const context = canvas.getContext("2d");
@@ -92,7 +120,7 @@ function sampleRegion(region: { x: number; y: number; width: number; height: num
   return rgb;
 }
 function pick(event: MouseEvent) {
-  if (!preview.value || selection.value === "cooldown" || busy.value) return;
+  if (!preview.value || activeTab.value !== "hud" || busy.value) return;
   const bounds = imageElement.value!.getBoundingClientRect();
   const point = {
     x: Math.max(0, Math.min(preview.value.width - 1, Math.floor((event.clientX - bounds.left) * preview.value.width / bounds.width))),
@@ -102,13 +130,13 @@ function pick(event: MouseEvent) {
   const region = { x: Math.min(point.x, corner.value.x), y: Math.min(point.y, corner.value.y), width: Math.abs(point.x - corner.value.x), height: Math.abs(point.y - corner.value.y) };
   corner.value = undefined;
   if (region.width < 3 || region.height < 3 || region.width > 1024 || region.height > 1024) { error.value = "Select a region between 3 and 1024 pixels wide and tall."; return; }
-  try { draft.value.regions[selection.value] = { ...region, reference: sampleRegion(region, selection.value) }; error.value = ""; }
+  try { draft.value.regions[selection.value] = { ...region, reference: sampleRegion(region, selection.value, "hud") }; error.value = ""; }
   catch (e) { error.value = String(e); }
 }
 function recordCooldown() {
   const region = draft.value.regions.unleash;
   if (!region) { error.value = "Select the ready icon first."; return; }
-  try { region.cooldown = sampleRegion(region, "unleash"); error.value = ""; }
+  try { region.cooldown = sampleRegion(region, "unleash", "cooldown"); error.value = ""; }
   catch (e) { error.value = String(e); }
 }
 </script>
@@ -160,19 +188,48 @@ function recordCooldown() {
       <summary>HUD calibration</summary>
       <p>Use windowed or borderless mode. Fill both globes, close panels, then capture. Switch to the game during the countdown and return here afterward.</p>
       <p class="muted">Globe percentages are visual estimates. Verify them in Preview before enabling keypresses. Recalibrate after changing resolution, HUD scale, skill or display colour settings.</p>
-      <div class="combat-controls">
-        <button :disabled="!api || busy" @click="capture">{{ countdown ? `Switch to game — ${countdown}…` : 'Capture game in 3 seconds' }}</button>
-        <label>Region <select v-model="selection" @change="corner = undefined"><option v-for="name in HUD_NAMES" :key="name" :value="name">{{ labels[name] }}</option><option value="cooldown">Unleash on cooldown</option></select></label>
-        <button v-if="selection === 'cooldown'" :disabled="!preview || busy" @click="recordCooldown">Record cooldown from screenshot</button>
-      </div>
-      <p>{{ hint }}</p>
-      <p v-if="selection !== 'cooldown'">{{ corner ? 'Now click the opposite corner.' : 'Click two opposite corners on the screenshot to select the region.' }}</p>
+      <p class="muted">Drafts and screenshots stay available while you navigate this app. Save settings to keep the recorded detector references after restarting.</p>
       <ul class="combat-calibrations"><li v-for="name in HUD_NAMES" :key="name">{{ labels[name] }}: {{ draft.regions[name] ? 'Recorded' : 'Needed' }}<span v-if="name === 'unleash'"> · Cooldown: {{ draft.regions.unleash?.cooldown ? 'Recorded' : 'Needed' }}</span></li></ul>
-      <div v-if="preview" class="hud-preview">
-        <img ref="imageElement" :src="preview.image" alt="Captured game HUD: click two corners to calibrate the selected region" @click="pick">
-        <template v-for="name in HUD_NAMES" :key="name">
-          <div v-if="draft.regions[name]" class="hud-region" :style="{ left: `${draft.regions[name]!.x / preview.width * 100}%`, top: `${draft.regions[name]!.y / preview.height * 100}%`, width: `${draft.regions[name]!.width / preview.width * 100}%`, height: `${draft.regions[name]!.height / preview.height * 100}%` }"><span>{{ labels[name] }}</span></div>
+      <div class="recorded-icons" aria-label="Recorded Unleash detector data">
+        <figure class="icon-sample">
+          <svg v-if="readyPixels.length" class="recorded-icon" viewBox="0 0 16 16" role="img" aria-label="Recorded ready reference, 16 by 16 RGB samples" shape-rendering="crispEdges"><rect v-for="(pixel, index) in readyPixels" :key="index" :x="pixel.x" :y="pixel.y" width="1" height="1" :fill="pixel.fill" /></svg>
+          <p v-else>No ready reference recorded.</p>
+          <figcaption>Recorded ready reference · 16 × 16 RGB samples</figcaption>
+        </figure>
+        <figure class="icon-sample">
+          <svg v-if="cooldownPixels.length" class="recorded-icon" viewBox="0 0 16 16" role="img" aria-label="Recorded cooldown reference, 16 by 16 RGB samples" shape-rendering="crispEdges"><rect v-for="(pixel, index) in cooldownPixels" :key="index" :x="pixel.x" :y="pixel.y" width="1" height="1" :fill="pixel.fill" /></svg>
+          <p v-else>No cooldown reference recorded.</p>
+          <figcaption>Recorded cooldown reference · 16 × 16 RGB samples</figcaption>
+        </figure>
+      </div>
+      <div class="calibration-tabs" role="tablist" aria-label="Calibration screenshots">
+        <button id="combat-hud-tab" role="tab" :aria-selected="activeTab === 'hud'" aria-controls="combat-hud-panel" :disabled="busy" @click="selectTab('hud')">HUD / ready</button>
+        <button id="combat-cooldown-tab" role="tab" :aria-selected="activeTab === 'cooldown'" aria-controls="combat-cooldown-panel" :disabled="busy" @click="selectTab('cooldown')">Unleash cooldown</button>
+      </div>
+      <div :id="activeTab === 'hud' ? 'combat-hud-panel' : 'combat-cooldown-panel'" role="tabpanel" :aria-labelledby="activeTab === 'hud' ? 'combat-hud-tab' : 'combat-cooldown-tab'">
+        <div class="combat-controls">
+          <button :disabled="!api || busy" @click="capture">{{ countdown ? `Switch to game — ${countdown}…` : activeTab === 'hud' ? 'Capture HUD / ready in 3 seconds' : 'Capture cooldown in 3 seconds' }}</button>
+          <label v-if="activeTab === 'hud'">Region <select v-model="selection" @change="corner = undefined"><option v-for="name in HUD_NAMES" :key="name" :value="name">{{ labels[name] }}</option></select></label>
+          <button v-else :disabled="!preview || busy || !screenshotMatchesHud" @click="recordCooldown">Record cooldown from screenshot</button>
+        </div>
+        <template v-if="activeTab === 'hud'">
+          <p>{{ hint }}</p>
+          <p>{{ corner ? 'Now click the opposite corner.' : 'Click two opposite corners on the screenshot to select the region.' }}</p>
         </template>
+        <p v-else>Capture a separate screenshot just after you cast R. Record cooldown samples the saved Unleash icon region from this screenshot. Your HUD / ready screenshot stays available on its tab.</p>
+        <p v-if="preview" class="capture-time">{{ activeTab === 'hud' ? 'HUD / ready' : 'Cooldown' }} captured <time :datetime="preview.capturedAt">{{ new Date(preview.capturedAt).toLocaleTimeString() }}</time> · {{ preview.width }} × {{ preview.height }}</p>
+        <p v-else>No screenshot captured on this tab yet.</p>
+        <p v-if="preview && !screenshotMatchesHud" class="combat-error">Screenshot size differs from the calibrated HUD. Restore the same game resolution and capture again before recording.</p>
+        <figure v-if="iconCropStyle" class="icon-sample">
+          <div class="icon-crop" :style="iconCropStyle" role="img" :aria-label="`${activeTab === 'hud' ? 'HUD / ready' : 'Cooldown'} screenshot Unleash icon crop`"></div>
+          <figcaption>Current screenshot crop — recorded detector data is shown above.</figcaption>
+        </figure>
+        <div v-if="preview" class="hud-preview" :class="{ 'cooldown-preview': activeTab === 'cooldown' }">
+          <img :key="activeTab" ref="imageElement" :src="preview.image" :alt="activeTab === 'hud' ? 'Captured game HUD: click two corners to calibrate the selected region' : 'Captured Unleash cooldown screenshot'" @click="pick">
+          <template v-for="name in (activeTab === 'hud' ? HUD_NAMES : ['unleash'] as const)" :key="name">
+            <div v-if="draft.regions[name] && screenshotMatchesHud" class="hud-region" :style="{ left: `${draft.regions[name]!.x / preview.width * 100}%`, top: `${draft.regions[name]!.y / preview.height * 100}%`, width: `${draft.regions[name]!.width / preview.width * 100}%`, height: `${draft.regions[name]!.height / preview.height * 100}%` }"><span>{{ activeTab === 'cooldown' ? 'Unleash cooldown' : labels[name] }}</span></div>
+          </template>
+        </div>
       </div>
     </details>
   </section>
@@ -192,8 +249,15 @@ fieldset { border: 1px solid #4b4437; border-radius: 8px; padding: 16px; min-wid
 legend, summary { font-weight: 600; }
 summary { cursor: pointer; margin-bottom: 12px; }
 .combat-calibrations { display: flex; flex-wrap: wrap; gap: 8px 24px; padding-left: 18px; }
+.calibration-tabs, .recorded-icons { display: flex; flex-wrap: wrap; gap: 16px; margin: 16px 0; }
+.calibration-tabs button[aria-selected=true] { border-color: #ffe084; background: #39342a; }
+.icon-sample { display: grid; align-content: start; gap: 8px; margin: 12px 0; max-width: 300px; }
+.icon-crop, .recorded-icon { display: block; width: 128px; height: 128px; border: 1px solid #82714e; image-rendering: pixelated; }
+.icon-crop { background-repeat: no-repeat; }
+.icon-sample figcaption { line-height: 1.4; color: #c5bdac; }
 .hud-preview { position: relative; margin-top: 12px; line-height: 0; }
 .hud-preview img { width: 100%; height: auto; cursor: crosshair; }
+.cooldown-preview img { cursor: default; }
 .hud-region { position: absolute; border: 2px solid #ffe084; pointer-events: none; }
 .hud-region span { background: #171612; color: #ffe084; font-size: 11px; line-height: 1.3; position: absolute; bottom: 100%; white-space: nowrap; }
 </style>

@@ -23,7 +23,7 @@ If the game rejects a cast and never enters cooldown, pause/resume to retry.
 ## First-time calibration
 
 1. Use windowed or borderless mode. Fill both globes and close game panels.
-2. Click **Capture game in 3 seconds**, switch to the game during the countdown,
+2. On **HUD / ready**, click **Capture HUD / ready in 3 seconds**, switch to the game during the countdown,
    then return to the companion once it has captured. If switching takes longer,
    capture waits up to 15 seconds for game focus; Stop cancels that wait.
 3. Select **Health**. Click two opposite corners of a narrow vertical strip
@@ -35,10 +35,15 @@ If the game rejects a cast and never enters cooldown, pause/resume to retry.
 5. Select **Fixed HUD ornament** and select a distinctive, static part of the
    globe's surrounding frame. Keep it close to the bottom HUD. Do not select
    empty space, numbers or animated art. This helps reject hidden/covered HUDs.
-6. Select **Unleash on cooldown**, capture again, and cast R yourself before the
-   countdown expires. Click **Record cooldown from screenshot**. The previously
-   selected skill region is reused. Very similar ready/cooldown samples are
-   rejected; capture early in the cooldown.
+6. Open the separate **Unleash cooldown** tab, click **Capture cooldown in 3 seconds**,
+   and cast R yourself before the countdown expires. Check the capture time and
+   icon crop, then click **Record cooldown from screenshot**. The saved skill
+   region is sampled from this tab's screenshot; the HUD / ready screenshot is
+   retained separately. Different-resolution cooldown captures cannot be recorded.
+   Compare the displayed **Recorded ready reference** and **Recorded cooldown
+   reference**: these show the exact 16 × 16 RGB samples used by the detector,
+   including previously saved references after restarting. Very similar samples
+   are rejected; capture early in the cooldown.
 7. Enable the desired toggles and **Preview only**, then **Save & start**.
    Compare the displayed health/mana estimates with the game. Preview traces
    show intended actions without emitting keys.
@@ -48,6 +53,11 @@ If the game rejects a cast and never enters cooldown, pause/resume to retry.
 Changing window resolution, HUD scaling, colour settings or the bound skill
 requires recalibration. Moving the window keeps client-relative regions valid;
 an in-flight action is rejected if the window moves after its capture.
+
+Unsaved settings, both screenshots, capture times and calibration selections
+survive navigation between app sections for the current app session. Full
+screenshots stay in memory only. Use **Save settings** to retain detector
+references after restarting; screenshots must be captured again in a new session.
 
 ## Controls and behavior
 

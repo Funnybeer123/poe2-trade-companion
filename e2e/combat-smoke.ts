@@ -17,6 +17,16 @@ export async function combatSmoke(mode: SmokeBuildMode, testInfo: TestInfo) {
     await panel.getByLabel("mana flask key").selectOption("2");
     await panel.getByLabel("mana flask key").selectOption("MOUSE5");
     await expect(panel.getByLabel("Unleash key", { exact: true })).toHaveValue("R");
+    await panel.getByRole("tab", { name: "Unleash cooldown", exact: true }).click();
+    await expect(panel.getByRole("tab", { name: "Unleash cooldown", exact: true })).toHaveAttribute("aria-selected", "true");
+    await panel.getByLabel("health threshold").fill("24");
+    await page.getByRole("navigation", { name: "Tools and QA sections" }).getByRole("link", { name: /Settings Automation defaults/ }).click();
+    await page.getByRole("link", { name: /Flasks & Unleash/ }).click();
+    await expect(panel.getByLabel("health threshold")).toHaveValue("24");
+    await expect(panel.getByRole("tab", { name: "Unleash cooldown", exact: true })).toHaveAttribute("aria-selected", "true");
+    expect((await page.evaluate(() => window.poe2!.combat!.status())).config.health.threshold).toBe(25);
+    await panel.getByLabel("health threshold").fill("25");
+    await panel.getByRole("tab", { name: "HUD / ready", exact: true }).click();
     await panel.getByLabel("Auto health flask").check();
     await panel.getByLabel("Auto Unleash").check();
     await panel.getByRole("button", { name: "Save settings", exact: true }).click();
