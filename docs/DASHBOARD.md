@@ -2,6 +2,8 @@
 
 The app opens to Dashboard. The home link and unknown routes return here; all existing workspace routes remain available.
 
+Selecting or restoring the companion raises it above the game and overlays. Switching to another window releases its topmost position. Launching the same app/profile again restores the existing window instead of starting a second input runtime.
+
 - **Combat assist:** toggle health, mana and Unleash independently, see saved bindings and thresholds, start/pause the loop, and open calibration. Enabled and running are separate states. Readings appear only while the HUD is valid. F8 remains the pause/resume shortcut.
 - **Stash actions:** empty, fill, two-cycle transfer and sort the open tab use the existing calibrated action service. Settings, rate limits and global Dry-run apply.
 - **Workflows:** launch gear sort, crafting, shop scans and bucket listings with saved settings. Dry-run selects each workflow's preview variant. Shop actions need a configured shop tab. Repricing remains in Shop alongside its plan and step controls.

@@ -62,6 +62,7 @@ import { CombatAssistService, combatStorage } from "./combatAssistService.js";
 import { defaultCombatConfig } from "../core/combatAssist.js";
 import { startEmergencyStopMonitor } from "../adapters/emergencyStopMonitor.js";
 import { sendRendererEvent } from "./rendererEvents.js";
+import { installWindowActivation } from "./windowActivation.js";
 
 const execFileAsync = promisify(execFile);
 const buildMode = resolveBuildMode(
@@ -70,6 +71,7 @@ const buildMode = resolveBuildMode(
 const killSwitch = new KillSwitch();
 
 let mainWindow: BrowserWindow | undefined;
+let activateMainWindow: (() => void) | undefined;
 let assistiveService: AssistiveRunService | undefined;
 let dryRunOverlay: DryRunOverlayWindow | undefined;
 let stashSortService: StashSortService | undefined;
@@ -330,7 +332,9 @@ function createWindow(): void {
   mainWindow = new BrowserWindow({
     width: 1120,
     height: 860,
-    alwaysOnTop: true,
+    show: false,
+    alwaysOnTop: false,
+    backgroundColor: "#090a0c",
     title: "PoE2 Trade Companion",
     webPreferences: {
       preload: path.join(path.dirname(fileURLToPath(import.meta.url)), "preload.mjs"),
@@ -339,8 +343,12 @@ function createWindow(): void {
     },
   });
   const window = mainWindow;
+  activateMainWindow = installWindowActivation(window);
   window.once("closed", () => {
-    if (mainWindow === window) mainWindow = undefined;
+    if (mainWindow === window) {
+      mainWindow = undefined;
+      activateMainWindow = undefined;
+    }
   });
   if (process.env.VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
@@ -349,7 +357,15 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+// A second shortcut launch should reveal the current dashboard, not open a
+// competing database/input runtime behind the game. Separate test profiles
+// retain separate Electron instance locks.
+const ownsInstance = app.requestSingleInstanceLock();
+if (!ownsInstance) app.quit();
+app.on("second-instance", () => activateMainWindow?.());
+app.on("activate", () => activateMainWindow?.());
+
+if (ownsInstance) void app.whenReady().then(() => {
   const memoryRoot = app.getPath("userData");
   const artifactDir = path.join(memoryRoot, "assistive-artifacts");
   localPersistence = openLocalPersistence(
