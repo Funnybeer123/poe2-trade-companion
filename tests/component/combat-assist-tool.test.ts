@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import CombatAssistTool from "../../src/renderer/components/tools/CombatAssistTool.vue";
 import { defaultCombatConfig, type CombatConfig, type CombatStatus } from "../../src/core/combatAssist.js";
 import { calibratedCombat, color } from "../combatFixtures.js";
+import { useCombatDraft } from "../../src/renderer/composables/useCombatDraft.js";
 
 afterEach(() => { delete window.poe2; vi.useRealTimers(); vi.restoreAllMocks(); });
 describe("combat controls", () => {
@@ -158,6 +159,77 @@ describe("separate calibration screenshots and session drafts", () => {
     expect(wrapper.get('input[aria-label="mana threshold"]').element).toHaveProperty("value", "24");
     expect(wrapper.get('[role="alert"]').text()).toContain("Ready and cooldown images are too similar");
     expect(api.start).not.toHaveBeenCalled();
+    wrapper.unmount();
+  });
+  it("reconciles dashboard toggles and new saved calibration while retaining unsaved edits and screenshots", async () => {
+    const api = bridge();
+    let wrapper = mount(CombatAssistTool); await flushPromises();
+    await wrapper.get('input[aria-label="health threshold"]').setValue(29);
+    const session = useCombatDraft(api);
+    const screenshot = { image: "data:image/png;base64,pending-shot", width: 2560, height: 1440, capturedAt: "2026-09-09T12:00:00.000Z" };
+    session.screenshots.value.cooldown = screenshot;
+    session.activeTab.value = "cooldown";
+    session.draft.value.regions.unleash!.cooldown = color(12, 23, 34);
+    wrapper.unmount();
+    const externallySaved = calibratedCombat();
+    externallySaved.health.enabled = false;
+    externallySaved.mana.key = "Q";
+    externallySaved.regions.anchor!.x = 2300;
+    await api.configure(externallySaved);
+    api.configure.mockClear();
+    wrapper = mount(CombatAssistTool); await flushPromises();
+    expect(wrapper.findAll('input[type="checkbox"]')[0].element).toHaveProperty("checked", false);
+    expect(wrapper.get('input[aria-label="health threshold"]').element).toHaveProperty("value", "29");
+    expect(wrapper.get('select[aria-label="mana flask key"]').element).toHaveProperty("value", "Q");
+    expect(wrapper.get(".hud-preview img").attributes("src")).toBe(screenshot.image);
+    expect(session.draft.value.regions.anchor?.x).toBe(2300);
+    expect(session.draft.value.regions.unleash?.cooldown).toEqual(color(12, 23, 34));
+    // An external save after entry must also be respected by the next save.
+    externallySaved.mana.enabled = false;
+    await api.configure(externallySaved);
+    api.configure.mockClear();
+    await button(wrapper, "Save settings");
+    expect(api.configure).toHaveBeenCalledWith(expect.objectContaining({
+      health: expect.objectContaining({ enabled: false, threshold: 29 }),
+      mana: expect.objectContaining({ enabled: false, key: "Q" }),
+      regions: expect.objectContaining({
+        anchor: expect.objectContaining({ x: 2300 }),
+        unleash: expect.objectContaining({ cooldown: color(12, 23, 34) }),
+      }),
+    }));
+    wrapper.unmount();
+  });
+  it("adopts saved HUD dimensions without overwriting unrelated unsaved settings", async () => {
+    const api = bridge();
+    let wrapper = mount(CombatAssistTool); await flushPromises();
+    await wrapper.get('input[aria-label="mana threshold"]').setValue(24);
+    wrapper.unmount();
+    const changed = calibratedCombat();
+    changed.width = 3840; changed.height = 2160;
+    changed.regions.anchor!.x = 3000;
+    await api.configure(changed);
+    wrapper = mount(CombatAssistTool); await flushPromises();
+    const session = useCombatDraft(api);
+    expect(session.draft.value.width).toBe(3840);
+    expect(session.draft.value.height).toBe(2160);
+    expect(session.draft.value.regions).toEqual(changed.regions);
+    expect(session.draft.value.mana.threshold).toBe(24);
+    wrapper.unmount();
+  });
+  it("blocks mixing unsaved calibration with externally changed HUD dimensions", async () => {
+    const api = bridge();
+    let wrapper = mount(CombatAssistTool); await flushPromises();
+    const session = useCombatDraft(api);
+    session.draft.value.regions.unleash!.cooldown = color(12, 23, 34);
+    wrapper.unmount();
+    const changed = calibratedCombat(); changed.width = 3840; changed.height = 2160;
+    await api.configure(changed);
+    api.configure.mockClear();
+    wrapper = mount(CombatAssistTool); await flushPromises();
+    expect(wrapper.get('[role="alert"]').text()).toContain("Saved HUD resolution changed");
+    await button(wrapper, "Save settings");
+    expect(api.configure).not.toHaveBeenCalled();
+    expect(session.draft.value.regions.unleash?.cooldown).toEqual(color(12, 23, 34));
     wrapper.unmount();
   });
 });

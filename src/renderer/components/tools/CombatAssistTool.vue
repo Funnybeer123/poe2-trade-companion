@@ -54,10 +54,7 @@ onMounted(async () => {
   if (!api) return;
   await act(async () => {
     status.value = await api.status();
-    if (!disposed && !session.initialized) {
-      draft.value = JSON.parse(JSON.stringify(status.value.config));
-      session.initialized = true;
-    }
+    if (!disposed) session.reconcile(status.value.config);
   }, false);
   if (!disposed) void refresh();
 });
@@ -65,8 +62,10 @@ onUnmounted(() => { disposed = true; clearTimeout(poll); });
 
 async function save(start: boolean) {
   await act(async () => {
+    status.value = await api!.status();
+    session.reconcile(status.value.config);
     status.value = await api!.configure(JSON.parse(JSON.stringify(draft.value)));
-    draft.value = JSON.parse(JSON.stringify(status.value.config));
+    session.acceptSaved(status.value.config);
     if (start) status.value = await api!.start();
   });
 }
