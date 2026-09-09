@@ -18,6 +18,21 @@ $healthEvents = [CombatWin]::TapEvents('1')
 if ($healthEvents[0].Type -ne 1 -or $healthEvents[0].Data.Key.Vk -ne 0x31 -or $healthEvents[1].Data.Key.Flags -ne 2) { throw 'Health binding must retain keyboard 1 down/up' }
 $digitEvents = [CombatWin]::TapEvents('5')
 if ($digitEvents[0].Type -ne 1 -or $digitEvents[0].Data.Key.Vk -ne 0x35) { throw 'Keyboard 5 must remain distinct from Mouse5' }
+$script:previewClock = 0L
+$script:previewChecks = New-Object 'System.Collections.Generic.List[long]'
+$previewNow = [Func[long]] { $script:previewClock }
+$previewWait = [Action[int]] { param($milliseconds) $script:previewClock += $milliseconds }
+$previewStable = [Func[bool]] { $script:previewChecks.Add($script:previewClock); return $true }
+if (-not [CombatWin]::WaitForStablePreview($previewStable, $previewNow, $previewWait)) { throw 'Stable preview should settle successfully' }
+if ($script:previewClock -ne 750 -or $script:previewChecks[0] -ne 0 -or $script:previewChecks[$script:previewChecks.Count - 1] -ne 750) { throw 'Preview must verify eligibility across the full 750 ms interval, including its end' }
+$script:previewClock = 0L
+$previewLostFocus = [Func[bool]] { return $script:previewClock -lt 200 }
+if ([CombatWin]::WaitForStablePreview($previewLostFocus, $previewNow, $previewWait) -or $script:previewClock -ne 200) { throw 'Focus loss during settling must reject the capture immediately' }
+if (-not [CombatWin]::WaitForStablePreview($previewStable, $previewNow, $previewWait) -or $script:previewClock -ne 950) { throw 'A retry must require a fresh full 750 ms of stable focus' }
+$script:previewClock = 0L
+$previewChangedAtDeadline = [Func[bool]] { return $script:previewClock -lt 750 }
+if ([CombatWin]::WaitForStablePreview($previewChangedAtDeadline, $previewNow, $previewWait)) { throw 'A changed window or client rectangle at the deadline must reject the capture' }
+Write-Output 'Preview settling checks passed with synthetic time and eligibility; no desktop access or OS input.'
 $bitmap = New-Object System.Drawing.Bitmap 5, 100
 try {
   for ($row = 0; $row -lt 100; $row++) {

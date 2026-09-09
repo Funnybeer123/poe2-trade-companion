@@ -88,6 +88,23 @@ public static class CombatWin {
     }
     return rgb;
   }
+  public static bool PreviewWindowMatches(IntPtr window, Rectangle bounds) {
+    return GetForegroundWindow() == window && Allowed(ProcessName(window)) && Bounds(window) == bounds;
+  }
+  public static bool WaitForStablePreview(Func<bool> eligible, Func<long> now, Action<int> wait) {
+    long started = now();
+    while (true) {
+      if (!eligible()) return false;
+      long remaining = 750 - (now() - started);
+      if (remaining <= 0) return true;
+      wait((int)Math.Min(25, remaining));
+    }
+  }
+  public static bool SettlePreview(IntPtr window, Rectangle bounds) {
+    // Calibration only: give the operator time to cast after activating the
+    // game. A focus or client-rectangle change requires a fresh full interval.
+    return WaitForStablePreview(() => PreviewWindowMatches(window, bounds), () => Clock.ElapsedMilliseconds, milliseconds => System.Threading.Thread.Sleep(milliseconds));
+  }
   public static string Preview(Rectangle bounds) {
     using (Bitmap bitmap = new Bitmap(bounds.Width, bounds.Height)) {
       using (Graphics graphics = Graphics.FromImage(bitmap)) { graphics.CopyFromScreen(bounds.Location, Point.Empty, bitmap.Size); }
@@ -146,7 +163,10 @@ while ($null -ne ($line = [Console]::ReadLine())) {
       $window = [CombatWin]::Foreground()
       $bounds = [CombatWin]::Bounds($window)
       if ($command.op -eq 'preview') {
-        $reply = @{ ok = $true; image = ('data:image/png;base64,' + [CombatWin]::Preview($bounds)); width = $bounds.Width; height = $bounds.Height }
+        if (-not [CombatWin]::SettlePreview($window, $bounds)) { throw 'Focus Path of Exile 2 to continue' }
+        $image = [CombatWin]::Preview($bounds)
+        if (-not [CombatWin]::PreviewWindowMatches($window, $bounds)) { throw 'Focus Path of Exile 2 to continue' }
+        $reply = @{ ok = $true; image = ('data:image/png;base64,' + $image); width = $bounds.Width; height = $bounds.Height }
       } else {
         if ([CombatWin]::ModifiersDown()) { throw 'Release modifier keys to resume' }
         [CombatWin]::BeginSample($window, $bounds)
