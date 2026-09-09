@@ -15,7 +15,17 @@ declare module "vue-router" {
 const routes: RouteRecordRaw[] = [
   {
     path: "/",
-    redirect: "/sort",
+    redirect: "/dashboard",
+  },
+  {
+    path: "/dashboard",
+    name: "dashboard",
+    component: () => import("../views/DashboardView.vue"),
+    meta: {
+      title: "Dashboard",
+      eyebrow: "Play",
+      description: "Your in-game actions, all in one place.",
+    },
   },
   {
     path: "/sort",
@@ -93,7 +103,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: "/:pathMatch(.*)*",
-    redirect: "/sort",
+    redirect: "/dashboard",
   },
 ];
 

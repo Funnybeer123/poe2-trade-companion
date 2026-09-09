@@ -1,5 +1,10 @@
 import { expect, test } from "@playwright/test";
 import { combatSmoke } from "./combat-smoke.js";
+import { dashboardSmoke } from "./dashboard-smoke.js";
+
+test("dashboard quick controls preserve settings across navigation", async ({}, testInfo) => {
+  await dashboardSmoke("public-companion", testInfo);
+});
 
 test("combat controls persist and require HUD calibration", async ({}, testInfo) => {
   await combatSmoke("public-companion", testInfo);

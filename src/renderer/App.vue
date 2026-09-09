@@ -3,6 +3,7 @@ import { onMounted, watch } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import GameActionRail from "./components/GameActionRail.vue";
 import CombatIndicator from "./components/CombatIndicator.vue";
+import ActionIcon from "./components/ActionIcon.vue";
 import { useGameActions } from "./composables/useGameActions";
 import { useIntelligenceStore } from "./composables/useIntelligenceStore";
 import { useRuntimeState } from "./composables/useRuntimeState";
@@ -14,11 +15,12 @@ const intelligence = useIntelligenceStore();
 const gameActions = useGameActions();
 
 const navigation = [
-  { to: "/sort", label: "Sort", short: "SO", detail: "Run & triage" },
-  { to: "/shop", label: "Shop", short: "SH", detail: "Listings & sales" },
-  { to: "/items", label: "Item log", short: "IT", detail: "Parse & review" },
-  { to: "/search", label: "Search", short: "SR", detail: "Queries & rules" },
-  { to: "/builds", label: "Builds", short: "BL", detail: "Target coverage" },
+  { to: "/dashboard", label: "Dashboard", icon: "dashboard", detail: "Quick actions" },
+  { to: "/sort", label: "Sort", icon: "sort", detail: "Run & triage" },
+  { to: "/shop", label: "Shop", icon: "shop", detail: "Listings & sales" },
+  { to: "/items", label: "Item log", icon: "items", detail: "Parse & review" },
+  { to: "/search", label: "Search", icon: "search", detail: "Queries & rules" },
+  { to: "/builds", label: "Builds", icon: "builds", detail: "Target coverage" },
 ] as const;
 
 onMounted(() => {
@@ -39,10 +41,10 @@ watch(gameActions.dryRun, (enabled) => {
   <a class="skip-link" href="#workspace">Skip to workspace</a>
   <div class="app-shell">
     <aside class="side-rail" aria-label="Primary">
-      <RouterLink class="brand" to="/sort" aria-label="PoE2 Intelligence home">
+      <RouterLink class="brand" to="/dashboard" aria-label="PoE2 Intelligence home">
         <span class="brand-mark" aria-hidden="true">II</span>
         <span class="brand-copy">
-          <strong>Item Intelligence</strong>
+          <strong>Trade Companion</strong>
           <small>Path of Exile 2</small>
         </span>
       </RouterLink>
@@ -54,7 +56,7 @@ watch(gameActions.dryRun, (enabled) => {
           :to="item.to"
           class="nav-link"
         >
-          <span class="nav-glyph" aria-hidden="true">{{ item.short }}</span>
+          <span class="nav-glyph" aria-hidden="true"><ActionIcon :name="item.icon" :size="18" /></span>
           <span>
             <strong>{{ item.label }}</strong>
             <small>{{ item.detail }}</small>
@@ -69,7 +71,7 @@ watch(gameActions.dryRun, (enabled) => {
         class="nav-link tools-link"
         :class="{ 'section-active': route.path.startsWith('/tools') }"
       >
-        <span class="nav-glyph" aria-hidden="true">QA</span>
+        <span class="nav-glyph" aria-hidden="true"><ActionIcon name="settings" :size="18" /></span>
         <span>
           <strong>Tools &amp; QA</strong>
           <small>Operate &amp; diagnose</small>
@@ -96,7 +98,7 @@ watch(gameActions.dryRun, (enabled) => {
         </span>
       </div>
 
-      <GameActionRail />
+      <GameActionRail v-if="route.name !== 'dashboard'" />
     </aside>
 
     <section class="app-stage">
@@ -108,7 +110,7 @@ watch(gameActions.dryRun, (enabled) => {
         </div>
 
         <div class="safety-cluster" aria-label="Runtime safety status">
-          <CombatIndicator />
+          <CombatIndicator v-if="route.name !== 'dashboard'" />
           <label
             class="dry-run-switch"
             title="One switch for every game action: on means plan, overlay, and trace only — no input is ever sent."

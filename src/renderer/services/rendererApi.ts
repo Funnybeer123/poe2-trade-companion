@@ -1045,6 +1045,8 @@ export interface StashSortApi {
 
 export interface StashTabAdminApi {
   status: () => Promise<StashTabAdminStatus>;
+  runScript?: (kind: string) => Promise<{ started: boolean; reason?: string }>;
+  stopScript?: () => Promise<boolean>;
   survey: (folderName?: string) => Promise<StashTabSurveyResult>;
   /** Recent finds from the sorter's value triage (newest first). */
   finds?: () => Promise<FindRecord[]>;
