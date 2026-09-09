@@ -24,7 +24,8 @@ If the game rejects a cast and never enters cooldown, pause/resume to retry.
 
 1. Use windowed or borderless mode. Fill both globes and close game panels.
 2. Click **Capture game in 3 seconds**, switch to the game during the countdown,
-   then return to the companion once it has captured.
+   then return to the companion once it has captured. If switching takes longer,
+   capture waits up to 15 seconds for game focus; Stop cancels that wait.
 3. Select **Health**. Click two opposite corners of a narrow vertical strip
    inside the red globe, spanning the liquid's full height. Exclude its frame,
    labels and white reflections. Repeat with **Mana** inside the blue globe.

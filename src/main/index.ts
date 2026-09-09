@@ -61,6 +61,7 @@ import { ScannerRuntimeService } from "./scanRuntimeService.js";
 import { CombatAssistService, combatStorage } from "./combatAssistService.js";
 import { defaultCombatConfig } from "../core/combatAssist.js";
 import { startEmergencyStopMonitor } from "../adapters/emergencyStopMonitor.js";
+import { sendRendererEvent } from "./rendererEvents.js";
 
 const execFileAsync = promisify(execFile);
 const buildMode = resolveBuildMode(
@@ -152,7 +153,7 @@ async function evaluateItemText(
   };
   itemIntelligenceService?.recordEvaluation(payload, source);
   if (publishEvaluation) {
-    mainWindow?.webContents.send("item:evaluated", payload);
+    sendRendererEvent(mainWindow, "item:evaluated", payload);
   }
   return payload;
 }
@@ -265,7 +266,7 @@ function voiceStatus(): VoiceTransferStatus {
 }
 
 function sendVoiceStatus(): void {
-  mainWindow?.webContents.send("voice:state", voiceStatus());
+  sendRendererEvent(mainWindow, "voice:state", voiceStatus());
 }
 
 function appendVoiceAudit(artifactDir: string, state: VoiceTransferState): void {
@@ -337,6 +338,10 @@ function createWindow(): void {
       nodeIntegration: false,
     },
   });
+  const window = mainWindow;
+  window.once("closed", () => {
+    if (mainWindow === window) mainWindow = undefined;
+  });
   if (process.env.VITE_DEV_SERVER_URL) {
     void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
   } else {
@@ -353,7 +358,7 @@ app.whenReady().then(() => {
   itemIntelligenceService = new ItemIntelligenceService({
     persistence: localPersistence,
     publish: (channel, payload) => {
-      mainWindow?.webContents.send(channel, payload);
+      sendRendererEvent(mainWindow, channel, payload);
       if (channel === "tiers:changed" || channel === "prices:changed") {
         exportTriageSnapshot();
       }
@@ -400,7 +405,7 @@ app.whenReady().then(() => {
     evaluateItemText: (text) => evaluateItemText(text, "scan", false),
     persistSession: syncRuntimeScanSession,
     onEvent: (event) =>
-      mainWindow?.webContents.send("scanner:event", event),
+      sendRendererEvent(mainWindow, "scanner:event", event),
     onTrace: (trace) => {
       mkdirSync(artifactDir, { recursive: true });
       appendFileSync(
@@ -422,7 +427,7 @@ app.whenReady().then(() => {
     artifactDir,
     baselineDir,
     profile: readMergedProfile,
-    onEvent: (event) => mainWindow?.webContents.send("assistive:event", event),
+    onEvent: (event) => sendRendererEvent(mainWindow, "assistive:event", event),
     onDryRunOverlay: (plan) => {
       if (plan) dryRunOverlay?.show(plan);
       else dryRunOverlay?.hide();
@@ -436,11 +441,11 @@ app.whenReady().then(() => {
     baselineDir,
     profile: readMergedProfile,
     sizeDatabase: () => loadItemSizeDatabase(sizeDatabaseFile()),
-    onEvent: (event) => mainWindow?.webContents.send("stash-sort:event", event),
+    onEvent: (event) => sendRendererEvent(mainWindow, "stash-sort:event", event),
   });
   stashTabAdminService = new StashTabAdminService({
     root: process.cwd(),
-    emit: (event) => mainWindow?.webContents.send("stash-tabs:event", event),
+    emit: (event) => sendRendererEvent(mainWindow, "stash-tabs:event", event),
     canRun: () => !killSwitch.isLatched(),
   });
   voiceService = new VoiceTransferService({
@@ -470,7 +475,7 @@ app.whenReady().then(() => {
     assistiveService?.stop("emergency-stop");
     stashSortService?.stop("emergency-stop");
     scannerService?.stop("emergency-stop");
-    mainWindow?.webContents.send("qa:killed");
+    sendRendererEvent(mainWindow, "qa:killed");
   };
   const emergencyStopRegistered = globalShortcut.register("CommandOrControl+Shift+Escape", stopAllInput);
   globalShortcut.register("CommandOrControl+Shift+F12", stopAllInput);

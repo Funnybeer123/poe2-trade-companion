@@ -14,9 +14,95 @@ describe("combat service lifecycle and input interlocks", () => {
     frame.samples.health = fill(config.regions.health!.reference, 24);
     const host = { send: vi.fn(async (p: Record<string, unknown>): Promise<WinReply> => p.op === "sample" ? { ok: true, ...frame } : { ok: true }), close: vi.fn(async () => {}) };
     const killSwitch = new KillSwitch(), audit = vi.fn();
-    const service = new CombatAssistService({ config, killSwitch, mode: "public-companion", audit, createHost: () => host, now: () => Date.now() });
-    return { config, frame, host, killSwitch, audit, service };
+    const createHost = vi.fn(() => host);
+    const service = new CombatAssistService({ config, killSwitch, mode: "public-companion", audit, createHost, now: () => Date.now() });
+    return { config, frame, host, killSwitch, audit, service, createHost };
   }
+  it.each([
+    "Focus Path of Exile 2 to continue",
+    'Exception calling "Foreground" with "0" argument(s): "Focus Path of Exile 2 to continue"',
+  ])("waits for game focus on the same preview worker, then captures without input: %s", async (error) => {
+    const h = harness();
+    h.host.send.mockResolvedValue({ ok: false, error });
+    const preview = h.service.preview();
+    await vi.advanceTimersByTimeAsync(750);
+    expect(h.service.status).toMatchObject({ running: false, reason: "Waiting for game focus — switch to Path of Exile 2" });
+    expect(h.host.send.mock.calls.length).toBeGreaterThan(1);
+    h.host.send.mockResolvedValue({ ok: true, image: "data:image/png;base64,capture", width: 2560, height: 1440 });
+    await vi.advanceTimersByTimeAsync(250);
+    await expect(preview).resolves.toEqual({ image: "data:image/png;base64,capture", width: 2560, height: 1440 });
+    expect(h.createHost).toHaveBeenCalledOnce();
+    expect(h.host.close).toHaveBeenCalledOnce();
+    expect(h.host.send.mock.calls.every(([p]) => p.op === "preview")).toBe(true);
+    expect(h.service.status.reason).toBe("Paused for HUD calibration");
+  });
+  it.each([
+    { ok: false, error: "Game window unavailable" },
+    { ok: false, error: "Focus Path of Exile 2 to continue: unexpected failure" },
+    { ok: false, error: 'Exception calling "Preview" with "0" argument(s): "Focus Path of Exile 2 to continue"' },
+    { ok: true },
+  ])("does not retry other preview failures: %j", async (reply) => {
+    const h = harness();
+    h.host.send.mockResolvedValue(reply);
+    await expect(h.service.preview()).rejects.toThrow(reply.error ?? "Capture failed");
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(h.host.send).toHaveBeenCalledOnce();
+    expect(h.host.close).toHaveBeenCalledOnce();
+  });
+  it("ends the focus wait after 15 seconds and closes the preview worker", async () => {
+    const h = harness();
+    h.host.send.mockResolvedValue({ ok: false, error: "Focus Path of Exile 2 to continue" });
+    const failure = expect(h.service.preview()).rejects.toThrow("Capture timed out waiting for game focus");
+    await vi.advanceTimersByTimeAsync(14_999);
+    expect(h.host.close).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(1);
+    await failure;
+    expect(h.service.status.reason).toBe("Capture timed out waiting for game focus");
+    expect(h.host.close).toHaveBeenCalledOnce();
+    const calls = h.host.send.mock.calls.length;
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.host.send).toHaveBeenCalledTimes(calls);
+  });
+  it("cancels a focus wait immediately on stop, closes the worker and never retries", async () => {
+    const h = harness();
+    h.host.send.mockResolvedValue({ ok: false, error: "Focus Path of Exile 2 to continue" });
+    const failure = expect(h.service.preview()).rejects.toThrow("Calibration cancelled");
+    await vi.advanceTimersByTimeAsync(0);
+    h.service.stop();
+    expect(h.host.close).toHaveBeenCalledOnce();
+    await failure;
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(h.host.send).toHaveBeenCalledOnce();
+    expect(h.host.close).toHaveBeenCalledOnce();
+    expect(h.service.status.reason).toBe("Stopped");
+  });
+  it("keeps the 15-second deadline when a retry is still waiting for its native reply", async () => {
+    const h = harness();
+    let resolve!: (reply: WinReply) => void;
+    h.host.send.mockResolvedValueOnce({ ok: false, error: "Focus Path of Exile 2 to continue" })
+      .mockImplementation(() => new Promise((r) => { resolve = r; }));
+    const failure = expect(h.service.preview()).rejects.toThrow("Capture timed out waiting for game focus");
+    await vi.advanceTimersByTimeAsync(15_000);
+    await failure;
+    expect(h.host.close).toHaveBeenCalledOnce();
+    resolve({ ok: true, image: "late-capture", width: 2560, height: 1440 });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(h.host.send).toHaveBeenCalledTimes(2);
+    expect(h.service.status.reason).toBe("Capture timed out waiting for game focus");
+  });
+  it("rejects a preview that completes after stop without retrying or replacing stop status", async () => {
+    const h = harness();
+    let resolve!: (reply: WinReply) => void;
+    h.host.send.mockImplementation(() => new Promise((r) => { resolve = r; }));
+    const failure = expect(h.service.preview()).rejects.toThrow("Calibration cancelled");
+    h.service.stop();
+    resolve({ ok: true, image: "late-capture", width: 2560, height: 1440 });
+    await failure;
+    await vi.advanceTimersByTimeAsync(15_000);
+    expect(h.host.send).toHaveBeenCalledOnce();
+    expect(h.host.close).toHaveBeenCalledOnce();
+    expect(h.service.status.reason).toBe("Stopped");
+  });
   it("sends immediate low-health and R decisions through audited input", async () => {
     const h = harness();
     await h.service.start(); await vi.advanceTimersByTimeAsync(0);

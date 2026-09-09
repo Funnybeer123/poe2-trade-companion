@@ -29,6 +29,7 @@ export class CombatAssistService {
   private reason = "Stopped";
   private host?: Host;
   private timer?: ReturnType<typeof setTimeout>;
+  private cancelPreviewWait?: () => void;
   private generation = 0;
   private frame?: CombatFrame;
   private reading?: CombatStatus["reading"];
@@ -57,6 +58,7 @@ export class CombatAssistService {
     this.reading = undefined;
     clearTimeout(this.timer);
     this.timer = undefined;
+    this.cancelPreviewWait?.();
     const host = this.host;
     this.host = undefined;
     if (host) void host.close().catch(() => {});
@@ -74,14 +76,50 @@ export class CombatAssistService {
     const generation = this.generation;
     const host = this.createHost();
     this.host = host;
+    const focusDeadline = this.now() + 15_000;
+    let waitingForFocus = false;
     try {
-      const result = await host.send({ op: "preview" });
-      if (generation !== this.generation) throw new Error("Calibration cancelled");
-      if (!result.ok || typeof result.image !== "string") throw new Error(String(result.error ?? "Capture failed"));
-      return { image: result.image, width: Number(result.width), height: Number(result.height) };
+      while (true) {
+        if (generation !== this.generation) throw new Error("Calibration cancelled");
+        if (waitingForFocus && this.now() >= focusDeadline) throw new Error("Capture timed out waiting for game focus");
+        const capture = host.send({ op: "preview" });
+        let captureTimeout: ReturnType<typeof setTimeout> | undefined;
+        const result = waitingForFocus ? await Promise.race([
+          capture,
+          new Promise<never>((_, reject) => {
+            captureTimeout = setTimeout(() => reject(new Error("Capture timed out waiting for game focus")), Math.max(0, focusDeadline - this.now()));
+          }),
+        ]).finally(() => clearTimeout(captureTimeout)) : await capture;
+        if (generation !== this.generation) throw new Error("Calibration cancelled");
+        if (result.ok && typeof result.image === "string") {
+          this.reason = "Paused for HUD calibration";
+          return { image: result.image, width: Number(result.width), height: Number(result.height) };
+        }
+        const needsGameFocus = result.error === "Focus Path of Exile 2 to continue"
+          || result.error === 'Exception calling "Foreground" with "0" argument(s): "Focus Path of Exile 2 to continue"';
+        if (result.ok || !needsGameFocus) throw new Error(String(result.error ?? "Capture failed"));
+        const remaining = focusDeadline - this.now();
+        if (remaining <= 0) throw new Error("Capture timed out waiting for game focus");
+        waitingForFocus = true;
+        this.reason = "Waiting for game focus — switch to Path of Exile 2";
+        await new Promise<void>((resolve) => {
+          const finish = () => {
+            clearTimeout(timer);
+            if (this.cancelPreviewWait === finish) this.cancelPreviewWait = undefined;
+            resolve();
+          };
+          const timer = setTimeout(finish, Math.min(250, remaining));
+          this.cancelPreviewWait = finish;
+        });
+      }
+    } catch (error) {
+      if (generation === this.generation) this.reason = error instanceof Error ? error.message : "Capture failed";
+      throw error;
     } finally {
-      if (this.host === host) this.host = undefined;
-      await host.close();
+      if (this.host === host) {
+        this.host = undefined;
+        await host.close();
+      }
     }
   }
   async start(): Promise<CombatStatus> {

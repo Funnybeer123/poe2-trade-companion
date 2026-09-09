@@ -113,6 +113,17 @@ export async function withPackagedElectron(
     await page.waitForLoadState("domcontentloaded");
     await expect(page.locator("#app")).toBeVisible();
 
+    const appPath = await application.evaluate(({ app }) => app.getAppPath());
+    const inputHost = path.join(
+      appPath.replace(/app\.asar$/, "app.asar.unpacked"),
+      "scripts",
+      "win-input-host.ps1",
+    );
+    expect(
+      existsSync(inputHost),
+      `${mode} must unpack the Windows input host for calibration and game tools`,
+    ).toBe(true);
+
     await run({ application, page });
     expect(pageErrors, "renderer page errors").toEqual([]);
   } catch (error) {
