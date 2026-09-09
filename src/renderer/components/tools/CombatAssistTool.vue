@@ -169,7 +169,7 @@ function recordCooldown() {
           <label><input v-model="draft.unleash.enabled" type="checkbox"> Auto Unleash</label>
           <label>Key / button <select v-model="draft.unleash.key" aria-label="Unleash key"><option v-for="binding in COMBAT_BINDINGS" :key="binding.value" :value="binding.value">{{ binding.label }}</option></select></label>
           <label>Minimum gap (ms) <input v-model.number="draft.unleash.retryMs" type="number" min="100" max="30000"></label>
-          <p class="muted">One cast per observed cooldown. If R fails to cast, pause/resume to retry.</p>
+          <p class="muted">Casts when ready. If another action interrupts the cast, retries automatically while the icon remains ready.</p>
         </div>
       </div>
       <div class="combat-controls">

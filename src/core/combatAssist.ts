@@ -196,9 +196,10 @@ export class CombatPlanner {
   private last: Partial<Record<CombatModule, number>> = {};
   private skillArmed = true;
   private coolingFrames = 0;
+  private readyFrames = 0;
   private low: Record<"health" | "mana", boolean> = { health: false, mana: false };
   decisions(config: CombatConfig, reading: CombatReading, now: number): Array<{ name: CombatModule; decision: BotDecision }> {
-    if (!reading.valid) { this.coolingFrames = 0; return []; }
+    if (!reading.valid) { this.coolingFrames = 0; this.readyFrames = 0; return []; }
     const actions: Array<{ name: CombatModule; decision: BotDecision }> = [];
     const add = (name: CombatModule, reason: string) => actions.push({ name, decision: {
       module: "combat", rule: `combat-${name}`, reason, confidence: 1,
@@ -211,15 +212,21 @@ export class CombatPlanner {
       if (value < options.threshold) this.low[name] = true;
       if (this.low[name] && value < options.threshold && now - (this.last[name] ?? -Infinity) >= options.retryMs) add(name, `${name} ${value}% below ${options.threshold}%`);
     }
-    // Require actual cooldown evidence before rearming: unknown/covered icons
-    // must never create a new ready edge. Two frames reject transient flashes.
+    // Confirm normal cooldown cycles, but recover when Windows accepts R and
+    // the game rejects/intercepts the cast. Unknown frames are never evidence
+    // of readiness; retries need two fresh ready frames and a bounded gap.
     this.coolingFrames = reading.unleash === "cooldown" ? this.coolingFrames + 1 : 0;
+    this.readyFrames = reading.unleash === "ready" ? this.readyFrames + 1 : 0;
     if (this.coolingFrames >= 2) this.skillArmed = true;
-    if (config.unleash.enabled && this.skillArmed && reading.unleash === "ready" && now - (this.last.unleash ?? -Infinity) >= config.unleash.retryMs) add("unleash", "Unleash icon ready after observed cooldown");
+    const sinceCast = now - (this.last.unleash ?? -Infinity);
+    const retryUnconfirmed = !this.skillArmed && this.readyFrames >= 2 && sinceCast >= Math.max(750, config.unleash.retryMs);
+    if (config.unleash.enabled && reading.unleash === "ready" && (retryUnconfirmed || this.skillArmed && sinceCast >= config.unleash.retryMs)) {
+      add("unleash", retryUnconfirmed ? "Unleash still ready — retrying unconfirmed cast" : "Unleash icon ready");
+    }
     return actions;
   }
   committed(name: CombatModule, now: number): void {
     this.last[name] = now;
-    if (name === "unleash") { this.skillArmed = false; this.coolingFrames = 0; }
+    if (name === "unleash") { this.skillArmed = false; this.coolingFrames = 0; this.readyFrames = 0; }
   }
 }

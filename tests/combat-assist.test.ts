@@ -88,18 +88,67 @@ describe("combat replay decisions", () => {
     c.health.enabled = false;
     expect(p.decisions(c, low, 3000)).toEqual([]);
   });
-  it("casts once per observed cooldown, never from icon occlusion", () => {
+  it("casts promptly after a confirmed cooldown without waiting for the retry interval", () => {
     const p = new CombatPlanner(), c = calibratedCombat();
     const ready = { valid: true, reason: "fixture", health: 100, mana: 100, unleash: "ready" as const };
     expect(p.decisions(c, ready, 0).map((d) => d.name)).toEqual(["unleash"]);
     p.committed("unleash", 0);
-    expect(p.decisions(c, ready, 1000)).toEqual([]);
-    p.decisions(c, { ...ready, unleash: "unknown" }, 1100);
+    expect(p.decisions(c, { ...ready, unleash: "cooldown" }, 200)).toEqual([]);
+    expect(p.decisions(c, { ...ready, unleash: "cooldown" }, 216)).toEqual([]);
+    expect(p.decisions(c, ready, 349)).toEqual([]);
+    expect(p.decisions(c, ready, 350).map((d) => d.name)).toEqual(["unleash"]);
+  });
+  it("retries an acknowledged but unconfirmed cast only after 750 ms and two fresh ready frames", () => {
+    const p = new CombatPlanner(), c = calibratedCombat();
+    const ready = { valid: true, reason: "fixture", health: 100, mana: 100, unleash: "ready" as const };
+    p.committed("unleash", 0);
+    expect(p.decisions(c, ready, 16)).toEqual([]);
+    expect(p.decisions(c, ready, 749)).toEqual([]);
+    const retry = p.decisions(c, ready, 750);
+    expect(retry.map((d) => d.name)).toEqual(["unleash"]);
+    expect(retry[0].decision.reason).toContain("retrying unconfirmed cast");
+    p.committed("unleash", 750);
+    expect(p.decisions(c, ready, 1500)).toEqual([]);
+    expect(p.decisions(c, ready, 1516).map((d) => d.name)).toEqual(["unleash"]);
+  });
+  it("recovers from persistent rejected casts without sending R on every frame", () => {
+    const p = new CombatPlanner(), c = calibratedCombat();
+    const ready = { valid: true, reason: "fixture", health: 100, mana: 100, unleash: "ready" as const };
+    const attempts: number[] = [];
+    for (let now = 0; now <= 5000; now += 16) {
+      const actions = p.decisions(c, ready, now);
+      if (actions.some((d) => d.name === "unleash")) { attempts.push(now); p.committed("unleash", now); }
+    }
+    expect(attempts[0]).toBe(0);
+    expect(attempts.length).toBeGreaterThan(1);
+    for (let i = 1; i < attempts.length; i++) {
+      expect(attempts[i] - attempts[i - 1]).toBeGreaterThanOrEqual(750);
+      expect(attempts[i] - attempts[i - 1]).toBeLessThan(766);
+    }
+  });
+  it("honours a longer configured minimum gap and the Unleash toggle on retries", () => {
+    const p = new CombatPlanner(), c = calibratedCombat(); c.unleash.retryMs = 1200;
+    const ready = { valid: true, reason: "fixture", health: 100, mana: 100, unleash: "ready" as const };
+    p.committed("unleash", 0);
+    expect(p.decisions(c, ready, 750)).toEqual([]);
+    expect(p.decisions(c, ready, 1199)).toEqual([]);
+    c.unleash.enabled = false;
     expect(p.decisions(c, ready, 1200)).toEqual([]);
-    p.decisions(c, { ...ready, unleash: "cooldown" }, 1300);
-    expect(p.decisions(c, ready, 1400)).toEqual([]);
-    p.decisions(c, { ...ready, unleash: "cooldown" }, 1500);
-    p.decisions(c, { ...ready, unleash: "cooldown" }, 1516);
-    expect(p.decisions(c, ready, 2000).map((d) => d.name)).toEqual(["unleash"]);
+    c.unleash.enabled = true;
+    expect(p.decisions(c, ready, 1216).map((d) => d.name)).toEqual(["unleash"]);
+  });
+  it.each(["unknown", "dead", "focus", "stale", "covered"] as const)("does not retry on %s evidence or a single ready frame afterward", (kind) => {
+    const p = new CombatPlanner(), c = calibratedCombat(), f = combatFrame(c);
+    const ready = readCombatFrame(c, f, 0);
+    p.committed("unleash", 0);
+    expect(p.decisions(c, ready, 800)).toEqual([]);
+    if (kind === "unknown") f.samples.unleash = color(150, 200, 30);
+    if (kind === "dead") f.samples.health = fill(c.regions.health!.reference, 0);
+    if (kind === "focus") f.process = "NotPathOfExile";
+    if (kind === "covered") f.samples.anchor = color(0, 0, 0);
+    const interrupted = readCombatFrame(c, f, kind === "stale" ? 121 : 0);
+    expect(p.decisions(c, interrupted, 816)).toEqual([]);
+    expect(p.decisions(c, ready, 932)).toEqual([]);
+    expect(p.decisions(c, ready, 948).map((d) => d.name)).toEqual(["unleash"]);
   });
 });

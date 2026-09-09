@@ -15,10 +15,13 @@ Mouse Button 5 and click Save settings.
 Mouse input also requires the pointer to be over the unobstructed game client;
 it is blocked if the cursor is over another window.
 
-Unleash casts once when the calibrated skill-bar icon looks ready, then waits
-until it has seen the calibrated cooldown appearance in two consecutive frames
-before allowing another cast. It does not infer a fixed cooldown duration.
-If the game rejects a cast and never enters cooldown, pause/resume to retry.
+Unleash casts when the calibrated skill-bar icon looks ready. Two consecutive
+cooldown frames confirm a successful cycle, and the next ready appearance allows
+another cast. If another action interrupts the cast, the app retries automatically
+while the icon remains ready. It does not infer a fixed cooldown duration.
+Retries require two consecutive valid ready frames and wait at least 750 ms
+after the previous attempt, or the configured minimum gap if that is longer.
+Unknown or covered icons do not trigger retries.
 
 ## First-time calibration
 
