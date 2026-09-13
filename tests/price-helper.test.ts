@@ -23,6 +23,14 @@ describe("read-only helper prices", () => {
   it("matches an exact gem level with a stack marker", () => {
     expect(priceHelperRow("2x Uncut Skill Gem (Level 19)", [snapshot("Uncut Skill Gem (Level 19)")], now).total).toBe(2);
   });
+  it.each(["lx Divine Orb", "Ix Divine Orb"])("shows only a unit estimate when Windows OCR cannot read the quantity: %s", text => {
+    const row = priceHelperRow(text, [snapshot()], now);
+    expect(row).toMatchObject({ state: "priced", name: "Divine Orb", unit: 1, detail: "1 div each · quantity unreadable" });
+    expect(row.quantity).toBeUndefined();
+    expect(row.total).toBeUndefined();
+    expect(priceHelperRow("lx Uncut Skill Gem (Level l9)", [snapshot("Uncut Skill Gem (Level 19)")], now).state).toBe("unknown");
+    expect(priceHelperRow("lx Divine Orb (2)", [snapshot()], now).state).toBe("unknown");
+  });
   it.each(["0x Divine Orb", "2x Divine Orb (3)", "Divine Orb xO", "999999x Divine Orb"])("refuses ambiguous quantities: %s", text => {
     expect(priceHelperRow(text, [snapshot()], now).state).toBe("unknown");
   });

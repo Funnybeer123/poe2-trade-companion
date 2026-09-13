@@ -20,8 +20,10 @@ public static class PriceWindow {
 "@
 [void][PriceWindow]::SetProcessDpiAwarenessContext([IntPtr](-4))
 $null = [Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType = WindowsRuntime]
+$null = [Windows.Globalization.Language, Windows.Globalization, ContentType = WindowsRuntime]
 $null = [Windows.Graphics.Imaging.BitmapDecoder, Windows.Foundation, ContentType = WindowsRuntime]
 $null = [Windows.Storage.Streams.InMemoryRandomAccessStream, Windows.Foundation, ContentType = WindowsRuntime]
+$null = [Windows.Storage.Streams.DataWriter, Windows.Foundation, ContentType = WindowsRuntime]
 $asTask = ([System.WindowsRuntimeSystemExtensions].GetMethods() | Where-Object { $_.Name -eq 'AsTask' -and $_.GetParameters().Count -eq 1 -and $_.GetParameters()[0].ParameterType.Name -eq 'IAsyncOperation`1' })[0]
 function Await-PriceOperation($operation, $type) {
   $task = $asTask.MakeGenericMethod($type).Invoke($null, @($operation))
@@ -75,26 +77,13 @@ function Select-PriceRegion($target) {
   $timer.Add_Tick({ $form.Close() }); $timer.Start()
   try { [void]$form.ShowDialog(); return $script:priceSelection } finally { $timer.Dispose(); $form.Dispose() }
 }
-function Read-PriceRegion($target, $region) {
-  if ($null -eq $region) { throw 'Calibrate the list region first.' }
-  foreach ($key in @('x','y','width','height','clientWidth','clientHeight')) {
-    $n = $region.$key
-    if ($null -eq $n -or $n -is [string] -or [double]$n -ne [Math]::Truncate([double]$n)) { throw 'Invalid capture region.' }
-  }
-  if ($region.clientWidth -ne $target.width -or $region.clientHeight -ne $target.height) { throw 'Game resolution changed. Recalibrate the list region.' }
-  if ($region.x -lt 0 -or $region.y -lt 0 -or $region.width -lt 20 -or $region.height -lt 20 -or $region.width -gt 2000 -or $region.height -gt 2000 -or ($region.x + $region.width) -gt $target.width -or ($region.y + $region.height) -gt $target.height) { throw 'Capture region is outside the game.' }
-  if (([PriceWindow]::GetAsyncKeyState(0x1B) -band 0x8000) -ne 0 -or (([PriceWindow]::GetAsyncKeyState(0x11) -band 0x8000) -ne 0 -and ([PriceWindow]::GetAsyncKeyState(0x01) -band 0x8000) -ne 0)) { return @{ ok = $true; dismissed = $true } }
+function Convert-PriceBitmapToLines([System.Drawing.Bitmap]$bitmap) {
   if ($null -eq $script:priceOcrEngine) {
     $script:priceOcrEngine = [Windows.Media.Ocr.OcrEngine]::TryCreateFromLanguage((New-Object Windows.Globalization.Language 'en-US'))
     if ($null -eq $script:priceOcrEngine) { throw 'Install the English Windows OCR language feature to scan English item names.' }
   }
-  $bitmap = $graphics = $memory = $stream = $writer = $software = $null
+  $memory = $stream = $writer = $software = $null
   try {
-    $bitmap = New-Object System.Drawing.Bitmap ([int]$region.width), ([int]$region.height)
-    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
-    Assert-PriceForeground $target
-    $graphics.CopyFromScreen(($target.left + $region.x), ($target.top + $region.y), 0, 0, $bitmap.Size)
-    Assert-PriceForeground $target
     $memory = New-Object System.IO.MemoryStream
     $bitmap.Save($memory, [System.Drawing.Imaging.ImageFormat]::Bmp)
     $stream = New-Object Windows.Storage.Streams.InMemoryRandomAccessStream
@@ -104,15 +93,36 @@ function Read-PriceRegion($target, $region) {
     $decoder = Await-PriceOperation ([Windows.Graphics.Imaging.BitmapDecoder]::CreateAsync($stream)) ([Windows.Graphics.Imaging.BitmapDecoder])
     $software = Await-PriceOperation ($decoder.GetSoftwareBitmapAsync()) ([Windows.Graphics.Imaging.SoftwareBitmap])
     $result = Await-PriceOperation ($script:priceOcrEngine.RecognizeAsync($software)) ([Windows.Media.Ocr.OcrResult])
-    Assert-PriceForeground $target
-    $lines = @($result.Lines | Select-Object -First 100 | ForEach-Object {
+    return @($result.Lines | Select-Object -First 100 | ForEach-Object {
       $y = ($_.Words | ForEach-Object { $_.BoundingRect.Y } | Measure-Object -Minimum).Minimum
       $height = ($_.Words | ForEach-Object { $_.BoundingRect.Height } | Measure-Object -Maximum).Maximum
       @{ text = [string]$_.Text; y = [int]$y; height = [int]$height }
     })
+  } finally {
+    foreach ($resource in @($software, $writer, $stream, $memory)) { if ($null -ne $resource) { $resource.Dispose() } }
+  }
+}
+function Read-PriceRegion($target, $region) {
+  if ($null -eq $region) { throw 'Calibrate the list region first.' }
+  foreach ($key in @('x','y','width','height','clientWidth','clientHeight')) {
+    $n = $region.$key
+    if ($null -eq $n -or $n -is [string] -or [double]$n -ne [Math]::Truncate([double]$n)) { throw 'Invalid capture region.' }
+  }
+  if ($region.clientWidth -ne $target.width -or $region.clientHeight -ne $target.height) { throw 'Game resolution changed. Recalibrate the list region.' }
+  if ($region.x -lt 0 -or $region.y -lt 0 -or $region.width -lt 20 -or $region.height -lt 20 -or $region.width -gt 2000 -or $region.height -gt 2000 -or ($region.x + $region.width) -gt $target.width -or ($region.y + $region.height) -gt $target.height) { throw 'Capture region is outside the game.' }
+  if (([PriceWindow]::GetAsyncKeyState(0x1B) -band 0x8000) -ne 0 -or (([PriceWindow]::GetAsyncKeyState(0x11) -band 0x8000) -ne 0 -and ([PriceWindow]::GetAsyncKeyState(0x01) -band 0x8000) -ne 0)) { return @{ ok = $true; dismissed = $true } }
+  $bitmap = $graphics = $null
+  try {
+    $bitmap = New-Object System.Drawing.Bitmap ([int]$region.width), ([int]$region.height)
+    $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+    Assert-PriceForeground $target
+    $graphics.CopyFromScreen(($target.left + $region.x), ($target.top + $region.y), 0, 0, $bitmap.Size)
+    Assert-PriceForeground $target
+    $lines = @(Convert-PriceBitmapToLines $bitmap)
+    Assert-PriceForeground $target
     return @{ ok = $true; target = $target; lines = $lines }
   } finally {
-    foreach ($resource in @($software, $writer, $stream, $memory, $graphics, $bitmap)) { if ($null -ne $resource) { $resource.Dispose() } }
+    foreach ($resource in @($graphics, $bitmap)) { if ($null -ne $resource) { $resource.Dispose() } }
   }
 }
 while ($null -ne ($commandLine = [Console]::ReadLine())) {

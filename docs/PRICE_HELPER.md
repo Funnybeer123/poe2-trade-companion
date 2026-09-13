@@ -16,7 +16,7 @@ Exalted Orb (10)
 Uncut Skill Gem (Level 19)
 ```
 
-Prices are shown in divines for totals of at least one divine, otherwise exalteds when that conversion is available. Totals retain full feed precision until display. The primary currency from poe.ninja is respected, including Hardcore leagues whose primary unit differs. A missing rate is never invented. Unknown names, ambiguous quantities, duplicate matches and unreadable gem types/levels display `?`; unavailable market values display `No market data`. These are market estimates, not guaranteed sale prices. Exact matching trades some OCR recall for fewer misleading prices.
+Prices are shown in divines for totals of at least one divine, otherwise exalteds when that conversion is available. Totals retain full feed precision until display. The primary currency from poe.ninja is respected, including Hardcore leagues whose primary unit differs. A missing rate is never invented. Unknown names, ambiguous quantities, duplicate matches and unreadable gem types/levels display `?`; unavailable market values display `No market data`. When Windows OCR reads a quantity marker as `lx` or `Ix`, an exact item match can show a per-item estimate with **quantity unreadable**, but no quantity or stack total is inferred. These are market estimates, not guaranteed sale prices. Exact matching trades some OCR recall for fewer misleading prices.
 
 Select **Island Rumours**, then **Refresh rumour sheet**, to load the [community spreadsheet](https://docs.google.com/spreadsheets/d/16YU8mSS7TdLPdmOunVjiPn_NrKVGfcnMkuMQDy8jgZA/edit). Each matched name shows a map, modifiers and community rating. A truncated name is accepted only with an explicit ellipsis and a unique match. Cached rumour data is marked old after 24 hours. No sheet credentials are requested. Ratings are community opinions, not guarantees.
 
@@ -43,16 +43,22 @@ The upstream review found background update staging/application and capture that
 
 The new core/service/UI tests cover exact gem matching, stack totals, currency conversion, malformed data, cache isolation, partial failures, rate limiting, unsafe redirects, response-size limits, focus loss, late OCR completion after stop, and escaped text. Packaged smoke tests cover the helper in both build modes without capturing the screen or generating game input. A separate read-only live-data probe fetched all five poe.ninja categories and the community rumour sheet successfully.
 
-Full-suite baseline note: the existing `item-sprites` and `transfer-reconciler` recorded-wand tests also fail on the unchanged `32b3468` checkout. They depend on a recorded inventory image and calibration; they are outside this helper's changes. The final task report records the actual check results. In-game OCR accuracy, drag calibration, monitor/DPI behavior and overlay placement still need a user check with the real game list.
+Full-suite baseline note: the existing `item-sprites` and `transfer-reconciler` recorded-wand tests also fail on the unchanged `32b3468` checkout. They depend on a recorded inventory image and calibration; they are outside this helper's changes.
+
+Live Windows testing on 2026-09-12 found and fixed missing WinRT language initialization. A new Windows integration test renders an in-memory text bitmap and runs the actual decoder/OCR pipeline twice; it neither captures the desktop nor sends input. The game test recognized all eight fully visible Runeshape reward names at 3840 × 2160 and 150% Windows scaling. Seven singleton markers were read as `lx`, so they now receive explicitly labelled unit estimates; the clear `3x Artificer's Orb` received its stack total. Overlay rows aligned beside the configured capture region and had no Node or application bridge. Losing game focus cleared the rows; Ctrl+Shift+F5 stopped and restarted scanning; Ctrl+Shift+F12 stopped scanning and latched the global kill switch. Reopening retained the region and data with scanning off.
+
+The calibration dialog opened, but the automation tool could not target that native form; the live capture test used a region configured from observed game coordinates. Drag selection remains a manual check. The tool's very short simulated Ctrl+Shift+Esc chord was not detected by the existing polling monitor; physical-key verification remains pending. Use the verified **Ctrl+Shift+F5** helper toggle or **Ctrl+Shift+F12** global emergency stop. Other monitor arrangements, list layouts and OCR languages were not live-tested.
 
 Validation snapshot, 2026-09-12:
 
 | Check | Result |
 | --- | --- |
 | Lint and TypeScript | Passed |
-| Helper/core/host/overlay/UI/preload checks | 37 passed |
-| Full Vitest suite | 919 passed; 2 pre-existing recorded-inventory failures |
+| Helper/core/host/overlay/UI/preload/native OCR checks | 40 passed as part of the full suite |
+| Full Vitest suite | 922 passed; 2 pre-existing recorded-inventory failures |
 | Public and QA Windows packages | Built successfully |
 | Selected packaged helper, dashboard, combat and activation checks | 8 passed; an earlier activation failure passed on isolated retry and on the complete rerun |
 | Dependency audit | 0 reported vulnerabilities |
 | Live public-data probes | Five categories loaded in Runes of Aldur and HC Forbidden Rites; 23 community rumours loaded |
+| Updated packages after the native OCR fix | Both built; both packaged helper smoke tests passed |
+| Live packaged helper | 244 prices, 23 rumours, eight real OCR reward rows; focus pause, dedicated toggle and F12 emergency stop passed |

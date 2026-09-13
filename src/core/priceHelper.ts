@@ -105,20 +105,28 @@ export function parseHelperStack(raw: string): { name: string; quantity: number 
 }
 export function priceHelperRow(text: string, snapshots: CategorySnapshot[], now = Date.now()): HelperRow {
   const row: HelperRow = { text: text.slice(0, 300), state: "unknown", stale: false, detail: "? — item, stack, or gem level could not be matched exactly" };
-  const stack = parseHelperStack(text);
+  // Windows OCR can read the game's singleton marker as "lx"/"Ix".
+  // Keep the exact item useful, but never invent a quantity or stack total.
+  const unreadableQuantity = /^[lI][x×]\s+/.test(text.trim());
+  const stack = parseHelperStack(unreadableQuantity ? text.trim().replace(/^[lI][x×]\s+/, "") : text);
   if (!stack) return row;
+  if (unreadableQuantity && /\s+(?:[x×]\s*\d+|\(\d+\))\s*$/i.test(text)) return row;
   const matches = snapshots.flatMap(s => s.prices.filter(p => normalizeHelperName(p.name) === stack.name).map(p => ({ p, s })));
   // No fuzzy/prefix fallback: especially never substitute a neighbouring gem level or type.
   if (matches.length !== 1) return row;
   const { p, s } = matches[0]!;
-  row.name = p.name; row.quantity = stack.quantity;
+  row.name = p.name; if (!unreadableQuantity) row.quantity = stack.quantity;
   row.stale = Boolean(s.error) || now - Date.parse(s.fetchedAt) >= 30 * 60_000;
   const useDivine = p.divine !== undefined && (p.divine * stack.quantity >= 1 || p.exalted === undefined);
   const unit = useDivine ? p.divine : p.exalted;
   if (unit === undefined) { row.state = "no-data"; row.detail = "No market data in the display currency"; return row; }
   row.currency = useDivine ? "div" : "ex";
-  row.unit = unit; row.total = unit * stack.quantity; row.state = "priced";
-  row.detail = `${formatHelperValue(row.total)} ${row.currency}${stack.quantity > 1 ? ` (${formatHelperValue(unit)} each)` : ""}${row.stale ? " · stale" : ""}`;
+  row.unit = unit; row.state = "priced";
+  if (unreadableQuantity) row.detail = `${formatHelperValue(unit)} ${row.currency} each · quantity unreadable${row.stale ? " · stale" : ""}`;
+  else {
+    row.total = unit * stack.quantity;
+    row.detail = `${formatHelperValue(row.total)} ${row.currency}${stack.quantity > 1 ? ` (${formatHelperValue(unit)} each)` : ""}${row.stale ? " · stale" : ""}`;
+  }
   return row;
 }
 export function formatHelperValue(value: number): string {
