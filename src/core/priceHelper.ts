@@ -106,10 +106,11 @@ export function parseHelperStack(raw: string): { name: string; quantity: number 
 }
 export function priceHelperRow(text: string, snapshots: CategorySnapshot[], now = Date.now()): HelperRow {
   const row: HelperRow = { text: text.slice(0, 300), state: "unknown", stale: false, detail: "? — item, stack, or gem level could not be matched exactly" };
-  // Windows OCR can read the game's singleton marker as "lx"/"Ix".
+  // Windows OCR can read the game's singleton marker as "lx"/"IX", sometimes after a dash.
   // Keep the exact item useful, but never invent a quantity or stack total.
-  const unreadableQuantity = /^[lI][x×]\s+/.test(text.trim());
-  const stack = parseHelperStack(unreadableQuantity ? text.trim().replace(/^[lI][x×]\s+/, "") : text);
+  const unreadableMarker = /^(?:[-–—]\s*)?[lI][xX×]\s+/;
+  const unreadableQuantity = unreadableMarker.test(text.trim());
+  const stack = parseHelperStack(unreadableQuantity ? text.trim().replace(unreadableMarker, "") : text);
   if (!stack) return row;
   if (unreadableQuantity && /\s+(?:[x×]\s*\d+|\(\d+\))\s*$/i.test(text)) return row;
   const matches = snapshots.flatMap(s => s.prices.filter(p => normalizeHelperName(p.name) === stack.name).map(p => ({ p, s })));

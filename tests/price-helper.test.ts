@@ -104,6 +104,24 @@ describe("read-only helper prices", () => {
     expect(priceHelperRow("lx Uncut Skill Gem (Level l9)", [snapshot("Uncut Skill Gem (Level 19)")], now).state).toBe("unknown");
     expect(priceHelperRow("lx Divine Orb (2)", [snapshot()], now).state).toBe("unknown");
   });
+  it.each(["IX", "lX", "-lx", "- lX", "–Ix", "– IX", "—lx", "— I×"])("recognizes the observed unreadable marker %s without guessing a stack", marker => {
+    const prices = [snapshot("Mystic Alloy", 3.5, 0.3), snapshot("Masterwork Rune", 9.5, 0.9)];
+    for (const [name, unit] of [["Mystic Alloy", 3.5], ["Masterwork Rune", 9.5]] as const) {
+      const row = priceHelperRow(`${marker} ${name}`, prices, now);
+      expect(row).toMatchObject({ state: "priced", name, unit, currency: "chaos" });
+      expect(row.detail).toContain("each · quantity unreadable");
+      expect(row.quantity).toBeUndefined(); expect(row.total).toBeUndefined();
+    }
+  });
+  it.each([
+    "IX Mystic Allov", "-lx Masterwork Runc", "IX Mystic Alloy x2", "-lx Masterwork Rune (3)",
+    "--lx Mystic Alloy", "–-IX Masterwork Rune", "OX Mystic Alloy", "0X Masterwork Rune",
+    "?x Mystic Alloy", "l0x Masterwork Rune", "-1x Mystic Alloy", "IXMasterwork Rune",
+  ])("refuses unrelated OCR errors or conflicting quantities: %s", text => {
+    const row = priceHelperRow(text, [snapshot("Mystic Alloy"), snapshot("Masterwork Rune")], now);
+    expect(row.state).toBe("unknown");
+    expect(row.quantity).toBeUndefined(); expect(row.total).toBeUndefined();
+  });
   it.each(["0x Divine Orb", "2x Divine Orb (3)", "Divine Orb xO", "999999x Divine Orb"])("refuses ambiguous quantities: %s", text => {
     expect(priceHelperRow(text, [snapshot()], now).state).toBe("unknown");
   });
