@@ -38,6 +38,8 @@ contextBridge.exposeInMainWorld("poe2", {
     refresh: () => ipcRenderer.invoke("price-helper:refresh"),
     refreshRumours: () => ipcRenderer.invoke("price-helper:refresh-rumours"),
     lookup: (text: string) => ipcRenderer.invoke("price-helper:lookup", text),
+    lookupLive: (text: string) => ipcRenderer.invoke("price-helper:lookup-live", text),
+    openTrade: (text: string) => ipcRenderer.invoke("price-helper:open-trade", text),
     calibrate: () => ipcRenderer.invoke("price-helper:calibrate"),
     start: () => ipcRenderer.invoke("price-helper:start"),
     stop: () => ipcRenderer.invoke("price-helper:stop"),

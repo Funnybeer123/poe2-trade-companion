@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, renameSync, statSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { HelperRewardService, type HelperRewardOptions } from "./helperRewardService.js";
 import {
   EXCHANGE_CATEGORIES, helperDefaults, parseNinjaExchange, parseRumourCsv, priceHelperRow,
   record, rumourHelperRow, validateHelperConfig, validRegion,
@@ -21,6 +22,7 @@ export interface HelperServiceOptions {
   hide(): void;
   fetchImpl?: typeof fetch;
   now?: () => number;
+  fetchReward?: HelperRewardOptions["fetchReward"];
 }
 function readJson(file: string): unknown {
   try {
@@ -39,7 +41,7 @@ export async function fetchHelperText(url: string, fetchImpl: typeof fetch, sign
     const parsed = new URL(url);
     const allowed = sheet
       ? parsed.hostname === "docs.google.com" || /^doc-[a-z0-9-]+-sheets\.googleusercontent\.com$/.test(parsed.hostname)
-      : parsed.hostname === "poe.ninja" && parsed.pathname === "/poe2/api/economy/exchange/current/overview";
+      : parsed.hostname === "poe.ninja" && parsed.pathname === "/poe2/api/economy/exchange/current/overview" || parsed.hostname === "www.pathofexile.com" && parsed.pathname === "/api/trade2/data/items" && !parsed.search;
     if (!allowed || parsed.protocol !== "https:" || parsed.port || parsed.username || parsed.password) throw new Error("Blocked an unexpected data endpoint.");
     const response = await fetchImpl(parsed.toString(), { signal, redirect: "manual", credentials: "omit", headers: { Accept: sheet ? "text/csv" : "application/json", "User-Agent": "PoE2TradeCompanion/0.1 (read-only price helper)" } });
     if ([301, 302, 303, 307, 308].includes(response.status)) {
@@ -49,7 +51,7 @@ export async function fetchHelperText(url: string, fetchImpl: typeof fetch, sign
       url = new URL(location, url).toString(); continue;
     }
     if (!response.ok) { await response.body?.cancel(); throw new Error(`Data service returned HTTP ${response.status}. Retry in a minute.`); }
-    const limit = sheet ? 1_000_000 : 4_000_000;
+    const limit = sheet ? 1_000_000 : parsed.hostname === "www.pathofexile.com" ? 2_000_000 : 4_000_000;
     if (Number(response.headers.get("content-length")) > limit) { await response.body?.cancel(); throw new Error("Data response is too large."); }
     if (!response.body) throw new Error("Empty data response.");
     const reader = response.body.getReader(), chunks: Uint8Array[] = []; let length = 0;
@@ -73,6 +75,9 @@ export class PriceHelperService {
   private running = false;
   private message = "Ready. Refresh prices, then calibrate an item list.";
   private rows: HelperRow[] = [];
+  private lastRows: HelperRow[] = [];
+  private lastCaptureAt?: string;
+  private rewards?: HelperRewardService;
   private generation = 0;
   private disposed = false;
   private timer?: ReturnType<typeof setInterval>;
@@ -85,6 +90,7 @@ export class PriceHelperService {
   constructor(private options: HelperServiceOptions) {
     try { const saved = readJson(path.join(options.directory, "settings.json")); if (saved) this.config = validateHelperConfig(saved); } catch { this.message = "Invalid saved settings were reset. Recalibrate before scanning."; }
     this.loadPrices();
+    if (options.fetchReward) this.rewards = new HelperRewardService({ directory: options.directory, now: options.now, fetchReward: options.fetchReward, readCatalog: async () => JSON.parse(await this.request("https://www.pathofexile.com/api/trade2/data/items")) as unknown });
     const cached = record(readJson(path.join(options.directory, "rumours.json")));
     if (typeof cached.csv === "string" && typeof cached.at === "string" && this.validStamp(cached.at)) {
       try { this.rumours = parseRumourCsv(cached.csv); this.rumoursFetchedAt = cached.at; } catch { /* Invalid cache is discarded. */ }
@@ -107,10 +113,12 @@ export class PriceHelperService {
   status(): HelperStatus {
     return { config: structuredClone(this.config), running: this.running, message: this.message, refreshing: Boolean(this.refreshing || this.rumourRefresh),
       categories: EXCHANGE_CATEGORIES.map(category => { const s = this.snapshots.find(s => s.category === category); return { category, count: s?.prices.length ?? 0, fetchedAt: s?.fetchedAt, error: s?.error }; }),
-      rows: structuredClone(this.rows), rumourCount: this.rumours.length, rumoursFetchedAt: this.rumoursFetchedAt, hotkeyErrors: [...this.hotkeyErrors] };
+      rows: this.reprice(this.rows), lastRows: this.reprice(this.lastRows), lastCaptureAt: this.lastCaptureAt, catalogCount: this.rewards?.catalog.length, catalogError: this.rewards?.catalogError,
+      rumourCount: this.rumours.length, rumoursFetchedAt: this.rumoursFetchedAt, hotkeyErrors: [...this.hotkeyErrors] };
   }
   configure(raw: unknown): HelperStatus {
     const config = validateHelperConfig(raw), changedLeague = config.league !== this.config.league;
+    if (changedLeague || config.mode !== this.config.mode || JSON.stringify(config.regions) !== JSON.stringify(this.config.regions)) { this.lastRows = []; this.lastCaptureAt = undefined; }
     writeJson(path.join(this.options.directory, "settings.json"), config);
     this.stop(); this.config = config;
     if (changedLeague) this.loadPrices();
@@ -136,7 +144,7 @@ export class PriceHelperService {
     const league = this.config.league, key = `prices:${league}`, now = this.now();
     if (now - (this.attempts.get(key) ?? -Infinity) < 60_000) { this.message = "Please wait a minute between price refreshes."; return Promise.resolve(this.status()); }
     this.attempts.set(key, now);
-    this.refreshing = this.pullPrices(league).finally(() => { this.refreshing = undefined; });
+    this.refreshing = Promise.all([this.pullPrices(league), this.rewards?.refreshCatalog()]).then(() => this.status()).finally(() => { this.refreshing = undefined; });
     return this.refreshing.then(() => this.status());
   }
   private async pullPrices(league: string): Promise<HelperStatus> {
@@ -186,7 +194,34 @@ export class PriceHelperService {
   }
   lookup(text: unknown): HelperRow[] {
     if (typeof text !== "string" || text.length > 30_000) throw new Error("Enter at most 30,000 characters.");
-    return text.split(/\r?\n/).filter(s => s.trim()).slice(0, 100).map(line => this.config.mode === "prices" ? priceHelperRow(line, this.snapshots, this.now()) : rumourHelperRow(line, this.rumours, this.rumoursFetchedAt, this.now()));
+    return text.split(/\r?\n/).filter(s => s.trim()).slice(0, 100).map(line => {
+      if (this.config.mode !== "prices") return rumourHelperRow(line, this.rumours, this.rumoursFetchedAt, this.now());
+      const row = priceHelperRow(line, this.snapshots, this.now());
+      return row.state === "priced" ? row : this.rewards?.row(line, this.config.league, this.snapshots) ?? row;
+    });
+  }
+  private reprice(rows: HelperRow[]): HelperRow[] { return rows.map(row => ({ ...this.lookup(row.text)[0]!, y: row.y, height: row.height })); }
+  private liveText(text: unknown): string {
+    if (typeof text !== "string" || !text.trim() || text.length > 300 || /[\r\n]/.test(text) || this.config.mode !== "prices" || !this.rewards || this.disposed) throw new Error("Enter one recognized reward, including its gem level, in price mode.");
+    return text;
+  }
+  async lookupLive(raw: unknown): Promise<HelperRow> {
+    const text = this.liveText(raw), league = this.config.league, generation = this.generation;
+    const canRun = () => !this.disposed && this.generation === generation && this.config.league === league;
+    await this.rewards!.refreshCatalog();
+    if (!canRun()) throw new Error("Lookup cancelled because the settings or scanning state changed.");
+    if (!this.rewards!.tradeUrl(text, league)) throw new Error("No exact trade identity. Enter the complete item name and gem level.");
+    const currency = this.snapshots.find(s => s.category === "Currency");
+    if (!currency || currency.error || this.now() - Date.parse(currency.fetchedAt) >= REFRESH_MS) await this.refresh();
+    await this.rewards!.request(text, league, canRun);
+    if (!canRun()) throw new Error("Lookup cancelled because the settings or scanning state changed.");
+    this.rows = this.reprice(this.rows); this.lastRows = this.reprice(this.lastRows);
+    return this.lookup(text)[0]!;
+  }
+  tradeUrl(raw: unknown): string {
+    const text = this.liveText(raw), url = this.rewards!.tradeUrl(text, this.config.league);
+    if (!url) throw new Error("No exact trade identity. Enter the complete item name and gem level.");
+    return url;
   }
   async calibrate(): Promise<HelperStatus> {
     this.stop(); const generation = this.generation, mode = this.config.mode;
@@ -205,6 +240,11 @@ export class PriceHelperService {
     if (this.config.mode === "prices" ? !this.snapshots.some(s => s.prices.length) : !this.rumours.length) { this.message = "Refresh data before scanning."; return this.status(); }
     this.running = true; this.message = "Waiting for Path of Exile 2…";
     const generation = ++this.generation;
+    if (this.config.mode === "prices" && this.config.livePrices && this.rewards) {
+      const currency = this.snapshots.find(s => s.category === "Currency");
+      if (!currency || currency.error || this.now() - Date.parse(currency.fetchedAt) >= REFRESH_MS) void this.refresh();
+      else void this.rewards.refreshCatalog();
+    }
     void this.tick(generation);
     return this.status();
   }
@@ -229,6 +269,14 @@ export class PriceHelperService {
         const row = this.lookup(l.text)[0];
         return row ? [{ ...row, y: l.y, height: l.height }] : [];
       });
+      if (this.rows.some(row => row.name)) { this.lastRows = structuredClone(this.rows); this.lastCaptureAt = new Date(this.now()).toISOString(); }
+      if (this.config.mode === "prices" && this.config.livePrices && this.rewards) {
+        const league = this.config.league;
+        for (const row of this.rows.filter(row => row.liveLookup && (row.state !== "priced" || row.stale))) {
+          void this.rewards.request(row.text, league, () => this.running && !this.disposed && this.generation === generation && this.config.league === league && this.rows.some(current => current.text === row.text));
+        }
+        this.rows = this.reprice(this.rows);
+      }
       if (this.rows.length) await this.options.show(this.rows, record(result.target), this.config);
       else this.options.hide();
       if (!this.running || generation !== this.generation) return;

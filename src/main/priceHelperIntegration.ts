@@ -1,4 +1,4 @@
-import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, Tray } from "electron";
+import { app, BrowserWindow, globalShortcut, ipcMain, Menu, screen, shell, Tray } from "electron";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { startWinHost } from "../adapters/winHost.js";
@@ -6,6 +6,7 @@ import { HELPER_THEMES, type HelperConfig, type HelperRow } from "../core/priceH
 import { helperOverlayLabel } from "../core/helperOverlayLabel.js";
 import { HELPER_CURRENCY_ICONS } from "./priceHelperIcons.js";
 import { PriceHelperService } from "./priceHelperService.js";
+import type { HelperRewardOptions } from "./helperRewardService.js";
 
 const OVERLAY = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:"><style>
 body{margin:0;background:transparent;color:#e2e8f0;font:700 20px 'Segoe UI',sans-serif;overflow:hidden}
@@ -79,7 +80,7 @@ export class HelperOverlay {
         if (${config.debug}) { const small = document.createElement('small'); small.textContent = row.raw; el.append(small); }
         root.append(el);
       }
-      document.getElementById('stamp').textContent = ${JSON.stringify(config.mode === "prices" ? `${config.league} · poe.ninja estimate` : "Community rumour ratings")};
+      document.getElementById('stamp').textContent = ${JSON.stringify(config.mode === "prices" ? `${config.league} · ${rows.some(row => row.source === "trade") ? "≈ trade listings · variants vary" : "poe.ninja estimate"}` : "Community rumour ratings")};
     })()`);
     if (generation === this.generation && !window.isDestroyed()) {
       // Borderless games can occupy the topmost layer; raise prices without taking focus.
@@ -90,12 +91,12 @@ export class HelperOverlay {
   }
 }
 
-export function installPriceHelper(getMain: () => BrowserWindow | undefined): PriceHelperService {
+export function installPriceHelper(getMain: () => BrowserWindow | undefined, fetchReward?: HelperRewardOptions["fetchReward"]): PriceHelperService {
   const overlay = new HelperOverlay();
   let host: ReturnType<typeof startWinHost> | undefined;
   const ensureHost = (calibration = false) => host ??= startWinHost({ scriptName: "win-price-helper.ps1", requestTimeoutMs: calibration ? 70000 : 15000 });
   const closeHost = () => { void host?.close(); host = undefined; };
-  const service = new PriceHelperService({ directory: path.join(app.getPath("userData"), "price-helper"),
+  const service = new PriceHelperService({ directory: path.join(app.getPath("userData"), "price-helper"), fetchReward,
     capture: {
       read: async region => { try { return await ensureHost().send({ op: "read", region }); } catch (error) { closeHost(); throw error; } },
       calibrate: async () => { const calibrationHost = ensureHost(true); try { return await calibrationHost.send({ op: "calibrate" }); } finally { if (host === calibrationHost) closeHost(); } },
@@ -106,6 +107,7 @@ export function installPriceHelper(getMain: () => BrowserWindow | undefined): Pr
   const handlers: Record<string, (value?: unknown) => unknown> = {
     status: () => service.status(), configure: raw => service.configure(raw), refresh: () => service.refresh(),
     "refresh-rumours": () => service.refreshRumours(), lookup: text => service.lookup(text), calibrate: () => service.calibrate(), start: () => service.start(), stop: () => service.stop(),
+    "lookup-live": text => service.lookupLive(text), "open-trade": text => shell.openExternal(service.tradeUrl(text)),
   };
   for (const [action, handler] of Object.entries(handlers)) ipcMain.handle(`price-helper:${action}`, (event, value: unknown) => {
     const main = getMain();

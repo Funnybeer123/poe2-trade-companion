@@ -3,6 +3,7 @@ import { fileURLToPath } from "node:url";
 import { expect, it } from "vitest";
 import { resolveWinHostScript } from "../../src/adapters/winHost.js";
 import { priceHelperRow, type CategorySnapshot } from "../../src/core/priceHelper.js";
+import { identifyHelperReward, parseRewardCatalog } from "../../src/core/helperReward.js";
 
 it.skipIf(process.platform !== "win32")("recognizes an in-memory bitmap through the real Windows OCR pipeline repeatedly", () => {
   const script = resolveWinHostScript("win-price-helper.ps1").replaceAll("'", "''");
@@ -34,6 +35,41 @@ try {
     expect(lines[0].y).toBeGreaterThan(0);
     expect(lines[0].height).toBeGreaterThan(0);
   }
+}, 30_000);
+
+it.skipIf(process.platform !== "win32")("identifies all six level-20 Runeshape gems from the supplied screenshot through native OCR", () => {
+  const script = resolveWinHostScript("win-price-helper.ps1").replaceAll("'", "''");
+  const fixture = fileURLToPath(new URL("../../fixtures/price-helper/runeshape-level20-skills.png", import.meta.url)).replaceAll("'", "''");
+  // Decode the supplied panel offline through the same function used by the scanner.
+  // Keep the verified crop and original pixel scale; never capture or operate the game.
+  const command = `
+. '${script}'
+$attachment = New-Object System.Drawing.Bitmap '${fixture}'
+$crop = $null
+try {
+  $rect = New-Object System.Drawing.Rectangle 250, 155, 491, 613
+  $crop = $attachment.Clone($rect, $attachment.PixelFormat)
+  $lines = @(Convert-PriceBitmapToLines $crop)
+  [Console]::WriteLine((ConvertTo-Json -InputObject $lines -Compress))
+} finally { if ($null -ne $crop) { $crop.Dispose() }; $attachment.Dispose() }
+`;
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-WindowStyle", "Hidden", "-ExecutionPolicy", "Bypass", "-Command", command], {
+    input: "quit\n", encoding: "utf8", timeout: 25_000, windowsHide: true,
+  });
+  expect(result.error).toBeUndefined(); expect(result.status, result.stderr).toBe(0);
+  const lines = JSON.parse(result.stdout.trim()) as Array<{ text: string; y: number; height: number }>;
+  const names = ["Rain of Blades", "Wardbound Minions", "Voltaic Barrier", "Hollow Shell", "Explosive Transmutation", "Animus Splinters"];
+  const catalog = parseRewardCatalog({ result: [{ id: "gem", entries: names.map(type => ({ type })) }] });
+  const rewards = lines.map(line => ({ ...line, identity: identifyHelperReward(line.text, catalog) })).filter(row => row.identity);
+  expect(rewards.map(row => row.identity), JSON.stringify(lines)).toEqual(names.map(name => ({ name, type: name, kind: "gem", gemLevel: 20, quantity: 1 })));
+  // Each identity must remain in its own reward band, even if rune icons produce extra OCR lines.
+  const expectedCenters = [32, 140, 248, 357, 465, 573];
+  rewards.forEach((row, index) => {
+    expect(row.y).toBeGreaterThanOrEqual(0); expect(row.height).toBeGreaterThan(0);
+    expect(row.y + row.height).toBeLessThanOrEqual(613);
+    expect(Math.abs(row.y + row.height / 2 - expectedCenters[index]!)).toBeLessThan(8);
+    if (index) expect(row.y).toBeGreaterThan(rewards[index - 1]!.y + rewards[index - 1]!.height);
+  });
 }, 30_000);
 
 it.skipIf(process.platform !== "win32")("prices both reported Runeshape rewards from native and scaled screenshot OCR", () => {

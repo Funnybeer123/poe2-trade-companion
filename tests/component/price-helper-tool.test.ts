@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import PriceHelperTool from "../../src/renderer/components/tools/PriceHelperTool.vue";
 import { EXCHANGE_CATEGORIES, helperDefaults, type HelperRow, type HelperStatus } from "../../src/core/priceHelper.js";
 
-afterEach(() => { delete window.poe2; });
+afterEach(() => { delete window.poe2; vi.useRealTimers(); });
 describe("price helper controls", () => {
   it("explains the desktop requirement in browser preview", async () => {
     const wrapper = mount(PriceHelperTool); await flushPromises();
@@ -36,6 +36,63 @@ describe("price helper controls", () => {
     const wrapper = mount(PriceHelperTool); await flushPromises();
     expect(wrapper.find('[aria-label="Price highlight legend"]').exists()).toBe(false);
     wrapper.unmount();
+  });
+  it("retains the last captured rows after focus loss and identifies them as an older list", async () => {
+    vi.useFakeTimers();
+    const captured: HelperRow = { text: "Skill Level 20: Rain of Blades", state: "no-data", stale: false, detail: "Not in the exchange feed", liveLookup: true };
+    let state: HelperStatus = { config: helperDefaults(), running: true, refreshing: false, message: "Scanning prices", categories: [], rows: [captured], rumourCount: 0, hotkeyErrors: [] };
+    const bridge = { status: vi.fn(async () => structuredClone(state)), lookup: vi.fn(async () => [{ text: "Manual item", state: "unknown" as const, stale: false, detail: "?" }]) };
+    window.poe2 = { priceHelper: bridge } as unknown as NonNullable<Window["poe2"]>;
+    const wrapper = mount(PriceHelperTool); await flushPromises();
+    expect(wrapper.text()).not.toContain("Last captured list");
+    state = { ...state, rows: [], lastRows: [captured], lastCaptureAt: "2026-09-13T01:00:00Z", message: "Paused: game focus changed." };
+    await vi.advanceTimersByTimeAsync(1000); await flushPromises();
+    expect(wrapper.get("tbody").text()).toContain(captured.text);
+    expect(wrapper.text()).toContain("Last captured list"); expect(wrapper.text()).toContain("These rows are from the last successful capture.");
+    expect(wrapper.findAll("button").some(button => button.text() === "Check live price")).toBe(true);
+    await wrapper.get("textarea").setValue("Manual item");
+    await wrapper.findAll("button").find(button => button.text() === "Look up list")!.trigger("click"); await flushPromises();
+    expect(wrapper.get("tbody").text()).toContain("Manual item"); expect(wrapper.get("tbody").text()).not.toContain(captured.text);
+    expect(wrapper.text()).not.toContain("Last captured list"); wrapper.unmount();
+  });
+  it("checks one exact reward through the bridge and shows the listing source, sample count and limitations", async () => {
+    const captured: HelperRow = { text: "Skill Level 20: Rain of Blades", state: "no-data", stale: false, detail: "Live lookup available", liveLookup: true };
+    const quote: HelperRow = { ...captured, state: "priced", source: "trade", sampleCount: 5, unit: 2, total: 2, quantity: 1, currency: "div", rangeHigh: 4, detail: "≈2–4 div · observed listings" };
+    const state: HelperStatus = { config: helperDefaults(), running: false, refreshing: false, message: "Paused", categories: [], rows: [], lastRows: [captured], lastCaptureAt: "2026-09-13T01:00:00Z", catalogCount: 6, rumourCount: 0, hotkeyErrors: [] };
+    let finish!: (row: HelperRow) => void;
+    const bridge = { status: vi.fn(async () => structuredClone(state)), lookupLive: vi.fn(() => new Promise<HelperRow>(resolve => { finish = resolve; })), openTrade: vi.fn(async () => {}) };
+    window.poe2 = { priceHelper: bridge } as unknown as NonNullable<Window["poe2"]>;
+    const wrapper = mount(PriceHelperTool); await flushPromises();
+    await wrapper.findAll("button").find(button => button.text() === "Check live price")!.trigger("click");
+    expect(bridge.lookupLive).toHaveBeenCalledWith(captured.text);
+    expect(wrapper.get("tbody").text()).toContain("Checking…");
+    finish(quote); await flushPromises();
+    expect(wrapper.get("tbody").text()).toContain("≈2–4 div");
+    expect(wrapper.get("tbody").text()).toContain("Official trade listings · 5 samples");
+    expect(wrapper.get("tbody").text()).toContain("quality, corruption and sockets can differ");
+    expect(wrapper.text()).toContain("Live searches preserve the exact gem name and level");
+    expect(wrapper.text()).toContain("6 official catalogue entries loaded for exact matching");
+    await wrapper.findAll("button").find(button => button.text() === "Open trade search")!.trigger("click"); await flushPromises();
+    expect(bridge.openTrade).toHaveBeenCalledWith(captured.text); wrapper.unmount();
+  });
+  it("shows a live lookup failure beside its row", async () => {
+    const state: HelperStatus = { config: helperDefaults(), running: false, refreshing: false, message: "Ready", categories: [], rows: [{ text: "Skill Level 20: Hollow Shell", state: "no-data", stale: false, detail: "Live lookup available", liveLookup: true }], rumourCount: 0, hotkeyErrors: [] };
+    const bridge = { status: vi.fn(async () => state), lookupLive: vi.fn(async () => { throw new Error("Trade lookup is rate limited. Try again later."); }) };
+    window.poe2 = { priceHelper: bridge } as unknown as NonNullable<Window["poe2"]>;
+    const wrapper = mount(PriceHelperTool); await flushPromises();
+    await wrapper.findAll("button").find(button => button.text() === "Check live price")!.trigger("click"); await flushPromises();
+    expect(wrapper.get('tbody [role="alert"]').text()).toContain("rate limited");
+    expect(wrapper.findAll("button").find(button => button.text() === "Check live price")!.attributes("disabled")).toBeUndefined();
+    wrapper.unmount();
+  });
+  it("saves the missing-reward live lookup preference", async () => {
+    const state: HelperStatus = { config: { ...helperDefaults(), livePrices: true }, running: false, refreshing: false, message: "Ready", categories: [], rows: [], rumourCount: 0, hotkeyErrors: [] };
+    const bridge = { status: vi.fn(async () => state), configure: vi.fn(async (config: HelperStatus["config"]) => ({ ...state, config })) };
+    window.poe2 = { priceHelper: bridge } as unknown as NonNullable<Window["poe2"]>;
+    const wrapper = mount(PriceHelperTool); await flushPromises();
+    expect(wrapper.text()).toContain("Look up missing reward prices live");
+    await wrapper.get("#helper-live-prices").setValue(false); await flushPromises();
+    expect(bridge.configure).toHaveBeenCalledWith(expect.objectContaining({ livePrices: false })); wrapper.unmount();
   });
   it("uses the bridge for refresh and escaped lookup results", async () => {
     const state: HelperStatus = { config: helperDefaults(), running: false, refreshing: false, message: "Ready", categories: EXCHANGE_CATEGORIES.map(category => ({ category, count: 0 })), rows: [], rumourCount: 0, hotkeyErrors: [] };

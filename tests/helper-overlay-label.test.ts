@@ -12,6 +12,32 @@ describe("compact price overlay labels", () => {
     expect(helperOverlayLabel(priceHelperRow("3x Test Item", prices, now))).toBe("8.96 (2.99)");
     expect(helperOverlayLabel(priced({ currency: "div", unit: 12, total: 12 }))).toBe("12");
   });
+  it("marks trade samples as approximate and shows their observed range", () => {
+    expect(helperOverlayLabel(priced({ source: "trade", rangeHigh: 5, sampleCount: 7 }))).toBe("≈2–5");
+    expect(helperOverlayLabel(priced({ source: "trade", rangeHigh: 2 }))).toBe("≈2");
+    expect(helperOverlayLabel(priced({ source: "trade" }))).toBe("≈2");
+    expect(helperOverlayLabel(priced({ source: "trade", rangeHigh: 5, stale: true }))).toBe("≈2–5 · stale");
+  });
+  it("treats a known stack rangeHigh as the upper total and derives the parenthesized unit range", () => {
+    expect(helperOverlayLabel(priced({ source: "trade", quantity: 3, total: 6, rangeHigh: 15 }))).toBe("≈6–15 (2–5)");
+    expect(helperOverlayLabel(priced({ source: "trade", quantity: 3, total: 6, rangeHigh: 6 }))).toBe("≈6 (2)");
+  });
+  it("shows only the unit listing range when the quantity is unreadable", () => {
+    expect(helperOverlayLabel(priced({ source: "trade", quantity: undefined, total: undefined, rangeHigh: 5, detail: "2 chaos each · quantity unreadable" }))).toBe("≈2–5 each · qty ?");
+  });
+  it("distinguishes pending and unavailable live searches from absent feed data", () => {
+    expect(helperOverlayLabel(priced({ state: "no-data", lookupState: "pending" }))).toBe("Checking…");
+    expect(helperOverlayLabel(priced({ state: "no-data", lookupState: "error" }))).toBe("No live price");
+    expect(helperOverlayLabel(priced({ state: "no-data", lookupState: "unavailable" }))).toBe("No live price");
+    expect(helperOverlayLabel(priced({ state: "no-data" }))).toBe("No data");
+  });
+  it.each([NaN, Infinity, -1, 0, 1])("rejects a malformed trade range: %s", rangeHigh => {
+    expect(helperOverlayLabel(priced({ source: "trade", rangeHigh }))).toBe("?");
+    expect(helperOverlayLabel(priced({ source: "trade", quantity: undefined, total: undefined, detail: "quantity unreadable", rangeHigh }))).toBe("?");
+  });
+  it("rejects an upper stack total below its lower total", () => {
+    expect(helperOverlayLabel(priced({ source: "trade", quantity: 3, total: 6, rangeHigh: 5 }))).toBe("?");
+  });
   it("keeps unreadable quantities explicit without presenting a stack total", () => {
     const row = priceHelperRow("lx Test Item", prices, now);
     expect(row.quantity).toBeUndefined(); expect(row.total).toBeUndefined();

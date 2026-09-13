@@ -8,6 +8,7 @@ export interface HelperRegion { x: number; y: number; width: number; height: num
 export interface HelperConfig {
   league: string;
   autoRefresh: boolean;
+  livePrices: boolean;
   theme: keyof typeof HELPER_THEMES;
   mode: HelperMode;
   debug: boolean;
@@ -17,11 +18,12 @@ export interface HelperConfig {
 export interface ExchangePrice { id: string; name: string; chaos?: number; exalted?: number; divine?: number }
 export interface CategorySnapshot { category: ExchangeCategory; fetchedAt: string; prices: ExchangePrice[]; error?: string }
 export interface Rumour { name: string; map: string; mods: string; rating: string }
-export interface HelperRow { text: string; name?: string; quantity?: number; total?: number; unit?: number; currency?: "chaos" | "div"; valueTier?: "high" | "very-high"; state: "priced" | "unknown" | "no-data" | "rumour"; stale: boolean; detail: string; y?: number; height?: number }
+export interface HelperRow { text: string; name?: string; quantity?: number; total?: number; unit?: number; currency?: "chaos" | "div"; valueTier?: "high" | "very-high"; state: "priced" | "unknown" | "no-data" | "rumour"; stale: boolean; detail: string; y?: number; height?: number; liveLookup?: boolean; source?: "trade"; sampleCount?: number; rangeHigh?: number; lookupState?: "pending" | "error" | "unavailable" }
 export interface HelperStatus {
   config: HelperConfig; running: boolean; message: string; refreshing: boolean;
   categories: Array<{ category: ExchangeCategory; count: number; fetchedAt?: string; error?: string }>;
   rows: HelperRow[]; rumourCount: number; rumoursFetchedAt?: string; hotkeyErrors: string[];
+  lastRows?: HelperRow[]; lastCaptureAt?: string; catalogCount?: number; catalogError?: string;
 }
 export interface PriceHelperBridge {
   status(): Promise<HelperStatus>;
@@ -29,12 +31,14 @@ export interface PriceHelperBridge {
   refresh(): Promise<HelperStatus>;
   refreshRumours(): Promise<HelperStatus>;
   lookup(text: string): Promise<HelperRow[]>;
+  lookupLive(text: string): Promise<HelperRow>;
+  openTrade(text: string): Promise<void>;
   calibrate(): Promise<HelperStatus>;
   start(): Promise<HelperStatus>;
   stop(): Promise<HelperStatus>;
 }
 export function helperDefaults(): HelperConfig {
-  return { league: "Runes of Aldur", autoRefresh: false, theme: "Toxic", mode: "prices", debug: false, minimizeToTray: false, regions: {} };
+  return { league: "Runes of Aldur", autoRefresh: false, livePrices: true, theme: "Toxic", mode: "prices", debug: false, minimizeToTray: false, regions: {} };
 }
 export function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
@@ -51,6 +55,7 @@ export function validateHelperConfig(value: unknown): HelperConfig {
   if (typeof v.league !== "string" || !/^[\p{L}\p{N}][\p{L}\p{N} '()-]{0,79}$/u.test(v.league)) throw new Error("Enter a valid league name (up to 80 characters).");
   if (!Object.hasOwn(HELPER_THEMES, String(v.theme)) || !["prices", "rumours"].includes(String(v.mode))) throw new Error("Invalid helper theme or mode.");
   if ([v.autoRefresh, v.debug, v.minimizeToTray].some(b => typeof b !== "boolean")) throw new Error("Invalid helper setting.");
+  if (v.livePrices !== undefined && typeof v.livePrices !== "boolean") throw new Error("Invalid live-price setting.");
   const regions: HelperConfig["regions"] = {};
   for (const mode of ["prices", "rumours"] as const) {
     const region = record(v.regions)[mode];
@@ -59,7 +64,7 @@ export function validateHelperConfig(value: unknown): HelperConfig {
       regions[mode] = { ...region };
     }
   }
-  return { league: v.league.trim(), autoRefresh: v.autoRefresh as boolean, theme: v.theme as HelperConfig["theme"], mode: v.mode as HelperMode, debug: v.debug as boolean, minimizeToTray: v.minimizeToTray as boolean, regions };
+  return { league: v.league.trim(), autoRefresh: v.autoRefresh as boolean, livePrices: v.livePrices !== false, theme: v.theme as HelperConfig["theme"], mode: v.mode as HelperMode, debug: v.debug as boolean, minimizeToTray: v.minimizeToTray as boolean, regions };
 }
 function positive(value: unknown): value is number { return typeof value === "number" && Number.isFinite(value) && value > 0 && value <= 1e12; }
 function safeText(value: unknown, max = 180): value is string { return typeof value === "string" && value.trim().length > 0 && value.length <= max && !/[\x00-\x08\x0b-\x1f]/.test(value); }

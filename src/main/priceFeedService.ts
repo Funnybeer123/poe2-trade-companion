@@ -41,6 +41,7 @@ import {
 } from "../core/tradePacing.js";
 import { looksLikePoeItemText, parseItemText } from "../core/parseItem.js";
 import type { PriceTable } from "../core/priceTable.js";
+import { buildRewardTradeQuery, buildRewardTradeUrl, type RewardIdentity } from "../core/helperReward.js";
 
 const SCOUT_BASE = "https://api.poe2scout.com/poe2";
 const TRADE_BASE = "https://www.pathofexile.com/api/trade2";
@@ -86,6 +87,62 @@ function headerOf(response: Response, name: string): string | undefined {
   return headers.get(name) ?? undefined;
 }
 const FETCH_TIMEOUT_MS = 20_000;
+const HELPER_TRADE_TIMEOUT_MS = 15_000;
+const HELPER_TRADE_MAX_BYTES = 2 * 1024 * 1024;
+
+interface TradeResponseReader<T> {
+  read: (response: Response, signal: AbortSignal) => Promise<T>;
+  timeoutMs: number;
+  canRun?: () => boolean;
+}
+
+/** Consume the body under the request deadline; never expose an API error body. */
+async function helperTradeJson(response: Response, signal: AbortSignal): Promise<unknown> {
+  if (response.status === 429) throw new Error("trade2 rate limit hit — try again after the restriction lifts.");
+  if (!response.ok) throw new Error(`trade2 lookup → HTTP ${response.status}`);
+  if (response.redirected) throw new Error("trade2 redirects are not allowed.");
+  const declared = Number(headerOf(response, "content-length"));
+  if (declared > HELPER_TRADE_MAX_BYTES) {
+    void response.body?.cancel().catch(() => undefined);
+    throw new Error("trade2 response exceeds the 2 MB limit.");
+  }
+  if (!response.body) throw new Error("trade2 returned no response body.");
+  const reader = response.body.getReader();
+  const cancel = () => { void reader.cancel().catch(() => undefined); };
+  signal.addEventListener("abort", cancel, { once: true });
+  const chunks: Uint8Array[] = [];
+  let length = 0;
+  try {
+    while (true) {
+      if (signal.aborted) throw new Error("trade2 lookup timed out.");
+      const chunk = await reader.read();
+      if (signal.aborted) throw new Error("trade2 lookup timed out.");
+      if (chunk.done) break;
+      length += chunk.value.byteLength;
+      if (length > HELPER_TRADE_MAX_BYTES) {
+        cancel();
+        throw new Error("trade2 response exceeds the 2 MB limit.");
+      }
+      chunks.push(chunk.value);
+    }
+    const bytes = new Uint8Array(length);
+    let offset = 0;
+    for (const chunk of chunks) { bytes.set(chunk, offset); offset += chunk.byteLength; }
+    try { return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes)) as unknown; }
+    catch { throw new Error("trade2 returned invalid JSON."); }
+  } finally {
+    signal.removeEventListener("abort", cancel);
+    reader.releaseLock();
+  }
+}
+
+export interface HelperRewardFetchResult {
+  /** Main-process only: the helper validates and strips account data before IPC. */
+  payload?: unknown;
+  fetchedAt?: string;
+  tradeUrl?: string;
+  error?: string;
+}
 
 export interface PriceFeedConfig {
   /** League name, or "auto" to use the current softcore trade league. */
@@ -384,23 +441,34 @@ export class PriceFeedService {
   // trade2 comps
   // -------------------------------------------------------------------------
 
-  private async tradeRequest(url: string, init: RequestInit): Promise<Response> {
+  private tradeRequest(url: string, init: RequestInit): Promise<Response>;
+  private tradeRequest<T>(url: string, init: RequestInit, reader: TradeResponseReader<T>): Promise<T>;
+  private async tradeRequest<T>(url: string, init: RequestInit, reader?: TradeResponseReader<T>): Promise<Response | T> {
     // Serialize all trade2 traffic; the pacer spaces it from the server's
     // own rate-limit rules so no window ever fills.
     const policy = policyForUrl(url);
     const run = this.tradeChain.then(async () => {
+      if (reader?.canRun && !reader.canRun()) throw new Error("Reward lookup cancelled.");
+      if (reader && this.helperTradeRestricted()) throw new Error("trade2 rate limit is active — try again after the restriction lifts.");
       const gap = this.options.tradeSpacingMs ?? TRADE_MIN_GAP_MS;
       const wait = Math.max(
         this.pacer.delayFor(policy),
         this.lastTradeRequestAt + gap - Date.now(),
       );
       if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      if (reader?.canRun && !reader.canRun()) throw new Error("Reward lookup cancelled.");
+      if (reader && this.helperTradeRestricted()) throw new Error("trade2 rate limit is active — try again after the restriction lifts.");
       this.lastTradeRequestAt = Date.now();
       this.pacer.record(policy);
       const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+      let timeoutReject: ((reason: Error) => void) | undefined;
+      const timeout = new Promise<never>((_, reject) => { timeoutReject = reject; });
+      const timer = setTimeout(() => {
+        controller.abort();
+        timeoutReject?.(new Error("trade2 lookup timed out."));
+      }, reader?.timeoutMs ?? FETCH_TIMEOUT_MS);
       try {
-        const response = await this.fetchImpl(url, {
+        const response = await Promise.race([this.fetchImpl(url, {
           ...init,
           headers: {
             "User-Agent": USER_AGENT,
@@ -412,22 +480,66 @@ export class PriceFeedService {
             ...(init.headers ?? {}),
           },
           signal: controller.signal,
-        });
+        }), timeout]);
+        const retryAfter = headerOf(response, "retry-after");
+        const retrySeconds = Number(retryAfter);
+        const retryDate = Date.parse(retryAfter ?? "");
+        const helperRetryAfter = Number.isFinite(retrySeconds) && retrySeconds > 0 ? retryAfter
+          : Number.isFinite(retryDate) ? String(Math.max(1, Math.ceil((retryDate - Date.now()) / 1000))) : "60";
         this.pacer.observe(policy, {
           rules: headerOf(response, "x-rate-limit-ip"),
           state: headerOf(response, "x-rate-limit-ip-state"),
-          ...(response.status === 429 ? { retryAfter: headerOf(response, "retry-after") } : {}),
+          ...(response.status === 429 ? { retryAfter: reader ? helperRetryAfter : retryAfter } : {}),
         });
         const restricted = this.pacer.restrictedUntil();
         if (restricted > this.rateLimitedUntil) this.rateLimitedUntil = restricted;
         this.savePacing();
-        return response;
+        return reader ? await Promise.race([reader.read(response, controller.signal), timeout]) : response;
       } finally {
         clearTimeout(timer);
       }
     });
     this.tradeChain = run.catch(() => undefined);
     return run;
+  }
+
+  private helperTradeRestricted(): boolean {
+    return Math.max(this.rateLimitedUntil, this.pacer.restrictedUntil()) > Date.now();
+  }
+
+  /** A bounded, paced search/fetch for an already identified reward. Never retries a 429. */
+  async fetchHelperReward(identity: RewardIdentity, league: string, canRun?: () => boolean): Promise<HelperRewardFetchResult> {
+    if (typeof league !== "string" || league.length > 80 || !/^[\p{L}\p{N}]/u.test(league) || /[^\p{L}\p{N} '()-]/u.test(league)) {
+      return { error: "Invalid reward league." };
+    }
+    const query = buildRewardTradeQuery(identity);
+    const tradeUrl = buildRewardTradeUrl(identity, league);
+    if (!query || !tradeUrl) return { error: "The reward could not be identified exactly." };
+    if (this.helperTradeRestricted()) return { tradeUrl, error: "trade2 rate limit is active — try again after the restriction lifts." };
+    const read = { read: helperTradeJson, timeoutMs: HELPER_TRADE_TIMEOUT_MS, canRun };
+    const init = { redirect: "error", credentials: "omit" } as const;
+    try {
+      const payload = await this.tradeRequest(
+        `${TRADE_BASE}/search/poe2/${encodeURIComponent(league)}`,
+        { ...init, method: "POST", body: JSON.stringify(query) }, read,
+      );
+      const search = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
+      if (typeof search.id !== "string" || !search.id.length || search.id.length > 2048 || /[^A-Za-z0-9_-]/.test(search.id) || !Array.isArray(search.result)) {
+        throw new Error("trade2 returned an invalid search result.");
+      }
+      const ids = search.result.slice(0, 10);
+      if (ids.some(id => typeof id !== "string" || id.length !== 64 || /[^a-fA-F0-9]/.test(id))) {
+        throw new Error("trade2 returned an invalid listing ID.");
+      }
+      if (!ids.length) return { payload: { result: [] }, fetchedAt: this.now().toISOString(), tradeUrl };
+      const result = await this.tradeRequest(
+        `${TRADE_BASE}/fetch/${[...new Set(ids)].join(",")}?query=${encodeURIComponent(search.id)}`,
+        { ...init, method: "GET" }, read,
+      );
+      return { payload: result, fetchedAt: this.now().toISOString(), tradeUrl };
+    } catch (error) {
+      return { tradeUrl, error: error instanceof Error ? error.message.slice(0, 200) : "trade2 lookup failed." };
+    }
   }
 
   /**

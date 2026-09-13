@@ -43,8 +43,8 @@ The automation implementation must include:
 ### Live price and Island Rumour helper
 
 **Tools & QA → Price helper** adds poe.ninja prices for five exchange categories,
-Forbidden Rites league choices, stack totals, exact gem-level matching, a local
-Windows OCR overlay, and community Island Rumour ratings. Refresh data, calibrate
+league choices, stack totals, exact gem-level matching, live official trade lookups
+for missing named rewards, a local Windows OCR overlay, and Island Rumour ratings. Refresh data, calibrate
 the visible list, then start scanning. Capture is read-only and stops on unverified
 game focus. See [the helper guide and security notes](docs/PRICE_HELPER.md).
 

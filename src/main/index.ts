@@ -762,7 +762,7 @@ if (ownsInstance) void app.whenReady().then(() => {
   ipcMain.handle("runtime:mode", () => buildMode);
   registerCalibrationIpc();
   createWindow();
-  priceHelperService = installPriceHelper(() => mainWindow);
+  priceHelperService = installPriceHelper(() => mainWindow, (identity, league, canRun) => priceFeedService!.fetchHelperReward(identity, league, canRun));
   setInterval(() => {
     void evaluateClipboard();
   }, 750);
