@@ -3,10 +3,18 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { startWinHost } from "../adapters/winHost.js";
 import { HELPER_THEMES, type HelperConfig, type HelperRow } from "../core/priceHelper.js";
+import { helperOverlayLabel } from "../core/helperOverlayLabel.js";
+import { HELPER_CURRENCY_ICONS } from "./priceHelperIcons.js";
 import { PriceHelperService } from "./priceHelperService.js";
 
-const OVERLAY = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>
-body{margin:0;background:transparent;color:#86efac;font:600 13px 'Segoe UI',sans-serif;overflow:hidden} .row{position:absolute;left:4px;right:4px;padding:3px 8px;line-height:18px;transform:translateY(-50%);background:#10151aee;border-left:2px solid currentColor;border-radius:3px}.price{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.high{color:#facc15}.very-high{color:#f472b6}.unknown{color:#aaa}.stale{color:#fbbf24}small{position:absolute;top:100%;left:0;right:0;padding:0 8px;font-size:10px;color:#ccc;background:#10151aee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#stamp{position:absolute;bottom:0;right:6px;color:#aaa;font-size:10px;background:#10151a}
+const OVERLAY = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; img-src data:"><style>
+body{margin:0;background:transparent;color:#e2e8f0;font:700 20px 'Segoe UI',sans-serif;overflow:hidden}
+.row{position:absolute;left:4px;max-width:calc(100% - 8px);min-height:30px;display:flex;align-items:center;gap:7px;line-height:26px;transform:translateY(-50%);background:transparent;text-shadow:-1px -1px 0 #000,1px -1px 0 #000,-1px 1px 0 #000,1px 1px 0 #000,0 2px 4px #000}
+.currency{display:block;flex:none;width:30px;height:30px}.currency img{display:block;width:100%;height:100%;object-fit:contain;filter:drop-shadow(0 1px 2px #000)}
+.price{display:block;min-width:0;font-variant-numeric:tabular-nums;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.rumour{font-size:13px;line-height:18px}.high{color:#facc15}.very-high{color:#f472b6}.unknown{color:#aaa}.stale{color:#fbbf24}
+small{position:absolute;top:100%;left:37px;max-width:340px;font:500 11px/14px 'Segoe UI',sans-serif;color:#ccc;background:#10151aee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#stamp{position:absolute;bottom:0;right:6px;color:#aaa;font:500 10px 'Segoe UI',sans-serif;background:#10151acc}
 </style></head><body><div id="rows"></div><div id="stamp">poe.ninja · estimate</div></body></html>`;
 
 export class HelperOverlay {
@@ -26,7 +34,7 @@ export class HelperOverlay {
     const x = right + width <= bounds.x + bounds.width ? right : left >= bounds.x ? left : undefined;
     if (x === undefined) throw new Error("Leave room beside the calibrated list for the price overlay.");
     if (!this.window || this.window.isDestroyed()) {
-      const window = this.window = new BrowserWindow({ width, height, show: false, frame: false, transparent: true, focusable: false, skipTaskbar: true, alwaysOnTop: true, resizable: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, devTools: false } });
+      const window = this.window = new BrowserWindow({ title: "Reward prices · PoE2 Trade Companion", width, height, show: false, frame: false, transparent: true, focusable: false, skipTaskbar: true, alwaysOnTop: true, resizable: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false, devTools: false, backgroundThrottling: false } });
       window.setIgnoreMouseEvents(true, { forward: true });
       window.setContentProtection(true);
       window.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
@@ -43,26 +51,42 @@ export class HelperOverlay {
       if (typeof row.y !== "number" || !Number.isFinite(row.y) || row.y < 0 ||
           typeof row.height !== "number" || !Number.isFinite(row.height) || row.height <= 0 ||
           row.y + row.height > region.height) return [];
-      return [{ text: row.detail, raw: row.text,
+      return [{ text: helperOverlayLabel(row), detail: row.detail, raw: row.text, currency: row.state === "priced" ? row.currency : undefined,
         centerY: roi.y - overlayY + (row.y + row.height / 2) * roi.height / region.height,
         state: row.state, stale: row.stale, valueTier: row.state === "priced" && !row.stale ? row.valueTier : undefined }];
     });
     // Data only reaches textContent. No HTML, URLs, event handlers, or Node bridge in this window.
     await window.webContents.executeJavaScript(`(() => {
       const data = ${JSON.stringify(data)};
+      const icons = ${JSON.stringify(HELPER_CURRENCY_ICONS)};
       document.body.style.color = ${JSON.stringify(HELPER_THEMES[config.theme])};
       const root = document.getElementById('rows'); root.replaceChildren();
       for (const row of data) {
         const el = document.createElement('div');
         el.className = 'row' + (row.stale ? ' stale' : row.state === 'unknown' || row.state === 'no-data' ? ' unknown' : row.valueTier === 'very-high' ? ' very-high' : row.valueTier === 'high' ? ' high' : '');
+        if (row.state === 'rumour') el.classList.add('rumour');
         el.style.top = row.centerY + 'px';
+        el.setAttribute('aria-label', row.detail);
+        if (row.state !== 'rumour') {
+          const currency = document.createElement('span'); currency.className = 'currency';
+          if (row.text !== '?' && (row.currency === 'chaos' || row.currency === 'div')) {
+            const icon = document.createElement('img'); icon.src = icons[row.currency];
+            icon.alt = row.currency === 'div' ? 'Divine Orb' : 'Chaos Orb'; currency.append(icon);
+          }
+          el.append(currency);
+        }
         const price = document.createElement('span'); price.className = 'price'; price.textContent = row.text; el.append(price);
         if (${config.debug}) { const small = document.createElement('small'); small.textContent = row.raw; el.append(small); }
         root.append(el);
       }
       document.getElementById('stamp').textContent = ${JSON.stringify(config.mode === "prices" ? `${config.league} · poe.ninja estimate` : "Community rumour ratings")};
     })()`);
-    if (generation === this.generation && !window.isDestroyed()) window.showInactive();
+    if (generation === this.generation && !window.isDestroyed()) {
+      // Borderless games can occupy the topmost layer; raise prices without taking focus.
+      window.setAlwaysOnTop(true, "screen-saver");
+      window.showInactive();
+      window.moveTop();
+    }
   }
 }
 

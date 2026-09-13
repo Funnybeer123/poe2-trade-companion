@@ -14,10 +14,10 @@ export interface HelperConfig {
   minimizeToTray: boolean;
   regions: Partial<Record<HelperMode, HelperRegion>>;
 }
-export interface ExchangePrice { id: string; name: string; exalted?: number; divine?: number }
+export interface ExchangePrice { id: string; name: string; chaos?: number; exalted?: number; divine?: number }
 export interface CategorySnapshot { category: ExchangeCategory; fetchedAt: string; prices: ExchangePrice[]; error?: string }
 export interface Rumour { name: string; map: string; mods: string; rating: string }
-export interface HelperRow { text: string; name?: string; quantity?: number; total?: number; unit?: number; currency?: "ex" | "div"; valueTier?: "high" | "very-high"; state: "priced" | "unknown" | "no-data" | "rumour"; stale: boolean; detail: string; y?: number; height?: number }
+export interface HelperRow { text: string; name?: string; quantity?: number; total?: number; unit?: number; currency?: "chaos" | "div"; valueTier?: "high" | "very-high"; state: "priced" | "unknown" | "no-data" | "rumour"; stale: boolean; detail: string; y?: number; height?: number }
 export interface HelperStatus {
   config: HelperConfig; running: boolean; message: string; refreshing: boolean;
   categories: Array<{ category: ExchangeCategory; count: number; fetchedAt?: string; error?: string }>;
@@ -71,9 +71,9 @@ export function parseNinjaExchange(payload: unknown): ExchangePrice[] {
   const p = record(payload), core = record(p.core), rates = record(core.rates);
   if (!Array.isArray(p.items) || !Array.isArray(p.lines) || p.items.length > 10000 || p.lines.length > 10000) throw new Error("Invalid poe.ninja response.");
   if (!["divine", "exalted", "chaos"].includes(String(core.primary))) throw new Error("Unknown price denomination.");
+  const chaosRate = core.primary === "chaos" ? 1 : rates.chaos;
   const exRate = core.primary === "exalted" ? 1 : rates.exalted;
   const divRate = core.primary === "divine" ? 1 : rates.divine;
-  if (!positive(exRate) && !positive(divRate)) throw new Error("Missing exchange rates.");
   const names = new Map<string, string>();
   for (const item of p.items) {
     const i = record(item);
@@ -85,6 +85,7 @@ export function parseNinjaExchange(payload: unknown): ExchangePrice[] {
     if (typeof l.id !== "string" || !names.has(l.id)) continue;
     const price: ExchangePrice = { id: l.id, name: names.get(l.id)! };
     if (positive(l.primaryValue)) {
+      if (positive(chaosRate) && positive(l.primaryValue * chaosRate)) price.chaos = l.primaryValue * chaosRate;
       if (positive(exRate) && positive(l.primaryValue * exRate)) price.exalted = l.primaryValue * exRate;
       if (positive(divRate) && positive(l.primaryValue * divRate)) price.divine = l.primaryValue * divRate;
     }
@@ -117,10 +118,11 @@ export function priceHelperRow(text: string, snapshots: CategorySnapshot[], now 
   const { p, s } = matches[0]!;
   row.name = p.name; if (!unreadableQuantity) row.quantity = stack.quantity;
   row.stale = Boolean(s.error) || now - Date.parse(s.fetchedAt) >= 30 * 60_000;
-  const useDivine = p.divine !== undefined && (p.divine * stack.quantity >= 1 || p.exalted === undefined);
-  const unit = useDivine ? p.divine : p.exalted;
+  // Legacy exalted values are never relabelled as chaos when a conversion is unavailable.
+  const useDivine = p.divine !== undefined && (p.divine * stack.quantity >= 1 || p.chaos === undefined);
+  const unit = useDivine ? p.divine : p.chaos;
   if (unit === undefined) { row.state = "no-data"; row.detail = "No market data in the display currency"; return row; }
-  row.currency = useDivine ? "div" : "ex";
+  row.currency = useDivine ? "div" : "chaos";
   row.unit = unit; row.state = "priced";
   // Compare actual divine values; unreadable quantities can only emphasize the unit estimate.
   const divineValue = p.divine === undefined ? undefined : p.divine * (unreadableQuantity ? 1 : stack.quantity);

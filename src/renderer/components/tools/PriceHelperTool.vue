@@ -75,9 +75,9 @@ onBeforeUnmount(() => { unmounted = true; if (timer) clearInterval(timer); });
       <button :disabled="!api" @click="stopNow">Stop / hide</button>
     </div>
     <p class="helper-status" role="status">{{ busy ? 'Working…' : status?.message ?? 'Loading helper…' }}</p>
-    <p class="helper-hint">{{ settings.regions[settings.mode] ? 'Region saved for this list.' : 'No region saved for this list.' }} Open the game list, choose Calibrate, and drag around names and quantities. Leave room beside it for prices.</p>
+    <p class="helper-hint">{{ settings.regions[settings.mode] ? 'Region saved for this list.' : 'No region saved for this list.' }} Open the game list, choose Calibrate, and capture the full scrolling viewport containing names and quantities, including space where rows appear as you scroll. Leave room beside it for prices.</p>
     <p class="helper-hint">Ctrl+Shift+F5 starts/stops · Ctrl+Shift+F4 calibrates · Ctrl+Shift+F3 shows recognized text. Esc or Ctrl+click detected during a scan stops the overlay. Ctrl+Shift+Esc stops all activity.</p>
-    <p v-if="settings.mode === 'prices'" class="helper-hint helper-value-legend" aria-label="Price highlight legend"><span class="value-high">Gold ≥ 1 divine</span> · <span class="value-very-high">Pink ≥ 10 divine</span>. Based on the stack total, or the per-item estimate when quantity is unreadable.</p>
+    <p v-if="settings.mode === 'prices'" class="helper-hint helper-value-legend" aria-label="Price highlight legend">Prices use Chaos and Divine Orbs. <span class="value-high">Gold ≥ 1 divine</span> · <span class="value-very-high">Pink ≥ 10 divine</span>. Based on the stack total, or the per-item estimate when quantity is unreadable. Parentheses show the unit price; “each · qty ?” means the quantity could not be read.</p>
     <div v-if="settings.mode === 'prices'" class="helper-feeds" aria-label="Price category freshness">
       <div v-for="category in status?.categories ?? []" :key="category.category" class="helper-feed" :class="{ stale: category.error || stale(category.fetchedAt) }">
         <strong>{{ category.category === 'UncutGems' ? 'Uncut gems' : category.category }}</strong>

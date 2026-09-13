@@ -10,7 +10,7 @@ export async function priceHelperSmoke(mode: SmokeBuildMode, testInfo: TestInfo)
         if (url.hostname !== "poe.ninja") throw new Error("Unexpected network request in smoke test");
         const category = url.searchParams.get("type");
         const name = category === "Currency" ? "Divine Orb" : `Example ${category}`;
-        return new Response(JSON.stringify({ core: { primary: "divine", rates: { exalted: 300 } }, items: [{ id: "fixture", name }], lines: [{ id: "fixture", primaryValue: 1 }] }), { status: 200 });
+        return new Response(JSON.stringify({ core: { primary: "divine", rates: { exalted: 300, chaos: 100 } }, items: [{ id: "fixture", name }], lines: [{ id: "fixture", primaryValue: category === "Currency" ? 1 : 0.025 }] }), { status: 200 });
       };
     });
     await page.evaluate(() => { location.hash = "/tools/price-helper"; });
@@ -23,9 +23,10 @@ export async function priceHelperSmoke(mode: SmokeBuildMode, testInfo: TestInfo)
     await expect(page.getByText("Settings saved. Start scanning when ready.")).toBeVisible();
     await page.getByRole("button", { name: "Refresh prices", exact: true }).click();
     await expect(page.getByText("All five price categories refreshed.")).toBeVisible();
-    await page.getByLabel("Check an item list").fill("2x Divine Orb\nUncut Skill Gem (Level 19)");
+    await page.getByLabel("Check an item list").fill("2x Divine Orb\n3x Example Verisium\nUncut Skill Gem (Level 19)");
     await page.getByRole("button", { name: "Look up list", exact: true }).click();
     await expect(page.getByRole("cell", { name: "2 div (1 each)", exact: true })).toBeVisible();
+    await expect(page.getByRole("cell", { name: "7.5 chaos (2.5 each)", exact: true })).toBeVisible();
     await expect(page.getByRole("cell", { name: /could not be matched exactly/ })).toBeVisible();
     await page.reload();
     await expect(page.getByLabel("League", { exact: true })).toHaveValue("HC Forbidden Rites");

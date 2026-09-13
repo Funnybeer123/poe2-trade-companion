@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { helperDefaults } from "../src/core/priceHelper.js";
 import { fetchHelperText, PriceHelperService } from "../src/main/priceHelperService.js";
 
-const payload = { core: { primary: "divine", rates: { exalted: 300 } }, items: [{ id: "divine", name: "Divine Orb" }], lines: [{ id: "divine", primaryValue: 1 }] };
+const payload = { core: { primary: "divine", rates: { chaos: 200, exalted: 300 } }, items: [{ id: "divine", name: "Divine Orb" }], lines: [{ id: "divine", primaryValue: 1 }] };
 const region = { x: 100, y: 100, width: 300, height: 300, clientWidth: 1920, clientHeight: 1080 };
 const services: PriceHelperService[] = [];
 afterEach(() => { for (const service of services.splice(0)) service.dispose(); vi.useRealTimers(); });
@@ -38,6 +38,24 @@ describe("price helper service safety", () => {
     expect(persisted.status().config.league).toBe("Forbidden Rites"); expect(persisted.status().running).toBe(false);
     expect(persisted.lookup("Divine Orb")[0]?.state).toBe("priced");
     expect(readFileSync(path.join(options.directory, "settings.json"), "utf8")).not.toContain("POESESSID");
+  });
+  it.each([
+    { name: "actual chaos conversion", rates: { chaos: 0.25, divine: 0.01 }, expected: { state: "priced", currency: "chaos", unit: 2, total: 6 } },
+    { name: "genuine divine fallback", rates: { divine: 0.01 }, expected: { state: "priced", currency: "div", unit: 0.08, total: 0.24 } },
+    { name: "missing display rates", rates: {}, expected: { state: "no-data" } },
+  ])("reparses a legacy exalted-primary raw cache using $name", async ({ rates, expected }) => {
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const category = new URL(String(url)).searchParams.get("type");
+      const name = category === "Currency" ? "Cached Rune" : `Other ${category}`;
+      return new Response(JSON.stringify({ core: { primary: "exalted", rates }, items: [{ id: "item", name }], lines: [{ id: "item", primaryValue: 8 }] }));
+    });
+    const { service, options } = setup(fetchImpl); await service.refresh();
+    const restored = new PriceHelperService(options); services.push(restored);
+    const row = restored.lookup("3x Cached Rune")[0]!;
+    expect(row).toMatchObject(expected);
+    if (expected.state === "no-data") { expect(row.currency).toBeUndefined(); expect(row.total).toBeUndefined(); }
+    expect(fetchImpl).toHaveBeenCalledTimes(5);
+    expect(restored.status().running).toBe(false);
   });
   it("preserves the last successful category on partial failure and reports stale", async () => {
     vi.useFakeTimers(); const { service, fetchImpl } = setup(); await service.refresh();
@@ -99,13 +117,13 @@ describe("price helper service safety", () => {
     expect(rows.map(({ text, y, height }) => ({ text, y, height }))).toEqual(lines);
     expect(rows).toMatchObject([
       { name: "Olroth's Saga", quantity: 1, total: 2, currency: "div", valueTier: "high" },
-      { name: "Vorana's Saga", quantity: 1, total: 75, currency: "ex" },
+      { name: "Vorana's Saga", quantity: 1, total: 50, currency: "chaos" },
       { name: "Uhtred's Saga", quantity: 2, total: 24, currency: "div", valueTier: "very-high" },
       { state: "unknown" },
-      { name: "Artificer's Orb", quantity: 3, unit: 3, total: 9, currency: "ex" },
+      { name: "Artificer's Orb", quantity: 3, unit: 2, total: 6, currency: "chaos" },
       { name: "Greater Robust Rune", unit: 1.5, currency: "div", detail: "1.5 div each · quantity unreadable" },
-      { name: "Greater Resolve Rune", quantity: 1, total: 12, currency: "ex" },
-      { name: "Greater Adept Rune", quantity: 1, total: 0.75, currency: "ex" },
+      { name: "Greater Resolve Rune", quantity: 1, total: 8, currency: "chaos" },
+      { name: "Greater Adept Rune", quantity: 1, total: 0.5, currency: "chaos" },
     ]);
     expect(rows[3]?.total).toBeUndefined(); expect(rows[3]?.name).toBeUndefined();
     expect(rows[5]?.total).toBeUndefined(); expect(rows[5]?.quantity).toBeUndefined();
