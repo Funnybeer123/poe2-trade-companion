@@ -35,6 +35,9 @@ async function stopNow(): Promise<void> {
   try { if (api) status.value = await api.stop(); }
   catch { error.value = "Could not stop the helper. Use Ctrl+Shift+Esc or quit the app."; }
 }
+function priceClass(row: HelperRow): string | undefined {
+  return row.state === "priced" && !row.stale && row.valueTier ? `value-${row.valueTier}` : undefined;
+}
 function stamp(value?: string): string { return value ? new Date(value).toLocaleString() : "Not loaded"; }
 function stale(value?: string): boolean { return Boolean(value && Date.now() - Date.parse(value) >= 30 * 60_000); }
 onMounted(async () => {
@@ -74,6 +77,7 @@ onBeforeUnmount(() => { unmounted = true; if (timer) clearInterval(timer); });
     <p class="helper-status" role="status">{{ busy ? 'Working…' : status?.message ?? 'Loading helper…' }}</p>
     <p class="helper-hint">{{ settings.regions[settings.mode] ? 'Region saved for this list.' : 'No region saved for this list.' }} Open the game list, choose Calibrate, and drag around names and quantities. Leave room beside it for prices.</p>
     <p class="helper-hint">Ctrl+Shift+F5 starts/stops · Ctrl+Shift+F4 calibrates · Ctrl+Shift+F3 shows recognized text. Esc or Ctrl+click detected during a scan stops the overlay. Ctrl+Shift+Esc stops all activity.</p>
+    <p v-if="settings.mode === 'prices'" class="helper-hint helper-value-legend" aria-label="Price highlight legend"><span class="value-high">Gold ≥ 1 divine</span> · <span class="value-very-high">Pink ≥ 10 divine</span>. Based on the stack total, or the per-item estimate when quantity is unreadable.</p>
     <div v-if="settings.mode === 'prices'" class="helper-feeds" aria-label="Price category freshness">
       <div v-for="category in status?.categories ?? []" :key="category.category" class="helper-feed" :class="{ stale: category.error || stale(category.fetchedAt) }">
         <strong>{{ category.category === 'UncutGems' ? 'Uncut gems' : category.category }}</strong>
@@ -90,7 +94,7 @@ onBeforeUnmount(() => { unmounted = true; if (timer) clearInterval(timer); });
     </div>
     <div v-if="results.length || status?.rows.length" class="helper-results">
       <table><thead><tr><th>Item / rumour</th><th>Estimate / details</th></tr></thead><tbody>
-        <tr v-for="(row, i) in results.length ? results : status?.rows ?? []" :key="i"><td>{{ row.name ?? row.text }} <small v-if="row.quantity && row.quantity > 1">×{{ row.quantity }}</small></td><td :class="{ stale: row.stale }">{{ row.detail }}<small v-if="row.state === 'rumour' && row.stale"> · old cached sheet</small></td></tr>
+        <tr v-for="(row, i) in results.length ? results : status?.rows ?? []" :key="i"><td>{{ row.name ?? row.text }} <small v-if="row.quantity && row.quantity > 1">×{{ row.quantity }}</small></td><td :class="[{ stale: row.stale }, priceClass(row)]">{{ row.detail }}<small v-if="row.state === 'rumour' && row.stale"> · old cached sheet</small></td></tr>
       </tbody></table>
     </div>
     <p class="helper-hint">Prices are poe.ninja market estimates, not guaranteed sale prices. Unknown items and unreadable gem levels show “?”. Capture pauses when the game loses focus; screenshots stay in memory on this PC. English item text is required. Start is always manual after reopening the app.</p>
@@ -98,5 +102,5 @@ onBeforeUnmount(() => { unmounted = true; if (timer) clearInterval(timer); });
 </template>
 
 <style scoped>
-.price-helper{display:grid;gap:16px;--helper-accent:#86efac}.helper-heading{display:flex;justify-content:space-between;gap:16px;align-items:center}.helper-heading h2,.helper-heading p,.price-helper>p{margin:0}.helper-badge{padding:6px 12px;border:1px solid var(--helper-accent);color:var(--helper-accent);border-radius:20px;font-size:12px;white-space:nowrap}.helper-settings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;border:1px solid #313946;border-radius:8px;padding:16px}.helper-settings label{display:grid;gap:6px;min-width:0}.helper-settings input,.helper-settings select{width:100%;min-width:0}.helper-settings .check{display:flex;align-items:center;font-size:12px}.check input{width:auto}.helper-actions{display:flex;flex-wrap:wrap;gap:8px}.helper-status{color:var(--helper-accent);padding:12px;background:#ffffff06;border-radius:6px}.helper-hint{font-size:12px;color:#a4afbd;line-height:1.6}.helper-feeds{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px}.helper-feed{display:grid;gap:5px;border:1px solid #313946;padding:12px;border-radius:6px;font-size:12px}.helper-feed small{font-size:10px}.helper-lookup{display:grid;gap:8px}.helper-lookup textarea{resize:vertical;min-height:95px}.helper-lookup button{justify-self:start}.helper-results{overflow:auto}.helper-results table{width:100%;font-size:13px}.helper-results td,.helper-results th{padding:10px;text-align:left;border-bottom:1px solid #ffffff12}.stale{color:#fbbf24}.error{color:#fca5a5}@media(max-width:850px){.helper-settings{grid-template-columns:1fr 1fr}}
+.price-helper{display:grid;gap:16px;--helper-accent:#86efac}.helper-heading{display:flex;justify-content:space-between;gap:16px;align-items:center}.helper-heading h2,.helper-heading p,.price-helper>p{margin:0}.helper-badge{padding:6px 12px;border:1px solid var(--helper-accent);color:var(--helper-accent);border-radius:20px;font-size:12px;white-space:nowrap}.helper-settings{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;border:1px solid #313946;border-radius:8px;padding:16px}.helper-settings label{display:grid;gap:6px;min-width:0}.helper-settings input,.helper-settings select{width:100%;min-width:0}.helper-settings .check{display:flex;align-items:center;font-size:12px}.check input{width:auto}.helper-actions{display:flex;flex-wrap:wrap;gap:8px}.helper-status{color:var(--helper-accent);padding:12px;background:#ffffff06;border-radius:6px}.helper-hint{font-size:12px;color:#a4afbd;line-height:1.6}.helper-feeds{display:grid;grid-template-columns:repeat(auto-fit,minmax(135px,1fr));gap:8px}.helper-feed{display:grid;gap:5px;border:1px solid #313946;padding:12px;border-radius:6px;font-size:12px}.helper-feed small{font-size:10px}.helper-lookup{display:grid;gap:8px}.helper-lookup textarea{resize:vertical;min-height:95px}.helper-lookup button{justify-self:start}.helper-results{overflow:auto}.helper-results table{width:100%;font-size:13px}.helper-results td,.helper-results th{padding:10px;text-align:left;border-bottom:1px solid #ffffff12}.value-high{color:#facc15}.value-very-high{color:#f472b6}.stale{color:#fbbf24}.error{color:#fca5a5}@media(max-width:850px){.helper-settings{grid-template-columns:1fr 1fr}}
 </style>

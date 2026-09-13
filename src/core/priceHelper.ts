@@ -17,7 +17,7 @@ export interface HelperConfig {
 export interface ExchangePrice { id: string; name: string; exalted?: number; divine?: number }
 export interface CategorySnapshot { category: ExchangeCategory; fetchedAt: string; prices: ExchangePrice[]; error?: string }
 export interface Rumour { name: string; map: string; mods: string; rating: string }
-export interface HelperRow { text: string; name?: string; quantity?: number; total?: number; unit?: number; currency?: "ex" | "div"; state: "priced" | "unknown" | "no-data" | "rumour"; stale: boolean; detail: string; y?: number; height?: number }
+export interface HelperRow { text: string; name?: string; quantity?: number; total?: number; unit?: number; currency?: "ex" | "div"; valueTier?: "high" | "very-high"; state: "priced" | "unknown" | "no-data" | "rumour"; stale: boolean; detail: string; y?: number; height?: number }
 export interface HelperStatus {
   config: HelperConfig; running: boolean; message: string; refreshing: boolean;
   categories: Array<{ category: ExchangeCategory; count: number; fetchedAt?: string; error?: string }>;
@@ -122,6 +122,12 @@ export function priceHelperRow(text: string, snapshots: CategorySnapshot[], now 
   if (unit === undefined) { row.state = "no-data"; row.detail = "No market data in the display currency"; return row; }
   row.currency = useDivine ? "div" : "ex";
   row.unit = unit; row.state = "priced";
+  // Compare actual divine values; unreadable quantities can only emphasize the unit estimate.
+  const divineValue = p.divine === undefined ? undefined : p.divine * (unreadableQuantity ? 1 : stack.quantity);
+  if (!row.stale && divineValue !== undefined && Number.isFinite(divineValue)) {
+    if (divineValue >= 10) row.valueTier = "very-high";
+    else if (divineValue >= 1) row.valueTier = "high";
+  }
   if (unreadableQuantity) row.detail = `${formatHelperValue(unit)} ${row.currency} each · quantity unreadable${row.stale ? " · stale" : ""}`;
   else {
     row.total = unit * stack.quantity;

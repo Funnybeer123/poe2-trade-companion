@@ -56,6 +56,95 @@ describe("price helper service safety", () => {
     finish(); await refreshing;
     expect(service.status().categories.every(c => c.count === 0)).toBe(true);
   });
+  it("keeps eight irregular Verisium reward rows aligned through an unknown item", async () => {
+    const market: Record<string, Array<{ id: string; name: string; primaryValue: number }>> = {
+      Currency: [{ id: "artificer", name: "Artificer's Orb", primaryValue: 0.01 }],
+      Runes: [
+        { id: "robust", name: "Greater Robust Rune", primaryValue: 1.5 },
+        { id: "resolve", name: "Greater Resolve Rune", primaryValue: 0.04 },
+        { id: "adept", name: "Greater Adept Rune", primaryValue: 0.0025 },
+      ],
+      Verisium: [
+        { id: "olroth", name: "Olroth's Saga", primaryValue: 2 },
+        { id: "vorana", name: "Vorana's Saga", primaryValue: 0.25 },
+        { id: "uhtred", name: "Uhtred's Saga", primaryValue: 12 },
+      ],
+      Expedition: [{ id: "expedition", name: "Other Expedition", primaryValue: 1 }],
+      UncutGems: [{ id: "gem", name: "Uncut Skill Gem (Level 19)", primaryValue: 1 }],
+    };
+    const fetchImpl = vi.fn(async (url: string | URL | Request) => {
+      const entries = market[new URL(String(url)).searchParams.get("type")!]!;
+      return new Response(JSON.stringify({ core: payload.core, items: entries, lines: entries }));
+    });
+    const { service, capture, options } = setup(fetchImpl);
+    await service.refresh();
+    const captureRegion = { x: 627, y: 387, width: 465, height: 935, clientWidth: 3840, clientHeight: 2160 };
+    service.configure({ ...helperDefaults(), regions: { prices: captureRegion } });
+    const lines = [
+      { text: "1x Olroth's Saga", y: 15, height: 36 },
+      { text: "1x Vorana's Saga", y: 177, height: 36 },
+      { text: "2x Uhtred's Saga", y: 339, height: 36 },
+      { text: "1x Unreadable Reward", y: 501, height: 36 },
+      { text: "3x Artificer's Orb", y: 589, height: 30 },
+      { text: "lx Greater Robust Rune", y: 684, height: 30 },
+      { text: "1x Greater Resolve Rune", y: 779, height: 30 },
+      { text: "1x Greater Adept Rune", y: 874, height: 39 },
+    ];
+    const target = { left: 0, top: 0, width: 3840, height: 2160 };
+    capture.read.mockResolvedValueOnce({ ok: true, target, lines });
+    service.start();
+    await vi.waitFor(() => expect(options.show).toHaveBeenCalledTimes(1));
+    expect(capture.read).toHaveBeenCalledWith(captureRegion);
+    const rows = service.status().rows;
+    expect(rows.map(({ text, y, height }) => ({ text, y, height }))).toEqual(lines);
+    expect(rows).toMatchObject([
+      { name: "Olroth's Saga", quantity: 1, total: 2, currency: "div", valueTier: "high" },
+      { name: "Vorana's Saga", quantity: 1, total: 75, currency: "ex" },
+      { name: "Uhtred's Saga", quantity: 2, total: 24, currency: "div", valueTier: "very-high" },
+      { state: "unknown" },
+      { name: "Artificer's Orb", quantity: 3, unit: 3, total: 9, currency: "ex" },
+      { name: "Greater Robust Rune", unit: 1.5, currency: "div", detail: "1.5 div each · quantity unreadable" },
+      { name: "Greater Resolve Rune", quantity: 1, total: 12, currency: "ex" },
+      { name: "Greater Adept Rune", quantity: 1, total: 0.75, currency: "ex" },
+    ]);
+    expect(rows[3]?.total).toBeUndefined(); expect(rows[3]?.name).toBeUndefined();
+    expect(rows[5]?.total).toBeUndefined(); expect(rows[5]?.quantity).toBeUndefined();
+    expect(options.show).toHaveBeenCalledWith(rows, target, service.status().config);
+    expect(service.status().message).toBe("Scanning prices · 8 rows");
+  });
+  it("skips missing, invalid, and clipped OCR boxes without closing valid row gaps", async () => {
+    const { service, capture, options } = setup(); await service.refresh(); await service.calibrate();
+    const invalid = [
+      { text: "Divine Orb", height: 20 },
+      { text: "Divine Orb", y: 25 },
+      { text: "Divine Orb", y: NaN, height: 20 },
+      { text: "Divine Orb", y: Infinity, height: 20 },
+      { text: "Divine Orb", y: 30, height: NaN },
+      { text: "Divine Orb", y: 40, height: Infinity },
+      { text: "Divine Orb", y: 50, height: "20" },
+      { text: "Divine Orb", y: 60, height: 0 },
+      { text: "Divine Orb", y: 70, height: -1 },
+      { text: "Divine Orb", y: 80, height: 200 },
+      { text: "Divine Orb", y: -1, height: 20 },
+      { text: "Divine Orb", y: 300, height: 20 },
+      { text: "Divine Orb", y: 290, height: 11 },
+    ];
+    const valid = [
+      { text: "Divine Orb", y: 0, height: 18 },
+      { text: "2x Divine Orb", y: 100, height: 24 },
+      { text: "3x Divine Orb", y: 282, height: 18 },
+    ];
+    capture.read.mockResolvedValueOnce({ ok: true, target: {}, lines: [valid[0], ...invalid, ...valid.slice(1)] });
+    service.start();
+    await vi.waitFor(() => expect(options.show).toHaveBeenCalledTimes(1));
+    expect(service.status().rows.map(({ text, y, height, total }) => ({ text, y, height, total }))).toEqual(valid.map((row, i) => ({ ...row, total: i + 1 })));
+    service.stop(); options.show.mockClear(); options.hide.mockClear();
+    capture.read.mockResolvedValueOnce({ ok: true, target: {}, lines: invalid });
+    service.start();
+    await vi.waitFor(() => expect(service.status().message).toBe("No readable rows. Prices hidden."));
+    expect(service.status().rows).toEqual([]);
+    expect(options.show).not.toHaveBeenCalled(); expect(options.hide).toHaveBeenCalled();
+  });
   it("hides on focus loss and rejects late OCR results after stop", async () => {
     const { service, capture, options } = setup(); await service.refresh(); await service.calibrate();
     service.start(); await new Promise(resolve => setTimeout(resolve, 5));

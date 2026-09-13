@@ -6,7 +6,7 @@ import { HELPER_THEMES, type HelperConfig, type HelperRow } from "../core/priceH
 import { PriceHelperService } from "./priceHelperService.js";
 
 const OVERLAY = `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'"><style>
-body{margin:0;background:transparent;color:#86efac;font:600 13px 'Segoe UI',sans-serif;overflow:hidden} .row{position:absolute;left:4px;right:4px;padding:3px 8px;background:#10151aee;border-left:2px solid currentColor;border-radius:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.unknown{color:#aaa}.stale{color:#fbbf24}small{display:block;font-size:10px;color:#ccc}#stamp{position:absolute;bottom:0;right:6px;color:#aaa;font-size:10px;background:#10151a}
+body{margin:0;background:transparent;color:#86efac;font:600 13px 'Segoe UI',sans-serif;overflow:hidden} .row{position:absolute;left:4px;right:4px;padding:3px 8px;line-height:18px;transform:translateY(-50%);background:#10151aee;border-left:2px solid currentColor;border-radius:3px}.price{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.high{color:#facc15}.very-high{color:#f472b6}.unknown{color:#aaa}.stale{color:#fbbf24}small{position:absolute;top:100%;left:0;right:0;padding:0 8px;font-size:10px;color:#ccc;background:#10151aee;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}#stamp{position:absolute;bottom:0;right:6px;color:#aaa;font-size:10px;background:#10151a}
 </style></head><body><div id="rows"></div><div id="stamp">poe.ninja · estimate</div></body></html>`;
 
 export class HelperOverlay {
@@ -36,10 +36,32 @@ export class HelperOverlay {
     const window = this.window;
     await this.ready;
     if (generation !== this.generation || window.isDestroyed()) return;
-    window.setBounds({ x: Math.round(x), y: Math.round(Math.min(roi.y, bounds.y + bounds.height - height)), width: Math.round(width), height: Math.round(height) });
-    const data = rows.map(row => ({ text: row.detail, raw: row.text, y: Math.round((row.y ?? 0) * roi.height / region.height), state: row.state, stale: row.stale }));
+    const overlayY = Math.round(Math.min(roi.y, bounds.y + bounds.height - height));
+    window.setBounds({ x: Math.round(x), y: overlayY, width: Math.round(width), height: Math.round(height) });
+    const data = rows.flatMap(row => {
+      // A label without a verified text box could point at a different reward.
+      if (typeof row.y !== "number" || !Number.isFinite(row.y) || row.y < 0 ||
+          typeof row.height !== "number" || !Number.isFinite(row.height) || row.height <= 0 ||
+          row.y + row.height > region.height) return [];
+      return [{ text: row.detail, raw: row.text,
+        centerY: roi.y - overlayY + (row.y + row.height / 2) * roi.height / region.height,
+        state: row.state, stale: row.stale, valueTier: row.state === "priced" && !row.stale ? row.valueTier : undefined }];
+    });
     // Data only reaches textContent. No HTML, URLs, event handlers, or Node bridge in this window.
-    await window.webContents.executeJavaScript(`(() => { const data = ${JSON.stringify(data)}; document.body.style.color = ${JSON.stringify(HELPER_THEMES[config.theme])}; const root = document.getElementById('rows'); root.replaceChildren(); for (const row of data) { const el = document.createElement('div'); el.className = 'row' + (row.stale ? ' stale' : row.state === 'unknown' ? ' unknown' : ''); el.style.top = row.y + 'px'; el.textContent = row.text; if (${config.debug}) { const small = document.createElement('small'); small.textContent = row.raw; el.append(small); } root.append(el); } document.getElementById('stamp').textContent = ${JSON.stringify(config.mode === "prices" ? `${config.league} · poe.ninja estimate` : "Community rumour ratings")}; })()`);
+    await window.webContents.executeJavaScript(`(() => {
+      const data = ${JSON.stringify(data)};
+      document.body.style.color = ${JSON.stringify(HELPER_THEMES[config.theme])};
+      const root = document.getElementById('rows'); root.replaceChildren();
+      for (const row of data) {
+        const el = document.createElement('div');
+        el.className = 'row' + (row.stale ? ' stale' : row.state === 'unknown' || row.state === 'no-data' ? ' unknown' : row.valueTier === 'very-high' ? ' very-high' : row.valueTier === 'high' ? ' high' : '');
+        el.style.top = row.centerY + 'px';
+        const price = document.createElement('span'); price.className = 'price'; price.textContent = row.text; el.append(price);
+        if (${config.debug}) { const small = document.createElement('small'); small.textContent = row.raw; el.append(small); }
+        root.append(el);
+      }
+      document.getElementById('stamp').textContent = ${JSON.stringify(config.mode === "prices" ? `${config.league} · poe.ninja estimate` : "Community rumour ratings")};
+    })()`);
     if (generation === this.generation && !window.isDestroyed()) window.showInactive();
   }
 }

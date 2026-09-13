@@ -224,8 +224,10 @@ export class PriceHelperService {
       this.rows = lines.flatMap(line => {
         const l = record(line);
         if (typeof l.text !== "string" || l.text.length > 300 || typeof l.y !== "number" || !Number.isFinite(l.y) || l.y < 0 || l.y >= this.config.regions[this.config.mode]!.height) return [];
+        // Skip incomplete OCR boxes instead of inventing geometry beside another reward.
+        if (typeof l.height !== "number" || !Number.isFinite(l.height) || l.height <= 0 || l.height >= 200 || l.y + l.height > this.config.regions[this.config.mode]!.height) return [];
         const row = this.lookup(l.text)[0];
-        return row ? [{ ...row, y: l.y, height: typeof l.height === "number" && l.height > 0 && l.height < 200 ? l.height : 20 }] : [];
+        return row ? [{ ...row, y: l.y, height: l.height }] : [];
       });
       if (this.rows.length) await this.options.show(this.rows, record(result.target), this.config);
       else this.options.hide();

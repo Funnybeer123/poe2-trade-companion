@@ -22,7 +22,7 @@ Select **Island Rumours**, then **Refresh rumour sheet**, to load the [community
 
 **Ctrl+Shift+F4** recalibrates; **Ctrl+Shift+F3** toggles recognized text. The modified shortcuts avoid taking the game's bare function keys. Conflicting hotkeys are reported in the tool. Esc or Ctrl+click held when a scan checks dismisses and stops the helper; use its dedicated stop shortcut for immediate cancellation. **Ctrl+Shift+Esc** also stops the helper through the existing emergency-stop path. Optional minimize-to-tray leaves scanning enabled only while the game remains foreground; the tray menu can open the app, stop the helper or quit.
 
-Five overlay accent themes are available: Toxic, Midnight, Obsidian, Abyss and Ember.
+Five overlay accent themes are available: Toxic, Midnight, Obsidian, Abyss and Ember. Fresh item estimates override the theme with gold at 1 divine or more, and pink at 10 divines or more. Thresholds use the actual divine conversion and known stack total; an unreadable quantity can highlight only the explicitly labelled unit estimate. Stale, unknown and missing-data rows never receive these value highlights. These colors indicate price, not rarity; the feed does not reliably identify rarity.
 
 ## Security and privacy decisions
 
@@ -62,3 +62,12 @@ Validation snapshot, 2026-09-12:
 | Live public-data probes | Five categories loaded in Runes of Aldur and HC Forbidden Rites; 23 community rumours loaded |
 | Updated packages after the native OCR fix | Both built; both packaged helper smoke tests passed |
 | Live packaged helper | 244 prices, 23 rumours, eight real OCR reward rows; focus pause, dedicated toggle and F12 emergency stop passed |
+
+### Focused reward-price verification, 2026-09-12
+
+Prices now center on each recognized item text box. The position accounts for Windows display scaling and any upward movement of the overlay near the bottom of the game window. Unknown items retain their original row position; missing, invalid and partly clipped OCR boxes are skipped instead of receiving invented positions. Recognized-text debug labels sit below the price without moving its center.
+
+The updated public app was tested against the eight fully visible Runeshape rewards in the running game at 3840 × 2160 and 150% scaling. Every rendered price center was within 0.636 logical pixels of its corresponding OCR text center; all eight labels fit without truncation. The 3x Artificer's Orb total and seven explicitly labelled unit estimates were verified again. No rewards were selected. Market data was refreshed successfully (252 items across the five categories). The current Verisium feed returned Celestial Alloy at 8.1 divines (gold tier) and a stack of two at 16.2 (pink tier). The eight visible rewards were below the gold threshold.
+
+Validation: lint and TypeScript passed; 55 focused core, service, overlay, component and native OCR tests passed; both updated Windows packages built and both packaged price-helper smoke checks passed. Full Vitest result: 941 passed, with the same two pre-existing recorded-inventory failures noted above. Alignment/color regressions include irregular row gaps, an unknown middle row, invalid/clipped geometry, 150% scaling, bottom-edge placement, stack/rate boundaries, and suppression for stale/missing data. Live evidence is saved locally in `artifacts/verisium-live-results.json` and `artifacts/verisium-live-overlay.png`.
+A separate hidden Electron fixture run also passed 32 actual rendered-center checks across four scenarios (normal/bottom-edge placement, debug off/on), with a maximum error of 0.636 logical pixels. Gold, pink, stale and unknown colors were checked from computed styles; debug text caused no center movement. The fixture made no network requests or game inputs and closed its test app afterward. Its clearly marked results and screenshots are under artifacts/verisium-fixture-overlay-*. The live app was then restarted normally with the temporary debugging listener closed.
