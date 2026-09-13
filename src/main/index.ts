@@ -48,6 +48,8 @@ import { ITEM_INTELLIGENCE_IPC_VERSION, type ParsedItemEvaluation } from "../sha
 import { openLocalPersistence, type LocalPersistenceDatabase } from "./persistence/index.js";
 import { ItemIntelligenceService } from "./itemIntelligenceService.js";
 import { PriceFeedService, type PriceFeedConfig } from "./priceFeedService.js";
+import { installPriceHelper } from "./priceHelperIntegration.js";
+import type { PriceHelperService } from "./priceHelperService.js";
 import { registerItemIntelligenceIpc } from "./itemIntelligenceIpc.js";
 import { registerScanIpc } from "./scanIpc.js";
 import { StashTabAdminService } from "./stashTabAdminService.js";
@@ -84,6 +86,7 @@ let lastClipboard = "";
 let localPersistence: LocalPersistenceDatabase | undefined;
 let itemIntelligenceService: ItemIntelligenceService | undefined;
 let priceFeedService: PriceFeedService | undefined;
+let priceHelperService: PriceHelperService | undefined;
 let scannerService: ScannerRuntimeService | undefined;
 let combatService: CombatAssistService | undefined;
 let combatGlobalDryRun = true;
@@ -226,7 +229,7 @@ function exportTriageSnapshot(): void {
 }
 
 async function evaluateClipboard() {
-  const text = clipboard.readText();
+  const text = await clipboard.readText().catch(() => "");
   if (!text || text === lastClipboard) return null;
   lastClipboard = text;
   return evaluateItemText(text, "clipboard");
@@ -491,6 +494,7 @@ if (ownsInstance) void app.whenReady().then(() => {
     assistiveService?.stop("emergency-stop");
     stashSortService?.stop("emergency-stop");
     scannerService?.stop("emergency-stop");
+    try { priceHelperService?.stop(); } catch { /* Never let an overlay delay the input kill switch. */ }
     sendRendererEvent(mainWindow, "qa:killed");
   };
   const emergencyStopRegistered = globalShortcut.register("CommandOrControl+Shift+Escape", stopAllInput);
@@ -758,6 +762,7 @@ if (ownsInstance) void app.whenReady().then(() => {
   ipcMain.handle("runtime:mode", () => buildMode);
   registerCalibrationIpc();
   createWindow();
+  priceHelperService = installPriceHelper(() => mainWindow);
   setInterval(() => {
     void evaluateClipboard();
   }, 750);

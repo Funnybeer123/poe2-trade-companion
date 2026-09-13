@@ -58,6 +58,7 @@ describe("preload API exposure", () => {
         "mode",
         "onItem",
         "priceFeed",
+        "priceHelper",
         "rearm",
         "scanner",
         "shop",

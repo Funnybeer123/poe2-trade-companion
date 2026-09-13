@@ -2,6 +2,11 @@ import { expect, test } from "@playwright/test";
 import { combatSmoke } from "./combat-smoke.js";
 import { dashboardSmoke } from "./dashboard-smoke.js";
 import { windowFocusSmoke } from "./window-focus-smoke.js";
+import { priceHelperSmoke } from "./price-helper-smoke.js";
+
+test("price helper safely prices lists and preserves league settings", async ({}, testInfo) => {
+  await priceHelperSmoke("authorized-qa", testInfo);
+});
 
 test("window activation restores and raises the existing companion", async ({}, testInfo) => {
   await windowFocusSmoke("authorized-qa", testInfo);

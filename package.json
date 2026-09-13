@@ -6,7 +6,7 @@
   "main": "dist-electron/index.js",
   "type": "module",
   "engines": {
-    "node": ">=20"
+    "node": ">=22.12.0"
   },
   "scripts": {
     "dev": "vite",
@@ -84,7 +84,7 @@
     "shop:tab": "npx --yes tsx scripts/shop-list-bag.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^12.11.1",
+    "better-sqlite3": "^13.0.3",
     "vue": "^3.5.13",
     "vue-router": "^4.6.4"
   },
@@ -96,8 +96,8 @@
     "@vitejs/plugin-vue": "^5.2.1",
     "@vue/test-utils": "^2.5.0",
     "cross-env": "^7.0.3",
-    "electron": "^34.3.0",
-    "electron-builder": "^25.1.8",
+    "electron": "^44.3.0",
+    "electron-builder": "^26.15.3",
     "eslint": "^10.9.1",
     "eslint-plugin-vue": "^10.10.0",
     "globals": "^17.11.0",
@@ -106,7 +106,7 @@
     "typescript-eslint": "^8.68.0",
     "vite": "^6.2.1",
     "vite-plugin-electron": "^0.29.0",
-    "vitest": "^3.0.8",
+    "vitest": "^4.1.11",
     "vue-tsc": "^2.2.8"
   }
 }

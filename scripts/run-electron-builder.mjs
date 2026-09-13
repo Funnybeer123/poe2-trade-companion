@@ -158,8 +158,14 @@ let builderStatus = 1;
 let hostStatus = 0;
 let preservedNative;
 let nativeReady = false;
+// better-sqlite3 13 ships N-API binaries in its npm package. They work in
+// both host Node and Electron; forcing an ABI rebuild unnecessarily requires
+// Visual Studio and replaces the tested, portable binary.
+const portableSqlite = existsSync(path.resolve("node_modules", "better-sqlite3", "prebuilds", `${process.platform}-${process.arch}.node`));
 try {
-  builderStatus = rebuildCli
+  builderStatus = portableSqlite
+    ? run(process.execPath, ["-e", "const Database=require('better-sqlite3');const db=new Database(':memory:');db.prepare('select 1').get();db.close()"])
+    : rebuildCli
     ? run(process.execPath, [
         rebuildCli,
         "--force",
@@ -168,10 +174,11 @@ try {
       ])
     : 1;
   nativeReady = builderStatus === 0;
-  if (!rebuildCli) {
+  if (!portableSqlite && !rebuildCli) {
     console.error("Could not locate electron-builder's native rebuild tool.");
   }
   if (builderStatus === 0) {
+    if (portableSqlite) builderArgs.push("--config.npmRebuild=false");
     selectUniqueOutput(1);
     builderStatus = run(process.execPath, [builderCli, ...builderArgs]);
   }
@@ -188,7 +195,7 @@ try {
 } finally {
   // electron-builder recompiles native modules for Electron in-place. Always
   // restore the host Node ABI, including after an interrupted/failed package.
-  hostStatus = npmCli
+  hostStatus = portableSqlite ? 0 : npmCli
     ? run(process.execPath, [npmCli, "rebuild", "better-sqlite3"])
     : run(
         process.platform === "win32"

@@ -8,13 +8,17 @@ export type WinReply = Record<string, unknown>;
 
 export interface WinHostOptions {
   requestTimeoutMs?: number;
-  scriptName?: "win-input-host.ps1" | "win-combat-host.ps1";
+  scriptName?: "win-input-host.ps1" | "win-combat-host.ps1" | "win-price-helper.ps1";
 }
 
 export function resolveWinHostScript(scriptName = "win-input-host.ps1"): string {
+  if (!["win-input-host.ps1", "win-combat-host.ps1", "win-price-helper.ps1", "win-emergency-stop.ps1"].includes(scriptName)) {
+    throw new Error("Unsupported native helper script");
+  }
   const here = path.dirname(fileURLToPath(import.meta.url));
+  // Bind executable helpers to this module's checkout/package, never to the
+  // caller's working directory (which may contain an unrelated scripts folder).
   const sourceCandidates = [
-    path.resolve(process.cwd(), "scripts", scriptName),
     path.resolve(here, "..", "scripts", scriptName),
     path.resolve(here, "../..", "scripts", scriptName),
     path.resolve(here, "../../..", "scripts", scriptName),

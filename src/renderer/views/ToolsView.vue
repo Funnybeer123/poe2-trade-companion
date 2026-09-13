@@ -9,10 +9,12 @@ import FilterSettingsTool from "../components/tools/FilterSettingsTool.vue";
 import HotkeyActionsTool from "../components/tools/HotkeyActionsTool.vue";
 import QaReplayTool from "../components/tools/QaReplayTool.vue";
 import CombatAssistTool from "../components/tools/CombatAssistTool.vue";
+import PriceHelperTool from "../components/tools/PriceHelperTool.vue";
 
 const route = useRoute();
 
 const tools = [
+  { id: "price-helper", label: "Price helper", detail: "Live prices & Island Rumours" },
   { id: "combat", label: "Flasks & Unleash", detail: "Health, mana & cooldowns" },
   { id: "calibration", label: "Calibration", detail: "Screen regions" },
   { id: "transfers", label: "Transfers", detail: "Audited stash movement" },
@@ -51,7 +53,8 @@ const selectedTool = computed<ToolId>(() => {
     </nav>
 
     <div class="tool-content">
-      <CombatAssistTool v-if="selectedTool === 'combat'" />
+      <PriceHelperTool v-if="selectedTool === 'price-helper'" />
+      <CombatAssistTool v-else-if="selectedTool === 'combat'" />
       <CalibrationPanel v-else-if="selectedTool === 'calibration'" />
       <TransferPanel v-else-if="selectedTool === 'transfers'" />
       <SortStashPanel v-else-if="selectedTool === 'sort-stash'" />

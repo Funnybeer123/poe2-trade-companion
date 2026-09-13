@@ -32,6 +32,16 @@ const subscribe = (<C extends IpcEventChannel>(
 }) as IpcSubscriber;
 
 contextBridge.exposeInMainWorld("poe2", {
+  priceHelper: {
+    status: () => ipcRenderer.invoke("price-helper:status"),
+    configure: (config: unknown) => ipcRenderer.invoke("price-helper:configure", config),
+    refresh: () => ipcRenderer.invoke("price-helper:refresh"),
+    refreshRumours: () => ipcRenderer.invoke("price-helper:refresh-rumours"),
+    lookup: (text: string) => ipcRenderer.invoke("price-helper:lookup", text),
+    calibrate: () => ipcRenderer.invoke("price-helper:calibrate"),
+    start: () => ipcRenderer.invoke("price-helper:start"),
+    stop: () => ipcRenderer.invoke("price-helper:stop"),
+  },
   combat: {
     setGlobalDryRun: (enabled: boolean) => ipcRenderer.invoke("combat:global-dry-run", enabled),
     status: () => ipcRenderer.invoke("combat:status"),
