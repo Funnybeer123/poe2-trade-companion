@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build && node scripts/build-stash-worker.mjs",
     "build:public": "cross-env POE2_BUILD_MODE=public-companion npm run build",
     "build:qa": "cross-env POE2_BUILD_MODE=authorized-qa npm run build",
     "lint": "eslint . --max-warnings=0",
@@ -69,6 +69,8 @@
     "tabs:finish-gear": "npx --yes tsx scripts/stash-tab-admin.ts --finish-gear --allow-priced",
     "sort:gear": "npx --yes tsx scripts/sort-gear.ts",
     "sort:gear:dry": "npx --yes tsx scripts/sort-gear.ts --dry-run",
+    "value:dump": "npx --yes tsx scripts/value-dump.ts",
+    "value:dump:sort": "npx --yes tsx scripts/value-dump.ts --move",
     "shop": "npx --yes tsx scripts/shop.ts",
     "shop:record": "npx --yes tsx scripts/shop.ts --record",
     "shop:apply": "npx --yes tsx scripts/shop.ts --live",

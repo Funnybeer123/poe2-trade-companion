@@ -194,7 +194,8 @@ export const ARCHETYPES: Archetype[] = [
     id: "amulet",
     classPattern: "^Amulets?$",
     desirableFamilies: [
-      "skill-levels", "spirit", "life", "all-attributes", "all-res", "chaos-res", "rarity-found", "energy-shield-flat",
+      "skill-levels", "spirit", "life", "all-attributes", "all-res", "chaos-res", "rarity-found", "energy-shield-flat", "energy-shield-percent",
+      "fire-res", "cold-res", "lightning-res",
     ],
     pGoodSlam: 0.26,
   },

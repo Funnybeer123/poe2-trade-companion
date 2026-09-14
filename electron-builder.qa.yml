@@ -1,6 +1,7 @@
 appId: com.poe2.tradecompanion.qa
 productName: PoE2 QA Trade Bot
 asarUnpack:
+  - dist-electron/value-dump.cjs
   - scripts/win-price-helper.ps1
   - scripts/win-emergency-stop.ps1
   - scripts/win-combat-host.ps1

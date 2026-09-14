@@ -12,6 +12,7 @@ import type {
   SaveValueTierConfigRequest,
   ScannerRuntimeEvent,
   ScannerStartRequest,
+  StashTabScriptKind,
 } from "../shared/ipc.js";
 import type { PriceTable } from "../core/priceTable.js";
 import type { SearchRegexRequest } from "../core/searchRegex.js";
@@ -140,13 +141,17 @@ contextBridge.exposeInMainWorld("poe2", {
     configure: (partial: unknown) => ipcRenderer.invoke("price-feed:configure", partial),
     comps: (itemText: string) => ipcRenderer.invoke("price-feed:comps", itemText),
   },
+  stashValuation: {
+    overview: () => ipcRenderer.invoke("stash-valuation:overview"),
+    saveSettings: (settings: unknown) => ipcRenderer.invoke("stash-valuation:save-settings", settings),
+  },
   stashTabs: {
     status: () => ipcRenderer.invoke("stash-tabs:status"),
     survey: (folderName?: string) => ipcRenderer.invoke("stash-tabs:survey", folderName),
     finds: () => ipcRenderer.invoke("stash-tabs:finds"),
     plan: (payload: unknown) => ipcRenderer.invoke("stash-tabs:plan", payload),
     apply: (payload: unknown) => ipcRenderer.invoke("stash-tabs:apply", payload),
-    runScript: (kind: string) => ipcRenderer.invoke("stash-tabs:run-script", kind),
+    runScript: (kind: StashTabScriptKind) => ipcRenderer.invoke("stash-tabs:run-script", kind),
     stopScript: () => ipcRenderer.invoke("stash-tabs:stop-script"),
     onEvent: (callback: (payload: unknown) => void) => {
       const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);

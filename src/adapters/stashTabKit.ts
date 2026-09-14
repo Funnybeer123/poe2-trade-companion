@@ -27,6 +27,8 @@ export interface OcrLine {
   y: number;
   w: number;
   h: number;
+  /** Actual OCR word boxes; preserves exact positions inside merged headers. */
+  words?: Array<{ text: string; x: number; y: number; w: number; h: number }>;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -119,6 +121,36 @@ export interface TabListRow {
   clickY: number;
 }
 
+/** Positive selected-row evidence in the calibrated dropdown's left gutter.
+ * The orange outline pointer is separate from tab colours/icons and aligned
+ * against fresh OCR row centres. Missing or multiple pointers remain unknown.
+ */
+export function selectedTabListRow(rows: readonly TabListRow[],
+  image: { width: number; height: number; data: Uint8Array },
+  client: { left: number; top: number; width: number; height: number }): TabListRow | undefined {
+  if (image.width !== client.width || image.height !== client.height) return undefined;
+  const hits = rows.filter(row => {
+    if (!row.readable) return false;
+    const left = TAB_LIST.region.left - 7;
+    const top = Math.round(row.clickY) - 18;
+    const points: Array<{ x: number; y: number }> = [];
+    for (let y = top; y <= top + 36; y += 1) for (let x = left; x < left + 40; x += 1) {
+      const ix = x - client.left, iy = y - client.top;
+      if (ix < 0 || iy < 0 || ix >= image.width || iy >= image.height) continue;
+      const offset = (iy * image.width + ix) * 3;
+      const b = image.data[offset]!, g = image.data[offset + 1]!, r = image.data[offset + 2]!;
+      if (r >= 90 && r - g >= 25 && g - b >= 10) points.push({ x, y });
+    }
+    if (points.length < 45 || points.length > 300) return false;
+    const minX = Math.min(...points.map(point => point.x)), maxX = Math.max(...points.map(point => point.x));
+    const minY = Math.min(...points.map(point => point.y)), maxY = Math.max(...points.map(point => point.y));
+    const w = maxX - minX + 1, h = maxY - minY + 1;
+    return w >= 24 && w <= 36 && h >= 16 && h <= 30 && minX > left + 1 && maxX < left + 38 &&
+      Math.abs((minY + maxY) / 2 - row.clickY) <= 6 && points.length / (w * h) < 0.45;
+  });
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
 export interface StripEntry {
   label: string;
   row: StripRowName;
@@ -126,6 +158,7 @@ export interface StripEntry {
   point: { x: number; y: number };
   /** OCR line width, for clicking a specific part of a merged label. */
   width: number;
+  words?: OcrLine["words"];
 }
 
 export interface Point {
@@ -215,6 +248,28 @@ export function findLabelSegment(
   return undefined;
 }
 
+/** Exact word-box resolution; short folder labels never use proportional guesses. */
+export function findExactWordSegment(entries: readonly StripEntry[], label: string): StripEntry | undefined {
+  const hits: StripEntry[] = [];
+  for (const entry of entries) {
+    const words = entry.words ?? [];
+    for (let start = 0; start < words.length; start += 1) {
+      let text = "";
+      for (let end = start; end < words.length; end += 1) {
+        text = text ? `${text} ${words[end]!.text}` : words[end]!.text;
+        if (!labelsEqualFolded(text, label)) continue;
+        const selected = words.slice(start, end + 1);
+        const left = Math.min(...selected.map(word => word.x));
+        const right = Math.max(...selected.map(word => word.x + word.w));
+        const top = Math.min(...selected.map(word => word.y));
+        const bottom = Math.max(...selected.map(word => word.y + word.h));
+        hits.push({ label, row: entry.row, point: { x: Math.round((left + right) / 2), y: Math.round((top + bottom) / 2) }, width: right - left });
+      }
+    }
+  }
+  return hits.length === 1 ? hits[0] : undefined;
+}
+
 export function pickUnique(entries: readonly StripEntry[], label: string): StripEntry | undefined {
   const exact = entries.filter((entry) => entry.label === label);
   if (exact.length === 1) return exact[0];
@@ -227,6 +282,43 @@ export function pickUnique(entries: readonly StripEntry[], label: string): Strip
 
 export class StashTabKit {
   constructor(private readonly host: TabHost) {}
+
+  /** Read short headers that Windows OCR suppresses without neighbouring text.
+   * Every crop covers the observed strip, and clicks use only returned screen
+   * word boxes. The native helper discards its neutral context before returning.
+   */
+  async readShortTopLabel(label: string, checkpoint?: () => Promise<void>): Promise<StripEntry | undefined> {
+    if (!/^[\p{L}\p{N}]{1,3}$/u.test(label)) return undefined;
+    const sameBox = (a: StripEntry, b: StripEntry) => Math.abs(a.point.x - b.point.x) <= 4 &&
+      Math.abs(a.point.y - b.point.y) <= 4 && Math.abs(a.width - b.width) <= 6;
+    const passes: StripEntry[][] = [];
+    for (const textThreshold of [90, 120]) {
+      const hits: StripEntry[] = [];
+      // Overlap keeps any complete glyph away from a crop boundary. These are
+      // strip-wide sampling windows, never remembered tab locations.
+      for (let left = 40; left < 1280; left += 75) {
+        await checkpoint?.();
+        const top = STRIP_ROWS.top.min + 14;
+        const width = Math.min(150, 1280 - left);
+        const height = STRIP_ROWS.top.max - top - 4;
+        const reply = await this.host.send({ op: "ocr", left, top, width, height, scale: 2, textThreshold, neutralContext: true });
+        if (!reply.ok) return undefined;
+        const lines = (Array.isArray(reply.lines) ? reply.lines : []) as OcrLine[];
+        for (const word of lines.flatMap(line => line.words ?? [])) {
+          if (word.text.trim().toLowerCase() !== label.toLowerCase() ||
+              ![word.x, word.y, word.w, word.h].every(Number.isFinite) || word.w < 6 || word.h < 12 ||
+              word.x < left + 2 || word.x + word.w > left + width - 2 || word.y < top || word.y + word.h > top + height) continue;
+          const hit: StripEntry = { label, row: "top", point: { x: Math.round(word.x + word.w / 2), y: Math.round(word.y + word.h / 2) }, width: word.w, words: [word] };
+          if (!hits.some(known => sameBox(known, hit))) hits.push(hit);
+        }
+      }
+      // A second visible copy is ambiguous even if another preprocessing pass
+      // happens to drop it; never choose by first match or prior coordinates.
+      if (hits.length !== 1) return undefined;
+      passes.push(hits);
+    }
+    return sameBox(passes[0]![0]!, passes[1]![0]!) ? passes[1]![0] : undefined;
+  }
 
   private async park(): Promise<void> {
     await this.host.send({ op: "move", ...PARK });
@@ -290,6 +382,7 @@ export class StashTabKit {
         row,
         point: { x: Math.round(line.x + line.w / 2), y: Math.round(line.y + line.h / 2) },
         width: line.w,
+        ...(line.words ? { words: line.words } : {}),
       }));
   }
 

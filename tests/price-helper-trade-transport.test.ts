@@ -55,7 +55,7 @@ describe("bounded helper reward trade transport", () => {
     expect(body).toEqual(buildRewardTradeQuery(GEM));
     expect(body.query.type).toBe("Rain of Blades");
     expect(body.query.filters.misc_filters.filters.gem_level).toEqual({ min: 20, max: 20 });
-    expect(calls[1]!.url).toBe(`https://www.pathofexile.com/api/trade2/fetch/${Array.from({ length: 10 }, (_, i) => id(i + 1)).join(",")}?query=safe_Search-1`);
+    expect(calls[1]!.url).toBe(`https://www.pathofexile.com/api/trade2/fetch/${Array.from({ length: 10 }, (_, i) => id(i + 1)).join(",")}?query=safe_Search-1&realm=poe2`);
     expect(calls[1]!.init.method).toBe("GET");
     for (const call of calls) {
       expect(call.init.redirect).toBe("error");
@@ -99,7 +99,7 @@ describe("bounded helper reward trade transport", () => {
     const result = await service.fetchHelperReward(GEM, LEAGUE);
     expect(result.error).toBeUndefined();
     expect(result.payload).toEqual(listings);
-    expect(calls[1]!.url).toBe(`https://www.pathofexile.com/api/trade2/fetch/${searches.result.join(",")}?query=${searchId}`);
+    expect(calls[1]!.url).toBe(`https://www.pathofexile.com/api/trade2/fetch/${searches.result.join(",")}?query=${searchId}&realm=poe2`);
   });
 
   it.each(["short", "../outside", "a".repeat(63), "a".repeat(65), "z".repeat(64), `${id(1)}\n`, null])("rejects unsafe listing ID %j", async listingId => {

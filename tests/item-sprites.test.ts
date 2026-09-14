@@ -1,9 +1,5 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { bmpToGray } from "../src/adapters/bmp.js";
 import { planFillMoves } from "../src/core/bagPack.js";
-import { loadProfile } from "../src/core/calibrationStore.js";
 import { diagnoseFillRun } from "../src/core/fillDiagnose.js";
 import {
   cellLooksOccupied,
@@ -16,6 +12,7 @@ import {
 import { fillRect } from "../src/core/grayImage.js";
 import { perceiveUi } from "../src/core/uiPerception.js";
 import { paintGridSprite, stashAndBagFrame, TEST_CLIENT } from "./perceptionFixtures.js";
+import { recordedWandFixture } from "./recordedWandFixture.js";
 
 const STASH = { x: 80, y: 144, w: 736, h: 630 };
 
@@ -84,15 +81,10 @@ describe("sprite item sizing", () => {
   });
 
   it("sees the leftover wand on the live empty-looking bag dump", () => {
-    const bmp = path.resolve("fixtures/perception/live/deposit-1787705758242.bmp");
-    if (!existsSync(bmp)) return;
-    const facts = perceiveUi(
-      bmpToGray(bmp),
-      { left: 0, top: 0, width: 3840, height: 2160 },
-      {},
-      loadProfile(path.resolve("fixtures/perception/templates")),
-    );
-    expect(facts.occupiedBag.some((cell) => cell.col === 11 && cell.row <= 2)).toBe(true);
+    const { frame, client, profile } = recordedWandFixture();
+    const facts = perceiveUi(frame, client, {}, profile);
+    expect(facts.inventoryPanelOpen).toBe(true);
+    expect(facts.occupiedBag.map(cell => [cell.row, cell.col])).toEqual([[0, 11], [1, 11], [2, 11]]);
   });
 });
 

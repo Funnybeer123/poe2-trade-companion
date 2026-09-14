@@ -96,6 +96,7 @@ import {
   type ScanSessionDetail,
   type ScanSessionView,
   type ScanSlotView,
+  type StashTabScriptKind,
 } from "../../shared/ipc.js";
 import {
   defaultHotkeyBindings,
@@ -1045,7 +1046,7 @@ export interface StashSortApi {
 
 export interface StashTabAdminApi {
   status: () => Promise<StashTabAdminStatus>;
-  runScript?: (kind: string) => Promise<{ started: boolean; reason?: string }>;
+  runScript?: (kind: StashTabScriptKind) => Promise<{ started: boolean; reason?: string }>;
   stopScript?: () => Promise<boolean>;
   survey: (folderName?: string) => Promise<StashTabSurveyResult>;
   /** Recent finds from the sorter's value triage (newest first). */
@@ -1112,6 +1113,10 @@ function compatibilityApi<T>(
 
 export function getStashTabAdminApi(): StashTabAdminApi | undefined {
   return compatibilityApi<StashTabAdminApi>("stashTabs");
+}
+
+export function getStashValuationApi() {
+  return nativeBridge()?.stashValuation;
 }
 
 export interface ShopListingView {

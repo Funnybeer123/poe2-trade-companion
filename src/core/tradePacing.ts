@@ -58,7 +58,7 @@ export const DEFAULT_RULES: Record<string, RateRule[]> = {
 };
 
 /** Extra guard after a window frees a slot, to absorb clock skew. */
-const RELEASE_SLACK_MS = 250;
+const RELEASE_SLACK_MS = 1000;
 
 function triples(header: string | null | undefined): Array<[number, number, number]> {
   if (!header) return [];
@@ -122,13 +122,29 @@ export class TradePacer {
   private readonly policies = new Map<string, PolicyRecord>();
 
   constructor(snapshot?: PacerSnapshot | null) {
+    this.merge(snapshot);
+  }
+
+  /** Reconcile independently persisted reservations without losing repeated hits. */
+  merge(snapshot?: PacerSnapshot | null): void {
     if (!snapshot || typeof snapshot !== "object") return;
     for (const [name, record] of Object.entries(snapshot)) {
       if (isRecord(record) && record.rules.length > 0) {
+        const existing = this.policies.get(name);
+        const counts = new Map<number, number>();
+        for (const hit of existing?.hits ?? []) counts.set(hit, (counts.get(hit) ?? 0) + 1);
+        const incoming = new Map<number, number>();
+        for (const hit of record.hits) incoming.set(hit, (incoming.get(hit) ?? 0) + 1);
+        for (const [hit, count] of incoming) counts.set(hit, Math.max(count, counts.get(hit) ?? 0));
+        const rules = new Map<number, RateRule>();
+        for (const rule of [...(existing?.rules ?? []), ...record.rules]) {
+          const previous = rules.get(rule.periodSec);
+          rules.set(rule.periodSec, { ...rule, max: Math.min(previous?.max ?? Infinity, rule.max), penaltySec: Math.max(previous?.penaltySec ?? 0, rule.penaltySec) });
+        }
         this.policies.set(name, {
-          rules: record.rules.map((rule) => ({ ...rule })),
-          hits: [...record.hits],
-          restrictedUntil: record.restrictedUntil,
+          rules: [...rules.values()],
+          hits: [...counts].flatMap(([hit, count]) => Array<number>(count).fill(hit)),
+          restrictedUntil: Math.max(existing?.restrictedUntil ?? 0, record.restrictedUntil),
         });
       }
     }
@@ -149,13 +165,32 @@ export class TradePacer {
     record.hits = record.hits.filter((hit) => now - hit < horizonMs && hit <= now);
   }
 
-  /** Requests allowed in a rule's window; the last slot is never used. */
+  /** Keep at least one slot and 20% of larger windows in reserve. */
   private allowed(rule: RateRule): number {
-    return Math.max(1, rule.max - 1);
+    return Math.max(1, Math.min(rule.max - 1, Math.floor(rule.max * 0.8)));
+  }
+
+  private requestPolicies(name: string): string[] {
+    return [name, ...[...this.policies.keys()].filter(key => key.startsWith(`${name}:`))];
+  }
+
+  /** Spread requests across the learned short windows instead of bursting at capacity. */
+  spacingFor(name: string): number {
+    return Math.max(0, ...this.requestPolicies(name).flatMap(key => this.policy(key).rules
+      .filter(rule => rule.periodSec <= 300).map(rule => Math.ceil(rule.periodSec * 1000 / this.allowed(rule)))));
+  }
+
+  spacingDelayFor(name: string, now: number = Date.now()): number {
+    const latest = Math.max(-Infinity, ...this.requestPolicies(name).flatMap(key => this.policy(key).hits));
+    return Math.max(0, latest + this.spacingFor(name) - now);
   }
 
   /** Milliseconds to wait before one request under `name` may go out. */
   delayFor(name: string, now: number = Date.now()): number {
+    return Math.max(...this.requestPolicies(name).map(key => this.delayForPolicy(key, now)));
+  }
+
+  private delayForPolicy(name: string, now: number): number {
     const record = this.policy(name);
     this.prune(record, now);
     let wait = Math.max(0, record.restrictedUntil - now);
@@ -175,6 +210,10 @@ export class TradePacer {
 
   /** How many requests under `name` could go out right now without waiting. */
   available(name: string, now: number = Date.now()): number {
+    return Math.min(...this.requestPolicies(name).map(key => this.availablePolicy(key, now)));
+  }
+
+  private availablePolicy(name: string, now: number): number {
     const record = this.policy(name);
     this.prune(record, now);
     if (record.restrictedUntil > now) return 0;
@@ -189,9 +228,11 @@ export class TradePacer {
 
   /** Note that a request under `name` just went out. */
   record(name: string, now: number = Date.now()): void {
-    const record = this.policy(name);
-    record.hits.push(now);
-    this.prune(record, now);
+    for (const key of this.requestPolicies(name)) {
+      const record = this.policy(key);
+      record.hits.push(now);
+      this.prune(record, now);
+    }
   }
 
   /** Learn the real rules and our standing from a response's headers. */

@@ -239,6 +239,15 @@ export const MOD_FAMILIES: ModFamily[] = [
     tiers: { t1: 150, t2: 90, t3: 50 },
   },
   {
+    id: "energy-shield-percent",
+    label: "Increased maximum energy shield",
+    pattern: String.raw`^\d+% increased maximum Energy Shield$`,
+    classes: ["Amulets", "Rings"],
+    weight: 4,
+    // Heuristic score bands; advanced copied affix tiers remain separate evidence.
+    tiers: { t1: 45, t2: 39, t3: 20 },
+  },
+  {
     id: "additional-projectiles",
     label: "Additional arrows / projectiles",
     pattern: String.raw`fires? (an|\d+) Additional (Arrow|Projectile)s?`,

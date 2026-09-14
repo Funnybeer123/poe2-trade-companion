@@ -30,9 +30,12 @@ import {
   StashTabKit,
   TAB_LIST,
   findLabelSegment,
+  findExactWordSegment,
   pickExact,
   pickUnique,
+  selectedTabListRow,
   type StripEntry,
+  type OcrLine,
   type TabListRow,
 } from "./stashTabKit.js";
 import { SortHarness, SortStop } from "./sortHarness.js";
@@ -154,6 +157,8 @@ export interface TabIndex {
   region: { x: number; y: number; w: number; h: number };
   cols: number;
   rows: number;
+  /** Present for an exhaustive audit; excluded cells make coverage incomplete. */
+  coverage?: { totalCells: number; copiedCells: number; excludedCells: GridCell[] };
 }
 
 export type TabScanResult =
@@ -174,6 +179,14 @@ export interface GearSorterTriageOptions {
 export interface GearSorterOptions {
   root: string;
   templateDir: string;
+  /** Exact destination folder label; existing sort workflows default to Gear. */
+  gearFolderName?: string;
+  /** Exact child names used as positive folder-navigation evidence. */
+  gearTabNames?: readonly string[];
+  /** Layout captured by the app's saved calibration; seeds both stash strip states. */
+  profileStashLayout?: "top-level" | "folder";
+  /** Exact live OCR labels only; no remembered coordinates or elimination guesses. */
+  strictTabNavigation?: boolean;
   dryRun?: boolean;
   debug?: boolean;
   maxChestClicks?: number;
@@ -681,7 +694,7 @@ export class GearSorter {
 
   /* ---------------- ensureSession ---------------- */
 
-  async ensureSession(): Promise<void> {
+  async ensureSession(options: { openFolder?: boolean } = {}): Promise<void> {
     const endPhase = this.harness.startPhase("ensure-session");
     try {
       // A process killed mid-click leaves the virtual left button LATCHED —
@@ -690,7 +703,7 @@ export class GearSorter {
       await this.harness.sleep(300, false);
       if (!(await this.ensureStash())) throw new Error("stash-not-openable");
       // The guild stash has NO Gear folder — every tab is top-level.
-      if (!this.guildChest && !(await this.ensureFolderRowOpen())) {
+      if (options.openFolder !== false && !this.guildChest && !(await this.ensureFolderRowOpen())) {
         throw new Error("gear-folder-row-not-openable");
       }
       // The Highlight (search) box is never touched any more — the user
@@ -841,8 +854,38 @@ export class GearSorter {
 
   private gearRowsIn(rows: readonly TabListRow[]): TabListRow[] {
     return rows.filter((row) =>
-      GEAR_TAB_NAMES.some((name) => row.label.trim() === name || labelsSimilar(row.label, name)),
+      (this.options.gearTabNames ?? GEAR_TAB_NAMES).some((name) => row.label.trim() === name || labelsSimilar(row.label, name)),
     );
+  }
+
+  private get gearFolderName(): string { return this.options.gearFolderName ?? "Gear"; }
+
+  private isGearFolderLabel(label: string): boolean {
+    return labelsEqualFolded(label.trim(), this.gearFolderName);
+  }
+
+  private findGearFolderHeader(entries: readonly StripEntry[]): StripEntry | undefined {
+    const exact = entries.filter(entry => this.isGearFolderLabel(entry.label));
+    if (exact.length > 1) return undefined;
+    return exact[0] ??
+      findExactWordSegment(entries, this.gearFolderName) ??
+      (this.options.gearFolderName ? undefined : entries.find(entry => /gear/i.test(entry.label)));
+  }
+
+  /** Enlarged, then inverted OCR of the observed header strip; never clicks. */
+  private async readTopStripEnhanced(label = this.gearFolderName): Promise<StripEntry[]> {
+    for (const invert of [false, true]) {
+      const reply = await this.host.send({ op: "ocr", left: 40, top: STRIP_ROWS.top.min,
+        width: 1240, height: STRIP_ROWS.top.max - STRIP_ROWS.top.min, scale: 2, invert });
+      const entries = this.kit.stripEntries((Array.isArray(reply.lines) ? reply.lines : []) as OcrLine[], "top");
+      const exact = entries.filter(entry => labelsEqualFolded(entry.label, label));
+      if (exact.length > 1) return [];
+      const found = exact[0] ?? findExactWordSegment(entries, label);
+      if (found) return [found];
+    }
+    const short = await this.kit.readShortTopLabel(label, () => this.harness.checkpoint(`OCR short stash header ${label}`));
+    if (short) return [short];
+    return [];
   }
 
   /**
@@ -864,7 +907,7 @@ export class GearSorter {
     // gear rows is therefore usable as a folder read; the caller strips the
     // top-level rows so matching can never click them.
     if (this.gearRowsIn(rows).length >= 2) return "folder";
-    if (rows.some((row) => /^(gear|affinities)$/i.test(row.label.trim()))) return "top-level";
+    if (rows.some((row) => this.isGearFolderLabel(row.label) || /^affinities$/i.test(row.label.trim()))) return "top-level";
     return "ambiguous";
   }
 
@@ -873,7 +916,7 @@ export class GearSorter {
   private isTopLevelRowLabel(label: string): boolean {
     const trimmed = label.trim();
     return (
-      /^(gear|affinities)$/i.test(trimmed) ||
+      this.isGearFolderLabel(trimmed) || /^affinities$/i.test(trimmed) ||
       Boolean(canonicalTTabLabel(trimmed)) ||
       isRemoveOnlyTabLabel(trimmed)
     );
@@ -905,13 +948,22 @@ export class GearSorter {
     for (let attempt = 0; attempt < 3; attempt += 1) {
       const strip = await this.kit.readStrip();
       const wrongGroup = specialGroup(strip.folder);
-      if (strip.folder.length > 0 && !wrongGroup) return true;
+      const knownChildren = strip.folder.filter(entry => (this.options.gearTabNames ?? GEAR_TAB_NAMES)
+        .some(name => labelsEqualFolded(entry.label, name))).length;
+      if (strip.folder.length > 0 && !wrongGroup && (!this.options.gearFolderName || knownChildren >= 2)) return true;
       if (this.harness.guard("strip-wrong-group", wrongGroup)) {
         this.log(
-          `  · strip second row shows the SPECIAL group [${strip.folder.map((e) => e.label).join(" | ")}] — re-selecting Gear`,
+          `  · strip second row shows the SPECIAL group [${strip.folder.map((e) => e.label).join(" | ")}] — re-selecting ${this.gearFolderName}`,
         );
       }
-      let header = strip.top.find((entry) => /gear/i.test(entry.label));
+      let header = this.findGearFolderHeader(strip.top);
+      if (!header && this.options.strictTabNavigation) {
+        header = this.findGearFolderHeader(await this.readTopStripEnhanced());
+        if (!header) {
+          this.log(`  ! folder "${this.gearFolderName}" did not resolve to one OCR label — refusing to scroll or guess`);
+          return false;
+        }
+      }
       if (!header) {
         // Never page the scroll arrows blind: with the stash panel gone the
         // arrow coordinate points at the bare world — this was the "clicking
@@ -948,7 +1000,7 @@ export class GearSorter {
             this.harness.guard("strip-vanished-mid-scroll", true);
             break; // stash likely gone — let the recovery below diagnose
           }
-          header = reread.top.find((entry) => /gear/i.test(entry.label));
+          header = this.findGearFolderHeader(reread.top);
         }
       }
       if (!header) {
@@ -956,17 +1008,26 @@ export class GearSorter {
         continue;
       }
       // A merged OCR line centres on the crack between headers; bias left.
-      const merged = !/^gear$/i.test(header.label.trim());
+      const merged = !this.isGearFolderLabel(header.label);
       const clickX = merged ? Math.round(header.point.x - header.width / 2 + 35) : header.point.x;
       await this.host.send({ op: "focus" });
       await this.harness.sleep(200);
-      if (!(await this.surfaceClick(clickX, header.point.y, "stripTop", "open Gear folder row"))) {
+      if (!(await this.surfaceClick(clickX, header.point.y, "stripTop", `open ${this.gearFolderName} folder row`))) {
         continue;
+      }
+      // A folder restores its last active child. A prior top-level selection
+      // and list cache cannot establish which child is now selected.
+      if (this.options.strictTabNavigation) {
+        this.lastSelected = undefined;
+        this.folderRowsCache = undefined;
+        this.folderListOpen = false;
       }
       await this.harness.sleep(900);
     }
     const strip = await this.kit.readStrip();
-    return strip.folder.length > 0 && !specialGroup(strip.folder);
+    return strip.folder.length > 0 && !specialGroup(strip.folder) && (!this.options.gearFolderName ||
+      strip.folder.filter(entry => (this.options.gearTabNames ?? GEAR_TAB_NAMES)
+        .some(name => labelsEqualFolded(entry.label, name))).length >= 2);
   }
 
   /**
@@ -1222,6 +1283,7 @@ export class GearSorter {
     const exact = rows.filter(
       (candidate) => candidate.readable && labelsEqualFolded(candidate.label, label),
     );
+    if (this.options.strictTabNavigation) return exact.length === 1 && occurrence === 0 ? exact[0] : undefined;
     // The exclusion below only makes sense when WE know exactly which
     // canonical tab we want — a garbled queue label ("Bunker/Sheildsl")
     // must still loose-match the real row it garbled from.
@@ -1281,6 +1343,22 @@ export class GearSorter {
     return row;
   }
 
+  /** Match a fresh exact OCR row to the visible selected pointer twice. */
+  private async selectedFolderDestination(label: string, occurrence: number): Promise<boolean> {
+    await this.harness.checkpoint(`verify selected destination ${label}`);
+    const rows = await this.kit.readTabList();
+    if (this.listContext(rows) !== "folder") return false;
+    const target = this.matchFolderRow(rows, label, occurrence);
+    if (!target?.readable) return false;
+    const first = await this.captureRaw();
+    const selected = selectedTabListRow(rows, first.bgr, first.client);
+    if (selected?.index !== target.index || !labelsEqualFolded(selected.label, label)) return false;
+    await this.harness.sleep(180, false);
+    const second = await this.captureRaw();
+    const confirmed = selectedTabListRow(rows, second.bgr, second.client);
+    return confirmed?.index === target.index && labelsEqualFolded(confirmed.label, label);
+  }
+
   /**
    * Select a tab by label, via the FOLDER list only. `occurrence` addresses
    * duplicate labels (the folder holds two tabs that read "Rings"): 0 = the
@@ -1330,11 +1408,11 @@ export class GearSorter {
       await this.harness.checkpoint(`goto ${label}`);
       // Already active: the run loop probes a tab and cleanTab immediately
       // re-navigates to it — that second hop needs one cheap grid proof.
-      if (this.lastSelected === cacheKey && (await this.stashOpenProof())) {
+      if (!this.options.strictTabNavigation && this.lastSelected === cacheKey && (await this.stashOpenProof())) {
         endPhase("already-active");
         return true;
       }
-      let cachedRow = this.folderRowsCache
+      let cachedRow = !this.options.strictTabNavigation && this.folderRowsCache
         ? this.matchFolderRow(this.folderRowsCache, label, occurrence)
         : undefined;
       // The list may be CLOSED (every Dump return loses the observation) —
@@ -1402,7 +1480,7 @@ export class GearSorter {
         }
         this.folderRowsCache = rows;
         const row = this.matchFolderRow(rows, label, occurrence);
-        if (!row && this.lastSelected === cacheKey) {
+        if (!row && !this.options.strictTabNavigation && this.lastSelected === cacheKey) {
           // Some tab highlights (Jewels' magenta) defeat OCR while the tab is
           // ACTIVE — and the tab we last selected is still the active one, so
           // there is nothing to click. Verify the grid and stay put.
@@ -1442,6 +1520,23 @@ export class GearSorter {
         // nothing — leave it open between hops (the user asked for exactly
         // this: only a top-level list ever needs closing).
         const observed = await this.observeTabSwitch(before, expectChange);
+        if (this.options.strictTabNavigation && observed !== "changed") {
+          // Opening G can restore the already-selected destination. Empty
+          // grids cannot prove that identity: require the selected pointer
+          // beside a fresh exact OCR row, stable in two captures instead.
+          if (await this.selectedFolderDestination(label, occurrence)) {
+            this.harness.guard("folder-tab-selected-pointer-verified", true);
+            this.lastSelected = cacheKey;
+            endPhase("selected-pointer");
+            return true;
+          }
+          this.harness.guard("tab-select-unobserved", true);
+          this.lastSelected = undefined;
+          this.folderRowsCache = undefined;
+          this.folderListOpen = false;
+          this.lastStashProofAt = 0;
+          continue;
+        }
         if (expectChange && observed === "unchanged") {
           // The probe covers the strip AND the grid top: a real switch moves
           // the header highlight even when two near-empty grids are pixel-
@@ -1449,7 +1544,7 @@ export class GearSorter {
           // observable. The one legitimate case is an unknown active tab
           // (session start / post-recovery) that already WAS the wanted tab.
           if (wasSelected === undefined && switchMisses === 0) {
-            this.harness.guard("tab-select-blind-accept", true);
+            this.harness.guard(this.options.strictTabNavigation ? "folder-tab-ocr-already-active" : "tab-select-blind-accept", true);
           } else {
             // We KNEW a different tab was active — diagnose, never believe:
             // re-read next attempt, and after two misses run the full-screen
@@ -1553,7 +1648,7 @@ export class GearSorter {
     }
     return (
       trimmed.length >= 2 &&
-      !/^(gear|affinities)$/i.test(trimmed) &&
+      !this.isGearFolderLabel(trimmed) && !/^affinities$/i.test(trimmed) &&
       !isRemoveOnlyTabLabel(trimmed) &&
       !trimmed.startsWith("~") &&
       !/price/i.test(trimmed)
@@ -1578,6 +1673,10 @@ export class GearSorter {
     shop = false,
   ): Promise<boolean | undefined> {
     const findEntry = (entries: readonly StripEntry[]): StripEntry | undefined => {
+      if (this.options.strictTabNavigation) {
+        const exact = entries.filter(candidate => labelsEqualFolded(candidate.label, label));
+        return exact.length > 0 ? (exact.length === 1 ? exact[0] : undefined) : findExactWordSegment(entries, label);
+      }
       if (shop) {
         // Shop navigation matches with labelsEqualFolded ONLY: a clipped or
         // garbled label ("rice 5 exalted") must refuse, never resolve — the
@@ -1592,6 +1691,13 @@ export class GearSorter {
     let strip = await this.kit.readStrip();
     this.noteTopStrip(strip.top);
     let entry = findEntry(strip.top);
+    if (!entry && this.options.strictTabNavigation) {
+      entry = findEntry(await this.readTopStripEnhanced(label));
+      if (!entry) {
+        this.log(`  ! top tab "${label}" did not resolve to one OCR label — refusing to guess`);
+        return false;
+      }
+    }
     if (entry && !this.clickableTopEntry(entry, drain, shop)) return false; // protected — refuse
     if (!entry && (drain || shop)) {
       // Remove-only and shop labels must resolve exactly; the guesswork
@@ -1702,7 +1808,7 @@ export class GearSorter {
       // Accept once, visibly — demanding a change here called an already-
       // active Dump "unreachable" after 35s of futile clicks (dry-run,
       // 2026-09-01).
-      this.harness.guard("top-strip-blind-accept", true);
+      this.harness.guard(this.options.strictTabNavigation ? "top-tab-ocr-already-active" : "top-strip-blind-accept", true);
       return true;
     }
     this.harness.guard("top-strip-click-unverified", true);
@@ -1743,7 +1849,7 @@ export class GearSorter {
       if (!this.guildChest && !label.startsWith("T@row") && rowY === undefined) {
         // Cached header point first — the strip never moves, and the full
         // path's settledOcr read cost every Dump return ~11.5s live.
-        const cachedPoint = this.topHeaderPoints.get(label);
+        const cachedPoint = this.options.strictTabNavigation ? undefined : this.topHeaderPoints.get(label);
         if (cachedPoint && !drain) {
           await this.host.send({ op: "focus" });
           await this.harness.sleep(200);
@@ -1908,7 +2014,7 @@ export class GearSorter {
     const admit = (label: string): boolean => {
       if (!label || isRemoveOnlyTabLabel(label)) return false;
       const lower = label.toLowerCase();
-      if (lower.startsWith("~") || lower.includes("price") || lower === "gear" || lower === "affinities") {
+      if (lower.startsWith("~") || lower.includes("price") || this.isGearFolderLabel(lower) || lower === "affinities") {
         return false;
       }
       if (normalizeTabLabel(label).length < 2) return false; // OCR debris
@@ -1953,14 +2059,14 @@ export class GearSorter {
     // that is not a T tab. Protected tabs (Remove-only, ~price, specials)
     // all have long, readable labels and sit outside the band, so a blind
     // positional click cannot land on one.
-    const anchor = rows.find((row) => row.readable && /^(affinities|gear)$/i.test(row.label.trim()));
+    const anchor = rows.find((row) => row.readable && (this.isGearFolderLabel(row.label) || /^affinities$/i.test(row.label.trim())));
     if (anchor) {
       const anchorAt = rows.findIndex((row) => row === anchor);
       for (let i = anchorAt + 1; i < rows.length; i += 1) {
         const row = rows[i]!;
         if (row.readable) {
           const trimmed = row.label.trim();
-          if (/^(affinities|gear)$/i.test(trimmed)) continue;
+          if (this.isGearFolderLabel(trimmed) || /^affinities$/i.test(trimmed)) continue;
           if (canonicalTTabLabel(trimmed)) continue; // readable T rows already queued
           break; // first readable non-T row ends the band
         }
@@ -2946,6 +3052,15 @@ export class GearSorter {
     } catch {
       this.gridCalibration = {};
     }
+    if (this.options.profileStashLayout) {
+      const grid = this.profile.quadStashGrid ?? this.profile.stashGrid;
+      if (grid) {
+        const folderY = grid.y + (this.options.profileStashLayout === "top-level" ? -TOP_LEVEL_GRID_DY : 0);
+        const plain = { x: grid.x, y: folderY, w: grid.w, h: grid.h, cols: 24, rows: 24 };
+        this.gridCalibration.__default_24x24 ??= plain;
+        this.gridCalibration.__default_24x24_toplevel ??= { ...plain, y: folderY + TOP_LEVEL_GRID_DY };
+      }
+    }
   }
 
   private saveGridCalibration(): void {
@@ -3206,7 +3321,7 @@ export class GearSorter {
    * have navigated to the tab. Returns undefined when no geometry source
    * exists (the stash-region-insane guard has fired by then).
    */
-  private async indexTab(source: SourceTab, key: string): Promise<TabIndex | undefined> {
+  private async indexTab(source: SourceTab, key: string, exhaustive = false): Promise<TabIndex | undefined> {
     let raw: RawFrame = await this.captureRaw();
     // The scan ALWAYS covers the full grid — trusting pixel occupancy to
     // pick cells let foreigners hide in cells it under-read. Cheap pixel
@@ -3311,7 +3426,7 @@ export class GearSorter {
     let dimRescues = 0;
     for (let r = 0; r < rows; r += 1) {
       for (let c = 0; c < cols; c += 1) {
-        if (emptyKeys.has(`${r},${c}`)) {
+        if (!exhaustive && emptyKeys.has(`${r},${c}`)) {
           // The baseline may only skip cells that are unmistakably black —
           // but tiny dim art (amulets, charms, thin blades) sits UNDER its
           // thresholds: ten small items survived three runs unseen (user
@@ -3333,10 +3448,17 @@ export class GearSorter {
         `  · ${key}: ${dimRescues} baseline-empty cell(s) hold bright blocks — sweeping them too`,
       );
     }
+    const planned = occupied;
     occupied = clampToArea(
       occupied,
       source.topLevel ? STASH_AREA_TOP_LEVEL : STASH_AREA,
-    ).filter((cell) => !this.phantomStash.has(this.phantomKey(source, cell)));
+    ).filter((cell) => exhaustive || !this.phantomStash.has(this.phantomKey(source, cell)));
+    const copiedKeys = new Set(occupied.map((cell) => `${cell.row},${cell.col}`));
+    const coverage = exhaustive ? {
+      totalCells: cols * rows,
+      copiedCells: occupied.length,
+      excludedCells: planned.filter((cell) => !copiedKeys.has(`${cell.row},${cell.col}`)),
+    } : undefined;
     // PERSISTED phantoms: cells that survived the full probe battery in a
     // previous run are skipped outright while their pixel SIGNATURE still
     // matches — a real item landing there changes the signature and gets
@@ -3346,6 +3468,7 @@ export class GearSorter {
     const tabKey = `${source.label}#${source.occurrence}`;
     let phantomsSkipped = 0;
     occupied = occupied.filter((cell) => {
+      if (exhaustive) return true;
       const stored = phantomStore.get(`${tabKey}:${cell.row},${cell.col}`);
       if (!stored) return true;
       const score = byKey.get(`${cell.row},${cell.col}`);
@@ -3361,25 +3484,26 @@ export class GearSorter {
         `  · ${key}: skipping ${phantomsSkipped} known phantom cell(s) (signatures unchanged)`,
       );
     }
-    if (this.options.teach) {
+    if (this.options.teach && !exhaustive) {
       occupied = await this.teachOccupancy(source, occupied, cellAt, region, cols, rows);
     }
     if (occupied.length === 0) {
-      return { occupiedCount: 0, modelItems: [], reads: [], unread: [], region, cols, rows };
+      return { occupiedCount: 0, modelItems: [], reads: [], unread: [], region, cols, rows, ...(coverage ? { coverage } : {}) };
     }
     const sweepOptions = {
-      phantomScope: source,
+      ...(exhaustive ? {} : { phantomScope: source }),
       looksEmpty: (cell: GridCell) => {
         const score = byKey.get(`${cell.row},${cell.col}`);
         return !score || (score.itemFrac < 0.08 && score.variance < 120);
       },
       probePoint: (cell: GridCell) =>
         brightestCellPoint(raw.gray, raw.client, region, cols, rows, cell),
-      sameSpriteAsLeft: (cell: GridCell) =>
-        cellEdgeContinuity(raw.gray, raw.client, region, cols, rows, cell.row, cell.col),
+      ...(exhaustive ? {} : { sameSpriteAsLeft: (cell: GridCell) =>
+        cellEdgeContinuity(raw.gray, raw.client, region, cols, rows, cell.row, cell.col) }),
       // Persist each phantom the MOMENT it proves silent — a Numpad 0
       // mid-sweep must never throw the probing away (it did, twice).
       onSilent: (cell: GridCell) => {
+        if (exhaustive) return;
         const score = byKey.get(`${cell.row},${cell.col}`);
         if (!score) return;
         phantomStore.set(`${tabKey}:${cell.row},${cell.col}`, {
@@ -3393,7 +3517,7 @@ export class GearSorter {
         this.savePhantomStore();
       },
     };
-    await this.step(`${key}: sweeping ${occupied.length}/${cols * rows} cells (black space skipped)`);
+    await this.step(`${key}: sweeping ${occupied.length}/${cols * rows} cells (${exhaustive ? "every grid cell copied" : "black space skipped"})`);
     const swept = await this.identifyCells(occupied, sweepOptions);
     const tabReads = new Map<string, { cell: GridCell; text: string }>();
     for (const read of swept.reads) tabReads.set(`${read.cell.row},${read.cell.col}`, read);
@@ -3404,8 +3528,9 @@ export class GearSorter {
     const unread = swept.unread;
     if (unread.length > 0) {
       this.log(
-        `! ${key}: ${unread.length} cell(s) never yielded item text — recorded as phantoms ` +
-          `(re-probed automatically if their pixels ever change); check them by hand once`,
+        `! ${key}: ${unread.length} cell(s) never yielded item text — ` +
+          (exhaustive ? "audit coverage is incomplete; retained for review" :
+            "recorded as phantoms (re-probed automatically if their pixels ever change); check them by hand once"),
       );
     }
     const reads = [...tabReads.values()];
@@ -3413,7 +3538,7 @@ export class GearSorter {
     if (this.options.teach && modelItems.length > 0) {
       modelItems = await this.teachItems(source, modelItems, region, cols, rows);
     }
-    return { occupiedCount: occupied.length, modelItems, reads, unread, region, cols, rows };
+    return { occupiedCount: occupied.length, modelItems, reads, unread, region, cols, rows, ...(coverage ? { coverage } : {}) };
   }
 
   /* ---------------- shop seams (docs/HANDOFF-shop-listings.md) ---------------- */
@@ -3428,6 +3553,8 @@ export class GearSorter {
       /** false = the caller already put the tab on screen (the Merchant
        * panel's own tab strip is not stash navigation); just index it. */
       navigate?: boolean;
+      /** Copy every grid cell, ignoring learned phantoms and sprite shortcuts. */
+      exhaustive?: boolean;
     } = {},
   ): Promise<TabScanResult> {
     const key = source.occurrence ? `${source.label}#${source.occurrence}` : source.label;
@@ -3448,7 +3575,7 @@ export class GearSorter {
         endPhase("source-unreachable");
         return { ok: false, reason: "source-unreachable" };
       }
-      const index = await this.indexTab(source, key);
+      const index = await this.indexTab(source, key, options.exhaustive);
       if (!index) {
         endPhase("no-geometry");
         return { ok: false, reason: "no-geometry" };
@@ -3924,7 +4051,7 @@ export class GearSorter {
       // frame (Gear, AFFINITIES and T10 were once queued as folder tabs).
       // The folder only ever holds gear tabs — drop such labels outright.
       const lower = label.toLowerCase();
-      if (lower === "gear" || lower === "affinities" || canonicalTTabLabel(label)) continue;
+      if (this.isGearFolderLabel(lower) || lower === "affinities" || canonicalTTabLabel(label)) continue;
       const occurrence = seen.get(label) ?? 0;
       seen.set(label, occurrence + 1);
       sources.push({ label, occurrence });

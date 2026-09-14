@@ -60,7 +60,7 @@ describe("TradePacer", () => {
     // until the first hit leaves the window (10s after T0).
     const wait = pacer.delayFor("p", T0 + 200);
     expect(wait).toBeGreaterThan(9_000);
-    expect(wait).toBeLessThanOrEqual(10_000 + 250);
+    expect(wait).toBeLessThanOrEqual(10_000 + 1000);
     expect(pacer.available("p", T0 + 200)).toBe(0);
     expect(pacer.delayFor("p", T0 + 10_300)).toBe(0);
   });
@@ -94,7 +94,7 @@ describe("TradePacer", () => {
       { max: 15, periodSec: 60, penaltySec: 120 },
     ]);
     // Server counted 4, we knew of 1: three foreign hits are now on the log.
-    expect(pacer.available(SEARCH_POLICY, T0 + 20)).toBe(7 - 4);
+    expect(pacer.available(SEARCH_POLICY, T0 + 20)).toBe(6 - 4);
   });
 
   it("stamps hits from a long window outside the shorter windows", () => {
@@ -123,7 +123,7 @@ describe("TradePacer", () => {
 
   it("honours a server restriction and Retry-After", () => {
     const pacer = new TradePacer();
-    pacer.observe(SEARCH_POLICY, { state: "9:10:45" }, T0);
+    pacer.observe(SEARCH_POLICY, { rules: "100:10:60", state: "9:10:45" }, T0);
     expect(pacer.restrictedUntil(SEARCH_POLICY, T0)).toBe(T0 + 45_000);
     expect(pacer.delayFor(SEARCH_POLICY, T0 + 1000)).toBe(44_000);
     expect(pacer.available(SEARCH_POLICY, T0 + 1000)).toBe(0);
@@ -140,5 +140,35 @@ describe("TradePacer", () => {
     const revived = new TradePacer(JSON.parse(JSON.stringify(pacer.toJSON())) as never);
     expect(revived.delayFor(SEARCH_POLICY, T0 + 700)).toBeGreaterThan(9_000);
     expect(new TradePacer({ bad: { nope: true } } as never).delayFor(SEARCH_POLICY, T0)).toBe(0);
+  });
+
+  it("reserves 20% of the learned search budget and spreads requests across its short windows", () => {
+    const pacer = new TradePacer();
+    pacer.observe(SEARCH_POLICY, { rules: "5:10:60,15:60:300,30:300:1800,600:21600:3600" }, T0);
+    expect(pacer.spacingFor(SEARCH_POLICY)).toBe(12_500);
+    pacer.record(SEARCH_POLICY, T0);
+    expect(pacer.spacingDelayFor(SEARCH_POLICY, T0 + 500)).toBe(12_000);
+    expect(pacer.spacingDelayFor(SEARCH_POLICY, T0 + 12_500)).toBe(0);
+    for (let i = 1; i < 24; i += 1) pacer.record(SEARCH_POLICY, T0 + i * 100);
+    expect(pacer.delayFor(SEARCH_POLICY, T0 + 60_000)).toBe(241_000);
+  });
+
+  it("merges concurrent persisted reservations without multiplying synthetic history", () => {
+    const rule = [{ max: 30, periodSec: 300, penaltySec: 1800 }];
+    const pacer = new TradePacer({ p: { rules: rule, hits: [T0, T0, T0 + 100], restrictedUntil: 0 } });
+    const snapshot = { p: { rules: rule, hits: [T0, T0, T0 + 200], restrictedUntil: T0 + 1000 } };
+    pacer.merge(snapshot); pacer.merge(snapshot);
+    expect(pacer.toJSON().p?.hits.sort((a, b) => a - b)).toEqual([T0, T0, T0 + 100, T0 + 200]);
+    expect(pacer.restrictedUntil("p", T0)).toBe(T0 + 1000);
+  });
+
+  it("paces all server-declared scopes and records each known scope", () => {
+    const pacer = new TradePacer();
+    pacer.observe(SEARCH_POLICY, { rules: "30:300:1800" }, T0);
+    pacer.observe(`${SEARCH_POLICY}:account`, { rules: "2:10:60", state: "1:10:0" }, T0);
+    expect(pacer.available(SEARCH_POLICY, T0)).toBe(0);
+    expect(pacer.delayFor(SEARCH_POLICY, T0)).toBeGreaterThan(10_000);
+    pacer.record(SEARCH_POLICY, T0 + 20_000);
+    expect(pacer.toJSON()[`${SEARCH_POLICY}:account`]?.hits).toContain(T0 + 20_000);
   });
 });

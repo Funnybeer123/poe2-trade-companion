@@ -1,15 +1,12 @@
-import { existsSync } from "node:fs";
-import path from "node:path";
 import { describe, expect, it } from "vitest";
-import { bmpToGray } from "../src/adapters/bmp.js";
 import type { StashItem } from "../src/core/bagPack.js";
-import { loadProfile } from "../src/core/calibrationStore.js";
 import {
   classifyDepositOutcome,
   classifyFillOutcome,
   reconcileTransfer,
 } from "../src/core/transferReconciler.js";
 import { perceiveUi, type OccupiedCell, type UiFacts } from "../src/core/uiPerception.js";
+import { recordedWandFixture } from "./recordedWandFixture.js";
 
 function cells(entries: Array<[number, number]>, bag?: string): OccupiedCell[] {
   return entries.map(([row, col]) => ({ row, col, x: col * 10 + 5, y: row * 10 + 5, bag }));
@@ -171,16 +168,12 @@ describe("transfer reconciliation", () => {
   });
 
   it("does not classify the recorded top-right wand as an empty bag", () => {
-    const bmp = path.resolve("fixtures/perception/live/deposit-1787705758242.bmp");
-    if (!existsSync(bmp)) return;
-    const observed = perceiveUi(
-      bmpToGray(bmp),
-      { left: 0, top: 0, width: 3840, height: 2160 },
-      {},
-      loadProfile(path.resolve("fixtures/perception/templates")),
-    );
+    const { frame, client, profile } = recordedWandFixture();
+    const observed = perceiveUi(frame, client, {}, profile);
 
-    expect(observed.occupiedBag.some((cell) => cell.col === 11 && cell.row <= 2)).toBe(true);
-    expect(classifyDepositOutcome(observed, 2)).not.toBe("bag-empty");
+    expect(observed.inventoryPanelOpen).toBe(true);
+    expect(observed.occupiedBag.map(cell => [cell.row, cell.col])).toEqual([[0, 11], [1, 11], [2, 11]]);
+    expect(observed.bagEmpty).toBe(false);
+    expect(classifyDepositOutcome(observed, 2)).toBe("partial");
   });
 });

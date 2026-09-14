@@ -1,3 +1,11 @@
+/** Named child operations shared by the desktop bridge and launcher. */
+export type StashTabScriptKind =
+  | "renumber" | "renumber-dry" | "finish-gear" | "sort-gear" | "sort-gear-dry"
+  | "value-dump" | "value-dump-sort" | "value-dump-resume"
+  | "craft-gear" | "craft-gear-dry" | "shop-scan-dry" | "shop-scan"
+  | "shop-apply" | "shop-apply-step" | "shop-list-dry" | "shop-list"
+  | "shop-buckets-dry" | "shop-buckets";
+
 import type {
   BuildProfile,
   CreateBuildProfileInput,
@@ -470,7 +478,18 @@ export interface Poe2Bridge {
   intelligence: ItemIntelligenceBridge;
   scanner: ScannerBridge;
   stashSort: Record<string, (...args: never[]) => unknown>;
-  stashTabs: Record<string, (...args: never[]) => unknown>;
+  stashTabs: Record<string, (...args: never[]) => unknown> & {
+    runScript: (kind: StashTabScriptKind) => Promise<{ started: boolean; reason?: string }>;
+  };
+  stashValuation?: {
+    overview: () => Promise<{
+      settings: import("../core/stashValuation.js").StashValuationSettings;
+      profiles: Record<string, import("../core/stashValuation.js").StashValuationSettings>;
+      report: import("../core/stashValuation.js").StashValuationReport | null;
+      issues: string[];
+    }>;
+    saveSettings: (settings: unknown) => Promise<import("../core/stashValuation.js").StashValuationSettings>;
+  };
   shop: Record<string, (...args: never[]) => unknown>;
   priceFeed: Record<string, (...args: never[]) => unknown>;
   assistive: Record<string, unknown>;

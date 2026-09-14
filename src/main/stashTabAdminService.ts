@@ -8,7 +8,10 @@
  * of the live dialog, so no single mis-read can rewrite a public listing.
  */
 import path from "node:path";
-import { spawn } from "node:child_process";
+import { existsSync } from "node:fs";
+import { execFile, spawn } from "node:child_process";
+import type { StashTabScriptKind } from "../shared/ipc.js";
+export type { StashTabScriptKind } from "../shared/ipc.js";
 import { DrainKit } from "../adapters/drainKit.js";
 import { StashTabKit, type StripEntry } from "../adapters/stashTabKit.js";
 import { startWinHost } from "../adapters/winHost.js";
@@ -30,31 +33,18 @@ import {
 
 export interface StashTabAdminOptions {
   root: string;
+  /** Shares the app's existing market config without copying credentials into artifacts. */
+  marketConfigDir?: string;
+  /** Standalone bundled worker and writable settings/report root in packaged builds. */
+  valuationWorker?: { executable: string; file: string; dataRoot: string };
   templateDir?: string;
   emit?: (event: StashTabAdminEvent) => void;
   /** Blocks every game-touching operation while it returns false. */
   canRun?: () => boolean;
+  onScriptStopped?: (kind: StashTabScriptKind, reason: string) => void;
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** Long-running stash operations exposed to the panel, run as CLI children. */
-export type StashTabScriptKind =
-  | "renumber"
-  | "renumber-dry"
-  | "finish-gear"
-  | "sort-gear"
-  | "sort-gear-dry"
-  | "craft-gear"
-  | "craft-gear-dry"
-  | "shop-scan-dry"
-  | "shop-scan"
-  | "shop-apply"
-  | "shop-apply-step"
-  | "shop-list-dry"
-  | "shop-list"
-  | "shop-buckets-dry"
-  | "shop-buckets";
 
 const SCRIPT_ARGS: Record<StashTabScriptKind, string[]> = {
   renumber: ["scripts/stash-tab-admin.ts", "--renumber"],
@@ -62,6 +52,9 @@ const SCRIPT_ARGS: Record<StashTabScriptKind, string[]> = {
   "finish-gear": ["scripts/stash-tab-admin.ts", "--finish-gear", "--allow-priced"],
   "sort-gear": ["scripts/sort-gear.ts"],
   "sort-gear-dry": ["scripts/sort-gear.ts", "--dry-run"],
+  "value-dump": ["scripts/value-dump.ts"],
+  "value-dump-sort": ["scripts/value-dump.ts", "--move"],
+  "value-dump-resume": ["scripts/value-dump.ts", "--pending-only"],
   "craft-gear": ["scripts/craft-gear.ts", "--live"],
   "craft-gear-dry": ["scripts/craft-gear.ts"],
   // Shop listings (docs/HANDOFF-shop-listings.md). Dry scans read the tab
@@ -82,6 +75,9 @@ export class StashTabAdminService {
   private state: StashTabAdminStatus = { running: false, phase: "idle" };
   private readonly templateDir: string;
   private child: ReturnType<typeof spawn> | undefined;
+  private childKind: StashTabScriptKind | undefined;
+  private stoppingChild: ReturnType<typeof spawn> | undefined;
+  private treeStopPending = false;
 
   /**
    * Run one of the packaged stash operations. They live as self-contained CLI
@@ -91,18 +87,38 @@ export class StashTabAdminService {
   runScript(kind: StashTabScriptKind): { started: boolean; reason?: string } {
     if (this.state.running || this.child) return { started: false, reason: "busy" };
     if (this.options.canRun && !this.options.canRun()) return { started: false, reason: "blocked" };
-    const args = SCRIPT_ARGS[kind];
-    if (!args) return { started: false, reason: `unknown-script:${kind}` };
+    const configured = SCRIPT_ARGS[kind];
+    if (!configured) return { started: false, reason: `unknown-script:${kind}` };
+    const args = [...configured];
+    const valuation = kind.startsWith("value-dump");
+    const worker = valuation ? this.options.valuationWorker : undefined;
+    if (kind === "value-dump-resume") {
+      const relativeReport = path.join("artifacts", "tab-admin", "stash-valuation-report.json");
+      const savedReport = path.join(worker?.dataRoot ?? this.options.root, relativeReport);
+      if (!existsSync(savedReport)) return { started: false, reason: "no-saved-report" };
+      // Development uses a fixed relative argument so workspace names never
+      // become shell syntax. Packaged workers receive an absolute path without a shell.
+      args.push("--from-scan=" + (worker ? savedReport : relativeReport));
+    }
     this.setPhase("applying");
-    const child = spawn("npx", ["--yes", "tsx", ...args], {
-      cwd: this.options.root,
-      shell: true,
+    const child = spawn(worker?.executable ?? "npx", worker ? [worker.file, ...args.slice(1)] : ["--yes", "tsx", ...args], {
+      cwd: worker?.dataRoot ?? this.options.root,
+      shell: !worker,
+      windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
       // Live crafting is double-gated: the script demands this env var on top
       // of --live, so only the explicit craft-gear kind can ever arm it.
-      env: { ...process.env, ...(kind === "craft-gear" ? { POE2_CRAFT_LIVE: "1" } : {}) },
+      env: {
+        ...process.env,
+        ...(kind === "craft-gear" ? { POE2_CRAFT_LIVE: "1" } : {}),
+        ...(kind.startsWith("value-dump") && this.options.marketConfigDir
+          ? { POE2_MARKET_CONFIG_DIR: this.options.marketConfigDir } : {}),
+        ...(valuation && this.options.templateDir ? { POE2_TEMPLATE_DIR: this.options.templateDir } : {}),
+        ...(worker ? { ELECTRON_RUN_AS_NODE: "1", POE2_STASH_DATA_ROOT: worker.dataRoot } : {}),
+      },
     });
     this.child = child;
+    this.childKind = kind;
     const forward = (chunk: unknown) => {
       for (const line of String(chunk).split(/\r?\n/)) {
         if (line.trim()) this.emit({ kind: "log", line: line.trimEnd() });
@@ -111,21 +127,67 @@ export class StashTabAdminService {
     child.stdout?.on("data", forward);
     child.stderr?.on("data", forward);
     child.on("exit", (code) => {
+      if (this.child !== child || this.stoppingChild === child) return;
       this.child = undefined;
+      this.childKind = undefined;
       if (code !== 0) {
         this.state = { ...this.state, lastError: `${kind} exited ${code}` };
         this.emit({ kind: "error", message: `${kind} exited ${code}` });
       }
       this.setPhase("idle");
     });
+    child.on("error", (error) => {
+      if (this.child !== child || this.stoppingChild === child) return;
+      this.child = undefined;
+      this.childKind = undefined;
+      this.state = { ...this.state, lastError: error.message };
+      this.emit({ kind: "error", message: `${kind} could not start: ${error.message}` });
+      this.setPhase("idle");
+    });
     return { started: true };
   }
 
-  stopScript(): boolean {
-    if (!this.child) return false;
-    this.child.kill();
-    this.child = undefined;
-    this.setPhase("idle");
+  stopScript(reason = "Stopped from the app"): boolean {
+    const child = this.child;
+    const kind = this.childKind;
+    if (!child || !kind) return false;
+    if (this.stoppingChild === child && this.treeStopPending) return true;
+    if (kind.startsWith("value-dump")) {
+      // The npx shell owns Node/tsx and both PowerShell input hosts. Killing
+      // only that shell orphans live input workers. Ask Windows to terminate
+      // this specific owned tree before allowing another run to start.
+      if (!Number.isInteger(child.pid) || !child.pid || child.pid <= 0) {
+        this.emit({ kind: "error", message: "Cannot stop dump valuation: its process ID is unavailable." });
+        return false;
+      }
+      this.stoppingChild = child;
+      this.treeStopPending = true;
+      this.emit({ kind: "log", line: "Stopping dump valuation and its worker processes…" });
+      execFile("taskkill.exe", ["/PID", String(child.pid), "/T", "/F"], { windowsHide: true }, error => {
+        if (this.child !== child) return;
+        this.treeStopPending = false;
+        if (error) {
+          const message = `Could not confirm dump valuation stopped: ${error.message}`;
+          this.state = { ...this.state, lastError: message };
+          this.emit({ kind: "error", message });
+          // Stay busy instead of claiming the grandchildren have stopped.
+          return;
+        }
+        this.stoppingChild = undefined;
+        this.child = undefined;
+        this.childKind = undefined;
+        try { this.options.onScriptStopped?.(kind, reason); }
+        catch (reportError) {
+          this.emit({ kind: "error", message: `Input workers stopped, but the report could not be updated: ${String(reportError)}` });
+        }
+        this.setPhase("idle");
+      });
+    } else {
+      child.kill();
+      this.child = undefined;
+      this.childKind = undefined;
+      this.setPhase("idle");
+    }
     return true;
   }
 

@@ -5,17 +5,19 @@ import type { FindRecord } from "@core/sortTriage";
 import type { StashTabAdminEvent, StashTabAdminStatus } from "@core/stashTabAdmin";
 import PriceTableEditor from "../components/PriceTableEditor.vue";
 import ValueTierEditor from "../components/ValueTierEditor.vue";
+import StashValuationPanel from "../components/StashValuationPanel.vue";
 import ViewTabs from "../components/ViewTabs.vue";
 import { useGameActions } from "../composables/useGameActions";
 import { useRuntimeState } from "../composables/useRuntimeState";
 import { getStashTabAdminApi } from "../services/rendererApi";
 
 const tabs = [
+  { id: "values", label: "Dump values", hint: "Scan every item" },
   { id: "run", label: "Run", hint: "Sort & triage" },
   { id: "tiers", label: "Value tiers", hint: "Keep, sell, dump" },
   { id: "prices", label: "Prices", hint: "Local price table" },
 ] as const;
-const tab = ref<string>("run");
+const tab = ref<string>("values");
 
 const runtime = useRuntimeState();
 const { dryRun } = useGameActions();
@@ -271,6 +273,7 @@ const readiness = computed(() => [
     </section>
     </template>
 
+    <StashValuationPanel v-else-if="tab === 'values'" />
     <ValueTierEditor v-else-if="tab === 'tiers'" />
     <PriceTableEditor v-else />
   </div>

@@ -53,6 +53,7 @@ import type { PriceHelperService } from "./priceHelperService.js";
 import { registerItemIntelligenceIpc } from "./itemIntelligenceIpc.js";
 import { registerScanIpc } from "./scanIpc.js";
 import { StashTabAdminService } from "./stashTabAdminService.js";
+import { StashValuationService } from "./stashValuationService.js";
 import type { StashTabPlan, SurveyedStashTab } from "../core/stashTabAdmin.js";
 import {
   JsonlScanSessionStorage,
@@ -78,6 +79,7 @@ let assistiveService: AssistiveRunService | undefined;
 let dryRunOverlay: DryRunOverlayWindow | undefined;
 let stashSortService: StashSortService | undefined;
 let stashTabAdminService: StashTabAdminService | undefined;
+let stashValuationService: StashValuationService | undefined;
 let voiceService: VoiceTransferService | undefined;
 let voiceConfig = normalizeVoiceTransferConfig(undefined);
 let registeredVoiceHotkey: string | undefined;
@@ -464,9 +466,18 @@ if (ownsInstance) void app.whenReady().then(() => {
   });
   stashTabAdminService = new StashTabAdminService({
     root: process.cwd(),
+    marketConfigDir: memoryRoot,
+    templateDir: baselineDir,
+    ...(app.isPackaged ? { valuationWorker: {
+      executable: process.execPath,
+      file: path.join(app.getAppPath().replace(/app\.asar$/, "app.asar.unpacked"), "dist-electron", "value-dump.cjs"),
+      dataRoot: memoryRoot,
+    } } : {}),
     emit: (event) => sendRendererEvent(mainWindow, "stash-tabs:event", event),
     canRun: () => !killSwitch.isLatched(),
+    onScriptStopped: (_kind, reason) => stashValuationService?.markStopped(reason),
   });
+  stashValuationService = new StashValuationService(app.isPackaged ? memoryRoot : process.cwd());
   voiceService = new VoiceTransferService({
     mode: buildMode,
     recognizer: new WindowsSpeechRecognizer(),
@@ -489,6 +500,7 @@ if (ownsInstance) void app.whenReady().then(() => {
   });
   const stopAllInput = () => {
     killSwitch.trip();
+    stashTabAdminService?.stopScript("Emergency stop");
     combatService?.stop("Emergency stop — rearm in the app");
     void voiceService?.cancel("emergency-stop");
     assistiveService?.stop("emergency-stop");
@@ -658,6 +670,11 @@ if (ownsInstance) void app.whenReady().then(() => {
     priceFeedService?.fetchComps(String(itemText ?? "")),
   );
   ipcMain.handle("stash-tabs:status", () => stashTabAdminService?.status);
+  ipcMain.handle("stash-valuation:overview", () => stashValuationService?.overview());
+  ipcMain.handle("stash-valuation:save-settings", (_event, settings: unknown) => {
+    if (stashTabAdminService?.status.running) throw new Error("Wait for the current stash operation before changing valuation settings.");
+    return stashValuationService?.saveSettings(settings);
+  });
   ipcMain.handle("stash-tabs:survey", (_event, folderName?: string) =>
     stashTabAdminService?.survey(folderName),
   );
@@ -769,6 +786,7 @@ if (ownsInstance) void app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  stashTabAdminService?.stopScript("App closed");
   emergencyStopMonitor?.close();
   combatService?.stop("App closed");
   void voiceService?.cancel("app-closed");
@@ -784,4 +802,8 @@ app.on("window-all-closed", () => {
   globalShortcut.unregisterAll();
   app.quit();
 });
-app.on("before-quit", () => { combatService?.stop("App exiting"); emergencyStopMonitor?.close(); });
+app.on("before-quit", () => {
+  stashTabAdminService?.stopScript("App exiting");
+  combatService?.stop("App exiting");
+  emergencyStopMonitor?.close();
+});

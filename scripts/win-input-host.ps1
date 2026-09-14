@@ -85,21 +85,65 @@ function Await-WinRt($operation, $resultType) {
   return $task.Result
 }
 
-function Invoke-OcrRegion([int]$left, [int]$top, [int]$width, [int]$height, [int]$scale = 1) {
+function Invoke-OcrRegion([int]$left, [int]$top, [int]$width, [int]$height, [int]$scale = 1, [bool]$invert = $false, [int]$textThreshold = 0, [bool]$neutralContext = $false) {
   Add-Type -AssemblyName System.Drawing
   $grab = New-Object System.Drawing.Bitmap $width, $height
   $g = [System.Drawing.Graphics]::FromImage($grab)
   $g.CopyFromScreen($left, $top, 0, 0, $grab.Size)
   $g.Dispose()
+  if ($textThreshold -ge 40 -and $textThreshold -le 240) {
+    if (-not ("StashOcrTextMask" -as [type])) {
+      Add-Type -ReferencedAssemblies System.Drawing -TypeDefinition @"
+using System.Drawing;
+public static class StashOcrTextMask {
+  public static void Apply(Bitmap bitmap, int threshold) {
+    for (int y = 0; y < bitmap.Height; y++) for (int x = 0; x < bitmap.Width; x++) {
+      Color c = bitmap.GetPixel(x, y);
+      bitmap.SetPixel(x, y, System.Math.Max(c.R, System.Math.Max(c.G, c.B)) >= threshold ? Color.Black : Color.White);
+    }
+  }
+}
+"@
+    }
+    [StashOcrTextMask]::Apply($grab, $textThreshold)
+  }
+  if ($invert) {
+    $flipped = New-Object System.Drawing.Bitmap $width, $height
+    $flipGraphics = [System.Drawing.Graphics]::FromImage($flipped)
+    $matrix = New-Object System.Drawing.Imaging.ColorMatrix
+    $matrix.Matrix00 = -1; $matrix.Matrix11 = -1; $matrix.Matrix22 = -1
+    $matrix.Matrix40 = 1; $matrix.Matrix41 = 1; $matrix.Matrix42 = 1
+    $attributes = New-Object System.Drawing.Imaging.ImageAttributes
+    $attributes.SetColorMatrix($matrix)
+    $flipGraphics.DrawImage($grab, (New-Object System.Drawing.Rectangle 0, 0, $width, $height), 0, 0, $width, $height, [System.Drawing.GraphicsUnit]::Pixel, $attributes)
+    $attributes.Dispose(); $flipGraphics.Dispose(); $grab.Dispose()
+    $grab = $flipped
+  }
+  $padX = 0; $padY = 0
+  if ($neutralContext) {
+    # Windows OCR often drops lone letters. Neutral neighbouring words supply
+    # line context; only boxes wholly inside the actual screen crop survive.
+    $padX = 110; $padY = 40
+    $padded = New-Object System.Drawing.Bitmap ($width + 2 * $padX), ($height + 2 * $padY)
+    $contextGraphics = [System.Drawing.Graphics]::FromImage($padded)
+    $contextGraphics.Clear([System.Drawing.Color]::White)
+    $contextGraphics.DrawImageUnscaled($grab, $padX, $padY)
+    $font = New-Object System.Drawing.Font 'Arial', 28, ([System.Drawing.FontStyle]::Regular), ([System.Drawing.GraphicsUnit]::Pixel)
+    $anchorY = $padY + [Math]::Max(0, ($height - 35) / 2)
+    $contextGraphics.DrawString('tab', $font, [System.Drawing.Brushes]::Black, 24, $anchorY)
+    $contextGraphics.DrawString('tab', $font, [System.Drawing.Brushes]::Black, ($padX + $width + 24), $anchorY)
+    $font.Dispose(); $contextGraphics.Dispose(); $grab.Dispose()
+    $grab = $padded
+  }
   $bmp = $grab
   if ($scale -gt 1) {
     # Upscale before recognition: small glyphs (the tooltip's "1x" amount)
     # never OCR at native size but read fine at 2x. Coordinates are mapped
     # back to screen space below.
-    $bmp = New-Object System.Drawing.Bitmap ($width * $scale), ($height * $scale)
+    $bmp = New-Object System.Drawing.Bitmap ($grab.Width * $scale), ($grab.Height * $scale)
     $g2 = [System.Drawing.Graphics]::FromImage($bmp)
     $g2.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
-    $g2.DrawImage($grab, 0, 0, ($width * $scale), ($height * $scale))
+    $g2.DrawImage($grab, 0, 0, ($grab.Width * $scale), ($grab.Height * $scale))
     $g2.Dispose()
     $grab.Dispose()
   }
@@ -117,23 +161,34 @@ function Invoke-OcrRegion([int]$left, [int]$top, [int]$width, [int]$height, [int
   $result = Await-WinRt ($script:OcrEngine.RecognizeAsync($softwareBitmap)) ([Windows.Media.Ocr.OcrResult])
   $lines = @()
   foreach ($line in $result.Lines) {
+    $wordBoxes = @()
     $minX = [double]::MaxValue; $minY = [double]::MaxValue; $maxX = 0.0; $maxY = 0.0
     foreach ($word in $line.Words) {
       $r = $word.BoundingRect
+      if ($neutralContext -and ($r.X -lt ($padX * $scale) -or ($r.X + $r.Width) -gt (($padX + $width) * $scale) -or $r.Y -lt ($padY * $scale) -or ($r.Y + $r.Height) -gt (($padY + $height) * $scale))) { continue }
+      $wordBoxes += @{
+        text = [string]$word.Text
+        x = [int]($left + ($r.X / $scale) - $padX)
+        y = [int]($top + ($r.Y / $scale) - $padY)
+        w = [int]($r.Width / $scale)
+        h = [int]($r.Height / $scale)
+      }
       if ($r.X -lt $minX) { $minX = $r.X }
       if ($r.Y -lt $minY) { $minY = $r.Y }
       if (($r.X + $r.Width) -gt $maxX) { $maxX = $r.X + $r.Width }
       if (($r.Y + $r.Height) -gt $maxY) { $maxY = $r.Y + $r.Height }
     }
+    if ($wordBoxes.Count -eq 0) { continue }
     $lines += @{
-      text = [string]$line.Text
-      x = [int]($left + ($minX / $scale))
-      y = [int]($top + ($minY / $scale))
+      text = if ($neutralContext) { [string](($wordBoxes | ForEach-Object { $_.text }) -join ' ') } else { [string]$line.Text }
+      x = [int]($left + ($minX / $scale) - $padX)
+      y = [int]($top + ($minY / $scale) - $padY)
       w = [int](($maxX - $minX) / $scale)
       h = [int](($maxY - $minY) / $scale)
+      words = $wordBoxes
     }
   }
-  return @{ text = [string]$result.Text; lines = $lines }
+  return @{ text = if ($neutralContext) { [string](($lines | ForEach-Object { $_.text }) -join ' ') } else { [string]$result.Text }; lines = $lines }
 }
 
 function Resolve-PinnedPoeWindow {
@@ -579,7 +634,7 @@ while ($true) {
     if ($scale -lt 1) { $scale = 1 }
     if ($scale -gt 4) { $scale = 4 }
     try {
-      $ocr = Invoke-OcrRegion $ox $oy $ow $oh $scale
+      $ocr = Invoke-OcrRegion $ox $oy $ow $oh $scale ([bool]$cmd.invert) ([int]$cmd.textThreshold) ([bool]$cmd.neutralContext)
       Emit @{ ok = $true; text = $ocr.text; lines = @($ocr.lines) }
     } catch {
       Emit @{ ok = $false; error = "ocr-failed"; detail = [string]$_.Exception.Message }

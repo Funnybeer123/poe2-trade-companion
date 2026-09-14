@@ -64,6 +64,7 @@ describe("preload API exposure", () => {
         "shop",
         "stashSort",
         "stashTabs",
+        "stashValuation",
         "windows",
       ].sort(),
     );
@@ -90,6 +91,9 @@ describe("preload API exposure", () => {
     await bridge.intelligence.tiers.evaluate("Item Class: Rings");
     await bridge.intelligence.prices.get();
     await bridge.scanner.status();
+    await bridge.stashValuation!.overview();
+    await bridge.stashValuation!.saveSettings({ league: "Forbidden Rites" });
+    await bridge.stashTabs.runScript("value-dump-resume");
 
     expect(electron.invoke.mock.calls).toEqual([
       ["runtime:mode"],
@@ -102,6 +106,9 @@ describe("preload API exposure", () => {
       ["tiers:evaluate", "Item Class: Rings"],
       ["prices:get"],
       ["scanner:status"],
+      ["stash-valuation:overview"],
+      ["stash-valuation:save-settings", { league: "Forbidden Rites" }],
+      ["stash-tabs:run-script", "value-dump-resume"],
     ]);
   });
 

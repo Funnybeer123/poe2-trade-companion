@@ -42,6 +42,9 @@ import {
 import { looksLikePoeItemText, parseItemText } from "../core/parseItem.js";
 import type { PriceTable } from "../core/priceTable.js";
 import { buildRewardTradeQuery, buildRewardTradeUrl, type RewardIdentity } from "../core/helperReward.js";
+import { buildStashTradeQuery, parseStashTradeStats, stashUnsupportedReason, stashQuoteFresh, summarizeStashListings, STASH_MARKET_MODEL, type StashTradeStat, type StashCurrencyRates } from "../core/stashMarket.js";
+import type { StashMarketQuote } from "../core/stashValuation.js";
+import { parseNinjaExchange } from "../core/priceHelper.js";
 
 const SCOUT_BASE = "https://api.poe2scout.com/poe2";
 const TRADE_BASE = "https://www.pathofexile.com/api/trade2";
@@ -182,6 +185,8 @@ interface PriceFeedServiceOptions {
   tradeSpacingMs?: number;
   /** Test seam: fixed 429 backoff instead of the server's Retry-After. */
   rateLimitBackoffMs?: number;
+  /** Standalone tools may reuse authentication/settings without scheduling background refreshes. */
+  disableAutoRefresh?: boolean;
 }
 
 const DEFAULT_CONFIG: PriceFeedConfig = {
@@ -200,6 +205,11 @@ export class PriceFeedService {
   private lastTradeRequestAt = 0;
   private tradeChain: Promise<unknown> = Promise.resolve();
   private readonly compsCache = new Map<string, CachedComps>();
+  private readonly stashQuotes = new Map<string, StashMarketQuote>();
+  private stashStats?: { at: number; entries: StashTradeStat[] };
+  private readonly stashRates = new Map<string, StashCurrencyRates>();
+  private readonly stashRateAttempts = new Map<string, number>();
+  private stashAccessFailure?: string;
   private readonly pacer: TradePacer;
   /** trade2 penalty window (epoch ms); persisted with the comps cache. */
   private rateLimitedUntil = 0;
@@ -248,9 +258,23 @@ export class PriceFeedService {
     }
   }
 
+  /** Only rate headers are retained: never URLs, query bodies, accounts or cookies. */
+  private saveRateDiagnostics(policy: string, response: Response): void {
+    try {
+      const file = path.join(this.options.configDir, "trade-response-diagnostics.json");
+      const previous: unknown = existsSync(file) ? JSON.parse(readFileSync(file, "utf8")) : [];
+      const headers = Object.fromEntries([...response.headers].filter(([key]) => /^x-rate-limit-[a-z-]+$/.test(key) || key === "retry-after")
+        .map(([key, value]) => [key, value.slice(0, 2000)]));
+      const entry = { at: this.now().toISOString(), status: response.status, policy, headers };
+      mkdirSync(this.options.configDir, { recursive: true });
+      writeFileSync(file, JSON.stringify([...(Array.isArray(previous) ? previous.slice(-19) : []), entry]));
+    } catch { /* Diagnostics must never affect the request or expose extra data. */ }
+  }
+
   /** When trade2 has us in a penalty window: the time it lifts, else undefined. */
   rateLimitedUntilIso(): string | undefined {
-    return this.rateLimitedUntil > Date.now() ? new Date(this.rateLimitedUntil).toISOString() : undefined;
+    const until = Math.max(this.rateLimitedUntil, this.pacer.restrictedUntil());
+    return until > Date.now() ? new Date(until).toISOString() : undefined;
   }
 
   /**
@@ -335,6 +359,8 @@ export class PriceFeedService {
   }
 
   configure(partial: Partial<PriceFeedConfig>): PriceFeedStatus {
+    if (typeof partial.league === "string" && partial.league.trim() && partial.league.trim() !== this.config.league) this.resolvedLeague = undefined;
+    if (typeof partial.poesessid === "string" && partial.poesessid !== this.config.poesessid) this.stashAccessFailure = undefined;
     this.config = {
       league:
         typeof partial.league === "string" && partial.league.trim()
@@ -372,7 +398,7 @@ export class PriceFeedService {
   private armDailyTimer(): void {
     if (this.dailyTimer) clearInterval(this.dailyTimer);
     this.dailyTimer = undefined;
-    if (!this.config.autoRefreshDaily) return;
+    if (!this.config.autoRefreshDaily || this.options.disableAutoRefresh) return;
     this.dailyTimer = setInterval(() => {
       void this.refresh().catch(() => undefined);
     }, 24 * 3_600_000);
@@ -451,15 +477,23 @@ export class PriceFeedService {
       if (reader?.canRun && !reader.canRun()) throw new Error("Reward lookup cancelled.");
       if (reader && this.helperTradeRestricted()) throw new Error("trade2 rate limit is active — try again after the restriction lifts.");
       const gap = this.options.tradeSpacingMs ?? TRADE_MIN_GAP_MS;
-      const wait = Math.max(
-        this.pacer.delayFor(policy),
-        this.lastTradeRequestAt + gap - Date.now(),
-      );
-      if (wait > 0) await new Promise((resolve) => setTimeout(resolve, wait));
+      while (true) {
+        this.pacer.merge(this.loadPacing());
+        if (reader && this.helperTradeRestricted()) throw new Error("trade2 rate limit is active — try again after the restriction lifts.");
+        const wait = Math.max(this.pacer.delayFor(policy), this.lastTradeRequestAt + gap - Date.now(),
+          this.options.tradeSpacingMs === undefined ? this.pacer.spacingDelayFor(policy) : 0);
+        if (wait <= 0) break;
+        const until = Date.now() + wait;
+        while (Date.now() < until) {
+          if (reader?.canRun && !reader.canRun()) throw new Error("Reward lookup cancelled.");
+          await new Promise(resolve => setTimeout(resolve, Math.min(reader?.canRun ? 100 : 1000, until - Date.now())));
+        }
+      }
       if (reader?.canRun && !reader.canRun()) throw new Error("Reward lookup cancelled.");
       if (reader && this.helperTradeRestricted()) throw new Error("trade2 rate limit is active — try again after the restriction lifts.");
       this.lastTradeRequestAt = Date.now();
       this.pacer.record(policy);
+      this.savePacing();
       const controller = new AbortController();
       let timeoutReject: ((reason: Error) => void) | undefined;
       const timeout = new Promise<never>((_, reject) => { timeoutReject = reject; });
@@ -486,14 +520,17 @@ export class PriceFeedService {
         const retryDate = Date.parse(retryAfter ?? "");
         const helperRetryAfter = Number.isFinite(retrySeconds) && retrySeconds > 0 ? retryAfter
           : Number.isFinite(retryDate) ? String(Math.max(1, Math.ceil((retryDate - Date.now()) / 1000))) : "60";
-        this.pacer.observe(policy, {
-          rules: headerOf(response, "x-rate-limit-ip"),
-          state: headerOf(response, "x-rate-limit-ip-state"),
+        this.pacer.merge(this.loadPacing());
+        const scopes = new Set(["ip", ...(headerOf(response, "x-rate-limit-rules") ?? "").split(",").map(scope => scope.trim().toLowerCase()).filter(scope => /^[a-z][a-z-]{0,30}$/.test(scope))]);
+        for (const scope of scopes) this.pacer.observe(scope === "ip" ? policy : `${policy}:${scope}`, {
+          rules: headerOf(response, `x-rate-limit-${scope}`),
+          state: headerOf(response, `x-rate-limit-${scope}-state`),
           ...(response.status === 429 ? { retryAfter: reader ? helperRetryAfter : retryAfter } : {}),
         });
         const restricted = this.pacer.restrictedUntil();
         if (restricted > this.rateLimitedUntil) this.rateLimitedUntil = restricted;
         this.savePacing();
+        this.saveRateDiagnostics(policy, response);
         return reader ? await Promise.race([reader.read(response, controller.signal), timeout]) : response;
       } finally {
         clearTimeout(timer);
@@ -505,6 +542,99 @@ export class PriceFeedService {
 
   private helperTradeRestricted(): boolean {
     return Math.max(this.rateLimitedUntil, this.pacer.restrictedUntil()) > Date.now();
+  }
+
+  /** One explicit league, strict per-item comparables, fresh observed rates; no fallback economy. */
+  async fetchStashQuote(itemText: string, league: string, canRun?: () => boolean): Promise<StashMarketQuote> {
+    const empty = (state: StashMarketQuote["state"], reason: string): StashMarketQuote => ({
+      state, league, provider: "pathofexile-trade2", fetchedAt: this.now().toISOString(), currency: "chaos",
+      sampleSize: 0, candidateCount: 0, confidence: 0, reasons: [reason],
+      ...(state === "unavailable" && this.rateLimitedUntilIso() ? { retryAfter: this.rateLimitedUntilIso() } : {}),
+    });
+    if (typeof league !== "string" || league === "auto" || !/^[\p{L}\p{N}][\p{L}\p{N} '()-]{0,79}$/u.test(league)) return empty("unavailable", "Choose an explicit league for stash valuation.");
+    if (!looksLikePoeItemText(itemText) || itemText.length > 30_000) return empty("unsupported", "The copied item text could not be parsed.");
+    const active = () => canRun?.() !== false;
+    if (!active()) return empty("unavailable", "Market lookup cancelled.");
+    const parsed = parseItemText(itemText);
+    const unsupported = stashUnsupportedReason(parsed);
+    if (unsupported) return empty("unsupported", unsupported);
+    // Only advanced unique parsing changed: preserve valid rare/magic cache work.
+    const model = /^unique$/i.test(parsed.rarity) && /^\s*\{\s*Unique Modifier\b/im.test(itemText)
+      ? `${STASH_MARKET_MODEL}:advanced-unique-1` : STASH_MARKET_MODEL;
+    const key = JSON.stringify([league, model, itemText]);
+    const file = path.join(this.options.configDir, "stash-market-quotes.json");
+    if (!this.stashQuotes.size) {
+      try {
+        const saved = JSON.parse(readFileSync(file, "utf8")) as Record<string, StashMarketQuote>;
+        for (const [savedKey, quote] of Object.entries(saved)) {
+          if (quote && quote.currency === "chaos" && quote.provider === "pathofexile-trade2" && Array.isArray(quote.reasons) && typeof quote.league === "string" &&
+            (quote.state === "priced" || quote.state === "no-comparables") && stashQuoteFresh(quote, this.now().getTime())) this.stashQuotes.set(savedKey, quote);
+        }
+      } catch { /* Cold cache. */ }
+    }
+    const cached = this.stashQuotes.get(key);
+    if (cached && cached.league === league && stashQuoteFresh(cached, this.now().getTime())) return { ...cached, reasons: [...cached.reasons], cached: true };
+    if (this.stashAccessFailure) return empty("unavailable", this.stashAccessFailure);
+    if (this.helperTradeRestricted()) return empty("unavailable", "trade2 rate limit is active; retry after its restriction lifts.");
+    const reader = { read: (response: Response, signal: AbortSignal) => {
+      if (response.status === 401 || response.status === 403) this.stashAccessFailure = `trade2 access denied (HTTP ${response.status}); further stash requests are paused for this session. Update trade authentication or restart the app before retrying.`;
+      return helperTradeJson(response, signal);
+    }, timeoutMs: HELPER_TRADE_TIMEOUT_MS, canRun: active };
+    const init = { redirect: "error", credentials: "omit" } as const;
+    try {
+      let rates = this.stashRates.get(league);
+      const rateAge = rates ? this.now().getTime() - Date.parse(rates.fetchedAt) : Infinity;
+      if (rateAge < 0 || rateAge >= 15 * 60_000) {
+        rates = undefined;
+        // Credential-free public economy request. Failure leaves native-chaos matching available.
+        if (this.now().getTime() - (this.stashRateAttempts.get(league) ?? -Infinity) >= 5 * 60_000) try {
+          this.stashRateAttempts.set(league, this.now().getTime());
+          const controller = new AbortController();
+          const timer = setTimeout(() => controller.abort(), HELPER_TRADE_TIMEOUT_MS);
+          try {
+            if (!active()) throw new Error("Market lookup cancelled.");
+            const response = await this.fetchImpl(`https://poe.ninja/poe2/api/economy/exchange/current/overview?league=${encodeURIComponent(league)}&type=Currency`, {
+              signal: controller.signal, redirect: "error", credentials: "omit", headers: { Accept: "application/json", "User-Agent": USER_AGENT },
+            });
+            const prices = parseNinjaExchange(await helperTradeJson(response, controller.signal));
+            const chaosPerCurrency: Record<string, number> = { chaos: 1 };
+            for (const [currency, name] of [["exalted", "Exalted Orb"], ["divine", "Divine Orb"]] as const) {
+              const matches = prices.filter(price => price.name === name);
+              if (matches.length === 1 && typeof matches[0]!.chaos === "number" && Number.isFinite(matches[0]!.chaos) && matches[0]!.chaos! > 0) chaosPerCurrency[currency] = matches[0]!.chaos!;
+            }
+            if (Object.keys(chaosPerCurrency).length > 1) {
+              rates = { league, fetchedAt: this.now().toISOString(), chaosPerCurrency };
+              this.stashRates.set(league, rates);
+            }
+          } finally { clearTimeout(timer); }
+        } catch { /* No inferred or stale exchange rate is substituted. */ }
+      }
+      if (parsed.mods.length && (!this.stashStats || this.now().getTime() - this.stashStats.at >= 24 * 60 * 60_000)) {
+        const payload = await this.tradeRequest(`${TRADE_BASE}/data/stats`, { ...init, method: "GET" }, reader);
+        const entries = parseStashTradeStats(payload);
+        if (!entries.length) throw new Error("Current trade stat catalog is unavailable.");
+        this.stashStats = { at: this.now().getTime(), entries };
+      }
+      const query = buildStashTradeQuery(parsed, this.stashStats?.entries ?? [], Boolean(rates));
+      const tradeUrl = `https://www.pathofexile.com/trade2/search/poe2/${encodeURIComponent(league)}?q=${encodeURIComponent(JSON.stringify(query.body))}`;
+      const payload = await this.tradeRequest(`${TRADE_BASE}/search/poe2/${encodeURIComponent(league)}`, { ...init, method: "POST", body: JSON.stringify(query.body) }, reader);
+      const search = payload && typeof payload === "object" && !Array.isArray(payload) ? payload as Record<string, unknown> : {};
+      if (typeof search.id !== "string" || !/^[A-Za-z0-9_-]{1,2048}$/.test(search.id) || !Array.isArray(search.result)) throw new Error("trade2 returned an invalid search result.");
+      const ids = [...new Set(search.result.slice(0, 10))];
+      if (ids.some(id => typeof id !== "string" || !/^[a-fA-F0-9]{64}$/.test(id))) throw new Error("trade2 returned an invalid listing ID.");
+      const listings = ids.length ? await this.tradeRequest(`${TRADE_BASE}/fetch/${ids.join(",")}?query=${encodeURIComponent(search.id)}&realm=poe2`, { ...init, method: "GET" }, reader) : { result: [] };
+      if (!active()) return empty("unavailable", "Market lookup cancelled.");
+      const quote = summarizeStashListings(parsed, listings, { league, fetchedAt: this.now().toISOString(), query, tradeUrl, rates });
+      this.stashQuotes.set(key, quote);
+      try {
+        const fresh = [...this.stashQuotes].filter(([, value]) => stashQuoteFresh(value, this.now().getTime())).slice(-2000);
+        mkdirSync(this.options.configDir, { recursive: true });
+        writeFileSync(file, JSON.stringify(Object.fromEntries(fresh)));
+      } catch { /* In-memory quote remains valid when disk storage is unavailable. */ }
+      return quote;
+    } catch (error) {
+      return empty("unavailable", error instanceof Error ? error.message.slice(0, 200) : "trade2 lookup failed.");
+    }
   }
 
   /** A bounded, paced search/fetch for an already identified reward. Never retries a 429. */
@@ -533,7 +663,7 @@ export class PriceFeedService {
       }
       if (!ids.length) return { payload: { result: [] }, fetchedAt: this.now().toISOString(), tradeUrl };
       const result = await this.tradeRequest(
-        `${TRADE_BASE}/fetch/${[...new Set(ids)].join(",")}?query=${encodeURIComponent(search.id)}`,
+        `${TRADE_BASE}/fetch/${[...new Set(ids)].join(",")}?query=${encodeURIComponent(search.id)}&realm=poe2`,
         { ...init, method: "GET" }, read,
       );
       return { payload: result, fetchedAt: this.now().toISOString(), tradeUrl };
@@ -584,7 +714,12 @@ export class PriceFeedService {
     const query = buildCompsQuery(parsed);
     if (!query) return { ok: false, error: "The item has no searchable base type." };
 
-    const cacheKey = JSON.stringify(query.body);
+    let league: string;
+    try {
+      league = this.config.league === "auto" ? this.resolvedLeague ?? await this.resolveLeague() : this.config.league;
+      this.resolvedLeague = league;
+    } catch (error) { return { ok: false, error: error instanceof Error ? error.message : String(error) }; }
+    const cacheKey = JSON.stringify([league, query.body]);
     const ourMods = parsed.mods.filter((mod) => !mod.implicit).map((mod) => mod.text);
     const summarize = (listings: readonly CompListing[]): CompsSummary =>
       summarizeComps(ourMods, listings, query.basis, {
@@ -604,8 +739,6 @@ export class PriceFeedService {
     }
 
     try {
-      const league = await this.resolveLeague();
-      this.resolvedLeague = league;
       const remember = (listings: CompListing[]): CompsResult => {
         this.compsCache.set(cacheKey, { at: Date.now(), league, basis: query.basis, listings });
         this.saveCompsCache();
@@ -625,7 +758,7 @@ export class PriceFeedService {
       const ids = Array.isArray(search.result) ? search.result.slice(0, 10) : [];
       if (!search.id || ids.length === 0) return remember([]);
       const fetchResponse = await this.tradeRequestWithBackoff(
-        `${TRADE_BASE}/fetch/${ids.join(",")}?query=${encodeURIComponent(search.id)}`,
+        `${TRADE_BASE}/fetch/${ids.join(",")}?query=${encodeURIComponent(search.id)}&realm=poe2`,
         { method: "GET" },
       );
       if (fetchResponse.status === 429) {

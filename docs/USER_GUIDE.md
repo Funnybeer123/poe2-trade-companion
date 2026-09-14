@@ -53,8 +53,9 @@ The bottom-left rail shows **Client detected** or **Client not detected**. Trans
 
 ## Sort & triage (home screen)
 
-The **Sort** screen is the app's home. It runs the gear sorter and holds the
-value logic that pulls winners aside automatically.
+The **Sort → Dump values** screen scans each dump item and values it for an explicit league. Use **Scan dump values** to read without transfers, then **Sort valuable items** to move items whose conservative estimate exceeds 1 chaos or whose crafting score qualifies. **Resume saved pricing** retries unavailable results without game input, using the saved league/settings and preserving transfer receipts. Earlier priced or completed search results retain their original timestamps; resume does not refresh expired quotes. The default setup uses your top-level `Dump` tab and the existing class tabs inside `G`, including `Body Armour` and `OffHands`. See [Dump valuation and exact stash names](DUMP_VALUATION.md) for the full setup, scoring controls, and market limitations.
+
+The older **Run**, **Value tiers**, and **Prices** tabs retain the original gear sorter described below. Its local rules and price table are separate from the new live dump valuation workflow.
 
 1. Check the readiness list (desktop app, client detected, input armed).
 2. Edit **Value tiers** — three rule buckets:
@@ -65,8 +66,7 @@ value logic that pulls winners aside automatically.
    `"ANY_RESIST >= 2"`, `"TOTAL_ELE_RES >= 70"`). Anything that matches no
    bucket files normally by class. Unidentified or unreadable items are
    **never** dumped — they always route to Review or the normal flow.
-3. Edit the **Price table** — the only price signal automation trusts (live
-   market data is disabled). A matching entry outranks tier rules: at or above
+3. Edit the **Price table** used by this older triage workflow. A matching entry outranks tier rules: at or above
    the *keep* threshold the item detours to Review, at or above *sell* it goes
    to the Sell tab.
 4. Click **Sort gear** to run (with the top-bar **Dry-run** switch on, the

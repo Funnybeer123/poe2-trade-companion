@@ -1,13 +1,14 @@
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import type { StashTabAdminStatus } from "@core/stashTabAdmin";
 import type { VoiceTransferStatus } from "@core/voiceTransfer";
+import type { StashTabScriptKind } from "../../shared/ipc.js";
 import { getAssistiveApi, getShopApi, getStashSortApi, getStashTabAdminApi } from "../services/rendererApi";
 import { useGameActions } from "./useGameActions";
 import { useRuntimeState } from "./useRuntimeState";
 
 export type DashboardScriptAction = "gear-sort" | "craft" | "shop-scan" | "shop-list";
 
-const scriptKinds: Record<DashboardScriptAction, { live: string; preview: string }> = {
+const scriptKinds: Record<DashboardScriptAction, { live: StashTabScriptKind; preview: StashTabScriptKind }> = {
   "gear-sort": { live: "sort-gear", preview: "sort-gear-dry" },
   craft: { live: "craft-gear", preview: "craft-gear-dry" },
   "shop-scan": { live: "shop-scan", preview: "shop-scan-dry" },

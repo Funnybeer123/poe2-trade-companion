@@ -56,6 +56,7 @@ export async function withPackagedElectron(
   mode: SmokeBuildMode,
   testInfo: TestInfo,
   run: (session: ElectronSmokeSession) => Promise<void>,
+  options: { cwd?: string } = {},
 ): Promise<void> {
   const executablePath = executableFor(mode);
   if (!existsSync(executablePath)) {
@@ -73,6 +74,7 @@ export async function withPackagedElectron(
   try {
     application = await electron.launch({
       executablePath,
+      ...(options.cwd ? { cwd: options.cwd } : {}),
       args: [
         `--user-data-dir=${testInfo.outputPath("user-data")}`,
         "--disable-gpu",

@@ -3,6 +3,11 @@ import { combatSmoke } from "./combat-smoke.js";
 import { dashboardSmoke } from "./dashboard-smoke.js";
 import { windowFocusSmoke } from "./window-focus-smoke.js";
 import { priceHelperSmoke } from "./price-helper-smoke.js";
+import { stashValuationSmoke } from "./stash-valuation-smoke.js";
+
+test("dump values persist league routing and display every item without game input", async ({}, testInfo) => {
+  await stashValuationSmoke("public-companion", testInfo);
+});
 
 test("price helper safely prices lists and preserves league settings", async ({}, testInfo) => {
   await priceHelperSmoke("public-companion", testInfo);
