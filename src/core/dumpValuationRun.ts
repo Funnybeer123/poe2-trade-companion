@@ -1,6 +1,7 @@
 import type { SourceTab, TabScanResult } from "../adapters/gearSorter.js";
 import type { GridCell, IdentifiedItem } from "./gearSort.js";
-import { CLASS_SIZE_DEFAULTS } from "./itemSizeCatalog.js";
+import { knownPhysicalItemSize } from "./itemSizeCatalog.js";
+import { parseItemText } from "./parseItem.js";
 import type { StashMarketQuote, StashValuationReport, StashValuationSettings } from "./stashValuation.js";
 import { captureBatch, sortSavedBatch } from "./batchCapture.js";
 /** Narrow existing sorter seam: tests replay the entire workflow without OS input. */
@@ -31,7 +32,7 @@ export function auditPhysicalItems(items: readonly IdentifiedItem[]): Identified
   return items.flatMap(item => {
     // Relics have varying footprints; the general catalogue's 1x1 default
     // is insufficient evidence to split an actual observed relic.
-    const size = CLASS_SIZE_DEFAULTS.find(entry => entry.itemClass.toLowerCase() === item.itemClass?.toLowerCase());
+    const size = knownPhysicalItemSize(item.itemClass, parseItemText(item.text).baseType);
     if (!size || /^Relics$/i.test(item.itemClass ?? "") || item.cells.length <= size.w * size.h) return [item];
     const remaining = new Map(item.cells.map(cell => [`${cell.row},${cell.col}`, cell]));
     const parts: IdentifiedItem[] = [];

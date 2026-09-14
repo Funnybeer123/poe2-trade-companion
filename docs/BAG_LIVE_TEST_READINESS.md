@@ -145,3 +145,39 @@ Logs and screenshots remain in ignored `artifacts/bag-live-*` and
 `artifacts/playwright/` locations. When the user is ready, launch the prepared
 build instead of reusing an older open companion process, then run the staged
 acceptance above. Live identification/drop counts are still **zero proven**.
+
+## Live test findings — 2026-09-14
+
+The user authorized the staged test. Initial capture exposed three real-client
+integration faults, fixed before any item mutation:
+
+- The companion could remain above the game despite the game owning focus.
+  Bag countdown now releases always-on-top and minimizes the companion before
+  worker startup; completion does not steal focus back.
+- Animated map pixels made the strict empty-cursor proof unusable. Optional
+  `cursorProbes: [{x,y},{x,y}]` now separates observation from the ground-drop
+  point. Full regions must fit in the client, avoid bag/chrome, and not overlap.
+  Both complete regions must still be unchanged across fresh frames. The local
+  3840×2160 profile uses blank statue backgrounds at (2710,900)/(3680,900),
+  which passed fresh native capture with pixel-identical regions.
+- Windows OCR sometimes returns Life, Shield, and Ward labels separately from
+  their numeric columns, or misreads the entire screen layout. Life can bind
+  to one numeric value on the same HUD row. The fallback uses a tight Life-label
+  crop and a wider value crop from the same saved frame, verified against seven
+  saved live frames. Shield/Ward values, ambiguous pairs, missing labels, and
+  zero Life do not qualify. Inventory-open evidence uses the calibrated title
+  image patch.
+
+The first complete scan attempt read all 60 cells but had two unread currency
+cells and exposed missing physical-size entries. A 250 ms hover resolved the
+currency reads. Supported 1×1 entries now include Augment, Pinnacle Keys, and
+Map Fragments; an exact-base Vaal Tower Shield exception records its observed
+2×4 footprint while preserving the general shield default.
+
+Attempt `live-authorized-20260914-08` passed the live capture: 60 unique cells,
+57 occupied cells, three empty cells, 30 physical items, zero unread cells,
+and a Scroll of Wisdom stack of 34. The durable journal validates and exactly
+matches the saved assessment. Ten eligible unidentified equipment items await
+the staged identification test; no item mutation was issued by capture.
+Private screenshots, paired reads, and input traces remain in the desktop data
+directory under `artifacts/map-triage/live-authorized-20260914-*`.

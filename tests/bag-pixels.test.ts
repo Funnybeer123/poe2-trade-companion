@@ -1,7 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { bagCellPixels, boxPixels, emptyBagPixels, obstructingBagUi, sameBagPixels, visibleLife } from "../src/core/bagPixels.js";
+import { bagCellPixels, boxPixels, emptyBagPixels, obstructingBagUi, sameBagPixels, visibleLife, visibleLifeInHud } from "../src/core/bagPixels.js";
 
 describe("live bag image evidence", () => {
+  it("pairs separate Life OCR columns by HUD position instead of reading Shield or Ward", () => {
+    const client = { width: 3840, height: 2160 };
+    const label = { text: "Life", x: 93, y: 1590, w: 56, h: 30 };
+    const value = { text: "2,446/2,599", x: 234, y: 1593, w: 176, h: 36 };
+    const shield = { text: "1,165/1,165", x: 262, y: 1637, w: 148, h: 36 };
+    expect(visibleLifeInHud([label, shield, value], client)).toBe(true);
+    expect(visibleLifeInHud([label, { ...value, text: "*2,446/2,599" }, shield, value], client)).toBe(true);
+    for (const lines of [[label, shield], [label, { ...value, text: "0/2,599" }, shield],
+      [label, value, { ...value, x: 420, w: 100 }], [{ ...label, y: 500 }, { ...value, y: 500 }],
+      [{ ...label, text: "Shield" }, value], [value], [label, { ...value, x: 1000 }]]) {
+      expect(visibleLifeInHud(lines, client)).toBe(false);
+    }
+  });
   it("samples cell interiors independently, keeping the grid rim out of identity evidence", () => {
     const image = { width: 240, height: 100, data: Buffer.alloc(240 * 100 * 3, 20) };
     const grid = { x: 0, y: 0, w: 240, h: 100, cols: 12, rows: 5 };

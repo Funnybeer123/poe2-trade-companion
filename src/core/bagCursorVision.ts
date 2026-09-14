@@ -68,7 +68,9 @@ function sourceFeatures(source: BagCursorSource, box: ClientBox, departed?: BgrI
   const cellW = source.grid.w / 12, cellH = source.grid.h / 5;
   for (let y = 4; y < box.h - 4; y += 2) for (let x = 4; x < box.w - 4; x += 2) {
     if (x % cellW < 4 || x % cellW > cellW - 4 || y % cellH < 4 || y % cellH > cellH - 4) continue;
-    if (!departed && y > box.h * .78) continue; // Wisdom stack digits are not cursor art.
+    // PoE2 inventory stack counts occupy the top-left corner. The lower scroll
+    // illustration remains part of the matching art; cursor use has no count.
+    if (!departed && x <= box.w * .45 && y <= box.h * .33) continue;
     const color = pixel(source.image, box.x + x, box.y + y), light = Math.max(...color);
     const nearby = pixel(source.image, box.x + x + 2, box.y + y + 2);
     const edge = Math.max(...color.map((value, i) => Math.abs(value - nearby[i]!)));
@@ -101,8 +103,12 @@ function matchFeatures(image: BgrImage, alpha: Uint8Array | undefined, pointer: 
 }
 function frameMatches(frame: CursorVisionFrame, box: ClientBox, features: Feature[]): Match[] {
   const screen = matchFeatures(frame.image, undefined, frame.pointer, box, features, "screen"), cursor = frame.cursorSprite;
-  if (!cursor || !validImage(cursor.image) || cursor.alpha.length !== cursor.image.width * cursor.image.height || !cursor.evidence) return screen;
-  return [...screen, ...matchFeatures(cursor.image, cursor.alpha, cursor.hotspot, box, features, "native")];
+  if (!cursor || !validImage(cursor.image) || cursor.alpha.length !== cursor.image.width * cursor.image.height || !cursor.evidence ||
+    !Number.isSafeInteger(cursor.hotspot.x) || !Number.isSafeInteger(cursor.hotspot.y) || cursor.hotspot.x < 0 || cursor.hotspot.y < 0 ||
+    cursor.hotspot.x >= cursor.image.width || cursor.hotspot.y >= cursor.image.height) return screen;
+  // The hotspot locates clicks, not the art within the native cursor bitmap.
+  const center = { x: cursor.image.width / 2, y: cursor.image.height / 2 };
+  return [...screen, ...matchFeatures(cursor.image, cursor.alpha, center, box, features, "native")];
 }
 
 /** Generic evidence for a specific physical item. A caller still checks map,

@@ -19,11 +19,16 @@ import { openLiveBag, type BagLivePerception } from "../src/adapters/liveBag.js"
 
 const EMPTY = "1".repeat(64), WISDOM = "2".repeat(64), UNKNOWN = "f".repeat(64);
 const WIDTH = 800, HEIGHT = 600;
+type OcrLine = { x: number; y: number; w: number; h: number; text: string };
+function savedHudLine(text: string, x: number, y: number, w: number, h: number): OcrLine {
+  return { text, x: x * WIDTH / 3840, y: y * HEIGHT / 2160, w: w * WIDTH / 3840, h: h * HEIGHT / 2160 };
+}
 const calibration: CalibrationProfile = { version: 1, client: { width: WIDTH, height: HEIGHT }, npcs: [], updatedAt: "2026-09-14T12:00:00Z",
   bagGrid: { x: 500, y: 250, w: 240, h: 100, cols: 12, rows: 5 } };
 const initialPerception: BagLivePerception = { version: 1, client: calibration.client, evidence: "synthetic calibration; no real game",
   emptyCursorHashes: [EMPTY], ground: { x: 200, y: 200 },
   inventoryChrome: { box: { x: 600, y: 10, w: 2, h: 2 }, patch: { width: 2, height: 2, pixels: [0, 50, 100, 150] } } };
+const aboveGridProbes: NonNullable<BagLivePerception["cursorProbes"]> = [{ x: 550, y: 150 }, { x: 700, y: 150 }];
 
 /** Real BMP decoding, cell comparison, controller and input sink run against this
  * deterministic native transport. No PowerShell process or native input starts. */
@@ -36,8 +41,10 @@ function fixture() {
   const state = { ok: true, hwnd: "11", pid: 12, process: "PathOfExileSteam.exe", foregroundIsPoe: true, stopped: false, paused: false,
     left: 0, top: 0, width: WIDTH, height: HEIGHT };
   const model = { cursor: EMPTY, clipboard: "original user clipboard", x: 0, y: 0, ocr: "Inventory Cosmetics Life 100 / 100", captures: 0,
-    lifeOcr: undefined as string | undefined, payload: undefined as { pixels: Buffer; native?: boolean } | undefined,
-    lines: [] as Array<{ x: number; y: number; w: number; h: number; text: string }>, capturedAt: undefined as string | undefined,
+    lifeOcr: undefined as string | undefined, lifeValueOcr: undefined as string | undefined,
+    lifeLines: undefined as OcrLine[] | undefined, lifeValueLines: undefined as OcrLine[] | undefined,
+    payload: undefined as { pixels: Buffer; native?: boolean } | undefined,
+    lines: [] as OcrLine[], capturedAt: undefined as string | undefined,
     onCommand: undefined as ((command: Record<string, unknown>) => void) | undefined,
     texts: new Map<string, string>(), state, data };
   native.start.mockReturnValue({ send: native.send, close: native.close });
@@ -56,7 +63,12 @@ function fixture() {
         const text = model.texts.get(key); if (text) model.clipboard = text;
         return { ok: true };
       }
-      case "ocr": return { ok: true, text: command.neutralContext ? model.lifeOcr ?? model.ocr : model.ocr, lines: structuredClone(model.lines) };
+      case "ocr": {
+        const labelCrop = command.left !== undefined && command.width === Math.round(WIDTH * 75 / 3840);
+        const valueCrop = command.left !== undefined && !labelCrop;
+        return { ok: true, text: labelCrop ? model.lifeOcr ?? model.ocr : valueCrop ? model.lifeValueOcr ?? model.ocr : model.ocr,
+          lines: structuredClone(labelCrop ? model.lifeLines ?? model.lines : valueCrop ? model.lifeValueLines ?? model.lines : model.lines) };
+      }
       case "capture": {
         model.captures++;
         const rendered = Buffer.from(data);
@@ -141,6 +153,20 @@ describe("actual live adapter with a replayed native transport", { timeout: 2000
     expect(() => openLiveBag({ ...f.options, calibration: profile })).toThrow();
     expect(native.start).not.toHaveBeenCalled(); expect(native.send).not.toHaveBeenCalled();
   });
+  it.each([
+    ["overlapping", [{ x: 200, y: 200 }, { x: 220, y: 200 }]],
+    ["bag grid", [{ x: 550, y: 260 }, { x: 200, y: 200 }]],
+    ["inventory chrome", [{ x: 600, y: 75 }, { x: 200, y: 200 }]],
+    ["outside client", [{ x: 790, y: 150 }, { x: 200, y: 200 }]],
+    ["fractional", [{ x: 550.5, y: 150 }, { x: 700, y: 150 }]],
+    ["non-finite", [{ x: Number.NaN, y: 150 }, { x: 700, y: 150 }]],
+    ["wrong length", [{ x: 550, y: 150 }]],
+    ["null", null],
+  ])("rejects %s explicit cursor probes before host startup", (_reason, cursorProbes) => {
+    writeFileSync(f.perceptionFile, JSON.stringify({ ...initialPerception, cursorProbes }));
+    expect(() => open()).toThrow("cursor probe");
+    expect(native.start).not.toHaveBeenCalled(); expect(native.send).not.toHaveBeenCalled();
+  });
   it.each(["stop", "focus", "map", "process"])("blocks %s before any pointer or keyboard input", async fault => {
     if (fault === "stop") f.model.state.stopped = true;
     if (fault === "focus") f.model.state.foregroundIsPoe = false;
@@ -172,19 +198,56 @@ describe("actual live adapter with a replayed native transport", { timeout: 2000
     await expect(settle(open().ports.observe())).rejects.toThrow("HUD");
     expect(inputs().map(input => input.op)).toEqual(["move", "move"]);
   });
-  it("uses neutral-context Life OCR from the same saved frame when whole-frame OCR misses HUD digits", async () => {
-    f.model.ocr = "Inventory Cosmetics Life"; f.model.lifeOcr = "Life 100 / 100";
+  it("binds separately cropped Life label and value from the same frame when whole-frame OCR is garbled", async () => {
+    // Coordinates and text are recorded from live06 at 3840x2160, scaled to this replay's client.
+    f.model.ocr = "& V FtvrORY ie/d ard";
+    f.model.lifeOcr = "Life"; f.model.lifeLines = [savedHudLine("Life", 92, 1589, 64, 33)];
+    f.model.lifeValueOcr = "Life.;n 2,446/2,599";
+    f.model.lifeValueLines = [savedHudLine("Life.;n", 91, 1590, 81, 30), savedHudLine("2,446/2,599", 234, 1593, 176, 36)];
     const observed = await settle(open().ports.observe());
-    expect(observed.alive).toBe(true);
+    expect(observed.alive).toBe(true); expect(observed.inventoryOpen).toBe(true);
     const commands = native.send.mock.calls.map(([command]) => command as Record<string, unknown>);
-    const crops = commands.filter(command => command.op === "ocr" && command.neutralContext);
+    const crops = commands.filter(command => command.op === "ocr" && command.left !== undefined);
     expect(crops.length).toBeGreaterThan(0);
     for (const crop of crops) {
-      expect(crop).toMatchObject({ textThreshold: 130, scale: 1 });
-      expect(commands.some(command => command.op === "ocr" && command.path === crop.path && !command.neutralContext)).toBe(true);
+      expect(crop.neutralContext).toBeFalsy(); expect(crop.textThreshold ?? 0).toBe(0);
+      expect(commands.some(command => command.op === "ocr" && command.path === crop.path && command.left === undefined)).toBe(true);
     }
-    const saved = JSON.parse(readFileSync(observed.evidence + ".scene.json", "utf8")) as { lifeOcr: { text: string }; scene: { at: string } };
-    expect(saved.lifeOcr.text).toBe("Life 100 / 100"); expect(saved.scene.at).toBe(observed.at);
+    expect(crops.some(crop => crop.width === Math.round(WIDTH * 75 / 3840) && crop.scale === 2)).toBe(true);
+    const saved = JSON.parse(readFileSync(observed.evidence + ".scene.json", "utf8")) as {
+      ocr: { text: string }; lifeOcr: { text: string; lines: OcrLine[] }; lifeValueOcr: { text: string; lines: OcrLine[] }; scene: { at: string };
+    };
+    expect(saved.ocr.text).toBe(f.model.ocr);
+    expect(saved.lifeOcr).toMatchObject({ text: "Life", lines: f.model.lifeLines });
+    expect(saved.lifeValueOcr).toMatchObject({ text: f.model.lifeValueOcr, lines: f.model.lifeValueLines });
+    expect(saved.scene.at).toBe(observed.at);
+    expect(inputs().some(input => ["click", "rightclick"].includes(String(input.op)))).toBe(false);
+  });
+  it("uses exact cropped digits when whole-frame Life, Shield and Ward labels precede a starred Life value", async () => {
+    // This is live05's actual OCR order; flattening it cannot bind Life to its value.
+    f.model.ocr = "Inventory Cosmetics Life Shield Ward *2,446/2,599 1,165/1,165 377/377";
+    f.model.lines = [savedHudLine("Life", 93, 1590, 56, 30), savedHudLine("Shield", 92, 1634, 100, 30),
+      savedHudLine("Ward", 90, 1679, 92, 30), savedHudLine("*2,446/2,599", 220, 1593, 190, 36),
+      savedHudLine("1,165/1,165", 262, 1637, 148, 36), savedHudLine("377/377", 303, 1682, 108, 36)];
+    f.model.lifeOcr = "Life"; f.model.lifeLines = [savedHudLine("Life", 93, 1590, 56, 30)];
+    f.model.lifeValueOcr = "Life 2,446/2,599";
+    f.model.lifeValueLines = [savedHudLine("Life", 93, 1590, 56, 30), savedHudLine("2,446/2,599", 220, 1593, 190, 36)];
+    expect((await settle(open().ports.observe())).alive).toBe(true);
+  });
+  it.each(["missing-label", "off-row", "dead"])("rejects %s cropped HUD evidence before copying", async fault => {
+    f.model.ocr = "garbled labels";
+    f.model.lifeOcr = fault === "missing-label" ? "" : "Life";
+    f.model.lifeLines = fault === "missing-label" ? [] : [savedHudLine("Life", 93, 1590, 56, 30)];
+    f.model.lifeValueOcr = fault === "dead" ? "0/2,599" : "2,446/2,599";
+    f.model.lifeValueLines = [savedHudLine(f.model.lifeValueOcr, 234, fault === "off-row" ? 1637 : 1593, 176, 36)];
+    await expect(settle(open().ports.observe())).rejects.toThrow("HUD");
+    expect(inputs().map(input => input.op)).toEqual(["move", "move"]);
+    expect(native.send.mock.calls.some(([command]) => command.op === "setclipboard")).toBe(false);
+  });
+  it("recognizes the inventory title from its calibrated pixels when whole-frame OCR misses the word", async () => {
+    f.model.ocr = "& V FtvrORY Life 100 / 100";
+    const observed = await settle(open().ports.observe());
+    expect(observed.inventoryOpen).toBe(true); expect(observed.alive).toBe(true);
   });
   it("captures all 60 cells with independent sentinel/read pairs and no inventory mutation", async () => {
     f.model.texts.set("0,1", weakText());
@@ -205,9 +268,14 @@ describe("actual live adapter with a replayed native transport", { timeout: 2000
     const first = open(), before = await settle(first.ports.observe());
     const bytes = readFileSync(before.evidence);
     expect(before.at).toBe((JSON.parse(readFileSync(before.evidence + ".json", "utf8")) as { capturedAt: string }).capturedAt);
+    writeFileSync(f.perceptionFile, JSON.stringify({ ...initialPerception, cursorProbes: aboveGridProbes }));
+    native.send.mockClear();
     const second = open(), after = await settle(second.ports.observe());
     expect(after.evidence).not.toBe(before.evidence);
     expect(readFileSync(before.evidence)).toEqual(bytes);
+    expect(inputs().slice(0, 2).map(input => ({ x: input.x, y: input.y }))).toEqual(aboveGridProbes);
+    expect(after.calibration).not.toBe(before.calibration);
+    expect(after.ground.x).toBe(before.ground.x); expect(after.ground.y).toBe(before.ground.y);
   });
   it("stops if focus changes between pointer movement and copying", async () => {
     let moves = 0;
@@ -277,6 +345,7 @@ describe("actual live adapter with a replayed native transport", { timeout: 2000
   });
   it.each([false, true])("requires a new world label after release (new label: %s)", async added => {
     const rawText = weakText(), parsed = parseItemText(rawText);
+    if (added) writeFileSync(f.perceptionFile, JSON.stringify({ ...initialPerception, cursorProbes: aboveGridProbes }));
     f.model.texts.set("0,1", rawText);
     const art = sourceArt(0, 1);
     const label = { text: parsed.name, x: 100, y: 200, w: 60, h: 15 };
@@ -293,6 +362,7 @@ describe("actual live adapter with a replayed native transport", { timeout: 2000
       if (++clicks === 1) {
         f.model.cursor = EMPTY; f.model.payload = { pixels: art }; f.model.texts.delete("0,1"); eraseSource(0, 1);
       } else {
+        expect(command).toMatchObject({ x: initialPerception.ground.x, y: initialPerception.ground.y });
         f.model.cursor = EMPTY; f.model.payload = undefined;
         if (added) f.model.lines.push({ ...label, y: 230 });
       }

@@ -1,7 +1,7 @@
 import { assessBatch, assessRow, BUNDLED_KNOWLEDGE, type LeagueKnowledge } from "./batchTriage.js";
 import { auditPhysicalItems } from "./dumpValuationRun.js";
 import { destForItemClass, type IdentifiedItem } from "./gearSort.js";
-import { CLASS_SIZE_DEFAULTS } from "./itemSizeCatalog.js";
+import { knownPhysicalItemSize } from "./itemSizeCatalog.js";
 import { knowledgeForReport } from "./leagueKnowledge.js";
 import { looksLikePoeItemText, parseItemText } from "./parseItem.js";
 import { defaultStashValuationSettings, unavailableStashQuote, validateStashValuationSettings,
@@ -81,7 +81,7 @@ export function captureBagLedger(id: string, cells: BagCellObservation[], settin
   const items = auditPhysicalItems([...groups.values()]);
   const rows: StashValuationRow[] = items.map(item => {
     const parsed = parseItemText(item.text), first = item.cells[0]!;
-    const size = CLASS_SIZE_DEFAULTS.find(s => s.itemClass === parsed.itemClass);
+    const size = knownPhysicalItemSize(parsed.itemClass, parsed.baseType);
     const complete = size && parsed.itemClass !== "Relics" && item.cells.length === size.w * size.h &&
       item.cells.every(c => c.row >= first.row && c.row < first.row + size.h && c.col >= first.col && c.col < first.col + size.w);
     if (!complete) unread.push(...item.cells.map(c => ({ row: c.row, col: c.col, source: "Inventory", reason: "Physical footprint not established." })));

@@ -41,6 +41,21 @@ export function visibleLife(text: string): boolean {
   const match = /\bLife\s*([\d,]+)\s*\/\s*([\d,]+)/i.exec(text);
   return !!match && Number(match[1]!.replace(/,/g, "")) > 0 && Number(match[2]!.replace(/,/g, "")) >= Number(match[1]!.replace(/,/g, ""));
 }
+/** Windows OCR can return HUD labels and values as separate columns. Bind the
+ * Life value to its visible label by position, never to Shield/Ward or chat. */
+export function visibleLifeInHud(lines: unknown, client: { width: number; height: number }): boolean {
+  if (!Array.isArray(lines) || ![client.width, client.height].every(n => Number.isFinite(n) && n > 0)) return false;
+  const valid = lines.filter((line): line is { text: string; x: number; y: number; w: number; h: number } =>
+    !!line && typeof line.text === "string" && [line.x, line.y, line.w, line.h].every(Number.isFinite) &&
+    line.w > 0 && line.h > 0 && line.x >= 0 && line.y >= client.height * .7 && line.y + line.h < client.height * .8 &&
+    line.x + line.w < client.width * .15);
+  const labels = valid.filter(line => /^Life$/i.test(line.text.trim()) && line.x < client.width * .06);
+  if (labels.length !== 1) return false;
+  const label = labels[0]!;
+  const values = valid.filter(line => line.x >= label.x + label.w && /^\s*[\d,]+\s*\/\s*[\d,]+\s*$/.test(line.text) &&
+    Math.min(label.y + label.h, line.y + line.h) - Math.max(label.y, line.y) >= Math.min(label.h, line.h) * .7);
+  return values.length === 1 && visibleLife("Life " + values[0]!.text);
+}
 export function obstructingBagUi(text: string, panelLines: readonly string[] = text.split(/\r?\n/)): boolean {
   const panelOpen = panelLines.some(line => /^(?:trade|stash|guild stash|merchant|gamble|vendor)$/.test(line.trim().replace(/\s+/g, " ").replace(/[.:]+$/, "").toLowerCase()));
   if (panelOpen) return true;

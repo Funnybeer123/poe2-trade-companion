@@ -1,11 +1,11 @@
 import { createHash, randomUUID } from "node:crypto";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { bagCellPixels, emptyBagPixels, sameBagPixels, visibleLife, obstructingBagUi } from "../core/bagPixels.js";
+import { bagCellPixels, emptyBagPixels, sameBagPixels, visibleLife, visibleLifeInHud, obstructingBagUi } from "../core/bagPixels.js";
 import { proveBagCursorEmpty, proveBagCursorPayload, type BagCursorSource, type CursorVisionFrame } from "../core/bagCursorVision.js";
 import { cellKey, exactText, type BagCellObservation, type BagPosition } from "../core/bagAssessment.js";
 import type { BagAction, BagObservationRequest, BagScene, BagSession } from "../core/bagSession.js";
-import { type CalibrationProfile, type ChromeMark, matchChrome } from "../core/calibrationProfile.js";
+import { type CalibrationProfile, type ChromeMark, type ClientBox, matchChrome } from "../core/calibrationProfile.js";
 import { GameInputController } from "../core/gameInputController.js";
 import { KillSwitch } from "../core/killSwitch.js";
 import { looksLikePoeItemText, parseItemText } from "../core/parseItem.js";
@@ -26,6 +26,8 @@ export interface BagLivePerception {
   heldCursorHashes?: Record<string, string[]>;
   inventoryChrome: ChromeMark;
   ground: { x: number; y: number };
+  /** Observation-only positions may use static UI space above the bag grid. */
+  cursorProbes?: [{ x: number; y: number }, { x: number; y: number }];
   evidence: string;
 }
 export interface LiveBagOptions {
@@ -45,12 +47,20 @@ function cursorProbeLayout(perception: BagLivePerception, calibration: Calibrati
   const payloadSize = { width: Math.max(96, Math.ceil(grid.w / 12 * 2 + 48)), height: Math.max(144, Math.ceil(grid.h / 5 * 4 + 48)) };
   const probeB = { x: perception.ground.x - payloadSize.width - 32, y: perception.ground.y };
   if (probeB.x < payloadSize.width / 2) probeB.x = perception.ground.x + payloadSize.width + 32;
-  for (const point of [perception.ground, probeB]) {
-    if (point.x - payloadSize.width / 2 < 0 || point.x + payloadSize.width / 2 >= grid.x ||
-      point.y - payloadSize.height / 2 < 0 || point.y + payloadSize.height / 2 >= calibration.client.height)
-      throw new Error("Live bag cursor probe regions do not fit outside inventory. Update the ground calibration.");
+  const probes = perception.cursorProbes === undefined ? [perception.ground, probeB] : perception.cursorProbes;
+  if (!Array.isArray(probes) || probes.length !== 2 || probes.some(point => !point || !Number.isSafeInteger(point.x) || !Number.isSafeInteger(point.y)))
+    throw new Error("Live bag cursor probes require exactly two finite integer positions.");
+  const regions = probes.map(point => ({ x: Math.floor(point.x - payloadSize.width / 2), y: Math.floor(point.y - payloadSize.height / 2),
+    w: payloadSize.width, h: payloadSize.height }));
+  const overlaps = (a: ClientBox, b: ClientBox) =>
+    a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
+  for (const region of regions) {
+    if (region.x < 0 || region.x + region.w > calibration.client.width || region.y < 0 || region.y + region.h > calibration.client.height ||
+      overlaps(region, grid) || overlaps(region, perception.inventoryChrome.box))
+      throw new Error("Live bag cursor probe regions must fit in the client without overlapping the bag grid or inventory chrome.");
   }
-  return { payloadSize, probeB };
+  if (overlaps(regions[0]!, regions[1]!)) throw new Error("Live bag cursor probe regions must not overlap each other.");
+  return { payloadSize, probes: structuredClone(probes) as NonNullable<BagLivePerception["cursorProbes"]> };
 }
 
 export function readBagLivePerception(file: string, calibration: CalibrationProfile): BagLivePerception {
@@ -75,8 +85,8 @@ export function readBagLivePerception(file: string, calibration: CalibrationProf
 /** Starts only after CLI files/arguments and perception calibration have validated. */
 export function openLiveBag(options: LiveBagOptions) {
   const perception = readBagLivePerception(options.perceptionFile, options.calibration);
-  const { payloadSize, probeB } = cursorProbeLayout(perception, options.calibration);
-  const calibrationHash = hash(JSON.stringify({ calibration: options.calibration, ground: perception.ground, chrome: perception.inventoryChrome }));
+  const { payloadSize, probes } = cursorProbeLayout(perception, options.calibration);
+  const calibrationHash = hash(JSON.stringify({ calibration: options.calibration, ground: perception.ground, chrome: perception.inventoryChrome, cursorProbes: probes }));
   const context = createBagMapContext(options.clientLog);
   mkdirSync(options.directory, { recursive: true });
   const traceFile = path.join(options.directory, "input-trace.jsonl");
@@ -179,16 +189,16 @@ export function openLiveBag(options: LiveBagOptions) {
     return { image: readBmpBgr(receipt.before.evidence), grid, cells: sourceCells, rawText: source.rawText,
       confirmation: source.confirmation, evidence: receipt.before.evidence + ":paired-source" };
   }
-  async function park(point = perception.ground) {
+  async function park(point = probes[0]) {
     const state = await checkpoint();
-    await input({ kind: "move", x: Number(state.left) + point.x, y: Number(state.top) + point.y }, "Park pointer over verified world region for unobstructed bag evidence");
+    await input({ kind: "move", x: Number(state.left) + point.x, y: Number(state.top) + point.y }, "Park pointer at verified observation position for unobstructed bag evidence");
     await new Promise(resolve => setTimeout(resolve, 150));
   }
   async function capturePair(): Promise<Frame> {
     await park(); const a = await capture();
-    await park(probeB); const b = await capture();
+    await park(probes[1]); const b = await capture();
     const frames = [visionFrame(a), visionFrame(b)] as const, now = new Date().toISOString();
-    for (const [index, point] of [perception.ground, probeB].entries()) {
+    for (const [index, point] of probes.entries()) {
       const observed = frames[index]!.pointer;
       if (!Number.isFinite(observed.x) || !Number.isFinite(observed.y) || Math.abs(observed.x - point.x) > 1 || Math.abs(observed.y - point.y) > 1)
         throw new Error("Cursor moved outside its requested probe position; no further bag input.");
@@ -212,7 +222,7 @@ export function openLiveBag(options: LiveBagOptions) {
     must(await host.send({ op: "setclipboard", text: sentinel, expectedHwnd: state.hwnd })); lastCopied = sentinel;
     const x = Math.round(Number(state.left) + grid.x + (cell.col + .5) * grid.w / 12), y = Math.round(Number(state.top) + grid.y + (cell.row + .5) * grid.h / 5);
     await input({ kind: "move", x, y }, `Read bag cell ${cellKey(cell)}`);
-    await new Promise(resolve => setTimeout(resolve, 140));
+    await new Promise(resolve => setTimeout(resolve, 250));
     await input({ kind: "key", key: "ctrlaltc", x, y }, `Copy advanced item text from bag cell ${cellKey(cell)}`);
     for (let attempt = 0; attempt < 8; attempt++) {
       await new Promise(resolve => setTimeout(resolve, 40));
@@ -226,23 +236,31 @@ export function openLiveBag(options: LiveBagOptions) {
     const evidence = frame.file + ":cell:" + cellKey(cell);
     if (rawText && exactText(rawText) === exactText(confirmation)) return { ...cell, state: "item", rawText, confirmation, evidence };
     if (!rawText && !confirmation && emptyBagPixels(bagCellPixels(frame.image, grid, cell))) return { ...cell, state: "empty", evidence };
-    return { ...cell, state: "unread", evidence };
+    return { ...cell, state: "unread", rawText, confirmation, evidence };
   }
   async function scene(frame: Frame): Promise<BagScene> {
     await checkpoint();
     const ocr = must(await host.send({ op: "ocr", path: frame.file }));
     const text = String(ocr.text ?? "");
-    // The game HUD's outlined digits need neutral context for Windows OCR.
-    // Process the same saved frame so preprocessing cannot freshen stale evidence.
-    const lifeOcr = visibleLife(text) ? undefined : must(await host.send({ op: "ocr", path: frame.file,
+    // World textures can distort whole-frame OCR layout. Read the exact HUD
+    // label and value separately from the same saved frame when needed.
+    const hudLife = visibleLife(text) || visibleLifeInHud(ocr.lines, frame.image);
+    const lifeOcr = hudLife ? undefined : must(await host.send({ op: "ocr", path: frame.file,
+      left: Math.round(frame.image.width * 85 / 3840), top: Math.round(frame.image.height * 1580 / 2160),
+      width: Math.round(frame.image.width * 75 / 3840), height: Math.round(frame.image.height * 47 / 2160), scale: 2 }));
+    const lifeValueOcr = hudLife ? undefined : must(await host.send({ op: "ocr", path: frame.file,
       left: Math.round(frame.image.width * 70 / 3840), top: Math.round(frame.image.height * 1570 / 2160),
-      width: Math.round(frame.image.width * 440 / 3840), height: Math.round(frame.image.height * 60 / 2160),
-      scale: 1, textThreshold: 130, neutralContext: true }));
-    const alive = visibleLife(text) || visibleLife(String(lifeOcr?.text ?? ""));
+      width: Math.round(frame.image.width * 440 / 3840), height: Math.round(frame.image.height * 60 / 2160), scale: 1 }));
+    const alive = hudLife || visibleLife(String(lifeValueOcr?.text ?? "")) || visibleLifeInHud([
+      ...(Array.isArray(lifeOcr?.lines) ? lifeOcr.lines : []),
+      ...(Array.isArray(lifeValueOcr?.lines) ? lifeValueOcr.lines.filter((line: Record<string, unknown>) => /^\s*[\d,]+\s*\/\s*[\d,]+\s*$/.test(String(line.text ?? ""))) : []),
+    ], frame.image);
     // OCR and cursor are bound to this exact frame; never re-stamp stale HUD evidence.
     const fresh = frame;
     const map = context.read(), client = { left: 0, top: 0, width: fresh.image.width, height: fresh.image.height };
-    const inventoryOpen = matchChrome(bgrToGray(fresh.image), client, perception.inventoryChrome) >= .9 && /\binventory\b/i.test(text);
+    // The calibrated patch contains the inventory title itself; whole-world OCR
+    // is not a second reliable title detector over animated map backgrounds.
+    const inventoryOpen = matchChrome(bgrToGray(fresh.image), client, perception.inventoryChrome) >= .9;
     const blocked = obstructingBagUi(text, (Array.isArray(ocr.lines) ? ocr.lines : []).map((line: Record<string, unknown>) => String(line.text ?? "")));
     const result: BagScene = { at: fresh.at, evidence: fresh.file, mapInstance: map.mapInstance, context: map.context, foreground: true,
       inventoryOpen, obstructed: blocked, alive, loading: map.loading, calibration: calibrationHash,
@@ -259,7 +277,7 @@ export function openLiveBag(options: LiveBagOptions) {
     if (!pendingAction || pendingAction.kind === "arm" || pendingAction.kind === "identify") {
       groundLabels = worldLabels(ocr); groundBaselineProven = Array.isArray(ocr.lines);
     }
-    writeFileSync(fresh.file + ".scene.json", JSON.stringify({ scene: result, ocr, lifeOcr }, null, 2));
+    writeFileSync(fresh.file + ".scene.json", JSON.stringify({ scene: result, ocr, lifeOcr, lifeValueOcr }, null, 2));
     if (!inventoryOpen || blocked || !result.alive) throw new Error("Inventory/map HUD or unobstructed live scene could not be verified; evidence: " + fresh.file);
     return result;
   }

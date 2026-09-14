@@ -68,6 +68,7 @@ import { startEmergencyStopMonitor } from "../adapters/emergencyStopMonitor.js";
 import { sendRendererEvent } from "./rendererEvents.js";
 import { installWindowActivation } from "./windowActivation.js";
 import { backgroundSmokeEnabled } from "./backgroundSmoke.js";
+import { prepareBagCountdownWindow } from "./bagCountdownWindow.js";
 
 const execFileAsync = promisify(execFile);
 const buildMode = resolveBuildMode(
@@ -502,7 +503,10 @@ if (ownsInstance) void app.whenReady().then(() => {
     root: app.getAppPath(), dataRoot: app.isPackaged ? memoryRoot : process.cwd(), templateDir: baselineDir,
     perceptionFile: process.env.POE2_BAG_PERCEPTION_FILE, clientLog: process.env.POE2_CLIENT_LOG,
     ...(app.isPackaged ? { workerFile: path.join(app.getAppPath().replace(/app\.asar$/, "app.asar.unpacked"), "dist-electron", "map-triage.cjs") } : {}),
-    emit: status => sendRendererEvent(mainWindow, "bag-triage:status-changed", status),
+    emit: status => {
+      if (!backgroundSmoke) prepareBagCountdownWindow(mainWindow, status.phase);
+      sendRendererEvent(mainWindow, "bag-triage:status-changed", status);
+    },
     blocked: () => backgroundSmoke ? "Game actions are disabled during background UI smoke checks."
       : killSwitch.isLatched() ? "Rearm the emergency stop before starting a bag stage."
       : assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || combatService?.status.running

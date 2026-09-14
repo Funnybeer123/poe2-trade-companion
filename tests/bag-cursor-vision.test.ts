@@ -49,8 +49,32 @@ describe("generic cursor payload proof independent of per-item cursor hashes", (
     expect(proveBagCursorPayload(input).state).toBe("item");
     expect(proveBagCursorEmpty({ frames: input.frames, knownEmptyCursorHashes: [EMPTY_HASH], payloadSize: { width: 96, height: 160 }, now: AT }).state).toBe("unknown");
   });
-  it("can match opaque native cursor art without requiring a per-item native hash", () => {
-    const input = fixture();
+  it.each(["screen", "native"])("excludes inventory top-left Wisdom stack digits absent from %s cursor art", channel => {
+    const input = fixture("wisdom");
+    if (channel === "native") for (const frame of input.frames) {
+      const sprite: BgrImage = { width: 64, height: 64, data: Buffer.alloc(64 * 64 * 3) };
+      copyBox(input.source.image, sprite, input.box, 16, 16);
+      frame.cursorSprite = { image: sprite, alpha: new Uint8Array(64 * 64).fill(255), hotspot: { x: 32, y: 32 }, evidence: frame.evidence + ":native-art" };
+      for (let y = frame.pointer.y - 16; y < frame.pointer.y + 16; y++) for (let x = frame.pointer.x - 16; x < frame.pointer.x + 16; x++) {
+        const index = (y * frame.image.width + x) * 3;
+        frame.image.data[index] = frame.image.data[index + 1] = frame.image.data[index + 2] = 20;
+      }
+    }
+    // Stack digits stay in the source bag cell across both observations, but do
+    // not appear in either cursor sprite. This reflects the recorded UI layout.
+    for (const image of [input.source.image, ...input.frames.map(frame => frame.image)]) {
+      for (let y = 4; y < 10; y++) for (let x = 4; x < 14; x++) {
+        const index = ((input.box.y + y) * image.width + input.box.x + x) * 3;
+        const value = (x + y) % 3 === 0 ? 255 : 30;
+        image.data[index] = image.data[index + 1] = image.data[index + 2] = value;
+      }
+    }
+    const proof = proveBagCursorPayload(input);
+    expect(proof.state).toBe("wisdom"); expect(proof.scores.features).toBeGreaterThanOrEqual(24);
+    expect(proof.scores.first).toBe(1); expect(proof.scores.second).toBe(1);
+  });
+  it.each([["item", 32], ["item", 0], ["wisdom", 32], ["wisdom", 0]] as const)("matches native %s bitmap art with hotspot %s independently of per-item hashes", (mode, hotspot) => {
+    const input = fixture(mode);
     for (const frame of input.frames) {
       for (let y = frame.pointer.y - 16; y < frame.pointer.y + 16; y++) for (let x = frame.pointer.x - 16; x < frame.pointer.x + 16; x++) {
         const offset = (y * frame.image.width + x) * 3;
@@ -58,10 +82,19 @@ describe("generic cursor payload proof independent of per-item cursor hashes", (
       }
       const sprite: BgrImage = { width: 64, height: 64, data: Buffer.alloc(64 * 64 * 3) };
       copyBox(input.source.image, sprite, input.box, 16, 16);
-      frame.cursorSprite = { image: sprite, alpha: new Uint8Array(64 * 64).fill(255), hotspot: { x: 32, y: 32 }, evidence: frame.evidence + ":native-art" };
+      frame.cursorSprite = { image: sprite, alpha: new Uint8Array(64 * 64).fill(255), hotspot: { x: hotspot, y: hotspot }, evidence: frame.evidence + ":native-art" };
     }
-    expect(proveBagCursorPayload(input).state).toBe("item");
-    input.frames[1].cursorSprite!.alpha.fill(0);
+    const proof = proveBagCursorPayload(input);
+    expect(proof.state).toBe(mode);
+    expect(proof.scores.first).toBe(1); expect(proof.scores.second).toBe(1);
+    const cursor = input.frames[1].cursorSprite!;
+    cursor.alpha.fill(0);
+    expect(proveBagCursorPayload(input).state).toBe("unknown");
+    cursor.alpha.fill(255);
+    cursor.hotspot.x = 64;
+    expect(proveBagCursorPayload(input).state).toBe("unknown");
+    cursor.hotspot.x = hotspot;
+    cursor.image.data.fill(0);
     expect(proveBagCursorPayload(input).state).toBe("unknown");
   });
   it.each(["stale", "same-frame", "same-position", "outside", "wrong-text", "source-present", "unrelated-change", "wrong-art", "stationary-art"])("retains unknown for %s evidence", fault => {

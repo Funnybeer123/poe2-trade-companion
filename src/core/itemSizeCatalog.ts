@@ -16,6 +16,9 @@ export const CLASS_SIZE_DEFAULTS: readonly ItemClassSizeDefault[] = [
   { itemClass: "Wombgifts", w: 1, h: 1 },
   { itemClass: "Runes", w: 1, h: 1 },
   { itemClass: "Soul Cores", w: 1, h: 1 },
+  { itemClass: "Augment", w: 1, h: 1 },
+  { itemClass: "Pinnacle Keys", w: 1, h: 1 },
+  { itemClass: "Map Fragments", w: 1, h: 1 },
   { itemClass: "Jewels", w: 1, h: 1 },
   { itemClass: "Gems", w: 1, h: 1 },
   { itemClass: "Skill Gems", w: 1, h: 1 },
@@ -65,6 +68,16 @@ export const CLASS_SIZE_DEFAULTS: readonly ItemClassSizeDefault[] = [
   { itemClass: "Crossbows", w: 2, h: 4 },
   { itemClass: "Spears", w: 1, h: 4 },
 ];
+
+/** Base exceptions require independently confirmed physical cells. The live
+ * 2026-09-14 capture confirmed Vaal Tower Shield across a complete 2x4 rectangle.
+ * Other shield bases retain their existing class default. */
+export function knownPhysicalItemSize(itemClass: string | undefined, baseType?: string): { w: number; h: number } | undefined {
+  const key = sizeKey(itemClass ?? "");
+  if (key === "shields" && sizeKey(baseType ?? "") === "vaal tower shield") return { w: 2, h: 4 };
+  const size = CLASS_SIZE_DEFAULTS.find(entry => sizeKey(entry.itemClass) === key);
+  return size ? { w: size.w, h: size.h } : undefined;
+}
 
 export function sizeKey(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, " ");
