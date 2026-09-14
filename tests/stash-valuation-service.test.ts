@@ -1,14 +1,46 @@
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { defaultStashValuationSettings, type StashValuationReport } from "../src/core/stashValuation.js";
 import { StashValuationService } from "../src/main/stashValuationService.js";
+import { BUNDLED_KNOWLEDGE } from "../src/core/batchTriage.js";
+import { batch } from "./support/batchFixtures.js";
 
 const settings = () => ({ ...defaultStashValuationSettings(), league: "Forbidden Rites" });
 const root = () => mkdtempSync(path.join(tmpdir(), "stash-valuation-service-"));
 
 describe("shared stash valuation settings and reports", () => {
+  it("imports immutable data-only snapshots and preserves old captures and assessments on profile changes", () => {
+    const directory = root(), service = new StashValuationService(directory);
+    service.saveSettings(settings());
+    const original = batch();
+    original.rows[0]!.status = "moved"; original.rows[0]!.actualDestination = "Rings";
+    const folder = path.join(directory, "artifacts", "tab-admin");
+    writeFileSync(path.join(folder, "stash-valuation-report.json"), JSON.stringify(original));
+    const snapshot = { ...structuredClone(BUNDLED_KNOWLEDGE), id: "manual-fixture-v2" };
+    expect(service.importKnowledge(snapshot)).toBe(snapshot.id);
+    expect(service.importKnowledge(snapshot)).toBe(snapshot.id);
+    expect(() => service.importKnowledge({ ...snapshot, patch: "changed" })).toThrow("immutable");
+    expect(() => service.importKnowledge({ ...snapshot, id: "../escape" })).toThrow("Invalid");
+    expect(() => service.importKnowledge({ ...snapshot, sources: [{ id: "bad", url: "javascript:alert(1)" }] })).toThrow("Invalid");
+    service.saveSettings({ ...settings(), knowledgeId: snapshot.id, weights: { life: 0.5 } });
+    const report = service.overview().report!;
+    expect(report.assessmentHistory).toHaveLength(2);
+    expect(report.rows[0]).toMatchObject({ status: "moved", actualDestination: "Rings", rawText: original.rows[0]!.rawText, assessment: { knowledgeId: snapshot.id } });
+    expect(report.knowledgeSnapshots?.[snapshot.id]).toEqual(snapshot);
+    const archives = readdirSync(path.join(folder, "batch-history")).map(file => JSON.parse(readFileSync(path.join(folder, "batch-history", file), "utf8")));
+    expect(archives).toContainEqual(original);
+  });
+  it("pauses a terminated pricing worker while retaining a complete offline assessment", () => {
+    const directory = root(), service = new StashValuationService(directory);
+    service.saveSettings(settings());
+    const report = batch();
+    report.pricingQueue = { ids: [report.rows[0]!.id], cursor: 0, budget: 10, attempts: 1, searches: 1, listingFetches: 0, metadata: 0, economy: 0, state: "running" };
+    writeFileSync(path.join(directory, "artifacts", "tab-admin", "stash-valuation-report.json"), JSON.stringify(report));
+    service.markStopped("Emergency stop");
+    expect(service.overview().report).toMatchObject({ status: "complete", pricingQueue: { state: "paused", searches: 1, cursor: 0, reason: "Emergency stop" } });
+  });
   it("requires an explicit league and rejects invalid thresholds before writing settings", () => {
     const service = new StashValuationService(root());
     expect(service.overview().settings.league).toBe("");

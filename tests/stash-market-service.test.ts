@@ -36,6 +36,26 @@ describe("stash quote transport", () => {
     expect(cached).toMatchObject({ cached: true, fetchedAt: quote.fetchedAt });
     expect(cached.validUntil).toBe(quote.validUntil);
     expect(calls).toHaveLength(4);
+    expect(quote.requests).toEqual({ searches: 1, listingFetches: 1, metadata: 1, economy: 1 });
+    expect(cached.requests).toEqual({ searches: 0, listingFetches: 0, metadata: 0, economy: 0 });
+  });
+  it("counts only emitted requests when cancellation blocks the next paced call", async () => {
+    let active = true;
+    const f = setup({ respond: url => {
+      if (url.endsWith("/data/stats")) active = false;
+      return Response.json(url.includes("poe.ninja") ? ratesPayload : statPayload);
+    } });
+    const result = await f.service.fetchStashQuote(TEXT, "Forbidden Rites", () => active, "0.5.5b");
+    expect(result).toMatchObject({ state: "unavailable", patch: "0.5.5b", requests: { searches: 0, listingFetches: 0, metadata: 1, economy: 1 } });
+    expect(f.calls).toHaveLength(2);
+  });
+  it("separates quote caches by patch", async () => {
+    const f = setup();
+    await f.service.fetchStashQuote(TEXT, "Forbidden Rites", undefined, "0.5.5");
+    const next = await f.service.fetchStashQuote(TEXT, "Forbidden Rites", undefined, "0.5.5b");
+    expect(next.cached).toBeUndefined();
+    expect(next.patch).toBe("0.5.5b");
+    expect(f.calls.filter(call => call.url.includes("/search/"))).toHaveLength(2);
   });
   it("does not reuse another league's quote", async () => {
     const { service, calls } = setup();

@@ -1,0 +1,561 @@
+{
+  "schemaVersion": 1,
+  "id": "forbidden-rites-0.5.5b-2026-09-14.1",
+  "league": "Forbidden Rites",
+  "patch": "0.5.5b",
+  "accessedAt": "2026-09-14",
+  "tierOrder": "one-is-best",
+  "refreshPolicy": "manual-import",
+  "sample": {
+    "guideCount": 4,
+    "ladderCharacters": 0,
+    "marketListings": 0,
+    "limitations": [
+      "Purposive author sample, not population shares or a definitive ranking.",
+      "poe.ninja league pages could not be retrieved; no market prices or ladder percentages inferred.",
+      "Minion sources include campaign and endgame plus an older Lich starter; these do not establish current endgame popularity.",
+      "Affix inference covers flat life only; other tiers require advanced annotations.",
+      "Special jewels, abyss modifiers and unsampled effects retain review coverage."
+    ]
+  },
+  "sources": [
+    {
+      "id": "patch",
+      "url": "https://www.pathofexile.com/forum/view-thread/4000864",
+      "publishedAt": "2026-09-03",
+      "kind": "official-patch"
+    },
+    {
+      "id": "patch-b",
+      "url": "https://www.pathofexile.com/forum/view-thread/4004106",
+      "publishedAt": "2026-09-11",
+      "kind": "official-patch"
+    },
+    {
+      "id": "tier-display",
+      "url": "https://www.pathofexile.com/forum/view-thread/3783548",
+      "publishedAt": "2025-05-21",
+      "kind": "official-announcement"
+    },
+    {
+      "id": "life-data",
+      "url": "https://poe2db.tw/us/Life",
+      "publishedAt": null,
+      "kind": "extracted-game-data"
+    },
+    {
+      "id": "jewel-data",
+      "url": "https://poe2db.tw/us/Jewels",
+      "publishedAt": null,
+      "kind": "extracted-game-data"
+    },
+    {
+      "id": "spark",
+      "url": "https://mobalytics.gg/poe-2/profile/animeprincess/builds/adonia-s-gemling-spark",
+      "publishedAt": "2026-09-11",
+      "kind": "build-author"
+    },
+    {
+      "id": "crossbow",
+      "url": "https://mobalytics.gg/poe-2/builds/woolie-run-n-gun-witch-hunter",
+      "publishedAt": "2026-09-02",
+      "kind": "build-author"
+    },
+    {
+      "id": "djinn",
+      "url": "https://mobalytics.gg/poe-2/builds/minion2win-varashta-campaign-build-guide",
+      "publishedAt": "2026-09-12",
+      "kind": "build-author"
+    },
+    {
+      "id": "lich-starter",
+      "url": "https://mobalytics.gg/poe-2/builds/lich-minions-animeprincess",
+      "publishedAt": "2026-05-27",
+      "kind": "build-author-starter-corroboration"
+    },
+    {
+      "id": "jewel-capacity",
+      "url": "https://mobalytics.gg/poe-2/profile/paintmaster/guides/recoup-chronomancer-gear-crafting-guide",
+      "publishedAt": "2026-06-27",
+      "kind": "craft-author-capacity-corroboration"
+    },
+    {
+      "id": "unset-base",
+      "url": "https://poe2db.tw/us/Unset_Ring",
+      "publishedAt": null,
+      "kind": "extracted-game-data"
+    },
+    {
+      "id": "absent-base",
+      "url": "https://poe2db.tw/us/Absent_Amulet",
+      "publishedAt": null,
+      "kind": "extracted-game-data-capacity-exception"
+    },
+    {
+      "id": "ladder",
+      "url": "https://poe.ninja/poe2/builds/forbidden-rites",
+      "publishedAt": null,
+      "kind": "unavailable"
+    },
+    {
+      "id": "economy",
+      "url": "https://poe.ninja/poe2/economy/forbidden-rites/overview",
+      "publishedAt": null,
+      "kind": "unavailable"
+    }
+  ],
+  "archetypes": [
+    {
+      "id": "spark-es-caster",
+      "label": "Gemling Spark endgame",
+      "subject": "spell",
+      "sources": [
+        "spark"
+      ],
+      "slots": {
+        "Rings": [
+          "cast-speed",
+          "mana",
+          "energy-shield-flat",
+          "fire-res",
+          "cold-res",
+          "lightning-res",
+          "all-res"
+        ],
+        "Amulets": [
+          "skill-levels",
+          "energy-shield-flat",
+          "energy-shield-percent",
+          "mana"
+        ],
+        "Boots": [
+          "movement-speed",
+          "energy-shield-flat",
+          "fire-res",
+          "cold-res",
+          "lightning-res"
+        ],
+        "Wands": [
+          "skill-levels",
+          "spell-damage",
+          "cast-speed"
+        ],
+        "Foci": [
+          "energy-shield-flat",
+          "mana",
+          "spell-damage"
+        ],
+        "Body Armours": [
+          "energy-shield-flat",
+          "energy-shield-percent"
+        ],
+        "Jewels": [
+          "jewel-es",
+          "jewel-cast-speed",
+          "jewel-crit-chance"
+        ]
+      },
+      "uniqueNames": [
+        "Adonia's Ego",
+        "Maligaro's Virtuosity",
+        "Mageblood"
+      ],
+      "bases": [
+        "Absent Amulet",
+        "Unset Ring",
+        "Invoking Belt"
+      ]
+    },
+    {
+      "id": "crossbow-attack",
+      "label": "Woolie Run n Gun Witchhunter",
+      "subject": "attack",
+      "sources": [
+        "crossbow"
+      ],
+      "slots": {
+        "Crossbows": [
+          "phys-pct",
+          "adds-phys",
+          "adds-ele",
+          "attack-speed"
+        ],
+        "Rings": [
+          "life",
+          "adds-phys",
+          "adds-ele",
+          "fire-res",
+          "cold-res",
+          "lightning-res"
+        ],
+        "Gloves": [
+          "life",
+          "adds-phys",
+          "adds-ele",
+          "attack-speed"
+        ],
+        "Boots": [
+          "movement-speed",
+          "life",
+          "fire-res",
+          "cold-res",
+          "lightning-res"
+        ],
+        "Body Armours": [
+          "evasion-percent",
+          "life"
+        ],
+        "Jewels": [
+          "jewel-attack-speed",
+          "jewel-damage"
+        ]
+      },
+      "uniqueNames": [],
+      "bases": []
+    },
+    {
+      "id": "djinn-minion",
+      "label": "Sand & Fire Djinn Varashta (mixed progression sample)",
+      "subject": "minion",
+      "sources": [
+        "djinn",
+        "lich-starter"
+      ],
+      "slots": {
+        "Sceptres": [
+          "skill-levels",
+          "spirit",
+          "minion-damage",
+          "minion-speed"
+        ],
+        "Helmets": [
+          "skill-levels",
+          "life",
+          "energy-shield-flat"
+        ],
+        "Amulets": [
+          "skill-levels",
+          "spirit",
+          "life"
+        ],
+        "Jewels": [
+          "jewel-minion-speed",
+          "minion-damage"
+        ]
+      },
+      "uniqueNames": [],
+      "bases": []
+    }
+  ],
+  "baseOpportunities": [
+    {
+      "base": "Unset Ring",
+      "itemClass": "Rings",
+      "minimumItemLevel": 54,
+      "source": "spark",
+      "reason": "Extra skill slot implicit; level 54 unlocks Virile flat life. Other desired modifier unlock levels are not verified."
+    },
+    {
+      "base": "Absent Amulet",
+      "itemClass": "Amulets",
+      "minimumItemLevel": 60,
+      "source": "spark",
+      "reason": "Author uses this base, but its -1 prefix/-1 suffix implicit changes capacity. Retain for review; no ordinary-affix crafting route is authorized until rarity-specific mechanics are verified."
+    }
+  ],
+  "lifeTiers": [
+    {
+      "classes": [
+        "Rings"
+      ],
+      "ranges": [
+        [
+          100,
+          119,
+          54
+        ],
+        [
+          85,
+          99,
+          46
+        ],
+        [
+          70,
+          84,
+          38
+        ],
+        [
+          60,
+          69,
+          33
+        ],
+        [
+          40,
+          59,
+          24
+        ],
+        [
+          30,
+          39,
+          16
+        ],
+        [
+          20,
+          29,
+          6
+        ],
+        [
+          10,
+          19,
+          1
+        ]
+      ]
+    },
+    {
+      "classes": [
+        "Amulets",
+        "Gloves",
+        "Boots"
+      ],
+      "ranges": [
+        [
+          120,
+          149,
+          60
+        ],
+        [
+          100,
+          119,
+          54
+        ],
+        [
+          85,
+          99,
+          46
+        ],
+        [
+          70,
+          84,
+          38
+        ],
+        [
+          60,
+          69,
+          33
+        ],
+        [
+          40,
+          59,
+          24
+        ],
+        [
+          30,
+          39,
+          16
+        ],
+        [
+          20,
+          29,
+          6
+        ],
+        [
+          10,
+          19,
+          1
+        ]
+      ]
+    },
+    {
+      "classes": [
+        "Helmets",
+        "Belts"
+      ],
+      "ranges": [
+        [
+          150,
+          174,
+          65
+        ],
+        [
+          120,
+          149,
+          60
+        ],
+        [
+          100,
+          119,
+          54
+        ],
+        [
+          85,
+          99,
+          46
+        ],
+        [
+          70,
+          84,
+          38
+        ],
+        [
+          60,
+          69,
+          33
+        ],
+        [
+          40,
+          59,
+          24
+        ],
+        [
+          30,
+          39,
+          16
+        ],
+        [
+          20,
+          29,
+          6
+        ],
+        [
+          10,
+          19,
+          1
+        ]
+      ]
+    },
+    {
+      "classes": [
+        "Shields"
+      ],
+      "ranges": [
+        [
+          175,
+          189,
+          70
+        ],
+        [
+          150,
+          174,
+          65
+        ],
+        [
+          120,
+          149,
+          60
+        ],
+        [
+          100,
+          119,
+          54
+        ],
+        [
+          85,
+          99,
+          46
+        ],
+        [
+          70,
+          84,
+          38
+        ],
+        [
+          60,
+          69,
+          33
+        ],
+        [
+          40,
+          59,
+          24
+        ],
+        [
+          30,
+          39,
+          16
+        ],
+        [
+          20,
+          29,
+          6
+        ],
+        [
+          10,
+          19,
+          1
+        ]
+      ]
+    },
+    {
+      "classes": [
+        "Body Armours"
+      ],
+      "ranges": [
+        [
+          200,
+          214,
+          80
+        ],
+        [
+          190,
+          199,
+          75
+        ],
+        [
+          175,
+          189,
+          70
+        ],
+        [
+          150,
+          174,
+          65
+        ],
+        [
+          120,
+          149,
+          60
+        ],
+        [
+          100,
+          119,
+          54
+        ],
+        [
+          85,
+          99,
+          46
+        ],
+        [
+          70,
+          84,
+          38
+        ],
+        [
+          60,
+          69,
+          33
+        ],
+        [
+          40,
+          59,
+          24
+        ],
+        [
+          30,
+          39,
+          16
+        ],
+        [
+          20,
+          29,
+          6
+        ],
+        [
+          10,
+          19,
+          1
+        ]
+      ]
+    }
+  ]
+}

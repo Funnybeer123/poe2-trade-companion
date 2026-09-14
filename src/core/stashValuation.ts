@@ -7,6 +7,13 @@ import type { ItemMod } from "./types.js";
 export const STASH_SCORING_VERSION = "stash-2026-09-14.3";
 
 export interface StashValuationSettings {
+  captureSource?: "stash" | "inventory" | "both";
+  assessmentModel?: "batch-triage-v1";
+  knowledgeId?: string;
+  searchBudget?: number;
+  selectedPriceIds?: string[];
+  feedback?: Record<string, "keep" | "review">;
+  triageRules?: { keepScore: number; craftScore: number; lowPriorityScore: number };
   league: string;
   sourceTab: string;
   destinationFolder: string;
@@ -25,6 +32,8 @@ export interface StashValuationSettings {
 }
 
 export interface StashMarketQuote {
+  patch?: string;
+  requests?: { searches: number; listingFetches: number; metadata: number; economy: number };
   state: "priced" | "no-comparables" | "unavailable" | "unsupported";
   league: string;
   provider: string;
@@ -59,6 +68,11 @@ export interface StashModScore {
 }
 
 export interface StashValuationRow {
+  sourceKind?: "stash" | "inventory";
+  cells?: Array<{ row: number; col: number }>;
+  quantity?: number;
+  parsed?: import("./types.js").ParsedItem;
+  assessment?: import("./batchTriage.js").ItemAssessment;
   id: string;
   rawText: string;
   name: string;
@@ -82,6 +96,12 @@ export interface StashValuationRow {
 }
 
 export interface StashValuationReport {
+  knowledgeSnapshots?: Record<string, import("./batchTriage.js").LeagueKnowledge>;
+  capture?: { id: string; league: string; patch: string; completedSources: string[]; complete: boolean };
+  assessmentHistory?: Array<{ id: string; at: string; model: string; knowledgeId: string; patch: string; league: string;
+    settings: StashValuationSettings; results: Array<{ id: string; assessment: import("./batchTriage.js").ItemAssessment }> }>;
+  pricingQueue?: { ids: string[]; cursor: number; budget: number; attempts: number; searches: number; listingFetches: number;
+    metadata: number; economy: number; state: "ready" | "running" | "paused" | "complete"; retryAfter?: string; reason?: string };
   schemaVersion: 1;
   id: string;
   startedAt: string;
@@ -93,7 +113,7 @@ export interface StashValuationReport {
   status: "running" | "complete" | "incomplete" | "stopped" | "failed";
   sourceTab: string;
   scannedItems: number;
-  unreadCells: Array<{ row: number; col: number; reason?: string }>;
+  unreadCells: Array<{ row: number; col: number; reason?: string; source?: string }>;
   rows: StashValuationRow[];
   errors: string[];
 }
@@ -114,6 +134,15 @@ export function validateStashValuationSettings(value: unknown, requireLeague = t
   if (!value || typeof value !== "object" || Array.isArray(value)) return ["Invalid valuation settings."];
   const input = value as Record<string, unknown>;
   const errors: string[] = [];
+  if (input.captureSource !== undefined && !["stash", "inventory", "both"].includes(String(input.captureSource))) errors.push("Invalid capture source.");
+  if (input.assessmentModel !== undefined && input.assessmentModel !== "batch-triage-v1") errors.push("Unknown assessment model.");
+  if (input.knowledgeId !== undefined && (typeof input.knowledgeId !== "string" || input.knowledgeId.length > 120)) errors.push("Invalid knowledge snapshot.");
+  if (input.searchBudget !== undefined && (!Number.isInteger(input.searchBudget) || Number(input.searchBudget) < 0 || Number(input.searchBudget) > 100)) errors.push("Search budget must be an integer from 0 to 100.");
+  if (input.selectedPriceIds !== undefined && (!Array.isArray(input.selectedPriceIds) || input.selectedPriceIds.some(id => typeof id !== "string") || input.selectedPriceIds.length > 10000)) errors.push("Invalid selected pricing items.");
+  if (input.feedback !== undefined && (!input.feedback || typeof input.feedback !== "object" || Array.isArray(input.feedback) || Object.values(input.feedback).some(v => !["keep", "review"].includes(String(v))))) errors.push("Invalid local feedback.");
+  if (input.triageRules !== undefined && (!input.triageRules || typeof input.triageRules !== "object" ||
+    !["keepScore", "craftScore", "lowPriorityScore"].every(key => typeof (input.triageRules as Record<string, unknown>)[key] === "number" &&
+      Number.isFinite((input.triageRules as Record<string, unknown>)[key]) && Number((input.triageRules as Record<string, unknown>)[key]) >= 0 && Number((input.triageRules as Record<string, unknown>)[key]) <= 100))) errors.push("Triage thresholds must be numbers from 0 to 100.");
   if (typeof input.league !== "string" || input.league.length > 80 ||
       (requireLeague && (!input.league.trim() || input.league.trim().toLowerCase() === "auto")) ||
       (input.league && !/^[\p{L}\p{N}][\p{L}\p{N} '()-]*$/u.test(input.league))) {
@@ -158,7 +187,7 @@ type CraftModMatch = NonNullable<ReturnType<typeof matchModFamily>> & { affixGro
 type JewelArchetype = "general-defence" | "player-attack" | "player-caster" | "minion";
 const JEWEL_ARCHETYPES: JewelArchetype[] = ["general-defence", "player-attack", "player-caster", "minion"];
 
-function matchStashMod(text: string, itemClass: string): CraftModMatch | undefined {
+export function matchStashMod(text: string, itemClass: string): CraftModMatch | undefined {
   const match = matchModFamily(text, { itemClass });
   // Family regexes match substrings. Other entities cannot inherit player
   // stats; retain only the explicitly supported minion damage/speed cases.
@@ -194,7 +223,7 @@ function isSupportedHybrid(kind: "prefix" | "suffix", mods: readonly ItemMod[]):
 }
 
 /** Source line positions preserve affix grouping even when one annotation owns several parsed modifier lines. */
-function observeAdvancedAffixes(rawText: string, explicit: readonly ItemMod[]): ObservedAffixes | undefined {
+export function observeAdvancedAffixes(rawText: string, explicit: readonly ItemMod[]): ObservedAffixes | undefined {
   const groups: Array<NonNullable<StashModScore["observedAffix"]> & { mods: ItemMod[] }> = [];
   const byLine = new Map(explicit.map(mod => [mod.line, mod]));
   let active: typeof groups[number] | undefined;
@@ -260,7 +289,7 @@ function strongestCraftFamilies(matches: readonly CraftModMatch[]): CraftModMatc
   return [...affixBest.values()];
 }
 
-const hasStrongCraftPair = (matches: readonly CraftModMatch[]) => matches.length >= 2 && matches.some(match => match.tier === 1);
+const hasStrongCraftPair = (matches: readonly CraftModMatch[]) => matches.length >= 2;
 const craftModPoints = (matches: readonly CraftModMatch[], settings: StashValuationSettings) =>
   matches.reduce((sum, match) => sum + (20 + (match.tier === 1 ? 15 : 0)) * (settings.weights[match.family.id] ?? 1), 0);
 

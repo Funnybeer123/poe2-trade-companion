@@ -57,21 +57,19 @@ describe("dump valuation panel", () => {
     running.unmount();
   });
 
-  it("resumes the saved league without persisting unsaved form settings or using game input", async () => {
+  it("saves an explicit local profile before starting only the selected pricing queue", async () => {
     state.report = savedCapture();
-    state.settings.league = "";
     state.dryRun.value = true;
     const wrapper = mount(StashValuationPanel);
     await flushPromises();
-    expect(wrapper.get('[data-test="scan"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('[data-test="scan"]').attributes("disabled")).toBeUndefined();
     expect(wrapper.get('[data-test="resume-pricing"]').attributes("disabled")).toBeUndefined();
     await wrapper.get('[data-test="resume-pricing"]').trigger("click");
     await flushPromises();
     expect(state.run).toHaveBeenCalledExactlyOnceWith("value-dump-resume");
-    expect(state.save).not.toHaveBeenCalled();
-    expect(wrapper.text()).toContain("Resuming unavailable prices for Forbidden Rites");
-    expect(wrapper.text()).toContain("It performs no game input or transfers");
-    expect(wrapper.text()).toContain("resuming does not refresh those earlier results");
+    expect(state.save).toHaveBeenCalled();
+    expect(wrapper.text()).toContain("Pricing only the selected queue");
+    expect(wrapper.text()).toContain("never enqueues every unpriced item afterward");
     expect(wrapper.get('[data-test="resume-pricing"]').attributes("disabled")).toBeDefined();
     wrapper.unmount();
   });
@@ -148,6 +146,7 @@ describe("dump valuation panel", () => {
   });
 
   it("starts the move command only from the explicit sort action", async () => {
+    state.report = savedCapture();
     const wrapper = mount(StashValuationPanel);
     await flushPromises();
     await wrapper.get('[data-test="sort"]').trigger("click");

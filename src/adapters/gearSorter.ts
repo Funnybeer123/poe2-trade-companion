@@ -23,6 +23,7 @@
  * - Round decisions come from src/core/gearSort.ts so they are unit-tested.
  */
 import os from "node:os";
+import type { CaptureProgress } from "../core/dumpValuationRun.js";
 import path from "node:path";
 import { appendFileSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import {
@@ -2369,6 +2370,7 @@ export class GearSorter {
        * so the learning survives a Numpad 0 mid-sweep (two stopped runs
        * lost it and re-ground the same glare cells, 2026-09-01). */
       onSilent?: (cell: GridCell) => void;
+      onProgress?: CaptureProgress;
     } = {},
   ): Promise<{ items: IdentifiedItem[]; unread: GridCell[]; reads: Array<{ cell: GridCell; text: string }> }> {
     const { phantomScope, looksEmpty, probePoint, sameSpriteAsLeft, onSilent } = options;
@@ -2458,6 +2460,10 @@ export class GearSorter {
         }
       }
       noText.push(...failed, ...(await sweepRow(orphaned, "identifying items (claim fallback)")));
+      if (options.onProgress) {
+        const readKeys = new Set(reads.map(entry => entry.cell.row + "," + entry.cell.col));
+        options.onProgress({ items: groupIdentifiedCells(reads), unread: cells.filter(cell => !readKeys.has(cell.row + "," + cell.col)) });
+      }
     }
     // Verified claiming: any item whose bounding box disagrees with its
     // class's minimum footprint gets its claimed cells RE-HOVERED — pixels
@@ -3321,7 +3327,7 @@ export class GearSorter {
    * have navigated to the tab. Returns undefined when no geometry source
    * exists (the stash-region-insane guard has fired by then).
    */
-  private async indexTab(source: SourceTab, key: string, exhaustive = false): Promise<TabIndex | undefined> {
+  private async indexTab(source: SourceTab, key: string, exhaustive = false, onProgress?: CaptureProgress): Promise<TabIndex | undefined> {
     let raw: RawFrame = await this.captureRaw();
     // The scan ALWAYS covers the full grid — trusting pixel occupancy to
     // pick cells let foreigners hide in cells it under-read. Cheap pixel
@@ -3491,6 +3497,7 @@ export class GearSorter {
       return { occupiedCount: 0, modelItems: [], reads: [], unread: [], region, cols, rows, ...(coverage ? { coverage } : {}) };
     }
     const sweepOptions = {
+      onProgress,
       ...(exhaustive ? {} : { phantomScope: source }),
       looksEmpty: (cell: GridCell) => {
         const score = byKey.get(`${cell.row},${cell.col}`);
@@ -3555,6 +3562,7 @@ export class GearSorter {
       navigate?: boolean;
       /** Copy every grid cell, ignoring learned phantoms and sprite shortcuts. */
       exhaustive?: boolean;
+      onProgress?: CaptureProgress;
     } = {},
   ): Promise<TabScanResult> {
     const key = source.occurrence ? `${source.label}#${source.occurrence}` : source.label;
@@ -3575,7 +3583,7 @@ export class GearSorter {
         endPhase("source-unreachable");
         return { ok: false, reason: "source-unreachable" };
       }
-      const index = await this.indexTab(source, key, options.exhaustive);
+      const index = await this.indexTab(source, key, options.exhaustive, options.onProgress);
       if (!index) {
         endPhase("no-geometry");
         return { ok: false, reason: "no-geometry" };
@@ -3596,10 +3604,27 @@ export class GearSorter {
   }
 
   /** Identify every occupied bag cell by Ctrl+C — phase 2's item source. */
-  async identifyBagItems(): Promise<{
+  async identifyBagItems(options: { exhaustive?: boolean; onProgress?: CaptureProgress } = {}): Promise<{
     items: IdentifiedItem[];
     unread: GridCell[];
   }> {
+    if (options.exhaustive) {
+      if (!this.profile.bagGrid) throw new Error("Exhaustive inventory capture requires verified bag-grid calibration.");
+      const raw = await this.captureRaw();
+      const region = toScreenBox(raw.client, this.profile.bagGrid);
+      const scores = scoreGridCells(raw.gray, raw.client, region, 12, 5);
+      const planned = scores.map(cell => ({ row: cell.row, col: cell.col,
+        x: Math.round(region.x + (cell.col + 0.5) * region.w / 12), y: Math.round(region.y + (cell.row + 0.5) * region.h / 5) }));
+      const cells = clampToArea(planned, BAG_AREA);
+      const safe = new Set(cells.map(cell => cell.row + "," + cell.col));
+      const result = await this.identifyCells(cells, {
+        onProgress: options.onProgress,
+        looksEmpty: cell => { const sample = scores.find(s => s.row === cell.row && s.col === cell.col);
+          return !!sample && sample.itemFrac < 0.08 && sample.variance < 120; },
+        probePoint: cell => brightestCellPoint(raw.gray, raw.client, region, 12, 5, cell),
+      });
+      return { items: result.items, unread: [...result.unread, ...planned.filter(cell => !safe.has(cell.row + "," + cell.col))] };
+    }
     const cells = await this.currentBagCells();
     const { items, unread } = await this.identifyCells(cells, {});
     return { items, unread };

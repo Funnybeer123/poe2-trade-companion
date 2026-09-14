@@ -1,97 +1,97 @@
 /**
- * Exhaustive Dump audit with league-specific live prices and explainable scores.
- *   npx tsx scripts/value-dump.ts                 # navigate/copy, never move
- *   npx tsx scripts/value-dump.ts --move          # re-scan, price, verify transfers
- *   npx tsx scripts/value-dump.ts --from-scan=FILE # re-price a saved report, no game
- *   npx tsx scripts/value-dump.ts --from-scan=FILE --pending-only # resume unavailable rows only
- * Settings: artifacts/tab-admin/stash-valuation.json (exact league required).
- * Source: top-level Dump. Destinations: configured class tabs inside G.
+ * Capture is local by default. --from-scan=FILE reassesses offline.
+ * --price --from-scan=FILE resumes a selected budgeted queue.
+ * --move --from-scan=FILE revalidates locations and performs verified transfers.
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { existsSync, mkdirSync, readFileSync, renameSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, existsSync } from "node:fs";
 import { startWinHost } from "../src/adapters/winHost.js";
 import { StashTabKit } from "../src/adapters/stashTabKit.js";
 import { GearSorter } from "../src/adapters/gearSorter.js";
 import { SortHarness } from "../src/adapters/sortHarness.js";
 import { loadProfile } from "../src/core/calibrationStore.js";
-import { runDumpValuation } from "../src/core/dumpValuationRun.js";
+import { captureBatch, sortSavedBatch } from "../src/core/batchCapture.js";
+import { assessBatch } from "../src/core/batchTriage.js";
 import { runSavedStashPricing, validateSavedStashReport } from "../src/core/savedStashPricing.js";
-import { defaultStashValuationSettings, unavailableStashQuote, validateStashValuationSettings, type StashValuationReport, type StashValuationSettings } from "../src/core/stashValuation.js";
+import { defaultStashValuationSettings, validateStashValuationSettings, type StashValuationReport, type StashValuationSettings } from "../src/core/stashValuation.js";
 import { PriceFeedService } from "../src/main/priceFeedService.js";
+import { writeBatchReport } from "../src/main/batchReportStore.js";
+import { StashValuationService } from "../src/main/stashValuationService.js";
+import { validateLeagueKnowledge } from "../src/core/leagueKnowledge.js";
 
 async function main(): Promise<void> {
 const runtimeRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const root = process.env.POE2_STASH_DATA_ROOT ? path.resolve(process.env.POE2_STASH_DATA_ROOT) : runtimeRoot;
 const outDir = path.join(root, "artifacts", "tab-admin");
 const argv = process.argv.slice(2);
-const value = (name: string) => argv.find(arg => arg.startsWith(`${name}=`))?.slice(name.length + 1);
-const move = argv.includes("--move");
-const craftOnly = argv.includes("--craft-only");
-const fromScan = value("--from-scan");
-const fromScanSpecified = argv.some(arg => arg === "--from-scan" || arg.startsWith("--from-scan="));
-const pendingOnly = argv.includes("--pending-only");
-if (fromScanSpecified && !fromScan) throw new Error("--from-scan requires a nonempty saved report path; no live scan was started.");
-if (pendingOnly && !fromScan) throw new Error("--pending-only requires --from-scan=FILE; it never starts a live scan.");
-if (pendingOnly && craftOnly) throw new Error("--pending-only cannot be combined with --craft-only.");
-if (move && (fromScan || argv.includes("--dry-run"))) throw new Error("--move cannot use --from-scan or --dry-run; transfer runs require a fresh live scan.");
-let saved: StashValuationReport | undefined;
-if (fromScanSpecified) {
-  const candidate: unknown = JSON.parse(readFileSync(path.resolve(fromScan!), "utf8"));
-  const savedIssues = validateSavedStashReport(candidate);
-  if (savedIssues.length) throw new Error(savedIssues.join(" "));
-  saved = candidate as StashValuationReport;
-  if (value("--league") && value("--league") !== saved.league) throw new Error("Saved pricing must use the report's original league; --league does not match.");
+const value = (name: string) => argv.find(arg => arg.startsWith(name + "="))?.slice(name.length + 1);
+const booleans = ["--move", "--price", "--pending-only", "--craft-only", "--dry-run", "--step", "--resume-capture"];
+const valued = ["--from-scan", "--report-file", "--league", "--source", "--budget", "--import-knowledge"];
+for (const arg of argv) if (!booleans.includes(arg) && !valued.some(name => arg.startsWith(name + "=") && value(name))) throw new Error("Unknown or incomplete argument: " + arg + ". No game input started.");
+if (value("--import-knowledge")) {
+  if (argv.length !== 1) throw new Error("Knowledge import is an independent offline action.");
+  const id = new StashValuationService(root).importKnowledge(JSON.parse(readFileSync(path.resolve(value("--import-knowledge")!), "utf8")));
+  console.log("Imported immutable knowledge snapshot: " + id + ". Select this ID and reassess locally.");
+  return;
 }
-const settingsFile = path.join(outDir, "stash-valuation.json");
-const rawSettings: unknown = saved?.settings ?? (existsSync(settingsFile) ? JSON.parse(readFileSync(settingsFile, "utf8")) : defaultStashValuationSettings());
-const settings = { ...(rawSettings as StashValuationSettings), ...(value("--league") ? { league: value("--league")! } : {}) };
+const fromScan = value("--from-scan"), move = argv.includes("--move"), resumeCapture = argv.includes("--resume-capture");
+const price = argv.includes("--price") || argv.includes("--pending-only");
+if ((price || move || resumeCapture) && !fromScan) throw new Error("Pricing, movement and capture resume require --from-scan=FILE.");
+if (Number(move) + Number(price) + Number(resumeCapture) > 1 || move && argv.includes("--dry-run")) throw new Error("Choose one independent action.");
+if (price && argv.includes("--craft-only")) throw new Error("Craft-only cannot request market data.");
+let saved: StashValuationReport | undefined;
+if (fromScan) {
+  const candidate: unknown = JSON.parse(readFileSync(path.resolve(fromScan), "utf8"));
+  const problems = validateSavedStashReport(candidate);
+  if (problems.length) throw new Error(problems.join(" "));
+  saved = candidate as StashValuationReport;
+}
+const service = new StashValuationService(root);
+const storedSettings = saved?.settings ?? service.overview().settings;
+const settings: StashValuationSettings = { ...defaultStashValuationSettings(), ...(saved?.settings ?? storedSettings),
+  ...(value("--league") ? { league: value("--league")! } : {}),
+  ...(value("--source") ? { captureSource: value("--source") as StashValuationSettings["captureSource"] } : {}),
+  ...(value("--budget") ? { searchBudget: Number(value("--budget")) } : {}) };
+if ((move || price || resumeCapture) && saved?.league !== settings.league) throw new Error("This action must use the original league of the saved assessment.");
 const issues = validateStashValuationSettings(settings);
 if (issues.length) throw new Error(issues.join(" "));
-mkdirSync(outDir, { recursive: true });
+const knowledge = saved?.knowledgeSnapshots?.[settings.knowledgeId ?? ""] ?? service.knowledge(settings);
+validateLeagueKnowledge(knowledge);
 const reportFile = value("--report-file") ? path.resolve(value("--report-file")!) : path.join(outDir, "stash-valuation-report.json");
-mkdirSync(path.dirname(reportFile), { recursive: true });
-const save = (report: StashValuationReport) => {
-  const temp = `${reportFile}.tmp`;
-  writeFileSync(temp, JSON.stringify(report, null, 2));
-  renameSync(temp, reportFile);
-};
-// The valuation endpoint never reads starter/manual prices. Its only use of
-// this table interface is satisfying the shared provider's legacy constructor.
-const feed = new PriceFeedService({ configDir: process.env.POE2_MARKET_CONFIG_DIR ?? outDir, disableAutoRefresh: true,
-  getPriceTable: () => ({ schemaVersion: 1, currency: "chaos", entries: [] }), savePriceTable: table => table });
-const lookupQuote = (text: string, canRun?: () => boolean) => craftOnly
-  ? Promise.resolve(unavailableStashQuote(settings.league, "Crafting-only pass: market valuation remains pending."))
-  : feed.fetchStashQuote(text, settings.league, canRun);
-
+if (fromScan && path.resolve(fromScan) === reportFile && path.basename(reportFile) !== "stash-valuation-report.json") throw new Error("Original capture files are immutable; choose a different report output.");
+mkdirSync(outDir, { recursive: true });
+const save = (report: StashValuationReport) => writeBatchReport(reportFile, report);
 function printReport(report: StashValuationReport): void {
-  console.log(`Dump valuation ${report.status}: ${report.scannedItems} items, ${report.unreadCells.length} unread cells, ${report.rows.filter(row => row.status === "moved").length} verified transfers.`);
-  console.log(`League: ${report.league}. Report: ${reportFile}`);
-  for (const error of report.errors) console.log(`  ${error}`);
-  if (report.status === "failed" || report.status === "incomplete") process.exitCode = 1;
+  const counts = report.rows.reduce<Record<string, number>>((result, row) => {
+    const key = row.assessment?.outcome ?? "review"; result[key] = (result[key] ?? 0) + 1; return result;
+  }, {});
+  console.log("Batch " + report.status + ": " + report.scannedItems + " items, " + report.unreadCells.length + " unread cells, " + report.rows.filter(row => row.status === "moved").length + " verified transfers.");
+  console.log(JSON.stringify({ league: report.league, counts, marketRequests: report.pricingQueue ? {
+    searches: report.pricingQueue.searches, listingFetches: report.pricingQueue.listingFetches, metadata: report.pricingQueue.metadata, economy: report.pricingQueue.economy
+  } : { searches: 0, listingFetches: 0, metadata: 0, economy: 0 }, output: reportFile }));
+  if (report.status === "failed") process.exitCode = 1;
 }
-
-if (fromScanSpecified) {
+if (fromScan && !move && !resumeCapture) {
   const capture = saved!;
+  if (!price) {
+    const result = assessBatch(capture, settings, new Date().toISOString(), knowledge);
+    save(result); printReport(result); return;
+  }
   let cancelled = false;
   const cancel = () => { cancelled = true; };
-  process.once("SIGINT", cancel);
-  process.once("SIGTERM", cancel);
+  process.once("SIGINT", cancel); process.once("SIGTERM", cancel);
+  const feed = new PriceFeedService({ configDir: process.env.POE2_MARKET_CONFIG_DIR ?? outDir, disableAutoRefresh: true,
+    getPriceTable: () => ({ schemaVersion: 1, currency: "chaos", entries: [] }), savePriceTable: table => table });
   try {
-    console.log("SAVED PRICING ONLY — league " + capture.league + "; " + (pendingOnly ? "unavailable rows only; prior quotes retained" : "refresh every saved quote") + ". No game input or transfers.");
-    const result = await runSavedStashPricing({ saved: capture, pendingOnly, quote: text => lookupQuote(text, () => !cancelled), onReport: save,
-      checkpoint: async message => {
-        if (cancelled) throw Object.assign(new Error("Saved pricing stopped."), { name: "AbortError" });
-        console.log(message);
-      } });
-    console.log("Saved pricing: " + result.pricingResume!.completed + "/" + result.pricingResume!.total + " attempted; " + result.pricingResume!.retained + " previous quotes retained.");
+    const result = await runSavedStashPricing({ saved: { ...capture, settings }, pendingOnly: true,
+      quote: text => feed.fetchStashQuote(text, settings.league, () => !cancelled, settings.league === knowledge.league ? knowledge.patch : undefined),
+      checkpoint: async message => { if (cancelled) throw Object.assign(new Error("Pricing stopped."), { name: "AbortError" }); console.log(message); },
+      onReport: save });
     printReport(result);
-  } finally {
-    process.removeListener("SIGINT", cancel);
-    process.removeListener("SIGTERM", cancel);
-    feed.dispose();
-  }
+  } finally { feed.dispose(); process.removeListener("SIGINT", cancel); process.removeListener("SIGTERM", cancel); }
 } else {
+
   const templateCandidates = [
     process.env.POE2_TEMPLATE_DIR,
     ...(process.env.POE2_MARKET_CONFIG_DIR ? [path.join(process.env.POE2_MARKET_CONFIG_DIR, "perception-templates")] : []),
@@ -124,18 +124,19 @@ if (fromScanSpecified) {
     console.log(`Calibration: ${profileGrid ? `${profileStashLayout} ${profileGrid.cols}×${profileGrid.rows}` : "automatic geometry"} from ${templateDir}`);
     await host.send({ op: "focus" });
     harness.startKeyListener();
-    console.log(`Dump valuation ${move ? "SCAN + VERIFIED TRANSFERS" : "SCAN ONLY (navigation and clipboard reads)"}${craftOnly ? " · CRAFTING ONLY; MARKET VALUES PENDING" : ""} — league ${settings.league}. Numpad 0 / Ctrl+Shift+Esc stops.`);
+    console.log(`Batch ${move ? "VERIFIED SORT FROM SAVED ASSESSMENT" : "CAPTURE THEN OFFLINE ASSESSMENT"} — league ${settings.league}. Zero market requests. Numpad 0 / Ctrl+Shift+Esc stops.`);
     let sessionReady = false;
-    const report = await runDumpValuation({ settings, mode: move ? "move" : "scan", sorter,
-      checkpoint: async message => {
+    const runOptions = { settings, mode: move ? "move" as const : "scan" as const, sorter,
+      checkpoint: async (message: string) => {
         await harness.checkpoint(message);
         if (!sessionReady) { await sorter.ensureSession({ openFolder: false }); sessionReady = true; }
       },
-      quote: text => lookupQuote(text, () => !harness.stopRequested), onReport: save });
+      quote: async () => { throw new Error("Capture cannot access the market."); }, onReport: save };
+    const report = move ? await sortSavedBatch(saved!, sorter, save, runOptions.checkpoint) : await captureBatch({ ...runOptions, knowledge, ...(resumeCapture ? { saved } : {}) });
     printReport(report);
     await harness.dispose({ outcome: report.status, moved: report.rows.filter(row => row.status === "moved").length });
   } finally {
-    feed.dispose();
+
     await harness.dispose({ outcome: "closed" });
     await controls.close();
     await host.close();

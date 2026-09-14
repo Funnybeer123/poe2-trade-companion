@@ -31,60 +31,70 @@ The valuation flow is configured for these existing names. No separate sale or c
 
 The older **Gear sort** workflow has its own historical `Gear` folder and routing rules. Use **Dump values → Sort valuable items** for this league-aware selection and your `G` folder.
 
-## Scan and sort
 
-1. Keep your personal stash open in the game. Choose **Scan dump values**. It navigates to `Dump`, copies item text throughout the grid, and requests current league comparisons. This uses game input for navigation and copying, but transfers nothing.
-2. Read **All scanned items**. Every copied item has its original text, source cell, gear score, craft score, market result, reasons, and planned destination. Failed reads and unavailable prices are explicit. A failed price request never becomes a zero-value item.
-3. Empty the inventory. Choose **Sort valuable items** with the app's Dry-run switch off. It performs a new scan and valuation, then verifies each selected item's source identity, inventory receipt, and destination receipt. Incomplete source coverage blocks transfers. A failed receipt stops the run.
-4. **Ctrl+Shift+Esc** is the emergency stop; Numpad **0** also stops the scanner. Keep the game foreground while it works.
+## Capture, assess, optionally price, then sort
 
-Hide or collapse chat when messages overlap the inventory or stash grid. Overlay text can appear as an occupied cell and cause an unread-item stop; clear the overlay before retrying.
+1. Select the exact league and capture source: **Dump / stash**, **Inventory**, or **Both**. Keep the personal stash open. **Scan dump values** copies the complete selected grids before assessing them locally. A nonempty inventory is supported; capture neither transfers items nor requests market data.
+2. Read **All scanned items**. The complete ledger retains exact advanced text, physical coordinates, quantity, parsed properties, affix evidence, outcome, uncertainty and destination. Identical items remain separate physical rows. Incomplete coverage is explicit; **Resume incomplete capture** retries incomplete sources using their original settings and keeps completed sources.
+3. Use the search, outcome, class, source, T1/T2, resistance, crafting-room and uncertainty filters. **Keep + craft shortlist** hides review and low-priority rows without deleting them. Expand an item for component scores, copied rolls, affix room and linked build sources. Keep/Review feedback overrides are local and reversible.
+4. Edit per-league weights or outcome thresholds and save, or choose **Reassess saved batch offline**. Both recompute from copied text, preserve assessment history and send zero game input or market requests. Select/import a new knowledge snapshot to change the research profile.
+5. Optionally check specific rows and choose **Resume saved pricing**. With no selection it creates a priority queue of at most the configured budget, initially **10 distinct searches**. It does not append every other unpriced item afterward. Search, listing-fetch, metadata and economy counters remain separate. Budget, cancellation, and Retry-After pause this queue independently of assessment. Increase the budget to continue a longer explicitly selected queue. Change the checked selection to start a different queue; completed queues do not automatically refresh expired quotes.
+6. Inspect **Movement preview**, then choose **Sort valuable items** with Dry-run off. Sorting uses the saved assessment, revalidates exact current text and original position, and verifies source, inventory and destination receipts. It makes no market requests. Inventory-source candidates are deposited directly first; stash withdrawals require an empty inventory. Retained inventory items can therefore prevent the stash portion from proceeding until handled. Changed positions or ambiguous copies require recapture, not relocation by fingerprint.
 
-Live navigation currently uses the verified 3840×2160 physical client calibration at screen origin. A different viewport is refused before input. Folder and tab labels are resolved through OCR; short folder names such as `G` use contrast preprocessing with repeated agreement checks.
+Keep the game foreground during capture/sorting. **Ctrl+Shift+Esc** and Numpad **0** stop generated input. Hide chat or other overlays covering grids. Navigation retains the verified 3840×2160 physical client calibration at screen origin and OCR agreement checks for exact folder/tab names. Inventory capture requires the calibrated bag grid and reports excluded/unread cells. A different viewport is refused before input.
 
-Market prices can be throttled or unavailable. The report retains the item copies so prices and scores can be improved without losing the inventory evidence. A scan with unpriced items is not a complete valuation even if every grid cell was read.
+Previously moved or failed transfer receipts survive rescoring, pricing and sorting resumes. They are not automatically retried. Inspect an uncertain transfer in-game and create a fresh capture before attempting it again. Historical coordinates never prove current location. No vendoring, destruction, listing, trade completion or actual crafting is part of this feature.
 
-Choose **Resume saved pricing** to retry only unavailable results, including requests interrupted by rate limits. It uses the saved report's original league, thresholds, item identities, and positions; unsaved settings in the form do not change that capture. It sends no game input and performs no transfers. Existing moved/failed outcomes and their receipt notes remain recorded.
+## Outcomes and evidence
 
-Resume retains priced, no-comparables, and unsupported results with their original timestamps. Expired prices remain historical evidence and cannot authorize a fresh sale plan; resuming does not refresh those earlier results. A new provider restriction checkpoints the affected item and pauses the remaining work. The button becomes available again after the job stops, and a saved future retry deadline is respected before any request.
+- **Keep/useful now:** coherent, sufficiently strong local modifiers, or a recognized build-enabling unique. Finished items do not need crafting room. This is a heuristic selection, not a price.
+- **Craft candidate:** a researched base opportunity or useful retained combination with a supported improvement route. Magic, ordinary rare equipment and ordinary jewels have different capacities. Complete advanced affix groups determine room; hybrid lines count as one group. Restrictions can block crafting while preserving existing usefulness.
+- **Review/unknown:** missing tiers/groups, unrecognized modifiers or special classes, conflicting copied ranges, incomplete coverage and research gaps remain visible. An unavailable/empty market search is not a zero-value observation.
+- **Low-priority:** requires positive evidence of known weak or irrelevant rolls and no recognized base/special opportunity. Items remain in the complete ledger and source.
+- **Price-confirmed route:** separately requires a fresh, same-league and same-patch quote with adequate comparable sellers/confidence and conservative lower estimate **strictly above max(1, configured threshold) chaos**. Exactly 1 chaos cannot qualify. Historical quotes without a patch key are not new transfer authority. Expired evidence is not refreshed during sorting; price those items explicitly first.
 
-## What qualifies
+Default local thresholds are Keep 70, Craft 55 and Low-priority at most 25. These are adjustable point thresholds; **T1/T2 refers to copied or verified affix tiers**, never a score band. The older minimum crafting-score field remains in saved profiles for compatibility with legacy reports; batch selection uses **Local outcome thresholds**. The model separates modifier quality, combination/build fit, general usefulness, crafting potential and coverage confidence. Price and price confidence are separate.
 
-- **Market value:** the conservative lower estimate must be **strictly greater than 1 chaos**, from at least three comparable sellers, with at least 65% confidence and a fresh timestamp. A price of exactly 1 chaos does not qualify. The threshold and confidence are editable.
-- **Crafting candidate:** a default score of at least **70/100**, with multiple strong modifier families suited to the item class and room for improvement. Complete advanced annotations determine prefix/suffix counts; supported hybrid modifiers count as one affix. Without complete annotations, a conservative line-count check is used. Copied accessory tiers can inform crafting strength and are shown separately from the heuristic gear bands. Corrupted, mirrored, unidentified, and unsupported crafting items are excluded. Jewel modifiers use jewel-scale scoring; full four-line rare jewels are not treated as open crafting bases.
-- **Review:** unavailable, stale, mismatched-league, low-confidence, unsupported, unreadable, or unmapped items stay in `Dump`. Nothing is vendored or listed by this feature.
+Read [the dated research and coverage limits](FORBIDDEN_RITES_KNOWLEDGE.md). Current automatic tier inference covers flat life by class only. Ordinary jewels use within-tier roll position, not equipment-sized thresholds. Many effects remain unsupported; Review is expected. Heuristics do not estimate crafting costs, success chances or profit.
 
-Crafting scores are editable heuristics, not crafting profit or verified affix-tier probabilities. Copied modifier lines do not prove exact prefix/suffix counts because hybrid affixes can span lines. Check the item's actual affix groups and current crafting costs before crafting.
+## Saved data and CLI
 
-## Market evidence and improvement
+Development files live under `artifacts/tab-admin/`; the installed app uses `%APPDATA%/poe2-trade-companion/artifacts/tab-admin`. The packaged worker runs without Node/npm or a source checkout. Authentication stays in existing app configuration and is never copied into reports.
 
-The lookup uses the real Path of Exile trade service and its current stat catalog, then checks returned listings locally for matching base, rarity, state, modifier text and comparable numeric rolls. It rejects duplicate sellers and unsuitable comparables. Currency conversion uses only fresh, same-league exchange data; no starter price table or hardcoded chaos/divine rate authorizes a transfer.
+| File/directory | Purpose |
+| --- | --- |
+| `stash-valuation.json` | Current explicit settings |
+| `stash-valuation-profiles.json` | Profiles keyed by exact league |
+| `stash-valuation-report.json` | Working report, checkpointed during each action |
+| `batch-history/<sha256>.json` | Immutable prior and new report versions, including original raw rows and receipts |
+| `knowledge/<id>.json` | Validated immutable research imports |
 
-Each quote records its provider, league, timestamp, expiry, sample counts, confidence, low/fair/high asking-price range, and search link. Quotes expire after at most 15 minutes; conversion data can shorten that lifetime. The sorter refreshes expired sale evidence before withdrawal. These are estimates of listed asking prices, not guaranteed sale proceeds. Sparse searches, unusual modifiers, special variants, inaccessible listings, and changing markets can leave items unpriced. The report states those limitations instead of substituting a generic base price.
+The working report stores capture identity, completion, source/league/patch, complete parsed rows, model/profile/snapshot and assessment history, plus an independent pricing queue. Archived versions preserve earlier quote/transfer states. Keep original named scans as permanent inputs; use a different `--report-file` for experiments. Local inventory data and history are ignored by Git.
 
-Advanced copied item text is supported: `14(5-15)%` contributes the actual roll of `14%`, while the original text and range remain saved. Named prefix and suffix annotations identify magic-item bases for searches. Unknown explicit modifiers exclude automatic crafting selection, and minion and player modifiers must fit a compatible crafting use.
+```powershell
+# Live capture then offline assessment; no pricing or transfers
+npm run value:dump -- --source=both
 
-Edit **Improve scoring for this league** to tune modifier-family weights. Profiles retain separate weights and thresholds per exact league. Item text and the scoring-model version are retained with every report so a later model can re-evaluate the same items.
+# Entirely offline, preserving this original file
+npx tsx scripts/value-dump.ts --from-scan=artifacts/tab-admin/stash-valuation-report.json --report-file=artifacts/tab-admin/reassessed.json
 
-## Local files and CLI
+# Optional bounded pricing from a saved assessment; --pending-only is an alias
+npx tsx scripts/value-dump.ts --from-scan=artifacts/tab-admin/reassessed.json --price --budget=10 --report-file=artifacts/tab-admin/priced.json
 
-- `artifacts/tab-admin/stash-valuation.json`: current settings.
-- `artifacts/tab-admin/stash-valuation-profiles.json`: settings per league.
-- `artifacts/tab-admin/stash-valuation-report.json`: latest report, checkpointed during work.
-- `npm run value:dump`: scan and value without transfers.
-- `npm run value:dump:sort`: scan, value, and move eligible items.
-- `npx tsx scripts/value-dump.ts --craft-only --move`: fresh scan and verified transfers for strong crafting candidates while market pricing is pending. This sends no market requests and cannot approve an item by price.
-- `--report-file=PATH`: save a separate report, useful for keeping an offline price pass separate from a live crafting pass.
-- `npx tsx scripts/value-dump.ts --from-scan=artifacts/tab-admin/stash-valuation-report.json`: reprice and rescore copied items without game input. This cannot move items or establish their current physical location.
+# Resume an incomplete live capture, preserving completed sources
+npx tsx scripts/value-dump.ts --from-scan=artifacts/tab-admin/stash-valuation-report.json --resume-capture
 
-The desktop passes its existing market configuration directory to the scanner. Authentication data remains in the existing app configuration and is not copied into item reports.
+# User-triggered verified transfers from the saved preview, no pricing
+npm run value:dump:sort -- --from-scan=artifacts/tab-admin/stash-valuation-report.json
 
-Add `--pending-only` to the `--from-scan=FILE` command to retry only unavailable rows and advance unfinished pricing without re-querying earlier expired prices. All earlier quote evidence and recorded transfer outcomes are retained.
+# Independent offline knowledge refresh; then select its ID in the app
+npx tsx scripts/value-dump.ts --import-knowledge=path/to/new-snapshot.json
+```
 
-Saved-report commands require a complete report containing its original settings and league. Bare/empty `--from-scan`, malformed reports, a conflicting `--league`, and combinations with `--move` are rejected before input starts. A pricing pass can overwrite the same saved report safely: it checkpoints the complete capture before the first request.
+Saved commands use the input report's profile. UI profile edits trigger reassessment; the CLI can explicitly select another league for offline analysis only. Other model IDs are rejected until implemented. A new knowledge ID must pass data-only validation, with HTTPS citations and bounded fields; existing IDs cannot be redefined. The complete selected snapshot is embedded in assessment reports for reproducibility.
 
-The installed Windows app bundles its scanner and stores these files under `%APPDATA%/poe2-trade-companion/artifacts/tab-admin`; it can launch from any folder without Node.js, npm, or the source repository. Development commands use the repository's `artifacts/tab-admin` directory. The installed app reuses calibration from its `perception-templates` directory.
+Bare/empty arguments, malformed reports, mismatched live-action leagues and incompatible combined actions are rejected before any game input. `--move`, `--price` and `--resume-capture` require `--from-scan`. The old `--craft-only` spelling remains a zero-market compatibility flag; ordinary capture/assessment are already offline. Do not use legacy commands that expect scan-and-price or scan-and-move in a single action.
 
-Trade pacing follows the server's advertised windows, retains capacity headroom, and shares reservations with the app's other market requests. A large dump can take a long time to price. Server-directed waits are saved with the affected item and remain cancellable; repeated throttling stops the run with its item copies intact.
+Optional pricing retains existing server pacing and Retry-After. It uses at most one search and one bounded listing fetch per uncached attempt, deduplicating exact raw item/state signatures within a league/patch. Materially different rolls never inherit a neighboring item's quote. Existing comparable matching checks base, rarity, state, modifiers, sellers, timestamps, expiry and current conversion evidence. A pre-request budget reservation survives abrupt termination; if no response is received, it is conservatively counted against the budget. Empty/no-comparable results are completed queue entries; unavailable results pause for explicit resume. Market ranges are asking-price estimates, not guaranteed proceeds.
 
-GGG's [current developer reference](https://www.pathofexile.com/developer/docs/reference) lists account/public stash APIs as PoE1-only. The PoE2 inventory scan therefore uses visible client state and copied item text. Trade-site endpoints are implementation interfaces, not a promise of a documented public stash API.
+See [the offline delivery report](BATCH_TRIAGE_VALIDATION.md) for the saved 276-item assessment and verification evidence.

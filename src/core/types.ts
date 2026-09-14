@@ -82,6 +82,11 @@ export interface ItemSection {
 }
 
 export interface ItemMod {
+  annotation?: string;
+  affixGroup?: number;
+  affixKind?: "prefix" | "suffix";
+  observedTier?: number;
+  ranges?: Array<{ min: number; max: number }>;
   text: string;
   value?: number;
   value2?: number;

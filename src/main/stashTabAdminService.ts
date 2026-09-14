@@ -55,6 +55,7 @@ const SCRIPT_ARGS: Record<StashTabScriptKind, string[]> = {
   "value-dump": ["scripts/value-dump.ts"],
   "value-dump-sort": ["scripts/value-dump.ts", "--move"],
   "value-dump-resume": ["scripts/value-dump.ts", "--pending-only"],
+  "value-dump-capture-resume": ["scripts/value-dump.ts", "--resume-capture"],
   "craft-gear": ["scripts/craft-gear.ts", "--live"],
   "craft-gear-dry": ["scripts/craft-gear.ts"],
   // Shop listings (docs/HANDOFF-shop-listings.md). Dry scans read the tab
@@ -92,7 +93,7 @@ export class StashTabAdminService {
     const args = [...configured];
     const valuation = kind.startsWith("value-dump");
     const worker = valuation ? this.options.valuationWorker : undefined;
-    if (kind === "value-dump-resume") {
+    if (kind === "value-dump-resume" || kind === "value-dump-sort" || kind === "value-dump-capture-resume") {
       const relativeReport = path.join("artifacts", "tab-admin", "stash-valuation-report.json");
       const savedReport = path.join(worker?.dataRoot ?? this.options.root, relativeReport);
       if (!existsSync(savedReport)) return { started: false, reason: "no-saved-report" };

@@ -142,6 +142,8 @@ contextBridge.exposeInMainWorld("poe2", {
     comps: (itemText: string) => ipcRenderer.invoke("price-feed:comps", itemText),
   },
   stashValuation: {
+    reassess: () => ipcRenderer.invoke("stash-valuation:reassess"),
+    importKnowledge: (snapshot: unknown) => ipcRenderer.invoke("stash-valuation:import-knowledge", snapshot),
     overview: () => ipcRenderer.invoke("stash-valuation:overview"),
     saveSettings: (settings: unknown) => ipcRenderer.invoke("stash-valuation:save-settings", settings),
   },

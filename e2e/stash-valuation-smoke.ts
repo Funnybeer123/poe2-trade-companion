@@ -4,6 +4,7 @@ import path from "node:path";
 import { expect, type TestInfo } from "@playwright/test";
 import { defaultStashValuationSettings, STASH_SCORING_VERSION, type StashValuationReport, type StashValuationSettings } from "../src/core/stashValuation.js";
 import { withPackagedElectron, type SmokeBuildMode } from "./electron-smoke.js";
+import { batch, strongText } from "../tests/support/batchFixtures.js";
 
 /** Real packaged IPC/persistence with synthetic reports, an isolated workspace, and no game operations. */
 export async function stashValuationSmoke(mode: SmokeBuildMode, testInfo: TestInfo): Promise<void> {
@@ -75,6 +76,26 @@ export async function stashValuationSmoke(mode: SmokeBuildMode, testInfo: TestIn
     const resumedReport = JSON.parse(readFileSync(path.join(workerArtifacts, "stash-valuation-report.json"), "utf8")) as StashValuationReport;
     expect(resumedReport).toMatchObject({ id: emptyReport.id, startedAt: workerAt, league: saved.league,
       status: "complete", scannedItems: 0, rows: [] });
+    // Nonempty packaged worker regression, with every network and child-input
+    // attempt made fatal even if some caller catches the thrown exception.
+    const guardFile = path.join(workerRoot, "offline-guard.cjs");
+    writeFileSync(guardFile, "const deny=()=>{process.exitCode=99;throw new Error('Offline smoke forbids network and game input')};globalThis.fetch=deny;require('node:http').request=deny;require('node:https').request=deny;require('node:child_process').spawn=deny;");
+    const hundredsFile = path.join(workerRoot, "hundreds.json");
+    const synthetic = batch(Array.from({ length: 276 }, () => strongText()));
+    synthetic.rows[0]!.status = "moved";
+    synthetic.rows[0]!.actualDestination = "Rings";
+    synthetic.rows[0]!.reasons.push("Synthetic verified receipt.");
+    writeFileSync(hundredsFile, JSON.stringify(synthetic));
+    const offlineOutput = execFileSync(runtime.executable, ["--require", guardFile, worker, "--from-scan=" + hundredsFile], {
+      cwd: workspace, windowsHide: true, encoding: "utf8", timeout: 30_000,
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: "1", POE2_STASH_DATA_ROOT: workerRoot, POE2_MARKET_CONFIG_DIR: workerRoot },
+    });
+    expect(offlineOutput).toContain("276 items, 0 unread cells, 1 verified transfers");
+    expect(offlineOutput).toContain('"searches":0');
+    const offlineHundreds = JSON.parse(readFileSync(path.join(workerArtifacts, "stash-valuation-report.json"), "utf8")) as StashValuationReport;
+    expect(offlineHundreds.assessmentHistory).toHaveLength(2);
+    expect(offlineHundreds.rows.every(row => row.assessment)).toBe(true);
+    expect(offlineHundreds.rows[0]!.reasons).toContain("Synthetic verified receipt.");
 
     const at = new Date().toISOString();
     const priced = {
@@ -97,6 +118,7 @@ export async function stashValuationSmoke(mode: SmokeBuildMode, testInfo: TestIn
           reasons: ["No fixture comparable listings."] }, reasons: ["Fixture crafting candidate; no profit estimate."],
       }, {
         ...priced, id: "fixture-unpriced", name: "Fixture Unpriced Wand", baseType: "Wand", itemClass: "Wands", row: 2,
+        rawText: "Item Class: Wands\nRarity: Rare\nFixture Unpriced Wand\nWand\n--------\nItem Level: 82\n--------\nUnknown modifier",
         gearScore: 32, decision: "review", destination: "Dump", status: "stay", mods: [],
         quote: { ...priced.quote, state: "unavailable", low: undefined, fair: undefined, high: undefined, sampleSize: 0, candidateCount: 0, confidence: 0,
           reasons: ["Fixture market service is unavailable."] }, reasons: ["Unpriced item remains in Dump for review."],
@@ -127,6 +149,15 @@ export async function stashValuationSmoke(mode: SmokeBuildMode, testInfo: TestIn
     await expect(page.locator('[data-test="league"]')).toHaveValue("Forbidden Rites");
     await expect(page.locator('[data-test="destination-folder"]')).toHaveValue("G");
     await expect(page.locator('[data-test="valuation-row"]')).toHaveCount(3);
+    await page.getByRole("button", { name: "Reassess saved batch offline", exact: true }).click();
+    await expect(page.getByText("Saved batch reassessed locally. Zero market requests or game input.", { exact: true })).toBeVisible();
+    await expect(page.locator('[data-test="request-counters"]')).toContainText("0 market requests");
+    await page.locator('[data-test="search-items"]').fill("Unpriced");
+    await expect(page.locator('[data-test="valuation-row"]')).toHaveCount(1);
+    await page.locator('[data-test="search-items"]').fill("");
+    await expect(page.locator('[data-test="valuation-row"]')).toHaveCount(3);
+    await page.locator('[data-test="valuation-row"]').first().locator("summary").click();
+    await page.screenshot({ path: testInfo.outputPath("batch-assessment.png"), fullPage: true });
     await page.getByRole("button", { name: "Resume saved pricing", exact: true }).click();
     await expect.poll(() => application.evaluate(() =>
       (globalThis as unknown as { __stashSmoke: { scriptRequests: string[] } }).__stashSmoke.scriptRequests,

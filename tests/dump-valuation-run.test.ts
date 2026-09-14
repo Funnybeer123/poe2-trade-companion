@@ -1,299 +1,133 @@
 import { describe, expect, it, vi } from "vitest";
 import { auditPhysicalItems, runDumpValuation, type DumpValuationSorter } from "../src/core/dumpValuationRun.js";
-import { defaultStashValuationSettings, type StashMarketQuote, type StashValuationReport } from "../src/core/stashValuation.js";
-import { destForItemClass, type IdentifiedItem } from "../src/core/gearSort.js";
-import type { TabScanResult } from "../src/adapters/gearSorter.js";
+import { captureBatch, sortSavedBatch } from "../src/core/batchCapture.js";
+import { assessBatch } from "../src/core/batchTriage.js";
+import type { StashValuationReport } from "../src/core/stashValuation.js";
+import type { IdentifiedItem, GridCell } from "../src/core/gearSort.js";
+import { AT, settings, batch, strongText, physical, scan } from "./support/batchFixtures.js";
 
-const at = "2026-09-14T12:00:00.000Z";
-const settings = { ...defaultStashValuationSettings(), routingMode: "purpose" as const, league: "Forbidden Rites" };
-const ring = "Item Class: Rings\nRarity: Rare\nStorm Coil\nGold Ring\n--------\nItem Level: 82\n--------\n+60 to maximum Life";
-const currency = "Item Class: Stackable Currency\nRarity: Currency\nChaos Orb\n--------\nStack Size: 3/20";
-const quote: StashMarketQuote = { state: "priced", league: settings.league, provider: "trade2", fetchedAt: at,
-  currency: "chaos", low: 3, fair: 4, high: 5, sampleSize: 12, candidateCount: 20, confidence: 80, reasons: [] };
-const item = (text = ring, col = 0): IdentifiedItem => {
-  const itemClass = /Item Class: (.*)/.exec(text)![1]!;
-  return { text, itemClass, dest: destForItemClass(itemClass), cells: [{ row: 0, col, x: col * 50, y: 300 }] };
-};
-const scan = (items: IdentifiedItem[], unread = false): TabScanResult => ({ ok: true, occupiedCount: items.length,
-  modelItems: items, reads: items.map(entry => ({ cell: entry.cells[0]!, text: entry.text })),
-  unread: unread ? [{ row: 3, col: 4, x: 200, y: 500 }] : [],
-  region: { x: 0, y: 0, w: 1200, h: 1200 }, cols: 24, rows: 24,
-  coverage: { totalCells: 576, copiedCells: 576, excludedCells: [] } });
-
-function fixture(items = [item()], options: { unread?: boolean; receipt?: boolean; depositFails?: boolean; maskedWithdrawal?: boolean } = {}) {
-  let bag: IdentifiedItem[] = [];
-  let deposited = false;
-  let withdrawn = false;
+function fixture(options: { inventory?: boolean; unrelated?: boolean; receipt?: boolean; masked?: boolean; depositFails?: boolean } = {}) {
+  const source = [physical()];
+  let stash = options.inventory ? [] : [...source];
+  let bag = options.inventory ? source.map(item => ({ ...item, cells: item.cells.map(cell => ({ ...cell, y: 1500 })) })) : [];
+  if (options.unrelated) bag.push(physical(strongText().replace("+38(36-40)% to Fire Resistance", "Unknown special effect"), 4));
+  let destination: typeof source = [];
   const saves: StashValuationReport[] = [];
   const sorter: DumpValuationSorter = {
-    scanTab: vi.fn(async source => source.topLevel ? scan(items, options.unread)
-      : scan(deposited && options.receipt !== false ? [items[0]!] : [])),
-    gotoTab: vi.fn(async () => true),
-    bagCellsNow: vi.fn(async () => bag.flatMap(entry => entry.cells)),
+    scanTab: vi.fn(async source => source.topLevel ? scan(stash) : scan(options.receipt === false ? [] : destination)),
+    gotoTab: vi.fn(async () => true), bagCellsNow: vi.fn(async () => bag.flatMap(item => item.cells)),
     identifyBagItems: vi.fn(async () => ({ items: bag, unread: [] })),
-    copyAt: vi.fn(async () => withdrawn ? "" : items[0]!.text),
-    withdrawItemsSerial: vi.fn(async entries => { bag = [...entries]; withdrawn = true; return options.maskedWithdrawal ? [] : [...entries]; }),
-    depositBagCells: vi.fn(async () => {
+    copyAt: vi.fn(async (x, y) => [...stash, ...bag].find(item => item.cells.some(cell => cell.x === x && cell.y === y))?.text ?? ""),
+    withdrawItemsSerial: vi.fn(async (items: readonly IdentifiedItem[]) => {
+      stash = []; bag = items.map(item => ({ ...item, cells: item.cells.map(cell => ({ ...cell, y: 1500 })) }));
+      return options.masked ? [] : [...items];
+    }),
+    depositBagCells: vi.fn(async (points: readonly GridCell[]) => {
       if (options.depositFails) return 1;
-      bag = []; deposited = true; return 0;
+      const moved = bag.filter(item => item.cells.some(cell => points.some(point => point.x === cell.x && point.y === cell.y)));
+      bag = bag.filter(item => !moved.includes(item)); destination = [...destination, ...moved]; return 0;
     }),
   };
-  const fetchQuote = vi.fn(async () => quote);
-  const run = (mode: "scan" | "move" = "scan") => runDumpValuation({ settings, mode, sorter,
-    quote: fetchQuote, now: () => at, onReport: report => saves.push(report) });
-  return { sorter, saves, fetchQuote, run };
+  return { sorter, saves, save: (report: StashValuationReport) => saves.push(structuredClone(report)),
+    reposition: () => { stash = [physical(strongText(), 2)]; } };
 }
-
-describe("complete Dump valuation workflow", () => {
-  it("preserves the denied item, waits for the server deadline, then resumes the full batch", async () => {
-    const f = fixture([item(), item(currency, 2)]);
-    let time = Date.parse(at);
-    const retryAfter = new Date(time + 1000).toISOString();
-    f.fetchQuote.mockResolvedValueOnce({ ...quote, state: "unavailable", retryAfter, reasons: ["HTTP 429"] });
-    const result = await runDumpValuation({ settings, mode: "scan", sorter: f.sorter, quote: f.fetchQuote,
-      now: () => new Date(time).toISOString(), sleep: async ms => { time += ms; }, onReport: r => f.saves.push(r) });
-    expect(time).toBe(Date.parse(retryAfter) + 250);
-    expect(f.fetchQuote).toHaveBeenCalledTimes(3);
-    expect(f.saves.some(r => r.rows[0]?.quote.retryAfter === retryAfter && r.rows.length === 2)).toBe(true);
-    expect(result.status).toBe("complete");
-    expect(f.sorter.withdrawItemsSerial).not.toHaveBeenCalled();
-  });
-
-  it("cancels a rate-limit wait without sending the retry", async () => {
+describe("capture, local assessment and independently resumed verified sorting", () => {
+  it("captures every item without invoking the market or transfers, even with a nonempty bag", async () => {
     const f = fixture();
-    f.fetchQuote.mockResolvedValueOnce({ ...quote, state: "unavailable", retryAfter: "2026-09-14T12:01:00Z" });
-    const result = await runDumpValuation({ settings, mode: "scan", sorter: f.sorter, quote: f.fetchQuote,
-      now: () => at, onReport: r => f.saves.push(r), checkpoint: async message => {
-        if (message.startsWith("market restriction")) { const error = new Error("Stopped"); error.name = "SortStop"; throw error; }
-      } });
-    expect(result.status).toBe("stopped");
-    expect(result.scannedItems).toBe(1);
-    expect(f.fetchQuote).toHaveBeenCalledTimes(1);
+    vi.mocked(f.sorter.bagCellsNow).mockResolvedValue([{ row: 0, col: 0, x: 10, y: 10 }]);
+    vi.mocked(f.sorter.scanTab).mockResolvedValue(scan([physical(), physical(strongText(), 1)]));
+    const quote = vi.fn(async () => { throw new Error("Network unavailable"); });
+    const result = await runDumpValuation({ settings: settings(), mode: "scan", sorter: f.sorter, quote, now: () => AT, onReport: f.save });
+    expect(result.rows).toHaveLength(2); expect(result.status).toBe("complete");
+    expect(quote).not.toHaveBeenCalled(); expect(f.sorter.withdrawItemsSerial).not.toHaveBeenCalled();
+    expect(f.saves.some(report => report.rows.length === 2 && report.rows.every(row => !row.assessment))).toBe(true);
+    expect(result.rows.every(row => row.assessment)).toBe(true);
   });
-
-  it("copies and prices every item, including non-gear, with no transfers during scan", async () => {
-    const f = fixture([item(), item(currency, 2)]);
-    const result = await f.run();
-    expect(f.sorter.scanTab).toHaveBeenCalledWith({ label: "Dump", occurrence: 0, topLevel: true }, { exhaustive: true });
-    expect(f.fetchQuote).toHaveBeenCalledTimes(2);
-    expect(result.rows.map(row => row.itemClass)).toEqual(["Rings", "Stackable Currency"]);
-    expect(result.rows.every(row => row.status === "planned")).toBe(true);
+  it("captures a nonempty inventory without empty-bag preconditions or stash navigation", async () => {
+    const f = fixture({ inventory: true });
+    const result = await captureBatch({ settings: { ...settings(), captureSource: "inventory" }, mode: "scan", sorter: f.sorter, now: () => AT, onReport: f.save });
+    expect(result.capture!.complete).toBe(true);
+    expect(result.rows[0]).toMatchObject({ sourceKind: "inventory", sourceTab: "Inventory", quantity: 1 });
+    expect(f.sorter.scanTab).not.toHaveBeenCalled(); expect(f.sorter.depositBagCells).not.toHaveBeenCalled();
+    expect(f.sorter.identifyBagItems).toHaveBeenCalledWith(expect.objectContaining({ exhaustive: true }));
+  });
+  it("saves partial progress on cancellation and resumes the incomplete source only", async () => {
+    const f = fixture({ inventory: true });
+    vi.mocked(f.sorter.scanTab).mockResolvedValue(scan([physical()]));
+    vi.mocked(f.sorter.identifyBagItems).mockImplementationOnce(async options => {
+      options?.onProgress?.({ items: [physical()], unread: [{ row: 1, col: 1, x: 1, y: 1 }] });
+      throw Object.assign(new Error("Stopped"), { name: "SortStop" });
+    });
+    const config = { ...settings(), captureSource: "both" as const };
+    const partial = await captureBatch({ settings: config, mode: "scan", sorter: f.sorter, now: () => AT, onReport: f.save });
+    expect(partial).toMatchObject({ status: "stopped", scannedItems: 2, capture: { completedSources: ["Dump"], complete: false } });
+    expect(partial.rows.every(row => !row.assessment)).toBe(true);
+    vi.mocked(f.sorter.identifyBagItems).mockResolvedValue({ items: [physical()], unread: [] });
+    const resumed = await captureBatch({ settings: config, saved: partial, mode: "scan", sorter: f.sorter, now: () => AT, onReport: f.save });
+    expect(f.sorter.scanTab).toHaveBeenCalledTimes(1); expect(resumed.rows).toHaveLength(2); expect(resumed.capture!.complete).toBe(true);
+  });
+  it("retains unread and excluded grid cells and prevents moving an incomplete capture", async () => {
+    const f = fixture();
+    vi.mocked(f.sorter.scanTab).mockResolvedValue(scan([physical()], true));
+    const captured = await captureBatch({ settings: settings(), mode: "scan", sorter: f.sorter, now: () => AT, onReport: f.save });
+    expect(captured.status).toBe("incomplete"); expect(captured.unreadCells).toHaveLength(1);
+    await expect(sortSavedBatch(captured, f.sorter, f.save)).rejects.toThrow("Complete capture");
     expect(f.sorter.withdrawItemsSerial).not.toHaveBeenCalled();
-    expect(result.status).toBe("complete");
-    expect(f.saves.some(report => report.rows.length === 2 && report.rows.every(row => row.quote.state === "unavailable"))).toBe(true);
   });
-
-  it("retains adjacent identical one-cell items as separate physical rows", () => {
-    const first = item();
+  it("splits identical neighbours only with complete known footprints", () => {
+    const first = physical();
     expect(auditPhysicalItems([{ ...first, cells: [first.cells[0]!, { ...first.cells[0]!, col: 1 }] }])).toHaveLength(2);
+    const helmet = physical(strongText().replace("Rings", "Helmets"));
+    helmet.cells = Array.from({ length: 8 }, (_, i) => ({ row: Math.floor(i / 4), col: i % 4, x: 0, y: 0 }));
+    expect(auditPhysicalItems([helmet]).map(item => item.cells.length)).toEqual([4, 4]);
+    helmet.cells.pop(); expect(auditPhysicalItems([helmet])).toHaveLength(1);
   });
-
-  it("splits identical adjacent helmets by their fully observed 2x2 footprints", () => {
-    const helmet = item(ring.replace("Rings", "Helmets"));
-    helmet.cells = Array.from({ length: 8 }, (_, index) => ({ row: Math.floor(index / 4), col: index % 4, x: 0, y: 0 }));
-    expect(auditPhysicalItems([helmet]).map(part => part.cells.length)).toEqual([4, 4]);
-  });
-
-  it("uses the user's class tabs for valuable gear and retains non-gear without a configured destination", async () => {
-    const f = fixture([item(), item(currency, 2)]);
-    const result = await runDumpValuation({ settings: { ...settings, routingMode: "class" }, mode: "scan",
-      sorter: f.sorter, quote: f.fetchQuote, now: () => at, onReport: () => undefined });
-    expect(result.rows[0]).toMatchObject({ status: "planned", destination: "Rings" });
-    expect(result.rows[1]).toMatchObject({ status: "stay", destination: "Dump", decision: "review" });
-  });
-
-  it("continues pricing every item after provider failure and reports incompleteness", async () => {
-    const f = fixture([item(), item(currency, 2)]);
-    f.fetchQuote.mockRejectedValueOnce(new Error("outage"));
-    const result = await f.run();
-    expect(f.fetchQuote).toHaveBeenCalledTimes(2);
-    expect(result.status).toBe("incomplete");
-    expect(result.rows[0]!.decision).toBe("review");
-    expect(result.rows[0]!.actualDestination).toBeUndefined();
-  });
-
-  it("persists unread cells and refuses transfers from an incomplete source scan", async () => {
-    const f = fixture([item()], { unread: true });
-    const result = await f.run("move");
-    expect(result.unreadCells).toEqual([{ row: 3, col: 4, reason: expect.any(String) }]);
-    expect(f.sorter.withdrawItemsSerial).not.toHaveBeenCalled();
-    expect(result.errors.join(" ")).toContain("coverage is incomplete");
-  });
-
-  it("marks moved only after source, bag, and destination receipt verification", async () => {
-    const f = fixture();
-    const result = await f.run("move");
-    expect(result.status).toBe("complete");
-    expect(result.rows[0]).toMatchObject({ status: "moved", actualDestination: "Sell" });
-    expect(f.fetchQuote).toHaveBeenCalledTimes(1);
-    expect(f.sorter.depositBagCells).toHaveBeenCalledWith([item().cells[0]], "Sell", { shiftOnly: true });
-    expect(f.saves.filter(report => report.rows[0]?.status === "moved")).not.toHaveLength(0);
-  });
-
-  it("never reports an unobserved destination as moved", async () => {
-    const f = fixture([item()], { receipt: false });
-    const result = await f.run("move");
-    expect(result.rows[0]).toMatchObject({ status: "failed" });
-    expect(result.rows[0]!.actualDestination).toBeUndefined();
-    expect(result.errors.join(" ")).toContain("Destination receipt could not be verified");
-  });
-
-  it("recovers masked bag growth only with exact item text, quantity, and an empty source cell", async () => {
-    const f = fixture([item()], { maskedWithdrawal: true });
-    const result = await f.run("move");
-    expect(result.status).toBe("complete");
-    expect(result.rows[0]).toMatchObject({ status: "moved", actualDestination: "Sell" });
-    expect(result.rows[0]!.reasons.join(" ")).toContain("exact inventory item text and quantity plus an empty original source cell");
-    expect(f.saves.some(saved => saved.rows[0]?.actualDestination === "inventory (unconfirmed)")).toBe(true);
+  it.each([false, true])("verifies source, inventory, and destination receipts even when growth is masked=%s", async masked => {
+    const f = fixture({ masked });
+    const result = await sortSavedBatch(batch(), f.sorter, f.save, undefined, () => AT);
+    expect(result.rows[0]).toMatchObject({ status: "moved", actualDestination: "Rings" });
     expect(f.sorter.withdrawItemsSerial).toHaveBeenCalledTimes(1);
-    expect(f.sorter.identifyBagItems).toHaveBeenCalledTimes(1);
-    expect(f.sorter.copyAt).toHaveBeenCalledTimes(2);
-    expect(f.sorter.depositBagCells).toHaveBeenCalledTimes(1);
+    expect(f.sorter.depositBagCells).toHaveBeenCalledWith(expect.any(Array), "Rings", { shiftOnly: true });
+    expect(f.saves.some(report => report.rows[0]?.actualDestination === "inventory (unconfirmed)")).toBe(true);
   });
-
-  it.each(["wrong item", "wrong quantity", "unread cell", "multiple items", "no item", "source still present"])(
-    "stops without another withdrawal or deposit when masked growth has %s", async failure => {
-      const source = failure === "wrong quantity" ? item(currency) : item();
-      const f = fixture([source], { maskedWithdrawal: true });
-      if (failure === "wrong item") vi.mocked(f.sorter.identifyBagItems).mockResolvedValue({ items: [item(currency)], unread: [] });
-      if (failure === "wrong quantity") vi.mocked(f.sorter.identifyBagItems).mockResolvedValue({ items: [item(currency.replace("3/20", "2/20"))], unread: [] });
-      if (failure === "unread cell") vi.mocked(f.sorter.identifyBagItems).mockResolvedValue({ items: [source], unread: [{ row: 2, col: 0, x: 0, y: 400 }] });
-      if (failure === "multiple items") vi.mocked(f.sorter.identifyBagItems).mockResolvedValue({ items: [source, item(ring, 2)], unread: [] });
-      if (failure === "no item") vi.mocked(f.sorter.identifyBagItems).mockResolvedValue({ items: [], unread: [] });
-      if (failure === "source still present") vi.mocked(f.sorter.copyAt).mockResolvedValue(source.text);
-      const result = await f.run("move");
-      expect(result.status).toBe("failed");
-      expect(result.rows[0]).toMatchObject({ status: "failed", actualDestination: "inventory (unconfirmed)" });
-      expect(result.errors.join(" ")).toContain("exact inventory text and an empty source cell");
-      expect(f.sorter.withdrawItemsSerial).toHaveBeenCalledTimes(1);
-      expect(f.sorter.depositBagCells).not.toHaveBeenCalled();
-      expect(f.saves.every(saved => saved.rows[0]?.status !== "moved")).toBe(true);
-    },
-  );
-
-  it("stops on a bounced deposit and preserves the actual inventory location", async () => {
-    const f = fixture([item()], { depositFails: true });
-    const result = await f.run("move");
-    expect(result.rows[0]).toMatchObject({ status: "failed", actualDestination: "inventory" });
-    expect(f.sorter.depositBagCells).toHaveBeenCalledTimes(1);
+  it("handles an inventory-source batch directly and preserves unrelated bag items", async () => {
+    const f = fixture({ inventory: true, unrelated: true });
+    const captured = await captureBatch({ settings: { ...settings(), captureSource: "inventory" }, mode: "scan", sorter: f.sorter, now: () => AT, onReport: f.save });
+    const result = await sortSavedBatch(captured, f.sorter, f.save, undefined, () => AT);
+    expect(result.rows[0]!.status).toBe("moved"); expect(f.sorter.withdrawItemsSerial).not.toHaveBeenCalled();
+    expect(result.rows[1]!.status).toBe("stay");
+    expect((await f.sorter.identifyBagItems()).items).toHaveLength(1);
   });
-
-  it("refuses to withdraw when source text changed after the price lookup", async () => {
-    const f = fixture();
-    vi.mocked(f.sorter.copyAt).mockResolvedValue(currency);
-    const result = await f.run("move");
-    expect(f.sorter.withdrawItemsSerial).not.toHaveBeenCalled();
-    expect(result.errors.join(" ")).toContain("identity changed");
-  });
-
-  it("requires an empty bag before any transfer", async () => {
-    const f = fixture();
-    vi.mocked(f.sorter.bagCellsNow).mockResolvedValue(item().cells);
-    const result = await f.run("move");
-    expect(result.errors.join(" ")).toContain("Empty the inventory");
+  it("stops on changed positions instead of relocating by a potentially duplicate fingerprint", async () => {
+    const f = fixture(); f.reposition();
+    const result = await sortSavedBatch(batch(), f.sorter, f.save, undefined, () => AT);
+    expect(result.status).toBe("failed"); expect(result.rows[0]!.status).toBe("failed");
     expect(f.sorter.withdrawItemsSerial).not.toHaveBeenCalled();
   });
-
-  it("rechecks quote freshness after a slow destination scan, before withdrawal", async () => {
+  it.each([{ receipt: false }, { depositFails: true }])("retains a failed transfer receipt without re-withdrawing: %j", async options => {
+    const f = fixture(options);
+    const result = await sortSavedBatch(batch(), f.sorter, f.save, undefined, () => AT);
+    expect(result.rows[0]!.status).toBe("failed"); expect(result.rows[0]!.actualDestination).toBeTruthy();
+    const next = assessBatch(result, result.settings, AT);
+    const resumed = await sortSavedBatch(next, f.sorter, f.save, undefined, () => AT);
+    expect(resumed.rows[0]!.status).toBe("failed"); expect(f.sorter.withdrawItemsSerial).toHaveBeenCalledTimes(1);
+  });
+  it("requires an exact inventory receipt and an empty source even when withdrawal reports success", async () => {
     const f = fixture();
-    let clock = at;
-    vi.mocked(f.sorter.copyAt).mockImplementation(async () => {
-      clock = "2026-09-14T12:02:00.000Z";
-      return ring;
-    });
-    const report = await runDumpValuation({ settings: { ...settings, maxAgeMinutes: 1 }, mode: "move",
-      sorter: f.sorter, quote: f.fetchQuote, now: () => clock, onReport: () => undefined });
-    expect(f.sorter.withdrawItemsSerial).not.toHaveBeenCalled();
-    expect(report.rows[0]).toMatchObject({ status: "stay", destination: "Dump" });
-    expect(report.rows[0]!.reasons.join(" ")).toContain("remained expired after destination verification");
-    expect(f.fetchQuote).toHaveBeenCalledTimes(2);
+    vi.mocked(f.sorter.copyAt).mockResolvedValue(strongText());
+    const result = await sortSavedBatch(batch(), f.sorter, f.save, undefined, () => AT);
+    expect(result.status).toBe("failed"); expect(f.sorter.depositBagCells).not.toHaveBeenCalled();
+    expect(result.rows[0]!.actualDestination).toContain("inventory");
   });
-
-  it("refreshes a sale quote that expired while other items were priced", async () => {
+  it("preserves moved history on rescore and never plans a second transfer", async () => {
+    const f = fixture(), saved = batch();
+    saved.rows[0]!.status = "moved"; saved.rows[0]!.actualDestination = "Amulets"; saved.rows[0]!.reasons.push("Historical receipt");
+    const result = await sortSavedBatch(assessBatch(saved, saved.settings, AT), f.sorter, f.save, undefined, () => AT);
+    expect(result.rows[0]!.reasons).toContain("Historical receipt"); expect(f.sorter.scanTab).not.toHaveBeenCalled();
+  });
+  it("fails closed before accessing game adapters for malformed saved input", async () => {
     const f = fixture();
-    let clock = at;
-    f.fetchQuote.mockImplementation(async () => ({ ...quote, fetchedAt: clock }));
-    const report = await runDumpValuation({ settings: { ...settings, maxAgeMinutes: 1 }, mode: "move", sorter: f.sorter,
-      quote: f.fetchQuote, now: () => clock, onReport: result => f.saves.push(result),
-      checkpoint: async message => { if (message.startsWith("verify ")) clock = "2026-09-14T12:02:00.000Z"; } });
-    expect(f.fetchQuote).toHaveBeenCalledTimes(2);
-    expect(report.rows[0]).toMatchObject({ status: "moved", quote: { fetchedAt: clock } });
-    expect(f.saves.some(saved => saved.rows[0]?.quote.fetchedAt === clock && saved.rows[0]?.status === "planned")).toBe(true);
-  });
-
-  it("refreshes again after destination verification and rechecks source identity afterwards", async () => {
-    const f = fixture();
-    let clock = at;
-    let copies = 0;
-    f.fetchQuote.mockImplementation(async () => ({ ...quote, fetchedAt: clock }));
-    vi.mocked(f.sorter.copyAt).mockImplementation(async () => {
-      copies += 1; clock = "2026-09-14T12:02:00.000Z"; return ring;
-    });
-    const report = await runDumpValuation({ settings: { ...settings, maxAgeMinutes: 1 }, mode: "move",
-      sorter: f.sorter, quote: f.fetchQuote, now: () => clock, onReport: () => undefined });
-    expect(report.rows[0]!.status).toBe("moved");
-    expect(f.fetchQuote).toHaveBeenCalledTimes(2);
-    expect(copies).toBe(2);
-    expect(vi.mocked(f.sorter.copyAt).mock.invocationCallOrder[1]).toBeGreaterThan(f.fetchQuote.mock.invocationCallOrder[1]!);
-    expect(vi.mocked(f.sorter.withdrawItemsSerial).mock.invocationCallOrder[0]).toBeGreaterThan(vi.mocked(f.sorter.copyAt).mock.invocationCallOrder[1]!);
-  });
-
-  it("does not withdraw an item that changed during the refresh", async () => {
-    const f = fixture();
-    let clock = at;
-    f.fetchQuote.mockImplementation(async () => ({ ...quote, fetchedAt: clock }));
-    vi.mocked(f.sorter.copyAt).mockImplementationOnce(async () => {
-      clock = "2026-09-14T12:02:00.000Z"; return ring;
-    }).mockResolvedValueOnce(currency);
-    const report = await runDumpValuation({ settings: { ...settings, maxAgeMinutes: 1 }, mode: "move",
-      sorter: f.sorter, quote: f.fetchQuote, now: () => clock, onReport: () => undefined });
-    expect(f.sorter.withdrawItemsSerial).not.toHaveBeenCalled();
-    expect(report.errors.join(" ")).toContain("identity changed during price refresh");
-  });
-
-  it("retains the source on a failed refresh without retrying the network indefinitely", async () => {
-    const f = fixture();
-    let clock = at;
-    f.fetchQuote.mockResolvedValueOnce(quote).mockRejectedValueOnce(new Error("offline"));
-    const report = await runDumpValuation({ settings: { ...settings, maxAgeMinutes: 1 }, mode: "move",
-      sorter: f.sorter, quote: f.fetchQuote, now: () => clock, onReport: () => undefined,
-      checkpoint: async message => { if (message.startsWith("verify ")) clock = "2026-09-14T12:02:00.000Z"; } });
-    expect(f.fetchQuote).toHaveBeenCalledTimes(2);
-    expect(report.rows[0]).toMatchObject({ status: "stay", destination: "Dump", quote: { state: "unavailable" } });
-    expect(f.sorter.withdrawItemsSerial).not.toHaveBeenCalled();
-  });
-
-  it("honors the provider expiry boundary and allows at most two refreshes per item", async () => {
-    const f = fixture();
-    let clock = at;
-    f.fetchQuote.mockResolvedValueOnce({ ...quote, validUntil: "2026-09-14T12:01:00.000Z" })
-      .mockResolvedValueOnce({ ...quote, fetchedAt: "2026-09-14T12:01:00.000Z", validUntil: "2026-09-14T12:02:00.000Z" })
-      .mockResolvedValueOnce({ ...quote, fetchedAt: "2026-09-14T12:02:00.000Z", validUntil: "2026-09-14T12:03:00.000Z" });
-    vi.mocked(f.sorter.copyAt).mockImplementation(async () => { clock = "2026-09-14T12:02:00.000Z"; return ring; });
-    const report = await runDumpValuation({ settings, mode: "move", sorter: f.sorter,
-      quote: f.fetchQuote, now: () => clock, onReport: () => undefined,
-      checkpoint: async message => { if (message.startsWith("verify ")) clock = "2026-09-14T12:01:00.000Z"; } });
-    expect(f.fetchQuote).toHaveBeenCalledTimes(3); // initial appraisal plus two bounded refreshes
-    expect(report.rows[0]!.status).toBe("moved");
-  });
-
-  it("can move a crafting candidate independently without refreshing unavailable market evidence", async () => {
-    const craftText = ring.replace("+60 to maximum Life", "+162 to maximum Life\n+40% to Chaos Resistance");
-    const f = fixture([item(craftText)]);
-    f.fetchQuote.mockResolvedValue({ ...quote, state: "unavailable", confidence: 0, sampleSize: 0 });
-    const report = await f.run("move");
-    expect(report.rows[0]).toMatchObject({ status: "moved", decision: "craft", actualDestination: "Craft" });
-    expect(f.fetchQuote).toHaveBeenCalledTimes(1);
-  });
-
-  it("persists the full inventory when a stop occurs midway through appraisal", async () => {
-    const f = fixture([item(), item(currency, 2)]);
-    const stopped = new Error("Emergency stop"); stopped.name = "SortStop";
-    const checkpoint = vi.fn(async () => undefined).mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockRejectedValueOnce(stopped);
-    const report = await runDumpValuation({ settings, mode: "scan", sorter: f.sorter, quote: f.fetchQuote,
-      checkpoint, now: () => at, onReport: result => f.saves.push(result) });
-    expect(report.status).toBe("stopped");
-    expect(report.rows).toHaveLength(2);
-    expect(report.rows[1]!.quote.state).toBe("unavailable");
+    await expect(sortSavedBatch({ bad: true } as unknown as StashValuationReport, f.sorter, f.save)).rejects.toThrow();
+    expect(f.sorter.scanTab).not.toHaveBeenCalled();
   });
 });

@@ -97,6 +97,7 @@ interface TradeResponseReader<T> {
   read: (response: Response, signal: AbortSignal) => Promise<T>;
   timeoutMs: number;
   canRun?: () => boolean;
+  onRequest?: (url: string) => void;
 }
 
 /** Consume the body under the request deadline; never expose an API error body. */
@@ -502,6 +503,7 @@ export class PriceFeedService {
         timeoutReject?.(new Error("trade2 lookup timed out."));
       }, reader?.timeoutMs ?? FETCH_TIMEOUT_MS);
       try {
+        reader?.onRequest?.(url);
         const response = await Promise.race([this.fetchImpl(url, {
           ...init,
           headers: {
@@ -545,9 +547,10 @@ export class PriceFeedService {
   }
 
   /** One explicit league, strict per-item comparables, fresh observed rates; no fallback economy. */
-  async fetchStashQuote(itemText: string, league: string, canRun?: () => boolean): Promise<StashMarketQuote> {
+  async fetchStashQuote(itemText: string, league: string, canRun?: () => boolean, patch?: string): Promise<StashMarketQuote> {
+    const requests = { searches: 0, listingFetches: 0, metadata: 0, economy: 0 };
     const empty = (state: StashMarketQuote["state"], reason: string): StashMarketQuote => ({
-      state, league, provider: "pathofexile-trade2", fetchedAt: this.now().toISOString(), currency: "chaos",
+      state, league, patch, requests: { ...requests }, provider: "pathofexile-trade2", fetchedAt: this.now().toISOString(), currency: "chaos",
       sampleSize: 0, candidateCount: 0, confidence: 0, reasons: [reason],
       ...(state === "unavailable" && this.rateLimitedUntilIso() ? { retryAfter: this.rateLimitedUntilIso() } : {}),
     });
@@ -561,7 +564,7 @@ export class PriceFeedService {
     // Only advanced unique parsing changed: preserve valid rare/magic cache work.
     const model = /^unique$/i.test(parsed.rarity) && /^\s*\{\s*Unique Modifier\b/im.test(itemText)
       ? `${STASH_MARKET_MODEL}:advanced-unique-1` : STASH_MARKET_MODEL;
-    const key = JSON.stringify([league, model, itemText]);
+    const key = JSON.stringify([league, patch ?? "unknown", model, itemText]);
     const file = path.join(this.options.configDir, "stash-market-quotes.json");
     if (!this.stashQuotes.size) {
       try {
@@ -573,13 +576,17 @@ export class PriceFeedService {
       } catch { /* Cold cache. */ }
     }
     const cached = this.stashQuotes.get(key);
-    if (cached && cached.league === league && stashQuoteFresh(cached, this.now().getTime())) return { ...cached, reasons: [...cached.reasons], cached: true };
+    if (cached && cached.league === league && stashQuoteFresh(cached, this.now().getTime())) return { ...cached, requests, reasons: [...cached.reasons], cached: true };
     if (this.stashAccessFailure) return empty("unavailable", this.stashAccessFailure);
     if (this.helperTradeRestricted()) return empty("unavailable", "trade2 rate limit is active; retry after its restriction lifts.");
     const reader = { read: (response: Response, signal: AbortSignal) => {
       if (response.status === 401 || response.status === 403) this.stashAccessFailure = `trade2 access denied (HTTP ${response.status}); further stash requests are paused for this session. Update trade authentication or restart the app before retrying.`;
       return helperTradeJson(response, signal);
-    }, timeoutMs: HELPER_TRADE_TIMEOUT_MS, canRun: active };
+    }, timeoutMs: HELPER_TRADE_TIMEOUT_MS, canRun: active, onRequest: (url: string) => {
+      if (url.includes("/data/stats")) requests.metadata += 1;
+      else if (url.includes("/search/")) requests.searches += 1;
+      else if (url.includes("/fetch/")) requests.listingFetches += 1;
+    } };
     const init = { redirect: "error", credentials: "omit" } as const;
     try {
       let rates = this.stashRates.get(league);
@@ -593,6 +600,7 @@ export class PriceFeedService {
           const timer = setTimeout(() => controller.abort(), HELPER_TRADE_TIMEOUT_MS);
           try {
             if (!active()) throw new Error("Market lookup cancelled.");
+            requests.economy += 1;
             const response = await this.fetchImpl(`https://poe.ninja/poe2/api/economy/exchange/current/overview?league=${encodeURIComponent(league)}&type=Currency`, {
               signal: controller.signal, redirect: "error", credentials: "omit", headers: { Accept: "application/json", "User-Agent": USER_AGENT },
             });
@@ -625,6 +633,7 @@ export class PriceFeedService {
       const listings = ids.length ? await this.tradeRequest(`${TRADE_BASE}/fetch/${ids.join(",")}?query=${encodeURIComponent(search.id)}&realm=poe2`, { ...init, method: "GET" }, reader) : { result: [] };
       if (!active()) return empty("unavailable", "Market lookup cancelled.");
       const quote = summarizeStashListings(parsed, listings, { league, fetchedAt: this.now().toISOString(), query, tradeUrl, rates });
+      quote.patch = patch; quote.requests = { ...requests };
       this.stashQuotes.set(key, quote);
       try {
         const fresh = [...this.stashQuotes].filter(([, value]) => stashQuoteFresh(value, this.now().getTime())).slice(-2000);

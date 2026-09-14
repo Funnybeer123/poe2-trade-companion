@@ -671,6 +671,14 @@ if (ownsInstance) void app.whenReady().then(() => {
   );
   ipcMain.handle("stash-tabs:status", () => stashTabAdminService?.status);
   ipcMain.handle("stash-valuation:overview", () => stashValuationService?.overview());
+  ipcMain.handle("stash-valuation:import-knowledge", (_event, snapshot: unknown) => {
+    if (stashTabAdminService?.status.running) throw new Error("Wait for the current stash operation.");
+    return stashValuationService?.importKnowledge(snapshot);
+  });
+  ipcMain.handle("stash-valuation:reassess", () => {
+    if (stashTabAdminService?.status.running) throw new Error("Wait for the current stash operation.");
+    return stashValuationService?.reassess();
+  });
   ipcMain.handle("stash-valuation:save-settings", (_event, settings: unknown) => {
     if (stashTabAdminService?.status.running) throw new Error("Wait for the current stash operation before changing valuation settings.");
     return stashValuationService?.saveSettings(settings);

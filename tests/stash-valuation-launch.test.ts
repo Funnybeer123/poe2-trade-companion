@@ -15,11 +15,12 @@ beforeEach(() => {
     pid: 12345, stdout: new EventEmitter(), stderr: new EventEmitter(), kill: vi.fn(),
   }));
   mocks.execFile.mockReset();
-  mocks.existsSync.mockReset().mockReturnValue(false);
+  mocks.existsSync.mockReset().mockReturnValue(true);
 });
 
 describe("dump valuation command dispatch", () => {
   it("requires a saved report before resuming and passes a fixed offline path in development", () => {
+    mocks.existsSync.mockReturnValue(false);
     const service = new StashTabAdminService({ root: "C:/companion with spaces" });
     expect(service.runScript("value-dump-resume")).toEqual({ started: false, reason: "no-saved-report" });
     expect(mocks.spawn).not.toHaveBeenCalled();
@@ -56,7 +57,8 @@ describe("dump valuation command dispatch", () => {
   it("adds the move flag only to the explicit sort command", () => {
     const service = new StashTabAdminService({ root: "C:/companion" });
     expect(service.runScript("value-dump-sort")).toEqual({ started: true });
-    expect(mocks.spawn).toHaveBeenCalledWith("npx", ["--yes", "tsx", "scripts/value-dump.ts", "--move"], expect.any(Object));
+    expect(mocks.spawn).toHaveBeenCalledWith("npx", ["--yes", "tsx", "scripts/value-dump.ts", "--move",
+      "--from-scan=" + path.join("artifacts", "tab-admin", "stash-valuation-report.json")], expect.any(Object));
     expect(service.runScript("value-dump")).toEqual({ started: false, reason: "busy" });
   });
 
@@ -65,7 +67,8 @@ describe("dump valuation command dispatch", () => {
     const service = new StashTabAdminService({ root: "C:/unrelated-working-directory", valuationWorker,
       marketConfigDir: "C:/user-data", templateDir: "C:/user-data/perception-templates" });
     expect(service.runScript("value-dump-sort")).toEqual({ started: true });
-    expect(mocks.spawn).toHaveBeenCalledWith(valuationWorker.executable, [valuationWorker.file, "--move"], expect.objectContaining({
+    expect(mocks.spawn).toHaveBeenCalledWith(valuationWorker.executable, [valuationWorker.file, "--move",
+      "--from-scan=" + path.join(valuationWorker.dataRoot, "artifacts", "tab-admin", "stash-valuation-report.json")], expect.objectContaining({
       cwd: "C:/user-data", shell: false, windowsHide: true, env: expect.objectContaining({ ELECTRON_RUN_AS_NODE: "1",
         POE2_STASH_DATA_ROOT: "C:/user-data", POE2_MARKET_CONFIG_DIR: "C:/user-data", POE2_TEMPLATE_DIR: "C:/user-data/perception-templates" }),
     }));

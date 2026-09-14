@@ -8,14 +8,15 @@ import type { TabListRow } from "../src/adapters/stashTabKit.js";
 
 vi.mock("../src/core/itemSprites.js", async importOriginal => {
   const actual = await importOriginal<typeof import("../src/core/itemSprites.js")>();
-  return { ...actual, scoreGridCells: vi.fn(() => Array.from({ length: 576 }, (_, n) => ({
-    row: Math.floor(n / 24), col: n % 24, mean: 0, variance: 0, itemFrac: 0,
+  return { ...actual, scoreGridCells: vi.fn((_gray: unknown, _client: unknown, _region: unknown, cols = 24, rows = 24) => Array.from({ length: cols * rows }, (_, n) => ({
+    row: Math.floor(n / cols), col: n % cols, mean: 0, variance: 0, itemFrac: 0,
   }))) };
 });
 
 interface AuditInternals {
   indexTab(source: SourceTab, key: string, exhaustive?: boolean): Promise<TabIndex>;
   scanTab: GearSorter["scanTab"];
+  identifyBagItems: GearSorter["identifyBagItems"];
   ensureSession: GearSorter["ensureSession"];
   gridCalibration: Record<string, { x: number; y: number; w: number; h: number; cols: number; rows: number }>;
   loadGridCalibration(): void;
@@ -44,6 +45,22 @@ function auditFixture() {
 }
 
 describe("exhaustive stash audit coverage", () => {
+  it("copies all 60 calibrated inventory cells despite empty-looking pixels and reports excluded cells", async () => {
+    const { sorter, identify } = auditFixture();
+    Object.assign(sorter, { profileCache: { bagGrid: { x: 2530, y: 1150, w: 1296, h: 540 } } });
+    const result = await sorter.identifyBagItems({ exhaustive: true });
+    expect(identify.mock.calls[0]![0]).toHaveLength(60);
+    expect(result.unread).toHaveLength(0);
+    Object.assign(sorter, { profileCache: { bagGrid: { x: 0, y: 0, w: 1296, h: 540 } } });
+    const excluded = await sorter.identifyBagItems({ exhaustive: true });
+    expect(excluded.unread).toHaveLength(60);
+  });
+  it("refuses uncalibrated inventory capture before copying", async () => {
+    const { sorter, identify } = auditFixture();
+    Object.assign(sorter, { profileCache: {} });
+    await expect(sorter.identifyBagItems({ exhaustive: true })).rejects.toThrow("verified bag-grid calibration");
+    expect(identify).not.toHaveBeenCalled();
+  });
   it("rejects selected-pointer evidence that disappears before the confirming capture", async () => {
     const { sorter } = auditFixture();
     const client = { left: 1320, top: 480, width: 100, height: 200 };
@@ -162,6 +179,6 @@ describe("exhaustive stash audit coverage", () => {
     const { sorter } = auditFixture();
     const spy = vi.spyOn(sorter, "indexTab");
     await sorter.scanTab({ label: "Dump", occurrence: 0, topLevel: true }, { navigate: false, exhaustive: true });
-    expect(spy).toHaveBeenCalledWith({ label: "Dump", occurrence: 0, topLevel: true }, "Dump", true);
+    expect(spy).toHaveBeenCalledWith({ label: "Dump", occurrence: 0, topLevel: true }, "Dump", true, undefined);
   });
 });

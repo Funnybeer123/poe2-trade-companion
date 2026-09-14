@@ -1,7 +1,7 @@
 /** Named child operations shared by the desktop bridge and launcher. */
 export type StashTabScriptKind =
   | "renumber" | "renumber-dry" | "finish-gear" | "sort-gear" | "sort-gear-dry"
-  | "value-dump" | "value-dump-sort" | "value-dump-resume"
+  | "value-dump" | "value-dump-sort" | "value-dump-resume" | "value-dump-capture-resume"
   | "craft-gear" | "craft-gear-dry" | "shop-scan-dry" | "shop-scan"
   | "shop-apply" | "shop-apply-step" | "shop-list-dry" | "shop-list"
   | "shop-buckets-dry" | "shop-buckets";
@@ -489,6 +489,8 @@ export interface Poe2Bridge {
       issues: string[];
     }>;
     saveSettings: (settings: unknown) => Promise<import("../core/stashValuation.js").StashValuationSettings>;
+    reassess?: () => Promise<import("../core/stashValuation.js").StashValuationReport>;
+    importKnowledge?: (snapshot: unknown) => Promise<string>;
   };
   shop: Record<string, (...args: never[]) => unknown>;
   priceFeed: Record<string, (...args: never[]) => unknown>;

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, toRaw } from "vue";
 import { MOD_FAMILIES } from "@core/modKnowledge";
+import { BATCH_MODEL, BUNDLED_KNOWLEDGE } from "@core/batchTriage";
 import { GEAR_TAB_NAMES } from "@core/gearSort";
 import { validateSavedStashReport, type SavedStashPricingReport } from "@core/savedStashPricing";
 import {
@@ -27,6 +28,27 @@ const error = ref("");
 const issues = ref<string[]>([]);
 const log = ref<string[]>([]);
 const now = ref(Date.now());
+const search = ref("");
+const outcomeFilter = ref("");
+const classFilter = ref("");
+const sourceFilter = ref("");
+const evidenceFilter = ref("");
+const sortBy = ref("source");
+const selectedIds = ref<string[]>([]);
+const filteredRows = computed(() => (report.value?.rows ?? []).filter(row =>
+  (!search.value || (row.name + " " + row.baseType + " " + row.rawText).toLowerCase().includes(search.value.toLowerCase())) &&
+  (!outcomeFilter.value || (outcomeFilter.value === "shortlist" ? ["keep", "craft"].includes(row.assessment?.outcome ?? "") : row.assessment?.outcome === outcomeFilter.value)) &&
+  (!classFilter.value || row.itemClass === classFilter.value) &&
+  (!sourceFilter.value || (row.sourceKind ?? "stash") === sourceFilter.value) &&
+  (!evidenceFilter.value || (evidenceFilter.value === "tiers" ? row.assessment?.modifiers.some(mod => mod.useful && mod.tier && mod.tier <= 2) :
+    evidenceFilter.value === "resistance" ? row.assessment?.resistance.triple :
+    evidenceFilter.value === "chaos" ? (row.assessment?.resistance.chaos ?? 0) > 0 :
+    evidenceFilter.value === "room" ? (row.assessment?.crafting.freePrefixes ?? 0) + (row.assessment?.crafting.freeSuffixes ?? 0) > 0 :
+    row.assessment?.uncertainty.length))
+).sort((a, b) => sortBy.value === "score" ? b.gearScore - a.gearScore : sortBy.value === "name" ? a.name.localeCompare(b.name) :
+  a.sourceTab.localeCompare(b.sourceTab) || (a.row ?? 0) - (b.row ?? 0) || (a.col ?? 0) - (b.col ?? 0)));
+const classes = computed(() => [...new Set(report.value?.rows.map(row => row.itemClass) ?? [])].sort());
+const movementPreview = computed(() => report.value?.rows.filter(row => row.status === "planned") ?? []);
 let unsubscribe: (() => void) | undefined;
 let freshnessTimer: ReturnType<typeof setInterval> | undefined;
 let refreshing = false;
@@ -34,7 +56,9 @@ let refreshing = false;
 const validation = computed(() => validateStashValuationSettings(settings.value));
 const canRun = computed(() => Boolean(api && scripts?.runScript && loaded.value && !running.value && !busy.value && !validation.value.length));
 const canResume = computed(() => Boolean(api && scripts?.runScript && loaded.value && !running.value && !busy.value &&
-  report.value?.rows.length && !validateSavedStashReport(report.value).length));
+  !validation.value.length && report.value?.rows.length && !validateSavedStashReport(report.value).length));
+const canResumeCapture = computed(() => canRun.value && report.value?.capture && !report.value.capture.complete &&
+  !report.value.rows.some(row => row.status === "moved" || row.status === "failed"));
 const pricingResume = computed(() => (report.value as SavedStashPricingReport | null)?.pricingResume);
 const counts = computed(() => {
   const rows = report.value?.rows ?? [];
@@ -57,7 +81,10 @@ async function refresh(loadSettings = false): Promise<void> {
   refreshing = true;
   try {
     const overview = await api.overview();
-    if (loadSettings) settings.value = structuredClone(overview.settings);
+    if (loadSettings) {
+      settings.value = structuredClone(overview.settings);
+      selectedIds.value = [...(overview.settings.selectedPriceIds ?? [])];
+    }
     profiles.value = overview.profiles;
     report.value = overview.report;
     issues.value = overview.issues;
@@ -110,7 +137,7 @@ async function persist(): Promise<void> {
 async function save(): Promise<void> {
   busy.value = true;
   error.value = "";
-  try { await persist(); message.value = `Saved valuation settings for ${settings.value.league}.`; }
+  try { await persist(); await refresh(); message.value = `Saved valuation settings for ${settings.value.league}.`; }
   catch (reason) { error.value = reason instanceof Error ? reason.message : "Settings could not be saved."; }
   finally { busy.value = false; }
 }
@@ -136,6 +163,19 @@ async function stop(): Promise<void> {
   await refresh();
 }
 
+async function resumeCapture(): Promise<void> {
+  if (!canResumeCapture.value) return;
+  busy.value = true;
+  error.value = "";
+  try {
+    const result = await scripts!.runScript!("value-dump-capture-resume");
+    if (!result.started) throw new Error("Capture could not resume: " + (result.reason ?? "unknown reason"));
+    running.value = true;
+    message.value = "Resuming incomplete sources using the capture's saved settings.";
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : "Capture resume failed."; }
+  finally { busy.value = false; }
+}
+
 async function resumePricing(): Promise<void> {
   if (!canResume.value) return;
   busy.value = true;
@@ -143,15 +183,41 @@ async function resumePricing(): Promise<void> {
   message.value = "";
   log.value = [];
   try {
-    // The saved report owns its league and thresholds. Unsaved form changes
-    // must not silently reinterpret a prior capture or rewrite its settings.
+    if (selectedIds.value.length) settings.value.selectedPriceIds = [...selectedIds.value];
+    else delete settings.value.selectedPriceIds;
+    await persist();
     const result = await scripts!.runScript!("value-dump-resume");
     if (!result.started) throw new Error("Could not resume saved pricing: " + (result.reason ?? "unknown reason"));
     running.value = true;
-    message.value = "Resuming unavailable prices for " + report.value!.league + " using the saved report's settings. Earlier quote timestamps and transfer receipts are retained.";
+    message.value = "Pricing only the selected queue (default budget 10 searches). Completed items and transfer receipts are retained.";
   } catch (reason) {
     error.value = reason instanceof Error ? reason.message : "Saved pricing could not start.";
   } finally { busy.value = false; }
+}
+
+async function reassess(): Promise<void> {
+  busy.value = true; error.value = "";
+  try {
+    await persist(); await refresh();
+    message.value = "Saved batch reassessed locally. Zero market requests or game input.";
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : "Assessment failed."; }
+  finally { busy.value = false; }
+}
+async function feedback(row: StashValuationRow, value: "keep" | "review"): Promise<void> {
+  settings.value.feedback ??= {};
+  settings.value.feedback[row.id] = value;
+  await reassess();
+}
+async function importKnowledge(event: Event): Promise<void> {
+  const file = (event.target as HTMLInputElement).files?.[0];
+  if (!file || !api?.importKnowledge) return;
+  busy.value = true; error.value = "";
+  try {
+    if (file.size > 1_000_000) throw new Error("Knowledge snapshots must be smaller than 1 MB.");
+    settings.value.knowledgeId = await api.importKnowledge(JSON.parse(await file.text()));
+    message.value = "Snapshot imported. Save settings to apply this version locally.";
+  } catch (reason) { error.value = reason instanceof Error ? reason.message : "Snapshot import failed."; }
+  finally { busy.value = false; }
 }
 
 function time(value?: string): string {
@@ -165,12 +231,13 @@ function quoteIssues(row: StashValuationRow): string[] {
   const limits = report.value?.settings ?? settings.value;
   const age = now.value - Date.parse(row.quote.fetchedAt);
   const result: string[] = [];
+  if (row.assessment && row.quote.patch !== row.assessment.patch) result.push("Different or unknown patch; excluded from price-confirmed sorting");
   if (!Number.isFinite(age) || age < -60_000) result.push("Invalid market timestamp");
-  else if (age > limits.maxAgeMinutes * 60_000) result.push(`Stale quote: older than ${limits.maxAgeMinutes} minutes; rescan to refresh`);
+  else if (age > limits.maxAgeMinutes * 60_000) result.push(`Stale quote: older than ${limits.maxAgeMinutes} minutes; select for optional pricing`);
   if (row.quote.validUntil !== undefined) {
     const expires = typeof row.quote.validUntil === "string" ? Date.parse(row.quote.validUntil) : Number.NaN;
-    if (!Number.isFinite(expires)) result.push("Invalid market evidence expiry; rescan required");
-    else if (expires <= now.value) result.push("Expired market or currency evidence; rescan to refresh");
+    if (!Number.isFinite(expires)) result.push("Invalid market evidence expiry; optional pricing required");
+    else if (expires <= now.value) result.push("Expired market or currency evidence; select for optional pricing");
   }
   if (row.quote.league !== report.value?.league || row.quote.currency !== "chaos") result.push("Different league or currency; excluded from valuation");
   if (row.quote.confidence < limits.minMarketConfidence || row.quote.sampleSize < 3) result.push("Limited price evidence: insufficient confidence or sample size");
@@ -188,11 +255,28 @@ function tradeLink(value?: string): string | undefined {
 <template>
   <div class="valuation-panel">
     <section class="card valuation-card" aria-labelledby="dump-values-title">
-      <span class="eyebrow">Every item · explicit league · market evidence</span>
+      <span class="eyebrow">Capture · assess locally · optionally price · preview and sort</span>
       <h2 id="dump-values-title">Find value in your dump tab</h2>
-      <p>Read each item, request comparable market listings for its league, and retain an explanation for every result.
+      <p>Capture an entire stash tab, inventory, or both before assessing the saved batch offline.
         A conservative estimate must be <strong>strictly above {{ settings.minChaos }} chaos</strong> to qualify for value sorting.
-        Strong crafting candidates also qualify. Unknown or uncertain values remain in the source tab for review.</p>
+        Useful items and crafting candidates can qualify through clearly labeled local heuristics. Unknown items remain in Review.</p>
+      <fieldset class="settings-grid" :disabled="running || busy">
+        <label>Capture source<select v-model="settings.captureSource" data-test="capture-source">
+          <option v-if="!settings.captureSource" :value="undefined">Dump / stash</option><option value="stash">Dump / stash</option><option value="inventory">Inventory</option><option value="both">Both</option>
+        </select></label>
+        <label>Assessment model<select v-model="settings.assessmentModel"><option :value="undefined">{{ BATCH_MODEL }}</option><option :value="BATCH_MODEL">{{ BATCH_MODEL }}</option></select></label>
+        <label>Knowledge snapshot<input :value="settings.knowledgeId ?? BUNDLED_KNOWLEDGE.id" @change="settings.knowledgeId = ($event.target as HTMLInputElement).value" /></label>
+        <label>Search budget (per batch)<input data-test="search-budget" type="number" min="0" max="100" :value="settings.searchBudget ?? 10" @input="settings.searchBudget = Number(($event.target as HTMLInputElement).value)" /></label>
+      </fieldset>
+      <p class="muted">Bundled knowledge: {{ BUNDLED_KNOWLEDGE.patch }} · {{ BUNDLED_KNOWLEDGE.sample.guideCount }} sampled guides · no ladder population estimate.
+        Refresh is manual; imported snapshots are selected by ID. Missing research remains visible.</p>
+      <label>Import refreshed knowledge JSON<input type="file" accept=".json,application/json" :disabled="running || busy" @change="importKnowledge" /></label>
+      <details><summary>Local outcome thresholds</summary>
+        <label v-for="(value, key) in (settings.triageRules ?? { keepScore: 70, craftScore: 55, lowPriorityScore: 25 })" :key="key">
+          {{ key }}<input type="number" min="0" max="100" :value="value" :disabled="running || busy"
+            @input="settings.triageRules = { ...(settings.triageRules ?? { keepScore: 70, craftScore: 55, lowPriorityScore: 25 }), [key]: Number(($event.target as HTMLInputElement).value) }" />
+        </label>
+      </details>
       <p class="muted">Market ranges are estimates from asking prices. Scores describe item properties; crafting scores do not estimate profit.</p>
       <p v-if="!api" class="inline-notice warning">Open the desktop app to save settings, scan the game, and move items.</p>
 
@@ -236,7 +320,7 @@ function tradeLink(value?: string): string | undefined {
       <details>
         <summary>Improve scoring for this league</summary>
         <p class="muted">Multipliers from 0 to 5 adjust each modifier family's contribution. A multiplier of 1 keeps the built-in score.
-          Saved profiles retain separate weights for each exact league. Rescan after changes to recompute the report.</p>
+          Saved profiles retain separate weights for each exact league. Saving recomputes the saved batch locally.</p>
         <fieldset :disabled="running || busy" class="weights-grid">
           <label v-for="family in MOD_FAMILIES" :key="family.id">{{ family.label }}
             <input :value="settings.weights[family.id] ?? 1" type="number" min="0" max="5" step="0.1"
@@ -260,15 +344,16 @@ function tradeLink(value?: string): string | undefined {
       <div class="button-row">
         <button class="button secondary" :disabled="!canRun" @click="save">Save settings</button>
         <button class="button primary" data-test="scan" :disabled="!canRun" @click="run(false)">Scan dump values</button>
-        <button class="button primary" data-test="sort" :disabled="!canRun || dryRun" @click="run(true)">Sort valuable items</button>
+        <button v-if="report?.capture && !report.capture.complete" class="button secondary" data-test="resume-capture" :disabled="!canResumeCapture" @click="resumeCapture">Resume incomplete capture</button>
+        <button class="button secondary" data-test="reassess" :disabled="!canResume" @click="reassess">Reassess saved batch offline</button>
+        <button class="button primary" data-test="sort" :disabled="!canRun || !canResume || dryRun" @click="run(true)">Sort valuable items</button>
         <button class="button secondary" data-test="resume-pricing" :disabled="!canResume" @click="resumePricing">Resume saved pricing</button>
         <button class="button danger" :disabled="!running" @click="stop">Stop</button>
       </div>
       <p class="muted">Scan navigates stash tabs and copies item text using game input; it does not transfer items.
-        Sort scans and values the items again before moving eligible items. Keep the stash open; use Ctrl+Shift+Esc to stop.</p>
-      <p class="muted">Resume saved pricing retries unavailable prices from the saved report using its original league and settings.
-        It performs no game input or transfers. Priced, no-comparables, and unsupported results retain their original timestamps, even when expired;
-        resuming does not refresh those earlier results.<template v-if="report"> {{ counts.pending }} unavailable items saved for {{ report.league }}.</template></p>
+        Sort revalidates current identity and location against the movement preview. Keep the stash open; use Ctrl+Shift+Esc to stop.</p>
+      <p class="muted">Resume saved pricing uses checked items, or up to 10 promising candidates when none are checked.
+        It never enqueues every unpriced item afterward. Budget, throttle and cancellation pauses retain the selected queue.</p>
       <p v-if="dryRun" class="inline-notice warning">Dry-run is on. Item transfers are disabled; Scan dump values still reads the game using navigation and clipboard input.</p>
       <p v-if="message" role="status">{{ message }}</p>
       <p v-if="error" class="inline-notice danger" role="alert">{{ error }}</p>
@@ -286,7 +371,7 @@ function tradeLink(value?: string): string | undefined {
           · {{ time(report.finishedAt ?? report.startedAt) }} · model {{ report.scoreVersion }}</p>
         <p class="muted">Decisions below were recorded with a threshold above {{ report.settings.minChaos }} chaos,
           crafting score {{ report.settings.minCraftScore }}, and market confidence {{ report.settings.minMarketConfidence }}%.
-          Rescan to apply changed settings or refresh old quotes.</p>
+          Save settings to reassess locally; market checks are optional and separate.</p>
         <p v-if="report.league !== settings.league" class="inline-notice warning">This saved report is for {{ report.league }}. Scan {{ settings.league || 'your selected league' }} for current results.</p>
         <p v-if="report.status === 'failed' && report.rows.length === 0" class="inline-notice danger">No item values were established because the source scan failed.</p>
         <p class="report-counts">{{ report.scannedItems }} items scanned · {{ report.rows.length }} rows recorded · {{ counts.priced }} quoted
@@ -309,21 +394,53 @@ function tradeLink(value?: string): string | undefined {
           <ul><li v-for="cell in report.unreadCells" :key="`${cell.row}:${cell.col}`">Row {{ cell.row + 1 }}, column {{ cell.col + 1 }}: {{ cell.reason ?? 'Item could not be read' }}</li></ul>
         </details>
         <ul v-if="report.errors.length" class="inline-notice danger"><li v-for="issue in report.errors" :key="issue">{{ issue }}</li></ul>
+        <p v-if="report.pricingQueue" data-test="request-counters">Market requests: {{ report.pricingQueue.searches }} / {{ report.pricingQueue.budget }} searches,
+          {{ report.pricingQueue.listingFetches }} listing fetches, {{ report.pricingQueue.metadata }} metadata, {{ report.pricingQueue.economy }} economy.
+          Queue {{ report.pricingQueue.state }}: {{ report.pricingQueue.reason }}</p>
+        <p v-else data-test="request-counters">This assessment made 0 market requests.</p>
+        <details data-test="movement-preview"><summary>Movement preview · {{ movementPreview.length }} items</summary>
+          <p>Each source location must match a fresh observation. Moved/failed history is never automatically retried. Unmapped items stay in their source.</p>
+          <ul><li v-for="row in movementPreview" :key="row.id">{{ row.name }} · {{ row.sourceTab }} → {{ settings.destinationFolder }} / {{ row.destination }} · {{ row.assessment?.outcome ?? row.decision }} (local heuristic unless fresh price confirmed)</li></ul>
+        </details>
+        <div class="settings-grid">
+          <label>Search items<input v-model="search" data-test="search-items" /></label>
+          <label>Outcome<select v-model="outcomeFilter"><option value="">Complete ledger</option><option value="shortlist">Keep + craft shortlist</option><option value="keep">Keep/useful now</option><option value="craft">Craft candidate</option><option value="review">Review/unknown</option><option value="low-priority">Low-priority</option></select></label>
+          <label>Class<select v-model="classFilter"><option value="">All classes</option><option v-for="itemClass in classes" :key="itemClass">{{ itemClass }}</option></select></label>
+          <label>Source<select v-model="sourceFilter"><option value="">All sources</option><option value="stash">Stash</option><option value="inventory">Inventory</option></select></label>
+          <label>Evidence<select v-model="evidenceFilter"><option value="">All evidence</option><option value="tiers">Useful T1/T2</option><option value="resistance">Triple elemental resistance</option><option value="chaos">Chaos resistance</option><option value="room">Confirmed crafting room</option><option value="unknown">Uncertainty</option></select></label>
+          <label>Sort by<select v-model="sortBy"><option value="source">Source position</option><option value="score">General usefulness</option><option value="name">Name</option></select></label>
+        </div>
+        <p>{{ filteredRows.length }} visible / {{ report.rows.length }} recorded. {{ selectedIds.length }} checked for optional pricing.
+          Shortlist: {{ report.rows.filter(row => ['keep', 'craft'].includes(row.assessment?.outcome ?? '')).length }};
+          filtered low-priority: {{ report.rows.filter(row => row.assessment?.outcome === 'low-priority').length }}.</p>
         <div class="report-table-wrap">
           <table class="report-table">
             <thead><tr><th>Item and evidence</th><th>Scores</th><th>Estimated chaos</th><th>Recorded decision and movement</th></tr></thead>
-            <tbody><tr v-for="row in report.rows" :key="row.id" data-test="valuation-row">
+            <tbody><tr v-for="row in filteredRows" :key="row.id" data-test="valuation-row">
               <td>
+                <label><input v-model="selectedIds" type="checkbox" :value="row.id" :disabled="running || busy" /> Select for optional price check</label>
                 <strong>{{ row.name || row.baseType }}</strong><small>{{ row.baseType }} · {{ row.itemClass }}<template v-if="row.itemLevel !== undefined"> · level {{ row.itemLevel }}</template></small>
                 <small v-if="row.row !== undefined && row.col !== undefined">{{ row.sourceTab }} · row {{ row.row + 1 }}, column {{ row.col + 1 }}</small>
                 <details><summary>Item text, score factors, and reasons</summary>
                   <pre class="item-text">{{ row.rawText }}</pre>
-                  <ul><li v-for="(mod, index) in row.mods" :key="index">{{ mod.text }} — {{ mod.points }} weighted points (multiplier {{ mod.multiplier }})<template v-if="mod.tier"> · heuristic score band {{ mod.tier }}</template><template v-if="mod.observedAffix"> · copied {{ mod.observedAffix.kind }} {{ mod.observedAffix.name }}<template v-if="mod.observedAffix.tier"> · observed tier {{ mod.observedAffix.tier }}</template></template><template v-if="mod.craftTier !== undefined"> · crafting strength band {{ mod.craftTier || 'below 3' }}</template><template v-if="!mod.familyId"> · unrecognized modifier</template></li></ul>
+                  <ul v-if="!row.assessment"><li v-for="(mod, index) in row.mods" :key="index">{{ mod.text }} — {{ mod.points }} weighted points (multiplier {{ mod.multiplier }})<template v-if="mod.tier"> · heuristic score band {{ mod.tier }}</template><template v-if="mod.observedAffix"> · copied {{ mod.observedAffix.kind }} {{ mod.observedAffix.name }}<template v-if="mod.observedAffix.tier"> · observed tier {{ mod.observedAffix.tier }}</template></template><template v-if="mod.craftTier !== undefined"> · crafting strength band {{ mod.craftTier || 'below 3' }}</template><template v-if="!mod.familyId"> · unrecognized modifier</template></li></ul>
                   <ul><li v-for="(reason, index) in row.reasons" :key="index">{{ reason }}</li></ul>
                   <small>Score model: {{ row.scoreVersion }}</small>
+                  <template v-if="row.assessment">
+                    <p>Knowledge {{ row.assessment.knowledgeId }} · patch {{ row.assessment.patch }}</p>
+                    <ul><li v-for="mod in row.assessment.modifiers" :key="mod.group + mod.text">{{ mod.text }} · {{ mod.tier ? 'T' + mod.tier : 'tier unknown' }} ({{ mod.tierEvidence }}) · {{ mod.useful ? 'useful' : 'outside supported needs' }} · {{ mod.subject }}</li></ul>
+                    <ul><li v-for="match in row.assessment.matches" :key="match.id">{{ match.label }}: {{ match.families.join(', ') }}
+                      <a v-for="url in match.urls" :key="url" :href="url" target="_blank" rel="noopener noreferrer">Research source</a></li></ul>
+                    <p v-for="issue in row.assessment.uncertainty" :key="issue" class="evidence-warning">{{ issue }}</p>
+                  </template>
                 </details>
               </td>
-              <td><span>Gear {{ row.gearScore }}/100</span><small>Craft {{ row.craftScore }}/100</small></td>
+              <td><span>Gear {{ row.gearScore }}/100</span><small>Craft {{ row.craftScore }}/100</small>
+                <template v-if="row.assessment"><small>Modifier quality {{ row.assessment.components.modifierQuality }}/100</small>
+                  <small>Combination/build fit {{ row.assessment.components.combination }}/100</small>
+                  <small>General usefulness {{ row.assessment.components.generalUsefulness }}/100</small>
+                  <small>Assessment confidence {{ row.assessment.components.confidence }}%</small></template>
+              </td>
               <td>
                 <template v-if="row.quote.state === 'priced'">
                   <strong>{{ amount(row.quote.fair) }} chaos</strong><small>Low {{ amount(row.quote.low) }} · high {{ amount(row.quote.high) }}</small>
@@ -338,6 +455,9 @@ function tradeLink(value?: string): string | undefined {
                 <a v-if="tradeLink(row.quote.tradeUrl)" :href="tradeLink(row.quote.tradeUrl)" target="_blank" rel="noopener noreferrer">View comparable search</a>
               </td>
               <td><strong>{{ row.decision }} · {{ row.status }}</strong>
+                <small v-if="row.assessment">{{ row.assessment.outcome }} · {{ row.assessment.override ? 'user override' : 'local heuristic' }}</small>
+                <button :disabled="running || busy" @click="feedback(row, 'keep')">Keep override</button>
+                <button :disabled="running || busy" @click="feedback(row, 'review')">Review override</button>
                 <small>Planned: {{ row.destination }}</small>
                 <small v-if="row.actualDestination">Actual: {{ row.actualDestination }}</small>
                 <small v-else-if="row.status === 'stay'">Remains in {{ row.sourceTab }}</small>
