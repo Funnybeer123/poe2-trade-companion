@@ -47,7 +47,7 @@ export const HOTKEY_ACTIONS: readonly HotkeyActionInfo[] = [
     id: "identify",
     label: "Identify & drop",
     detail:
-      "With the Scroll of Wisdom at bag (0,0): identify all unidentified gear, drop what fails the value-tier rules, compact the bag left.",
+      "Staged bag identification and shared Keep/Craft/Review assessment. Live input is awaiting map/cursor verification; the worker currently refuses before input. Compaction is disabled.",
     context: "map",
     defaultKey: 6,
   },

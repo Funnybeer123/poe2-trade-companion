@@ -13,3 +13,15 @@ await build({
   banner: { js: 'const __stashWorkerModuleUrl = require("node:url").pathToFileURL(__filename).href;' },
   logLevel: "info",
 });
+
+await build({
+  entryPoints: ["scripts/map-triage.ts"],
+  outfile: "dist-electron/map-triage.cjs",
+  bundle: true,
+  platform: "node",
+  target: "node22",
+  format: "cjs",
+  define: { "import.meta.url": "__bagWorkerModuleUrl" },
+  banner: { js: 'const __bagWorkerModuleUrl = require("node:url").pathToFileURL(__filename).href;' },
+  logLevel: "info",
+});

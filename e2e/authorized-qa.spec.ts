@@ -4,6 +4,11 @@ import { dashboardSmoke } from "./dashboard-smoke.js";
 import { windowFocusSmoke } from "./window-focus-smoke.js";
 import { priceHelperSmoke } from "./price-helper-smoke.js";
 import { stashValuationSmoke } from "./stash-valuation-smoke.js";
+import { bagTriageSmoke } from "./bag-triage-smoke.js";
+
+test("bag triage worker runs offline with isolated journals and no game input", async ({}, testInfo) => {
+  await bagTriageSmoke("authorized-qa", testInfo);
+});
 
 test("dump values persist league routing and display every item without game input", async ({}, testInfo) => {
   await stashValuationSmoke("authorized-qa", testInfo);

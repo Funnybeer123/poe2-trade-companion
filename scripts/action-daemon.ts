@@ -146,15 +146,12 @@ async function actionFill(): Promise<void> {
 }
 
 /**
- * Num6: in-map identify & drop. Delegates to the map-triage runner as a
- * subprocess — it verifies the Scroll of Wisdom at bag (0,0), identifies all
- * unidentified gear, evaluates the tier regexes, and drops the not-good
- * items on the ground. The script refuses on its own when the stash panel
- * is open (hideout/town) or the scroll is missing.
+ * Num6 delegates to the staged bag worker. Live capture remains blocked
+ * until map/cursor perception is validated; the legacy bulk path is gone.
  */
 async function actionIdentify(): Promise<void> {
-  const code = await spawnScript(["scripts/map-triage.ts", "--run"], "identify");
-  log({ action: "identify", phase: "result", message: `map-triage --run exited ${code}` });
+  const code = await spawnScript(["scripts/map-triage.ts", "--stage=capture"], "identify");
+  log({ action: "identify", phase: "result", message: `staged map-triage capture exited ${code}; live mutations require a saved verified session` });
 }
 
 /**
