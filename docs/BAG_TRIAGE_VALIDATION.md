@@ -143,11 +143,44 @@ network/child-process access, as done in `bag-real-regression.log`.
    `priceBatch`/`PriceFeedService` queue (default ten searches). The bag adapter
    already honors saved market protections; the map CLI does not yet dispatch
    pricing. Keep this disabled for initial live trials.
-5. **Recorded replay and live preparation.** After the above tests and package
-   checks pass, report the exact build/commit and readiness. Then ask the user
-   to prepare a cleared safe map, foreground calibrated client, inventory with
-   enough verified top-left Wisdom scrolls and deliberate Keep/Review controls.
+5. **Recorded replay and staged live validation.** The user confirmed on
+   September 14 that their bags are full and they are in a map, and explicitly
+   requested live testing. That authorization remains in effect; do not ask for
+   the same preparation permission again. After the above tests and package
+   checks pass, report the exact build/commit and readiness. Reobserve the current
+   map, foreground calibrated client, inventory, verified top-left Wisdom stack
+   and Keep/Review controls before acting; preparation may have changed.
    State exact scroll count, hard drop limit, validated ground point and stop
-   keys. Only after user confirmation run capture, identify-only, one drop,
+   keys. Under the existing authorization run capture, identify-only, one drop,
    then bounded mixed/repeated batches. No supported live commands are offered
    here because the missing adapters cannot yet satisfy those guarantees.
+
+## September 14 authorized live attempt: capture blocked
+
+The user requested testing with their full bag in a map. A read-only Windows
+computer-use observation confirmed the open inventory, a visible checkpoint,
+and a 40-count scroll sprite in the top-left bag cell. Exact advanced item text,
+the scroll's identity, a stable map-instance signal and held-cursor state were
+not programmatically verified. This screenshot is real evidence of the prepared
+scene, not a complete physical-item capture or a passing perception test.
+
+The source worker and both packaged workers were invoked with `--stage=capture`
+and distinct new journal/output paths while the game was running. All three
+exited with status 1 and `Live bag testing is NOT ready`; none created a session
+journal. This is the worker's explicit missing-adapter guard, not an approval
+rejection or a problem with the user's preparation. Identification, pickup,
+dropping and compaction were not attempted; this attempt generated no game input.
+
+Both packaged bag workers had SHA-256
+`a0d9bbc6ccce179ca5d492b11585ef9becc804dd6d2e03cc91301d4e7072e709`.
+The public package used was `release/smoke-public-1789412540165-34176-1`;
+the QA package was `release/smoke-qa-1789409159053-12584-1`. The separately
+running companion window belonged to an older public package
+(`smoke-public-1789285261261-27460-1`); it was not used to trigger item actions.
+
+Private evidence remains ignored under
+`artifacts/map-triage/live-2026-09-14/`: `before.jpg`, `observation.json`,
+`entrypoint-results.json`, and the reproducible `check-entrypoints.mjs` runner.
+The result is **live stage 1 blocked before capture**, not an end-to-end live
+pass. The integration tasks above still need implementation before identification
+or drop trials can proceed.
