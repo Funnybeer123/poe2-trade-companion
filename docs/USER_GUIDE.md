@@ -261,8 +261,8 @@ Path of Exile 2 is the foreground window and runs one game action at a time:
 | Num2 | **Sort** — run the class-routed stash sorter |
 | Num3 | **Fill** — stash → bag |
 | Num4 | **Vendor** — quick-sell the bag to ZELINA (opening her window is wired; the sell click is not yet, see `docs/HANDOFF-hotkey-actions.md`) |
-| Num6 | **Identify (map)** — with a Scroll of Wisdom stack parked in the very top-left bag cell, identify all unidentified gear in the bag, evaluate each against your value-tier regex rules, and drop the not-good ones on the ground |
-| Num7 | **Vendor cycle (map)** — /hideout, sell every identified junk item to ZELINA (same verdicts as Num6's drops; currency/maps/unidentified never offered), then re-enter the same map through its portal. Test first with `npm run vendor:cycle` (dry-run) |
+| Num6 | **Identify (map)** — staged bag worker; live capture/input currently refuses until map/cursor perception is validated. Offline assessment and replay are available; see below |
+| Num7 | **Vendor cycle (map)** — legacy vendor workflow using its existing appraisal policy; this is separate from the new shared bag assessment |
 
 Num5/0/8/9 never launch actions — they stay the in-run control keys
 (pause / stop / step verdicts) of every spawned flow.
@@ -274,26 +274,41 @@ keys and the daemon's last activity. Note the actions themselves run in
 the standalone daemon, not inside the app — the app supplies the rules
 (value tiers, price table, calibration) the scripts consume.
 
-Hideout-only by construction: Stash and Vendor both require OCR-locating a
-world nameplate first and refuse if it isn't found. Identify is the opposite —
-it refuses while the stash panel is open (a stash means hideout/town, where
-ground drops are refused) and verifies the scroll by Ctrl+C before any click.
-Test it first with `npm run map:triage` (dry-run: sweeps the bag and prints
-the plan without clicking); `npm run map:triage:run` is the live flow Num6
-triggers. Items that match keep/sell rules, clear a price threshold, or get
-heuristically promoted stay in the bag; explicit dump matches and rule-less
-unknowns drop (pass `--keep-unknown` to drop only explicit dump matches).
-The default FAST mode reads one point per item (perception segmentation +
-batched copies), identifies everything in one shift-held click chain,
-drops in burst clicks, and finishes by compacting the remaining items to
-the left side of the bag (the scroll stays pinned at the top-left) — about
-30 seconds for a full bag. It evaluates all identified gear in the bag.
-`--no-compact` skips the compaction; `--careful` selects the original
-slower per-cell flow, which only drops what it just identified (there,
-`--include-identified` widens it after a capped or aborted run).
-Every identify and drop is verified by re-copying the cell and journaled to
-`artifacts/map-triage/journal.jsonl`. Every action is logged to
-`artifacts/action-daemon.log`. Stop the daemon with **Ctrl+C**.
+The bag worker now uses the same `batch-triage-v1` model and saved knowledge
+as stash assessment. Its default profile is Forbidden Rites normal trade.
+Keep, Craft, Review, unknowns and unsupported classes are retained. Only
+positive shared Low-priority evidence can enter a drop plan; scores and
+missing prices never become disposal authority. Scope is every physical
+item in the captured inventory, including equipment already identified.
+
+**Live bag testing is not ready.** Num6 currently dispatches `--stage=capture`,
+which refuses before starting a native host. The old bulk identify/drop and
+compaction runner has been replaced. `--careful`, `--keep-unknown`,
+`--calibrate-moves` and the old timing/ground flags are rejected. Do not use
+`map:triage:run` or `map:calibrate` as readiness checks. No live stage was run
+for this delivery; existing August results are historical.
+
+For an existing batch, run the genuinely offline operation:
+
+```powershell
+npm run map:triage -- --from-scan=artifacts/tab-admin/stash-valuation-report.json --output=artifacts/map-triage/assessment.json
+```
+
+This preserves the input and its historical receipts and makes zero market
+requests. Stash coordinates remain historical, never executable bag locations.
+Run `npm run map:triage -- --help` for the strict replay interface. The
+packaged standalone worker is `dist-electron/map-triage.cjs`, run by Electron
+in Node mode with `POE2_BAG_DATA_ROOT` pointing to isolated writable data.
+The app's Hotkeys panel displays the same availability warning; there is
+not yet a packaged live bag action button.
+
+Synthetic stages save append-only, flushed, hash-chained journals, including
+original captures and per-item pending/verified receipts. Reconciliation is
+read-only and never automatically retries uncertain clicks. A `.lock` left
+after a crash or a torn journal needs inspection, not automatic deletion.
+See [current validation and remaining work](BAG_TRIAGE_VALIDATION.md).
+Every daemon action is logged to `artifacts/action-daemon.log`.
+Stop the daemon with **Ctrl+C**.
 
 ## Where data lives
 
