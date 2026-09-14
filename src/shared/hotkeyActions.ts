@@ -45,9 +45,9 @@ export const HOTKEY_ACTIONS: readonly HotkeyActionInfo[] = [
   },
   {
     id: "identify",
-    label: "Identify & drop",
+    label: "Bag preview",
     detail:
-      "Staged bag identification and shared Keep/Craft/Review assessment. Live input is awaiting map/cursor verification; the worker currently refuses before input. Compaction is disabled.",
+      "Capture and assess the full bag. Use Bag triage for separate Identify one and Drop one stages with verified receipts. Num0 stops; Num5 pauses. Compaction is disabled.",
     context: "map",
     defaultKey: 6,
   },

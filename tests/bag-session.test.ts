@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { bagDecision, captureBagObservations, eligibleBagEquipment, wisdomCount } from "../src/core/bagAssessment.js";
-import { runBagStage, validateBagSession } from "../src/core/bagSession.js";
+import { bagDecision, captureBagLedger, captureBagObservations, eligibleBagEquipment, wisdomCount } from "../src/core/bagAssessment.js";
+import { runBagStage, validateBagSession, type BagObservationRequest } from "../src/core/bagSession.js";
 import { parseBagTriageArgs } from "../src/core/bagTriageArgs.js";
 import { batch, text, strongText, AT } from "./support/batchFixtures.js";
 import { scene, session, simulator, unid, weakText, wisdom } from "./support/bagFixtures.js";
@@ -25,6 +25,17 @@ describe("complete physical bag capture and shared decision parity", () => {
     expect(s.report.rows.every(r => r.cells?.length === 4)).toBe(true);
     const partial = scene([{ text: t, row: 1, col: 0, w: 1, h: 1 }]);
     expect(captureBagObservations("partial", partial.cells, undefined, AT).capture?.complete).toBe(false);
+  });
+  it("reconciles the same physical identities without creating assessment history", () => {
+    const observed = scene([{ text: wisdom(), row: 0, col: 0 }, { text: weakText(), row: 0, col: 1 },
+      { text: weakText(), row: 0, col: 2 }, { text: text([], { itemClass: "Boots" }), row: 1, col: 0 }]);
+    const ledger = captureBagLedger("scan", observed.cells, undefined, AT);
+    const assessed = captureBagObservations("scan", observed.cells, undefined, AT);
+    const identities = (report: typeof ledger) => report.rows.map(row => ({ id: row.id, rawText: row.rawText, cells: row.cells }));
+    expect(identities(ledger)).toEqual(identities(assessed));
+    expect(ledger.capture).toEqual(assessed.capture);
+    expect(ledger.assessmentHistory).toBeUndefined();
+    expect(ledger.rows.every(row => row.assessment === undefined)).toBe(true);
   });
   it.each(["missing", "stale", "empty-copy", "cross-item", "invalid-cell", "duplicate-cell"])("rejects or retains %s coverage", fault => {
     const s = scene([{ text: weakText(), row: 0, col: 1 }]);
@@ -96,6 +107,39 @@ describe("per-item identification, dropping and restart receipts", () => {
     expect(resumed.actions).toHaveLength(2);
     expect(done.report.rows).toHaveLength(5); // Departures remain in the local ledger.
     validateBagSession(done);
+  });
+  it("bounds identification to one physical item and resumes without repeating it", async () => {
+    const initial = mixed(), sim = simulator(initial);
+    const requests: BagObservationRequest[] = [];
+    const first = await runBagStage(initial, "identify", { ...sim.ports, observe: async request => {
+      requests.push(request!); return sim.ports.observe(request);
+    } }, { maxIdentifications: 1 });
+    expect(first.identifiedIds).toEqual([initial.report.rows[1]!.id]);
+    expect(sim.actions.map(action => [action.kind, action.cell])).toEqual([
+      ["arm", { row: 0, col: 0 }], ["identify", { row: 0, col: 1 }],
+    ]);
+    expect(requests.map(request => request.phase)).toEqual(["before", "after", "after"]);
+    expect(requests.every(request => request.itemId === initial.report.rows[1]!.id &&
+      request.rawText === unid() && request.cells?.[0]?.col === 1)).toBe(true);
+    expect(requests.at(-1)?.action?.kind).toBe("identify");
+    const resumed = simulator(first);
+    const second = await runBagStage(first, "identify", resumed.ports, { maxIdentifications: 1 });
+    expect(second.identifiedIds).toHaveLength(2);
+    expect(resumed.actions[1]?.cell).toEqual({ row: 0, col: 2 });
+    validateBagSession(second);
+    const invalid = structuredClone(second);
+    invalid.receipts[0]!.action.cell.col = 1;
+    expect(() => validateBagSession(invalid)).toThrow("action history");
+  });
+  it.each([-1, 1.5, 60, Number.NaN])("rejects invalid identification limit %s before observation or input", async maxIdentifications => {
+    const initial = mixed(), sim = simulator(initial);
+    await expect(runBagStage(initial, "identify", sim.ports, { maxIdentifications })).rejects.toThrow("max-identifications");
+    expect(sim.actions).toHaveLength(0);
+  });
+  it("a zero identification limit emits no input and preserves the bag", async () => {
+    const initial = mixed(), sim = simulator(initial);
+    expect(await runBagStage(initial, "identify", sim.ports, { maxIdentifications: 0 })).toEqual(initial);
+    expect(sim.actions).toHaveLength(0);
   });
   it.each(["missing", "wrong", "zero", "malformed"])("does not spend an unverified %s Wisdom stack", async fault => {
     const raw = fault === "wrong" ? wisdom().replace("Scroll of Wisdom", "Chaos Orb") : fault === "zero" ? wisdom(0) : wisdom().replace("Stack Size:", "Stack:");
@@ -190,6 +234,13 @@ describe("per-item identification, dropping and restart receipts", () => {
     await expect(runBagStage(s, "identify", sim.ports)).rejects.toThrow("disk full");
     expect(sim.actions).toHaveLength(0);
   });
+  it("does not emit a mutation if a durable journal flush ages its observation", async () => {
+    let now = AT;
+    const initial = mixed(), sim = simulator(initial, { save() { now = new Date(Date.parse(AT) + 2001).toISOString(); } });
+    await expect(runBagStage(initial, "identify", { ...sim.ports, now: () => now })).rejects.toThrow("stale");
+    expect(sim.actions).toHaveLength(0);
+    expect(sim.latest.receipts.at(-1)?.state).toBe("pending");
+  });
   it.each(["arm", "pickup"])("does not repeat an interrupted verified %s transaction after restart", async kind => {
     const s = kind === "arm" ? mixed() : session([{ text: weakText(), row: 0, col: 1 }]);
     const sim = simulator(s, { save(current) {
@@ -198,8 +249,47 @@ describe("per-item identification, dropping and restart receipts", () => {
     await expect(runBagStage(s, kind === "arm" ? "identify" : "drop", sim.ports)).rejects.toThrow("crash");
     expect(sim.latest.receipts.at(-1)?.state).toBe("verified");
     const restart = simulator(sim.latest);
-    for (const stage of ["identify", "drop", "reconcile"] as const) await expect(runBagStage(sim.latest, stage, restart.ports)).rejects.toThrow("operator inspection");
+    const refused = kind === "arm" ? ["drop", "reconcile"] as const : ["identify", "drop", "reconcile"] as const;
+    for (const stage of refused) await expect(runBagStage(sim.latest, stage, restart.ports)).rejects.toThrow("operator inspection");
     expect(restart.actions).toHaveLength(0);
+    if (kind === "arm") {
+      const done = await runBagStage(sim.latest, "identify", restart.ports, { maxIdentifications: 1 });
+      expect(done.identifiedIds).toHaveLength(1);
+      expect(restart.actions.map(action => action.kind)).toEqual(["identify"]);
+    }
+  });
+  it("reconciles an initially unreadable Wisdom cursor, then identifies only its original target without rearming", async () => {
+    const initial = mixed(), sim = simulator(initial, { mutate(action, observed) {
+      if (action.kind === "arm") observed.cursor.state = "unknown";
+    } });
+    await expect(runBagStage(initial, "identify", sim.ports)).rejects.toThrow("cursor");
+    expect(sim.actions.map(action => action.kind)).toEqual(["arm"]);
+    const restart = simulator(sim.latest);
+    restart.current.cursor = { state: "wisdom", evidence: "synthetic:verified-wisdom-cursor" };
+    const armed = await runBagStage(sim.latest, "reconcile", restart.ports);
+    expect(armed.receipts.at(-1)?.state).toBe("verified");
+    expect(restart.actions).toHaveLength(0);
+    const resumed = simulator(armed);
+    const done = await runBagStage(armed, "identify", resumed.ports, { maxIdentifications: 1 });
+    expect(resumed.actions.map(action => [action.kind, action.itemId])).toEqual([["identify", initial.report.rows[1]!.id]]);
+    expect(done.identifiedIds).toEqual([initial.report.rows[1]!.id]);
+    expect(done.report.rows[0]!.quantity).toBe(1);
+    validateBagSession(done);
+  });
+  it.each(["cursor", "target", "neighbor", "scroll", "map"])("refuses armed continuation after changed %s evidence without generating recovery input", async fault => {
+    const initial = mixed(), sim = simulator(initial, { save(current) {
+      if (current.receipts.length === 2) throw new Error("crash before identify");
+    } });
+    await expect(runBagStage(initial, "identify", sim.ports)).rejects.toThrow("crash");
+    const resumed = simulator(sim.latest);
+    if (fault === "cursor") resumed.current.cursor.state = "empty";
+    if (fault === "map") resumed.current.mapInstance += "changed";
+    if (["target", "neighbor", "scroll"].includes(fault)) {
+      const cell = resumed.current.cells[fault === "target" ? 1 : fault === "neighbor" ? 3 : 0]!;
+      cell.rawText = fault === "scroll" ? wisdom(1) : weakText(); cell.confirmation = cell.rawText;
+    }
+    await expect(runBagStage(sim.latest, "identify", resumed.ports, { maxIdentifications: 1 })).rejects.toThrow();
+    expect(resumed.actions).toHaveLength(0);
   });
   it("honors stop at every checkpoint with no automatic recovery input", async () => {
     for (let stop = 1; stop <= 8; stop++) {
@@ -221,5 +311,21 @@ describe("strict offline/live argument boundary", () => {
       ["--stage=identify", "--journal=x"], ["--stage=reconcile", "--journal=x", "--run"], ["--max-drops=1"]]) expect(() => parseBagTriageArgs(args)).toThrow();
     expect(parseBagTriageArgs(["--from-scan=x"]).stage).toBe("assess");
     expect(parseBagTriageArgs(["--stage=drop", "--journal=x", "--replay=y"]).maxDrops).toBe(1);
+  });
+  it.each(["NaN", "0", "-1", "1.5", "60", "1e1", "Infinity"])("rejects invalid identification limit %s before adapters", value => {
+    expect(() => parseBagTriageArgs(["--stage=identify", "--journal=x", "--run", "--max-identifications=" + value])).toThrow("max-identifications");
+  });
+  it("defaults live identification to one item and confines live file flags to live stages", () => {
+    const base = ["--stage=identify", "--journal=x", "--run"];
+    expect(parseBagTriageArgs(base).maxIdentifications).toBe(1);
+    expect(parseBagTriageArgs([...base, "--max-identifications=59"]).maxIdentifications).toBe(59);
+    for (const stage of ["capture", "drop", "reconcile"]) {
+      expect(() => parseBagTriageArgs(["--stage=" + stage, "--journal=x", "--max-identifications=1"])).toThrow("only to the identify stage");
+    }
+    for (const flag of ["--calibration", "--perception", "--client-log"]) {
+      expect(() => parseBagTriageArgs(["--stage=capture", "--replay=x", flag + "=fixture"])).toThrow("offline assessment/replay");
+      expect(() => parseBagTriageArgs(["--from-scan=x", flag + "=fixture"])).toThrow("offline assessment/replay");
+      expect(parseBagTriageArgs([...base, flag + "=fixture"]).stage).toBe("identify");
+    }
   });
 });

@@ -8,8 +8,10 @@ import { defaultStashValuationSettings, unavailableStashQuote, validateStashValu
   type StashValuationReport, type StashValuationRow, type StashValuationSettings } from "./stashValuation.js";
 
 export type BagPosition = { row: number; col: number };
-/** Each cell needs an independent clipboard read pair OR positive empty-cell evidence.
- * A timeout/sentinel/empty clipboard is unread, never empty. Frame refs remain local. */
+/** Each item cell needs an independent clipboard read pair. An adapter may reuse
+ * the pair only with new image evidence proving that cell has not changed since
+ * its reads; affected cells must be read again. Empty cells require positive
+ * visual evidence. A timeout/sentinel/empty clipboard is unread, never empty. */
 export interface BagCellObservation extends BagPosition {
   state: "item" | "empty" | "unread";
   rawText?: string;
@@ -53,9 +55,10 @@ export function validateBagObservations(cells: BagCellObservation[]): void {
   }
 }
 
-/** Full 12×5 coverage, grouping by exact text, then the shared physical-footprint audit.
- * Unknown/partial footprints are ledger rows plus unread cells; they cannot authorize input. */
-export function captureBagObservations(id: string, cells: BagCellObservation[], settings = defaultBagSettings(),
+/** Capture identity without running usefulness assessment. The live runner uses
+ * this for frequent physical reconciliation, so verification cannot append
+ * assessment histories or spend the freshness window recalculating policy. */
+export function captureBagLedger(id: string, cells: BagCellObservation[], settings = defaultBagSettings(),
   at = new Date().toISOString(), knowledge: LeagueKnowledge = BUNDLED_KNOWLEDGE): StashValuationReport {
   const issues = validateStashValuationSettings(settings);
   if (issues.length) throw new Error(issues.join(" "));
@@ -89,11 +92,18 @@ export function captureBagObservations(id: string, cells: BagCellObservation[], 
       quote: unavailableStashQuote(settings.league, "Not requested; local bag capture.", at), decision: "review", status: "stay",
       destination: "Inventory", reasons: ["Exact original capture retained; no market requests."] };
   });
-  return assessBatch({ schemaVersion: 1, id, startedAt: at, settings: structuredClone(settings), league: settings.league,
+  return { schemaVersion: 1, id, startedAt: at, settings: structuredClone(settings), league: settings.league,
     sourceTab: settings.sourceTab, scoreVersion: "capture-only", mode: "scan", status: unread.length ? "incomplete" : "complete",
     scannedItems: rows.length, rows, unreadCells: unread, errors: [],
     capture: { id, league: settings.league, patch: settings.league === knowledge.league ? knowledge.patch : "unknown",
-      complete: !unread.length, completedSources: unread.length ? [] : ["Inventory"] } }, settings, at, knowledge);
+      complete: !unread.length, completedSources: unread.length ? [] : ["Inventory"] } };
+}
+
+/** Full 12×5 coverage, grouping by exact text, then the shared physical-footprint audit.
+ * Unknown/partial footprints are ledger rows plus unread cells; they cannot authorize input. */
+export function captureBagObservations(id: string, cells: BagCellObservation[], settings = defaultBagSettings(),
+  at = new Date().toISOString(), knowledge: LeagueKnowledge = BUNDLED_KNOWLEDGE): StashValuationReport {
+  return assessBatch(captureBagLedger(id, cells, settings, at, knowledge), settings, at, knowledge);
 }
 
 export interface BagDecision { id: string; action: "keep" | "review" | "drop"; reasons: string[] }

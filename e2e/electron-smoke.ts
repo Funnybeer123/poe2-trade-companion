@@ -56,7 +56,7 @@ export async function withPackagedElectron(
   mode: SmokeBuildMode,
   testInfo: TestInfo,
   run: (session: ElectronSmokeSession) => Promise<void>,
-  options: { cwd?: string } = {},
+  options: { cwd?: string; background?: boolean } = {},
 ): Promise<void> {
   const executablePath = executableFor(mode);
   if (!existsSync(executablePath)) {
@@ -71,12 +71,13 @@ export async function withPackagedElectron(
   let mainState = "";
   const pageErrors: string[] = [];
   const processOutput: string[] = [];
+  const userData = testInfo.outputPath("user-data");
   try {
     application = await electron.launch({
       executablePath,
       ...(options.cwd ? { cwd: options.cwd } : {}),
       args: [
-        `--user-data-dir=${testInfo.outputPath("user-data")}`,
+        `--user-data-dir=${userData}`,
         "--disable-gpu",
       ],
       env: {
@@ -86,6 +87,12 @@ export async function withPackagedElectron(
         POE2_QA_OPT_IN: "0",
         POE2_QA_ACK: "0",
         POE2_ENABLE_LIVE_INPUT: "0",
+        POE2_SMOKE_BACKGROUND: options.background ? "1" : "0",
+        POE2_SMOKE_USER_DATA_DIR: options.background ? userData : "",
+        ...(options.background ? {
+          POE2_BAG_PERCEPTION_FILE: path.join(userData, "missing-bag-perception.json"),
+          POE2_CLIENT_LOG: path.join(userData, "missing-client-log.txt"),
+        } : {}),
       },
       timeout: 30_000,
     });
@@ -114,6 +121,16 @@ export async function withPackagedElectron(
     page.on("pageerror", (error) => pageErrors.push(error.message));
     await page.waitForLoadState("domcontentloaded");
     await expect(page.locator("#app")).toBeVisible();
+    if (options.background) {
+      const hidden = await application.evaluate(({ app, BrowserWindow, globalShortcut }) => ({
+        userData: app.getPath("userData"),
+        windows: BrowserWindow.getAllWindows().map(window => ({ visible: window.isVisible(), focused: window.isFocused(), focusable: window.isFocusable() })),
+        shortcuts: ["CommandOrControl+Shift+Escape", "CommandOrControl+Shift+F12", "F8", "CommandOrControl+D", "CommandOrControl+Shift+F5", "CommandOrControl+Shift+F4", "CommandOrControl+Shift+F3"].filter(key => globalShortcut.isRegistered(key)),
+      }));
+      expect(hidden.windows).toEqual([{ visible: false, focused: false, focusable: false }]);
+      expect(path.resolve(hidden.userData)).toBe(path.resolve(userData));
+      expect(hidden.shortcuts).toEqual([]);
+    }
 
     const appPath = await application.evaluate(({ app }) => app.getAppPath());
     const inputHost = path.join(

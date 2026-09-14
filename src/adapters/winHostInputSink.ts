@@ -89,7 +89,8 @@ export class WinHostInputSink implements InputSink {
       return;
     }
     if (action.kind === "key") {
-      await this.checkedSend({ op: "hotkey", keys: normalizedHotkey(action.key) });
+      await this.checkedSend({ op: "hotkey", keys: normalizedHotkey(action.key),
+        ...(action.x !== undefined && action.y !== undefined ? { expectedCursorX: action.x, expectedCursorY: action.y } : {}) });
       return;
     }
     if (action.kind === "type") {

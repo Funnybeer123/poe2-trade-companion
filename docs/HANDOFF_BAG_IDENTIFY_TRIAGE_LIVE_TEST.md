@@ -1,5 +1,7 @@
 # Handoff: harden and test in-map bag identification and item triage
 
+Current implementation and test readiness are recorded in [BAG_LIVE_TEST_READINESS.md](BAG_LIVE_TEST_READINESS.md). The inventory adapter and staged desktop controls now exist; the implementation inventory below describes the earlier handoff baseline. The user is playing while offline preparation finishes. Wait for their readiness before any further live game input or capture.
+
 Work in `C:/Users/evanb/OneDrive/Documents/Codex/poe2-trade-companion`. This is the implementation checkout; the similarly named `Documents/ChatGPT` folder is not. Baseline for this handoff: `55ea75b` (`feat: triage captured item batches offline`). Inspect current Git changes and preserve other work. Read `AGENTS.md` and the relevant architecture, product, input-interlock and QA documentation.
 
 The user wants the app to scan their bag inside a map, use Scrolls of Wisdom to identify unidentified equipment, evaluate the resulting items using the application's reusable item-quality and pricing mechanism, keep useful/high-value items and crafting candidates, and drop positively classified unwanted equipment onto the map ground. Implement any missing integration, fix defects, and stress-test the complete workflow. Deliver working code and evidence, not just a plan. Do not claim it is perfect from a passing happy path.

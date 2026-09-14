@@ -54,6 +54,7 @@ import { registerItemIntelligenceIpc } from "./itemIntelligenceIpc.js";
 import { registerScanIpc } from "./scanIpc.js";
 import { StashTabAdminService } from "./stashTabAdminService.js";
 import { StashValuationService } from "./stashValuationService.js";
+import { BagTriageService } from "./bagTriageService.js";
 import type { StashTabPlan, SurveyedStashTab } from "../core/stashTabAdmin.js";
 import {
   JsonlScanSessionStorage,
@@ -66,12 +67,20 @@ import { defaultCombatConfig } from "../core/combatAssist.js";
 import { startEmergencyStopMonitor } from "../adapters/emergencyStopMonitor.js";
 import { sendRendererEvent } from "./rendererEvents.js";
 import { installWindowActivation } from "./windowActivation.js";
+import { backgroundSmokeEnabled } from "./backgroundSmoke.js";
 
 const execFileAsync = promisify(execFile);
 const buildMode = resolveBuildMode(
   typeof __POE2_BUILD_MODE__ === "undefined" ? process.env.POE2_BUILD_MODE : __POE2_BUILD_MODE__,
 );
 const killSwitch = new KillSwitch();
+const backgroundSmoke = backgroundSmokeEnabled(process.argv, process.env);
+if (backgroundSmoke) {
+  const smokeProfile = path.resolve(process.env.POE2_SMOKE_USER_DATA_DIR!);
+  mkdirSync(smokeProfile, { recursive: true });
+  app.setPath("userData", smokeProfile);
+  killSwitch.trip();
+}
 
 let mainWindow: BrowserWindow | undefined;
 let activateMainWindow: (() => void) | undefined;
@@ -80,6 +89,7 @@ let dryRunOverlay: DryRunOverlayWindow | undefined;
 let stashSortService: StashSortService | undefined;
 let stashTabAdminService: StashTabAdminService | undefined;
 let stashValuationService: StashValuationService | undefined;
+let bagTriageService: BagTriageService | undefined;
 let voiceService: VoiceTransferService | undefined;
 let voiceConfig = normalizeVoiceTransferConfig(undefined);
 let registeredVoiceHotkey: string | undefined;
@@ -93,6 +103,11 @@ let scannerService: ScannerRuntimeService | undefined;
 let combatService: CombatAssistService | undefined;
 let combatGlobalDryRun = true;
 let emergencyStopMonitor: ReturnType<typeof startEmergencyStopMonitor> | undefined;
+
+function assertBagIdle(): void {
+  if (backgroundSmoke) throw new Error("Game actions are disabled during background UI smoke checks.");
+  if (bagTriageService?.status.running) throw new Error("Stop the current bag stage before starting another game action.");
+}
 
 function quotesFile(): string {
   const candidates = [
@@ -231,6 +246,7 @@ function exportTriageSnapshot(): void {
 }
 
 async function evaluateClipboard() {
+  if (backgroundSmoke) return null;
   const text = await clipboard.readText().catch(() => "");
   if (!text || text === lastClipboard) return null;
   lastClipboard = text;
@@ -238,6 +254,7 @@ async function evaluateClipboard() {
 }
 
 async function listPoeProcesses(): Promise<Array<{ name: string; title: string }>> {
+  if (backgroundSmoke) return [];
   try {
     const { stdout } = await execFileAsync("powershell.exe", [
       "-NoProfile",
@@ -303,6 +320,7 @@ function appendVoiceAudit(artifactDir: string, state: VoiceTransferState): void 
 }
 
 function installVoiceHotkey(next: VoiceTransferConfig): void {
+  if (backgroundSmoke) return;
   const previous = registeredVoiceHotkey;
   if (previous) {
     globalShortcut.unregister(previous);
@@ -338,6 +356,7 @@ function createWindow(): void {
     width: 1120,
     height: 860,
     show: false,
+    ...(backgroundSmoke ? { focusable: false, skipTaskbar: true } : {}),
     alwaysOnTop: false,
     backgroundColor: "#090a0c",
     title: "PoE2 Trade Companion",
@@ -345,10 +364,11 @@ function createWindow(): void {
       preload: path.join(path.dirname(fileURLToPath(import.meta.url)), "preload.mjs"),
       contextIsolation: true,
       nodeIntegration: false,
+      ...(backgroundSmoke ? { backgroundThrottling: false } : {}),
     },
   });
   const window = mainWindow;
-  activateMainWindow = installWindowActivation(window);
+  if (!backgroundSmoke) activateMainWindow = installWindowActivation(window);
   window.once("closed", () => {
     if (mainWindow === window) {
       mainWindow = undefined;
@@ -436,7 +456,7 @@ if (ownsInstance) void app.whenReady().then(() => {
       );
     },
   });
-  registerScanIpc(ipcMain, scannerService);
+  registerScanIpc(ipcMain, scannerService, assertBagIdle);
   voiceConfig = loadVoiceTransferConfig(memoryRoot);
   dryRunOverlay = new DryRunOverlayWindow();
   const baselineDir = path.join(memoryRoot, "perception-templates");
@@ -474,16 +494,30 @@ if (ownsInstance) void app.whenReady().then(() => {
       dataRoot: memoryRoot,
     } } : {}),
     emit: (event) => sendRendererEvent(mainWindow, "stash-tabs:event", event),
-    canRun: () => !killSwitch.isLatched(),
+    canRun: () => !killSwitch.isLatched() && !bagTriageService?.status.running,
     onScriptStopped: (_kind, reason) => stashValuationService?.markStopped(reason),
   });
   stashValuationService = new StashValuationService(app.isPackaged ? memoryRoot : process.cwd());
+  bagTriageService = new BagTriageService({
+    root: app.getAppPath(), dataRoot: app.isPackaged ? memoryRoot : process.cwd(), templateDir: baselineDir,
+    perceptionFile: process.env.POE2_BAG_PERCEPTION_FILE, clientLog: process.env.POE2_CLIENT_LOG,
+    ...(app.isPackaged ? { workerFile: path.join(app.getAppPath().replace(/app\.asar$/, "app.asar.unpacked"), "dist-electron", "map-triage.cjs") } : {}),
+    emit: status => sendRendererEvent(mainWindow, "bag-triage:status-changed", status),
+    blocked: () => backgroundSmoke ? "Game actions are disabled during background UI smoke checks."
+      : killSwitch.isLatched() ? "Rearm the emergency stop before starting a bag stage."
+      : assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || combatService?.status.running
+        ? "Stop the current game action before starting a bag stage." : undefined,
+  });
+  ipcMain.handle("bag-triage:status", () => bagTriageService!.refresh());
+  ipcMain.handle("bag-triage:select", (_event, journal: string) => bagTriageService!.select(journal));
+  ipcMain.handle("bag-triage:start", (_event, stage) => bagTriageService!.start(stage));
+  ipcMain.handle("bag-triage:stop", () => bagTriageService!.stop());
   voiceService = new VoiceTransferService({
     mode: buildMode,
     recognizer: new WindowsSpeechRecognizer(),
     config: () => voiceConfig,
     assistiveStatus: () => assistiveService!.status,
-    startTransfer: (request) => assistiveService!.start(request),
+    startTransfer: (request) => { assertBagIdle(); return assistiveService!.start(request); },
     stopTransfer: (reason) => assistiveService!.stop(reason),
     onState: (state) => {
       try {
@@ -500,6 +534,7 @@ if (ownsInstance) void app.whenReady().then(() => {
   });
   const stopAllInput = () => {
     killSwitch.trip();
+    bagTriageService?.stop("Emergency stop");
     stashTabAdminService?.stopScript("Emergency stop");
     combatService?.stop("Emergency stop — rearm in the app");
     void voiceService?.cancel("emergency-stop");
@@ -509,9 +544,9 @@ if (ownsInstance) void app.whenReady().then(() => {
     try { priceHelperService?.stop(); } catch { /* Never let an overlay delay the input kill switch. */ }
     sendRendererEvent(mainWindow, "qa:killed");
   };
-  const emergencyStopRegistered = globalShortcut.register("CommandOrControl+Shift+Escape", stopAllInput);
-  globalShortcut.register("CommandOrControl+Shift+F12", stopAllInput);
-  if (!emergencyStopRegistered) {
+  const emergencyStopRegistered = !backgroundSmoke && globalShortcut.register("CommandOrControl+Shift+Escape", stopAllInput);
+  if (!backgroundSmoke) globalShortcut.register("CommandOrControl+Shift+F12", stopAllInput);
+  if (!backgroundSmoke && !emergencyStopRegistered) {
     try { emergencyStopMonitor = startEmergencyStopMonitor(stopAllInput, stopAllInput); }
     catch { /* Combat stays disarmed until a working stop mechanism exists. */ }
   }
@@ -527,12 +562,12 @@ if (ownsInstance) void app.whenReady().then(() => {
     blocked: () => {
       if ((!emergencyStopRegistered && !emergencyStopMonitor?.ready) || !combatHotkeyRegistered) return "Combat hotkeys are starting or unavailable. Wait a moment, or close conflicting apps and restart the companion.";
       if (combatGlobalDryRun && !combatService?.status.config.dryRun) return "Global Dry-run is on. Use Preview only or turn off global Dry-run for live combat.";
-      if (assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running) return "Paused while another game action is running";
+      if (assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || bagTriageService?.status.running) return "Paused while another game action is running";
       return undefined;
     },
   });
   if (combatLoadError) combatService.stop(combatLoadError);
-  combatHotkeyRegistered = globalShortcut.register("F8", () => {
+  combatHotkeyRegistered = !backgroundSmoke && globalShortcut.register("F8", () => {
     if (combatService?.status.running) combatService.stop("Paused with F8");
     else void combatService?.start().catch((error) => combatService?.stop(String(error)));
   });
@@ -545,8 +580,8 @@ if (ownsInstance) void app.whenReady().then(() => {
   ipcMain.handle("combat:configure", (_event, config: unknown) => combatService!.configure(config));
   ipcMain.handle("combat:start", () => combatService!.start());
   ipcMain.handle("combat:stop", () => combatService!.stop());
-  ipcMain.handle("combat:preview", () => combatService!.preview());
-  globalShortcut.register("CommandOrControl+D", () => {
+  ipcMain.handle("combat:preview", () => { if (backgroundSmoke) throw new Error("Game capture is disabled during background UI smoke checks."); return combatService!.preview(); });
+  if (!backgroundSmoke) globalShortcut.register("CommandOrControl+D", () => {
     lastClipboard = "";
     void evaluateClipboard();
   });
@@ -557,6 +592,7 @@ if (ownsInstance) void app.whenReady().then(() => {
   }
   ipcMain.handle("qa:kill-latched", () => killSwitch.isLatched());
   ipcMain.handle("qa:rearm", () => {
+    if (backgroundSmoke) return true;
     killSwitch.rearm();
     return killSwitch.isLatched();
   });
@@ -596,7 +632,7 @@ if (ownsInstance) void app.whenReady().then(() => {
     mode: buildMode,
     qaOptIn: true,
   }));
-  ipcMain.handle("assistive:start", (_event, request: AssistiveRunRequest) => assistiveService?.start(request));
+  ipcMain.handle("assistive:start", (_event, request: AssistiveRunRequest) => { assertBagIdle(); return assistiveService?.start(request); });
   ipcMain.handle("assistive:stop", () => {
     void voiceService?.cancel("operator-stop");
     assistiveService?.stop("operator-stop");
@@ -654,9 +690,7 @@ if (ownsInstance) void app.whenReady().then(() => {
       assistiveService?.resetMemory(payload.stashTab, payload.query),
   );
   ipcMain.handle("stash-sort:status", () => stashSortService?.status);
-  ipcMain.handle("stash-sort:start", (_event, request: SortStashRequest) =>
-    stashSortService?.start(request),
-  );
+  ipcMain.handle("stash-sort:start", (_event, request: SortStashRequest) => { assertBagIdle(); return stashSortService?.start(request); });
   ipcMain.handle("stash-sort:stop", () => {
     stashSortService?.stop("operator-stop");
     return stashSortService?.status;
@@ -751,7 +785,7 @@ if (ownsInstance) void app.whenReady().then(() => {
     return { config, issues };
   });
   ipcMain.handle("voice:status", () => voiceStatus());
-  ipcMain.handle("voice:trigger", () => voiceService?.trigger("ui"));
+  ipcMain.handle("voice:trigger", () => { if (backgroundSmoke) throw new Error("Voice is disabled during background UI smoke checks."); return voiceService?.trigger("ui"); });
   ipcMain.handle("voice:cancel", () => voiceService?.cancel("voice-operator-cancel"));
   ipcMain.handle(
     "voice:configure",
@@ -785,15 +819,19 @@ if (ownsInstance) void app.whenReady().then(() => {
   ipcMain.handle("poe:windows", () => listPoeProcesses());
   ipcMain.handle("filter:generate", (_event, options) => generateLootFilter(options));
   ipcMain.handle("runtime:mode", () => buildMode);
-  registerCalibrationIpc();
+  if (backgroundSmoke) {
+    ipcMain.handle("cal:profile", () => readMergedProfile());
+    ipcMain.handle("cal:target", () => { throw new Error("Game detection is disabled during background UI smoke checks."); });
+  } else registerCalibrationIpc();
   createWindow();
-  priceHelperService = installPriceHelper(() => mainWindow, (identity, league, canRun) => priceFeedService!.fetchHelperReward(identity, league, canRun));
-  setInterval(() => {
-    void evaluateClipboard();
-  }, 750);
+  if (!backgroundSmoke) {
+    priceHelperService = installPriceHelper(() => mainWindow, (identity, league, canRun) => priceFeedService!.fetchHelperReward(identity, league, canRun));
+    setInterval(() => { void evaluateClipboard(); }, 750);
+  }
 });
 
 app.on("window-all-closed", () => {
+  bagTriageService?.stop("App closed");
   stashTabAdminService?.stopScript("App closed");
   emergencyStopMonitor?.close();
   combatService?.stop("App closed");
@@ -811,6 +849,7 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 app.on("before-quit", () => {
+  bagTriageService?.stop("App exiting");
   stashTabAdminService?.stopScript("App exiting");
   combatService?.stop("App exiting");
   emergencyStopMonitor?.close();

@@ -1,5 +1,5 @@
 import { assessBatch } from "./batchTriage.js";
-import { bagDecision, captureBagObservations, cellKey, eligibleBagEquipment, exactText, sameCells, wisdomCount,
+import { bagDecision, captureBagLedger, cellKey, eligibleBagEquipment, exactText, sameCells, wisdomCount,
   validateBagObservations, type BagCellObservation, type BagPosition } from "./bagAssessment.js";
 import { knowledgeForReport } from "./leagueKnowledge.js";
 import { parseItemText } from "./parseItem.js";
@@ -26,6 +26,7 @@ export interface BagScene {
 export type BagMutation = "arm" | "identify" | "pickup" | "drop";
 export interface BagAction {
   id: string; kind: BagMutation; itemId: string;
+  /** Actual input cell: Wisdom (0,0) for arm, equipment source otherwise. */
   cell: BagPosition; ground: { x: number; y: number };
 }
 export interface BagReceipt {
@@ -45,13 +46,24 @@ export interface BagSession {
   identifiedIds: string[];
 }
 export interface BagSessionPorts {
-  observe(): Promise<BagScene>;
+  observe(request?: BagObservationRequest): Promise<BagScene>;
   mutate(action: BagAction): Promise<void>;
   /** Must honor pause/stop before observations and every native input boundary. */
   checkpoint(): Promise<void>;
   /** Must synchronously commit (including flush) or throw BEFORE input. */
   save(session: BagSession): void;
   now(): string;
+}
+export interface BagObservationRequest {
+  phase: "before" | "after" | "reconcile";
+  itemId?: string;
+  cells?: BagPosition[];
+  rawText?: string;
+  action?: BagAction;
+}
+export interface BagStageLimits {
+  maxDrops?: number;
+  maxIdentifications?: number;
 }
 
 export function validateBagScene(scene: BagScene): void {
@@ -88,7 +100,8 @@ export function validateBagSession(value: unknown): asserts value is BagSession 
     const r = s.receipts[i]!;
     if (!r?.action || !r.before || !["pending", "verified"].includes(r.state) || ids.has(r.action.id) ||
       !["arm", "identify", "pickup", "drop"].includes(r.action.kind) ||
-      r.action.id !== s.report.id + ":action:" + i || !s.report.rows.some(row => row.id === r.action.itemId && row.row === r.action.cell?.row && row.col === r.action.cell?.col) ||
+      r.action.id !== s.report.id + ":action:" + i || !s.report.rows.some(row => row.id === r.action.itemId &&
+        (r.action.kind === "arm" ? r.action.cell?.row === 0 && r.action.cell?.col === 0 : row.row === r.action.cell?.row && row.col === r.action.cell?.col)) ||
       r.state === "pending" && (i !== s.receipts.length - 1 || r.after !== undefined) || r.state === "verified" && !r.after) throw new Error("Invalid bag action history.");
     validateBagScene(r.before);
     if (r.after) validateBagScene(r.after);
@@ -121,7 +134,7 @@ function guardScene(scene: BagScene, session: BagSession, now: string, cursor: B
   }
 }
 function observedReport(scene: BagScene, session: BagSession): StashValuationReport {
-  const r = captureBagObservations(session.report.id, scene.cells, session.report.settings, scene.at, knowledgeForReport(session.report));
+  const r = captureBagLedger(session.report.id, scene.cells, session.report.settings, scene.at, knowledgeForReport(session.report));
   if (!r.capture?.complete || r.unreadCells.length) throw new Error("Full bag coverage required; empty clipboard is not empty-cell evidence.");
   return r;
 }
@@ -149,30 +162,48 @@ export function createBagSession(report: StashValuationReport, scene: BagScene, 
 /** A mutation is issued once. Every exception leaves the pending receipt for explicit
  * reconciliation; there are no blind retries, recovery clicks, or bulk drops. */
 export async function runBagStage(saved: BagSession, stage: "identify" | "drop" | "reconcile", ports: BagSessionPorts,
-  maxDrops = 1): Promise<BagSession> {
+  limits: number | BagStageLimits = 1): Promise<BagSession> {
   validateBagSession(saved);
+  const maxDrops = typeof limits === "number" ? limits : limits.maxDrops ?? 1;
+  const maxIdentifications = typeof limits === "number" ? 59 : limits.maxIdentifications ?? 59;
   if (!Number.isInteger(maxDrops) || maxDrops < 0 || maxDrops > 59) throw new Error("max-drops must be an integer from 0 to 59.");
+  if (!Number.isInteger(maxIdentifications) || maxIdentifications < 0 || maxIdentifications > 59) throw new Error("max-identifications must be an integer from 0 to 59.");
   const s = structuredClone(saved);
   const pending = s.receipts.at(-1)?.state === "pending" ? s.receipts.at(-1)! : undefined;
+  const armed = !pending && s.receipts.at(-1)?.action.kind === "arm" ? s.receipts.at(-1)! : undefined;
   if (pending && stage !== "reconcile") throw new Error("Pending mutation requires read-only reconciliation; never retry it.");
-  if (!pending && ["arm", "pickup"].includes(s.receipts.at(-1)?.action.kind ?? "")) {
+  if (!pending && (s.receipts.at(-1)?.action.kind === "pickup" || armed && stage !== "identify")) {
     throw new Error("Interrupted cursor transaction requires operator inspection; do not repeat arming/pickup or start another stage.");
   }
   const save = () => ports.save(structuredClone(s));
-  const observe = async () => { await ports.checkpoint(); return ports.observe(); };
+  const observe = async (request: BagObservationRequest) => { await ports.checkpoint(); return ports.observe(request); };
+  const observationFor = (phase: BagObservationRequest["phase"], row: StashValuationRow, action?: BagAction): BagObservationRequest =>
+    ({ phase, itemId: row.id, cells: structuredClone(row.cells!), rawText: row.rawText, action: action && structuredClone(action) });
   const issue = async (kind: BagMutation, row: StashValuationRow, before: BagScene) => {
     await ports.checkpoint();
     guardScene(before, s, ports.now(), kind === "identify" ? "wisdom" : kind === "drop" ? "item" : "empty");
     const action: BagAction = { id: s.report.id + ":action:" + s.receipts.length, kind, itemId: row.id,
-      cell: { row: row.row!, col: row.col! }, ground: { x: before.ground.x, y: before.ground.y } };
+      cell: kind === "arm" ? { row: 0, col: 0 } : { row: row.row!, col: row.col! }, ground: { x: before.ground.x, y: before.ground.y } };
     const receipt: BagReceipt = { action, before: structuredClone(before), state: "pending" };
     s.receipts.push(receipt); save(); // A write failure prevents the mutation.
     await ports.checkpoint();
+    // Disk flush or a pause can age the observation after the first guard.
+    guardScene(before, s, ports.now(), kind === "identify" ? "wisdom" : kind === "drop" ? "item" : "empty");
     await ports.mutate(structuredClone(action));
-    return { receipt, after: await observe() };
+    return { receipt, after: await observe(observationFor("after", row, action)) };
   };
   const finish = (receipt: BagReceipt, after: BagScene) => {
     receipt.after = structuredClone(after); receipt.state = "verified"; s.scene = structuredClone(after); save();
+  };
+  const verifyArming = (receipt: BagReceipt, after: BagScene) => {
+    guardScene(after, s, ports.now(), "wisdom"); assertBag(after, s);
+    const row = s.report.rows.find(r => r.id === receipt.action.itemId)!;
+    if (!eligibleBagEquipment(row.rawText) || parseItemText(row.rawText).identified || s.identifiedIds.includes(row.id)) {
+      throw new Error("Armed Wisdom transaction no longer targets an unidentified equipment item.");
+    }
+    const scroll = s.report.rows.find(atTopLeft);
+    if (!scroll || !wisdomCount(scroll.rawText) || scroll.quantity === 0) throw new Error("Verified Wisdom stack required in bag (0,0).");
+    finish(receipt, after);
   };
   const verifyIdentification = (receipt: BagReceipt, after: BagScene) => {
     guardScene(after, s, ports.now(), "empty");
@@ -205,8 +236,10 @@ export async function runBagStage(saved: BagSession, stage: "identify" | "drop" 
   };
   if (stage === "reconcile") {
     if (!pending) return s;
-    const after = await observe();
-    if (pending.action.kind === "identify") verifyIdentification(pending, after);
+    const row = s.report.rows.find(r => r.id === pending.action.itemId)!;
+    const after = await observe(observationFor("reconcile", row, pending.action));
+    if (pending.action.kind === "arm") verifyArming(pending, after);
+    else if (pending.action.kind === "identify") verifyIdentification(pending, after);
     else if (pending.action.kind === "drop") verifyDrop(pending, after);
     else throw new Error("Interrupted arming/pickup needs operator inspection; no automatic recovery click.");
     return s;
@@ -215,22 +248,37 @@ export async function runBagStage(saved: BagSession, stage: "identify" | "drop" 
   // Each future bag comparison handles it as a completed departure.
   const activeRows = () => s.report.rows.filter(r => !s.droppedIds.includes(r.id) && !(atTopLeft(r) && r.quantity === 0));
   // After identification with exactly one scroll, the identification stage ends.
-  let drops = 0;
+  let drops = 0, identifications = 0;
+  // Read-only reconciliation can prove an interrupted arm completed. Continuing
+  // may then use that same cursor transaction once, without spending another arm.
+  if (armed && maxIdentifications > 0) {
+    const row = s.report.rows.find(r => r.id === armed.action.itemId)!;
+    const before = await observe(observationFor("before", row, armed.action));
+    guardScene(before, s, ports.now(), "wisdom"); assertBag(before, s);
+    if (!eligibleBagEquipment(row.rawText) || parseItemText(row.rawText).identified || s.identifiedIds.includes(row.id)) {
+      throw new Error("Armed Wisdom transaction no longer targets an unidentified equipment item.");
+    }
+    const scroll = s.report.rows.find(atTopLeft);
+    if (!scroll || !wisdomCount(scroll.rawText) || scroll.quantity === 0) throw new Error("Verified Wisdom stack required in bag (0,0).");
+    const result = await issue("identify", row, before);
+    verifyIdentification(result.receipt, result.after); identifications++;
+    if (s.report.rows.find(atTopLeft)?.quantity === 0) return s;
+  }
   for (const row of activeRows()) {
     if (!eligibleBagEquipment(row.rawText)) continue;
     const identified = parseItemText(row.rawText).identified;
-    if (stage === "identify" && (identified || s.identifiedIds.includes(row.id))) continue;
+    if (stage === "identify" && (identifications >= maxIdentifications || identified || s.identifiedIds.includes(row.id))) continue;
     if (stage === "drop" && (drops >= maxDrops || bagDecision(row, s.report, ports.now()).action !== "drop")) continue;
-    const before = await observe();
+    const before = await observe(observationFor("before", row));
     guardScene(before, s, ports.now(), "empty"); assertBag(before, s);
     if (stage === "identify") {
       const scroll = s.report.rows.find(atTopLeft);
       if (!scroll || !wisdomCount(scroll.rawText) || scroll.quantity === 0) throw new Error("Verified Wisdom stack required in bag (0,0).");
       const armed = await issue("arm", row, before);
-      guardScene(armed.after, s, ports.now(), "wisdom"); assertBag(armed.after, s);
-      finish(armed.receipt, armed.after);
+      verifyArming(armed.receipt, armed.after);
       const result = await issue("identify", row, armed.after);
       verifyIdentification(result.receipt, result.after);
+      identifications++;
       if (s.report.rows.find(atTopLeft)?.quantity === 0) break;
     } else {
       if (!identified || bagDecision(row, s.report, ports.now()).action !== "drop") continue;

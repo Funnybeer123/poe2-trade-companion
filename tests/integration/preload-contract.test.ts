@@ -47,6 +47,7 @@ describe("preload API exposure", () => {
     expect(Object.keys(bridge).sort()).toEqual(
       [
         "assistive",
+        "bagTriage",
         "calibration",
         "combat",
         "evaluateText",
@@ -146,5 +147,19 @@ describe("preload API exposure", () => {
       "catalog:changed",
       listener,
     );
+  });
+
+  it("exposes explicit bag stages and payload-only status subscriptions", async () => {
+    await import("../../src/main/preload.js");
+    const api = (electron.exposeInMainWorld.mock.calls[0]![1] as Poe2Bridge).bagTriage!;
+    await api.status(); await api.select("live-adapter/bag-01.jsonl");
+    for (const stage of ["capture", "identify", "drop", "reconcile"] as const) await api.start(stage);
+    await api.stop();
+    expect(electron.invoke.mock.calls).toEqual([["bag-triage:status"], ["bag-triage:select", "live-adapter/bag-01.jsonl"],
+      ["bag-triage:start", "capture"], ["bag-triage:start", "identify"], ["bag-triage:start", "drop"], ["bag-triage:start", "reconcile"], ["bag-triage:stop"]]);
+    const callback = vi.fn(), dispose = api.onStatus(callback), listener = electron.on.mock.calls.find(([channel]) => channel === "bag-triage:status-changed")![1];
+    const payload = { running: false, phase: "complete", message: "Bag stage complete.", sessions: [] };
+    listener({ sender: "fake" }, payload); expect(callback).toHaveBeenCalledWith(payload);
+    dispose(); expect(electron.removeListener).toHaveBeenCalledWith("bag-triage:status-changed", listener);
   });
 });

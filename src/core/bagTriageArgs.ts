@@ -6,6 +6,10 @@ export interface BagTriageArgs {
   output?: string;
   run: boolean;
   maxDrops: number;
+  maxIdentifications: number;
+  calibration?: string;
+  perception?: string;
+  clientLog?: string;
   help: boolean;
 }
 export function parseBagTriageArgs(argv: string[]): BagTriageArgs {
@@ -14,7 +18,7 @@ export function parseBagTriageArgs(argv: string[]): BagTriageArgs {
     const [key, ...rest] = arg.split("="), value = rest.join("=");
     if (["--run", "--help"].includes(key!) && rest.length === 0) {
       if (flags.has(key!)) throw new Error("Duplicate argument: " + key); flags.add(key!);
-    } else if (["--stage", "--from-scan", "--replay", "--journal", "--output", "--max-drops"].includes(key!) && value.trim()) {
+    } else if (["--stage", "--from-scan", "--replay", "--journal", "--output", "--max-drops", "--max-identifications", "--calibration", "--perception", "--client-log"].includes(key!) && value.trim()) {
       if (values.has(key!)) throw new Error("Duplicate argument: " + key); values.set(key!, value);
     } else throw new Error("Unknown/incomplete argument: " + arg + ". No live adapter started.");
   }
@@ -23,6 +27,10 @@ export function parseBagTriageArgs(argv: string[]): BagTriageArgs {
   const numeric = values.get("--max-drops") ?? "1";
   if (!/^\d+$/.test(numeric) || Number(numeric) > 59) throw new Error("max-drops must be an integer from 0 to 59.");
   if (values.has("--max-drops") && stage !== "drop") throw new Error("max-drops applies only to the drop stage.");
+  const maxIdentifications = values.get("--max-identifications") ?? "1";
+  if (!/^\d+$/.test(maxIdentifications) || Number(maxIdentifications) < 1 || Number(maxIdentifications) > 59) throw new Error("max-identifications must be an integer from 1 to 59.");
+  if (values.has("--max-identifications") && stage !== "identify") throw new Error("max-identifications applies only to the identify stage.");
+  if ((stage === "assess" || values.has("--replay")) && ["--calibration", "--perception", "--client-log"].some(k => values.has(k))) throw new Error("Live calibration/log arguments do not apply to offline assessment/replay.");
   if (values.has("--replay") && flags.has("--run")) throw new Error("Replay cannot enable live input.");
   if (stage === "assess" && (!values.has("--from-scan") || values.has("--replay") || flags.has("--run") || values.has("--journal"))) throw new Error("Offline assessment requires only --from-scan and optional --output.");
   if (stage !== "assess" && values.has("--from-scan")) throw new Error("A stash report is not a resumable physical bag session.");
@@ -30,5 +38,6 @@ export function parseBagTriageArgs(argv: string[]): BagTriageArgs {
   if (["identify", "drop"].includes(stage) && !values.has("--replay") && !flags.has("--run")) throw new Error("Live mutation requires --run.");
   if (stage === "reconcile" && flags.has("--run")) throw new Error("Reconciliation is read-only.");
   return { stage: stage as BagTriageArgs["stage"], fromScan: values.get("--from-scan"), replay: values.get("--replay"),
-    journal: values.get("--journal"), output: values.get("--output"), run: flags.has("--run"), maxDrops: Number(numeric), help: flags.has("--help") };
+    journal: values.get("--journal"), output: values.get("--output"), run: flags.has("--run"), maxDrops: Number(numeric),
+    maxIdentifications: Number(maxIdentifications), calibration: values.get("--calibration"), perception: values.get("--perception"), clientLog: values.get("--client-log"), help: flags.has("--help") };
 }

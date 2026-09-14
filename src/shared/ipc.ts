@@ -459,6 +459,7 @@ export interface HotkeysBridge {
 }
 
 export interface Poe2Bridge {
+  bagTriage?: import("./bagTriage.js").BagTriageBridge;
   priceHelper?: import("../core/priceHelper.js").PriceHelperBridge;
   combat?: import("../core/combatAssist.js").CombatBridge;
   mode: () => Promise<RuntimeMode>;

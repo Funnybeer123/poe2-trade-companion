@@ -3,15 +3,30 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { expect, type TestInfo } from "@playwright/test";
 import { withPackagedElectron, type SmokeBuildMode } from "./electron-smoke.js";
-import { scene, weakText } from "../tests/support/bagFixtures.js";
+import { scene, weakText, unid, wisdom } from "../tests/support/bagFixtures.js";
 import { batch, strongText } from "../tests/support/batchFixtures.js";
 
 export async function bagTriageSmoke(mode: SmokeBuildMode, testInfo: TestInfo) {
   const root = testInfo.outputPath("isolated-bag-worker"); mkdirSync(root, { recursive: true });
-  await withPackagedElectron(mode, testInfo, async ({ application }) => {
+  await withPackagedElectron(mode, testInfo, async ({ application, page }) => {
+    await page.locator("aside.side-rail").getByRole("link", { name: /^Tools\b/ }).click();
+    await page.getByRole("navigation", { name: "Tools and QA sections" }).getByRole("link", { name: /^Bag triage\b/ }).click();
+    const panel = page.locator(".bag-triage-tool");
+    await expect(panel.getByRole("heading", { name: "Bag triage", exact: true })).toBeVisible();
+    await expect(panel.getByRole("list", { name: "Bag setup needed" })).toBeVisible();
+    for (const name of ["Capture bag", "Identify one", "Drop one low-priority item", "Reconcile"]) {
+      await expect(panel.getByRole("button", { name, exact: true })).toBeDisabled();
+    }
+    await expect(panel.getByRole("button", { name: "Refresh setup", exact: true })).toBeEnabled();
+    await panel.getByRole("button", { name: "Refresh setup", exact: true }).click();
+    await expect(panel.getByRole("list", { name: "Bag setup needed" })).toContainText("Inventory calibration is missing");
+    await page.screenshot({ path: testInfo.outputPath("bag-triage.png"), fullPage: true });
+    const background = await application.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().map(window => ({ visible: window.isVisible(), focused: window.isFocused() })));
+    expect(background).toEqual([{ visible: false, focused: false }]);
     const runtime = await application.evaluate(({ app }) => ({ executable: process.execPath, path: app.getAppPath() }));
     const worker = path.join(runtime.path.replace(/app\.asar$/, "app.asar.unpacked"), "dist-electron", "map-triage.cjs");
     expect(existsSync(worker)).toBe(true);
+    expect(existsSync(path.join(runtime.path.replace(/app\.asar$/, "app.asar.unpacked"), "scripts", "win-bag-host.ps1"))).toBe(true);
     const guard = path.join(root, "no-input.cjs");
     writeFileSync(guard, "const deny=()=>{process.exitCode=99;throw Error('OFFLINE_GUARD')};globalThis.fetch=deny;" +
       "for(const name of ['node:http','node:https']){const m=require(name);m.request=deny;m.get=deny}" +
@@ -29,8 +44,19 @@ export async function bagTriageSmoke(mode: SmokeBuildMode, testInfo: TestInfo) {
     const out = run(["--replay=" + replay, "--journal=" + journal]);
     expect(out).toContain('"physicalItems":2'); expect(out).toContain('"marketRequests":0');
     expect(existsSync(journal)).toBe(true);
-    // Same no-live-adapter refusal as the daemon's stage=capture request.
-    try { run(["--stage=capture", "--journal=" + path.join(root, "not-live.jsonl")]); throw new Error("expected refusal"); }
-    catch (error) { expect((error as { status: number }).status).toBe(1); expect(String((error as { stderr: string }).stderr)).toContain("NOT ready"); }
-  }, { cwd: root });
+    const before = scene([{ text: wisdom(3), row: 0, col: 0 }, { text: unid(), row: 0, col: 1 }, { text: unid(), row: 0, col: 2 }]);
+    const identifyJournal = path.join(root, "identify-one.jsonl");
+    writeFileSync(replay, JSON.stringify([{ kind: "observe", scene: before }]));
+    run(["--replay=" + replay, "--journal=" + identifyJournal]);
+    const armed = structuredClone(before); armed.cursor = { state: "wisdom", evidence: "synthetic:wisdom-cursor" };
+    const after = scene([{ text: wisdom(2), row: 0, col: 0 }, { text: weakText(), row: 0, col: 1 }, { text: unid(), row: 0, col: 2 }]);
+    const action = { id: "identify-one:action:0", kind: "arm", itemId: "identify-one:Inventory:0,1", cell: { row: 0, col: 0 }, ground: { x: 400, y: 300 } };
+    writeFileSync(replay, JSON.stringify([{ kind: "observe", scene: before }, { kind: "mutate", action }, { kind: "observe", scene: armed },
+      { kind: "mutate", action: { ...action, id: "identify-one:action:1", kind: "identify", cell: { row: 0, col: 1 } } }, { kind: "observe", scene: after }]));
+    const identified = run(["--replay=" + replay, "--journal=" + identifyJournal, "--stage=identify"]);
+    expect(identified).toContain('"verifiedIdentifications":1'); expect(identified).toContain('"nativeInputs":0');
+    // Missing per-client live perception must fail before the guarded host starts.
+    try { run(["--stage=capture", "--journal=" + path.join(root, "not-live.jsonl"), "--perception=" + path.join(root, "absent-perception.json")]); throw new Error("expected refusal"); }
+    catch (error) { expect((error as { status: number }).status).toBe(1); expect(String((error as { stderr: string }).stderr)).toContain("No native host started"); }
+  }, { cwd: root, background: true });
 }

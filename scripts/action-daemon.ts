@@ -146,11 +146,11 @@ async function actionFill(): Promise<void> {
 }
 
 /**
- * Num6 delegates to the staged bag worker. Live capture remains blocked
- * until map/cursor perception is validated; the legacy bulk path is gone.
+ * Num6 captures a new physical bag; mutation stages are explicit in Bag triage.
  */
 async function actionIdentify(): Promise<void> {
-  const code = await spawnScript(["scripts/map-triage.ts", "--stage=capture"], "identify");
+  const journal = path.join(artifactDir, "map-triage", `bag-${Date.now()}.jsonl`);
+  const code = await spawnScript(["scripts/map-triage.ts", "--stage=capture", "--journal=" + journal], "identify");
   log({ action: "identify", phase: "result", message: `staged map-triage capture exited ${code}; live mutations require a saved verified session` });
 }
 

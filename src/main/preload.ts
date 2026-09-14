@@ -16,6 +16,7 @@ import type {
 } from "../shared/ipc.js";
 import type { PriceTable } from "../core/priceTable.js";
 import type { SearchRegexRequest } from "../core/searchRegex.js";
+import type { BagTriageStage, BagTriageStatus } from "../shared/bagTriage.js";
 
 const invoke = ((channel: string, ...args: unknown[]) =>
   ipcRenderer.invoke(channel, ...args)) as IpcInvoker;
@@ -33,6 +34,17 @@ const subscribe = (<C extends IpcEventChannel>(
 }) as IpcSubscriber;
 
 contextBridge.exposeInMainWorld("poe2", {
+  bagTriage: {
+    status: () => ipcRenderer.invoke("bag-triage:status"),
+    select: (journal: string) => ipcRenderer.invoke("bag-triage:select", journal),
+    start: (stage: BagTriageStage) => ipcRenderer.invoke("bag-triage:start", stage),
+    stop: () => ipcRenderer.invoke("bag-triage:stop"),
+    onStatus: (callback: (status: BagTriageStatus) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: BagTriageStatus) => callback(status);
+      ipcRenderer.on("bag-triage:status-changed", listener);
+      return () => ipcRenderer.removeListener("bag-triage:status-changed", listener);
+    },
+  },
   priceHelper: {
     status: () => ipcRenderer.invoke("price-helper:status"),
     configure: (config: unknown) => ipcRenderer.invoke("price-helper:configure", config),

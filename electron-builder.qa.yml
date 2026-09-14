@@ -1,6 +1,7 @@
 appId: com.poe2.tradecompanion.qa
 productName: PoE2 QA Trade Bot
 asarUnpack:
+  - scripts/win-bag-host.ps1
   - dist-electron/map-triage.cjs
   - dist-electron/value-dump.cjs
   - scripts/win-price-helper.ps1
@@ -8,6 +9,7 @@ asarUnpack:
   - scripts/win-combat-host.ps1
   - scripts/win-input-host.ps1
 files:
+  - scripts/win-bag-host.ps1
   - scripts/win-price-helper.ps1
   - scripts/win-emergency-stop.ps1
   - dist/**
