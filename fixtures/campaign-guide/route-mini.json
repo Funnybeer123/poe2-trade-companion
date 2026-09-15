@@ -1,0 +1,82 @@
+{
+  "schemaVersion": 1,
+  "source": "fixture",
+  "updatedAt": "2026-09-12",
+  "communityNote": "Community-maintained route. Nothing here is verified against the current game build - verify in game.",
+  "acts": [
+    {
+      "part": 1,
+      "act": 1,
+      "name": "Act 1",
+      "townId": "G1_town",
+      "areas": [
+        {
+          "id": "G1_1",
+          "name": "The Riverbank",
+          "level": 1,
+          "exits": ["G1_2"],
+          "wiki": "The_Riverbank",
+          "objectives": [
+            { "id": "G1_1.miller", "title": "Kill the Bloated Miller", "kind": "boss", "rewards": [], "verified": false },
+            { "id": "G1_1.reach-G1_2", "title": "Reach Clearfell", "kind": "reach", "targetAreaId": "G1_2", "rewards": [], "verified": false }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_2",
+          "name": "Clearfell",
+          "level": 2,
+          "aliases": ["G1_2b"],
+          "waypoint": true,
+          "exits": ["G1_3", "G1_town"],
+          "objectives": [
+            { "id": "G1_2.beira", "title": "Kill Beira of the Rotten Pack", "kind": "boss", "rewards": [], "verified": false }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_3",
+          "name": "Mud Burrow",
+          "level": 3,
+          "branch": true,
+          "exits": ["G1_2"],
+          "objectives": [
+            { "id": "G1_3.devourer", "title": "Kill the Devourer", "kind": "boss", "rewards": ["unlocks"], "detail": "Quest turn-in in Clearfell Encampment.", "verified": false },
+            { "id": "G1_3.optional", "title": "Open the side chest", "kind": "note", "rewards": ["currency"], "optional": true, "verified": false }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_town",
+          "name": "Clearfell Encampment",
+          "level": 15,
+          "town": true,
+          "exits": ["G2_1", "G1_99"],
+          "objectives": [
+            { "id": "G1_town.quests", "title": "Hand in the act quests", "kind": "quest", "rewards": ["gems", "passives"], "verified": false }
+          ],
+          "verified": false
+        }
+      ]
+    },
+    {
+      "part": 1,
+      "act": 2,
+      "name": "Act 2",
+      "townId": "G2_town",
+      "areas": [
+        {
+          "id": "G2_1",
+          "name": "Vastiri Outskirts",
+          "level": 16,
+          "waypoint": true,
+          "exits": [],
+          "objectives": [
+            { "id": "G2_1.arrive", "title": "Verify: act 2 opening quest", "kind": "note", "rewards": [], "verified": false }
+          ],
+          "verified": false
+        }
+      ]
+    }
+  ]
+}

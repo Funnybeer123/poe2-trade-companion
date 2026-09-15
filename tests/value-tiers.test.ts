@@ -17,6 +17,7 @@ import {
   validateValueTierRules,
   type ValueTierRules,
 } from "../src/core/valueTiers.js";
+import { decideDrop } from "../src/core/mapTriage.js";
 
 const rareBody = readFileSync(
   path.join(process.cwd(), "fixtures", "items", "rare-body.txt"),
@@ -159,6 +160,27 @@ describe("value tier evaluation", () => {
 
   it("ships starter rules that validate", () => {
     expect(validateValueTierRules(starterValueTierRules())).toEqual([]);
+  });
+
+  it.each(["Heavy Belt", "Utility Belt"])("keeps normal %s crafting bases ahead of the normal-item dump rule", (base) => {
+    const text = `Item Class: Belts\nRarity: Normal\n${base}\n--------\n\nRequires: Level 50`;
+    for (const newline of ["\n", "\r\n"]) {
+      const verdict = evaluateValueTier(text.replaceAll("\n", newline), { rules: starterValueTierRules() });
+      expect(verdict).toMatchObject({ tier: "keep", source: "rule", matchedRules: ["Normal belt crafting bases"] });
+      expect(decideDrop(verdict).drop).toBe(false);
+    }
+  });
+
+  it.each([
+    ["Normal", "Leather Belt", "dump"],
+    ["Normal", "Heavy Belt Replica", "dump"],
+    ["Magic", "Regenerating Utility Belt of the Leviathan", "unknown"],
+    ["Rare", "Heavy Belt", "unknown"],
+  ])("does not widen crafting-base protection to %s %s", (rarity, base, tier) => {
+    const text = `Item Class: Belts\nRarity: ${rarity}\n${base}\n--------\nRequires: Level 50`;
+    const verdict = evaluateValueTier(text, { rules: starterValueTierRules() });
+    expect(verdict.tier).toBe(tier);
+    expect(verdict.matchedRules).not.toContain("Normal belt crafting bases");
   });
 
   it("flags invalid bucket rules with their tier and index", () => {

@@ -1,0 +1,15 @@
+Item Class: Life Flasks
+Rarity: Magic
+Chemist's Ultimate Life Flask of the Cheetah
+--------
+Recovers 1230 Life over 3 Seconds
+Consumes 10 of 90 Charges on use
+Currently has 90 Charges
+--------
+Requirements:
+Level: 60
+--------
+Item Level: 78
+--------
+28% reduced Charges per use
+15% increased Movement Speed during Effect

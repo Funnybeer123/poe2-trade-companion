@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 99,
+  "folders": [
+    { "id": "fld_ok", "name": "   Keep me   ", "colour": "not-a-colour", "order": "first", "expanded": "yes" },
+    { "id": "fld_ok", "name": "duplicate id", "colour": "gold", "order": 1 },
+    { "name": "no id", "colour": "gold" }
+  ],
+  "favorites": [
+    { "id": "fav_orphan", "folderId": "fld_missing", "name": "Orphan", "draft": { "kind": "search", "query": { "type": "Ruby Ring", "stats": [] } } },
+    { "id": "fav_bad_draft", "folderId": null, "name": "No query", "draft": { "kind": "search" } },
+    { "id": "fav_bad_stats", "folderId": "fld_ok", "name": "Junk stats", "draft": { "kind": "search", "query": { "stats": [{ "type": "nope", "filters": [] }, { "type": "and", "filters": [{ "id": "NOT AN ID" }, { "id": "explicit.stat_3299347043", "value": { "min": "abc", "max": 1e400 } }] }], "misc": { "ilvl": { "min": -5, "max": 900 } }, "sort": { "key": "not_a_key" } } } },
+    { "id": "fav_orphan", "folderId": null, "name": "Duplicate", "draft": { "kind": "search", "query": { "stats": [] } } }
+  ],
+  "extra": "dropped"
+}

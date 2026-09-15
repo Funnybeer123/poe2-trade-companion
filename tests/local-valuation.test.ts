@@ -1,13 +1,34 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { evaluateWithAppraisal } from "../src/core/appraisal.js";
+import { parseAdvancedItemText } from "../src/core/itemAnnotations.js";
 import { exaltedFromScore } from "../src/core/crafting.js";
-import { valueItemLocally } from "../src/core/localValuation.js";
+import { valueItemLocally, VALUATION_PROVIDER_LABELS } from "../src/core/localValuation.js";
 import { parseItemText } from "../src/core/parseItem.js";
 import { PRICE_TABLE_SCHEMA_VERSION, type PriceTable } from "../src/core/priceTable.js";
+import type { PriceLesson } from "../src/core/priceTraining.js";
 import type { CompsSummary } from "../src/core/tradeComps.js";
 import { emptyValueTierRules } from "../src/core/valueTiers.js";
 
 const NOW = new Date("2026-09-07T10:00:00.000Z");
+const SAPPHIRE = readFileSync(path.join(process.cwd(), "fixtures/items/chilling-sapphire-training.txt"), "utf8");
+const PARSED_SAPPHIRE = parseItemText(parseAdvancedItemText(SAPPHIRE).plainText);
+const TRAINING_LEAGUE = "Training Test League";
+
+function lesson(overrides: Partial<PriceLesson> = {}): PriceLesson {
+  return {
+    id: "sapphire-example", itemText: SAPPHIRE, league: TRAINING_LEAGUE,
+    amount: 1, currency: "divine", evidence: "estimate", scope: "exact",
+    createdAt: NOW.toISOString(), updatedAt: NOW.toISOString(), ...overrides,
+  };
+}
+
+function trainedVerdict(lessons: PriceLesson[] = [lesson()]) {
+  return evaluateWithAppraisal(SAPPHIRE, {
+    rules: emptyValueTierRules(), training: { league: TRAINING_LEAGUE, lessons, now: NOW },
+  });
+}
 
 const EXALTED_STACK = [
   "Item Class: Currency",
@@ -96,6 +117,78 @@ function verdictFor(text: string, priceTable?: PriceTable) {
 }
 
 describe("valueItemLocally", () => {
+  it("keeps a saved one-divine user estimate in divine with low confidence instead of converting its score", () => {
+    const verdict = trainedVerdict();
+    expect(verdict.training).toMatchObject({ status: "matched", amount: 1, currency: "divine", confidence: 40 });
+    const valuation = valueItemLocally({ parsed: PARSED_SAPPHIRE, verdict, now: NOW });
+    expect(valuation).toMatchObject({
+      providerName: "price-training", currency: "divine", low: 1, fair: 1, high: 1,
+      recommendedListing: 1, confidence: "low", candidateCount: 0, comparablesUsed: 0,
+      normalizedKeyStats: { trainedExampleCount: 1 },
+    });
+    expect(valuation.lowConfidenceReason).toContain("user estimate");
+    expect(valuation.lowConfidenceReason).toContain("1 distinct saved item example");
+    expect(VALUATION_PROVIDER_LABELS["price-training"]).toBe("saved price examples");
+  });
+
+  it("uses the actual saved amount and observed range before table, comps, and appraisal", () => {
+    const verdict = trainedVerdict([
+      lesson({ amount: 0.0125 }),
+      lesson({ id: "sapphire-second-example", amount: 0.015 }),
+    ]);
+    const valuation = valueItemLocally({
+      parsed: PARSED_SAPPHIRE, verdict,
+      priceTable: table([{ id: "sapphire-table", match: { name: PARSED_SAPPHIRE.name }, value: 90 }]),
+      comps: comps([5, 6, 7, 8]), now: NOW,
+    });
+    expect(valuation).toMatchObject({
+      providerName: "price-training", currency: "divine", low: 0.0125, high: 0.015,
+      fair: verdict.training!.amount, recommendedListing: verdict.training!.amount,
+      normalizedKeyStats: { trainedExampleCount: 1 }, candidateCount: 0, comparablesUsed: 0,
+    });
+    expect(valuation.confidence).toBe("low");
+  });
+
+  it.each([[49, "low"], [50, "medium"], [74, "medium"], [75, "high"]] as const)(
+    "maps model confidence %i to %s without promoting a weak estimate", (confidence, expected) => {
+      const original = trainedVerdict();
+      const verdict = { ...original, training: { ...original.training!, confidence } };
+      const valuation = valueItemLocally({ parsed: PARSED_SAPPHIRE, verdict, now: NOW });
+      expect(valuation.confidence).toBe(expected);
+    },
+  );
+
+  it.each(["stale", "conflict"] as const)(
+    "requires review for %s examples and blocks table, comps, and heuristic quote fallback", (status) => {
+      const lessons = status === "stale"
+        ? [lesson({ observedAt: "2026-08-01T00:00:00.000Z" })]
+        : [lesson(), lesson({ id: "different-currency", currency: "exalted", amount: 100 })];
+      const verdict = trainedVerdict(lessons);
+      expect(verdict.training?.status).toBe(status);
+      const valuation = valueItemLocally({
+        parsed: PARSED_SAPPHIRE, verdict,
+        priceTable: table([{ id: "sapphire-table", match: { name: PARSED_SAPPHIRE.name }, value: 90 }]),
+        comps: comps([5, 6, 7, 8]), now: NOW,
+      });
+      expect(valuation).toMatchObject({
+        providerName: "none", low: 0, fair: 0, high: 0, recommendedListing: 0,
+        confidence: "none", candidateCount: 0, comparablesUsed: 0,
+        normalizedKeyStats: { trainedExampleCount: verdict.training!.exampleCount },
+      });
+      expect(valuation.lowConfidenceReason).toContain("no current quote");
+      for (const reason of verdict.training!.reasons) expect(valuation.lowConfidenceReason).toContain(reason);
+    },
+  );
+
+  it("leaves existing sources available when training has no matching example", () => {
+    const verdict = trainedVerdict([lesson({ league: "Another League" })]);
+    expect(verdict.training?.status).toBe("unknown");
+    const withTraining = valueItemLocally({ parsed: PARSED_SAPPHIRE, verdict, comps: comps([2, 3]), now: NOW });
+    const withoutTraining = valueItemLocally({ parsed: PARSED_SAPPHIRE, comps: comps([2, 3]), now: NOW });
+    expect(withTraining).toEqual(withoutTraining);
+    expect(withTraining.providerName).toBe("trade2-comps");
+  });
+
   it("prices a currency stack from the price table, stack-aware", () => {
     const priceTable = table(
       [{ id: "exalted-orb", match: { name: "Exalted Orb" }, value: 1 }],

@@ -27,6 +27,67 @@ public class AssistiveWin {
 }
 "@
 
+# Opt-in map-triage interlocks. The stop latch belongs to this host process;
+# even a later command that omits guarded cannot re-arm it. Other hosts retain
+# their existing behaviour. Pause is edge-triggered and emits no further input
+# until the next Numpad 5 press; stop/focus checks continue while paused.
+$script:GuardedInputState = @{ stopped = ""; paused = $false; pauseDown = $false }
+
+function Update-GuardedInputState($state, [bool]$stopDown, [bool]$emergencyDown, [bool]$pauseDown, [bool]$foreground) {
+  $stopped = [string]$state.stopped
+  $paused = [bool]$state.paused
+  if (-not $stopped) {
+    if ($stopDown -or $emergencyDown) { $stopped = "stop-requested" }
+    elseif (-not $foreground) { $stopped = "focus-lost" }
+    elseif ($pauseDown -and -not [bool]$state.pauseDown) { $paused = -not $paused }
+  }
+  return @{ stopped = $stopped; paused = $paused; pauseDown = $pauseDown }
+}
+
+function Test-EmergencyStopChord {
+  return (([AssistiveWin]::GetAsyncKeyState(0x11) -band 0x8000) -ne 0 -and
+    ([AssistiveWin]::GetAsyncKeyState(0x10) -band 0x8000) -ne 0 -and
+    ([AssistiveWin]::GetAsyncKeyState(0x1B) -band 0x8000) -ne 0)
+}
+
+function Get-GuardedInputSample([IntPtr]$target, [bool]$checkFocus) {
+  return @{
+    stopDown = (([AssistiveWin]::GetAsyncKeyState(0x60) -band 0x8000) -ne 0)
+    emergencyDown = (Test-EmergencyStopChord)
+    pauseDown = (([AssistiveWin]::GetAsyncKeyState(0x65) -band 0x8000) -ne 0)
+    foreground = (-not $checkFocus -or [AssistiveWin]::GetForegroundWindow() -eq $target)
+  }
+}
+
+function Wait-GuardedInputReady([IntPtr]$target, [bool]$guarded, [bool]$checkFocus = $true) {
+  if ($script:GuardedInputState.stopped) { throw [string]$script:GuardedInputState.stopped }
+  if (-not $guarded) { return }
+  do {
+    $sample = Get-GuardedInputSample $target $checkFocus
+    $script:GuardedInputState = Update-GuardedInputState $script:GuardedInputState @sample
+    if ($script:GuardedInputState.stopped) { throw [string]$script:GuardedInputState.stopped }
+    if ($script:GuardedInputState.paused) { Start-Sleep -Milliseconds 25 }
+  } while ($script:GuardedInputState.paused)
+}
+
+function Wait-GuardedInputDelay([int]$ms, [IntPtr]$target, [bool]$guarded) {
+  if (-not $guarded) { Start-Sleep -Milliseconds $ms; return }
+  $remaining = $ms
+  while ($remaining -gt 0) {
+    Wait-GuardedInputReady $target $guarded
+    $chunk = [Math]::Min(25, $remaining)
+    Start-Sleep -Milliseconds $chunk
+    $remaining -= $chunk
+  }
+  Wait-GuardedInputReady $target $guarded
+}
+
+function Test-GeneratedInput([string]$operation, $command) {
+  return ($operation -in @("focus", "move", "click", "ctrlclick", "shiftctrlclick", "rightclick",
+    "drag", "hotkey", "type", "wheel", "copysweep", "clickburst", "identifyburst", "ctrlburst", "flaskguard") -or
+    ($operation -eq "ocr" -and [bool]$command.holdAlt))
+}
+
 function Get-PoeWindow {
   $named = Get-Process | Where-Object {
     $_.ProcessName -match 'PathOfExile' -and [int64]$_.MainWindowHandle -ne 0
@@ -419,6 +480,10 @@ $ShiftKeys = @{
   ([char]'>') = [byte]0xBE
   ([char]'{') = [byte]0xDB
   ([char]'}') = [byte]0xDD
+  # Chat commands (src/main/chatCommandService.ts): a whisper needs its @, and
+  # ^ is the only other Shift+digit the tables lacked.
+  ([char]'@') = [byte]0x32
+  ([char]'^') = [byte]0x36
 }
 
 # Read the next command WITHOUT starving the overlay: a blocking ReadLine
@@ -517,11 +582,54 @@ public class FlaskSampler : IDisposable {
       return one.Patch(cx, cy, s);
     }
   }
+  // Diagnostic: downscaled PNG of a screen rect (what the guard saw when it pressed).
+  public static void Snapshot(string path, int left, int top, int width, int height, int outW, int outH) {
+    using (Bitmap full = new Bitmap(Math.Max(1, width), Math.Max(1, height), PixelFormat.Format32bppArgb))
+    using (Graphics g = Graphics.FromImage(full)) {
+      g.CopyFromScreen(left, top, 0, 0, full.Size, CopyPixelOperation.SourceCopy);
+      using (Bitmap small = new Bitmap(Math.Max(1, outW), Math.Max(1, outH), PixelFormat.Format24bppRgb))
+      using (Graphics gs = Graphics.FromImage(small)) {
+        gs.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.Bilinear;
+        gs.DrawImage(full, 0, 0, small.Width, small.Height);
+        small.Save(path, ImageFormat.Png);
+      }
+    }
+  }
   public void Dispose() { g.Dispose(); bmp.Dispose(); }
 }
 public static class FlaskTimer {
   [DllImport("winmm.dll")] public static extern uint timeBeginPeriod(uint ms);
   [DllImport("winmm.dll")] public static extern uint timeEndPeriod(uint ms);
+}
+// SendInput with a hardware scan code (what a physical key produces), plus
+// mouse side buttons — flasks are commonly bound to M4/M5.
+public static class FlaskInput {
+  [StructLayout(LayoutKind.Sequential)] public struct KEYBDINPUT { public ushort wVk; public ushort wScan; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Sequential)] public struct MOUSEINPUT { public int dx; public int dy; public uint mouseData; public uint dwFlags; public uint time; public IntPtr dwExtraInfo; }
+  [StructLayout(LayoutKind.Explicit)] public struct INPUTUNION { [FieldOffset(0)] public MOUSEINPUT mi; [FieldOffset(0)] public KEYBDINPUT ki; }
+  [StructLayout(LayoutKind.Sequential)] public struct INPUT { public uint type; public INPUTUNION u; }
+  [DllImport("user32.dll", SetLastError = true)] public static extern uint SendInput(uint nInputs, INPUT[] pInputs, int cbSize);
+  [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint uCode, uint uMapType);
+  public static uint Key(ushort vk, bool down) {
+    INPUT[] inputs = new INPUT[1];
+    inputs[0].type = 1;
+    inputs[0].u.ki.wVk = vk;
+    inputs[0].u.ki.wScan = (ushort)MapVirtualKey(vk, 0);
+    inputs[0].u.ki.dwFlags = down ? 0u : 2u;
+    return SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+  }
+  // button: 3 = middle, 4 = XButton1 (M4), 5 = XButton2 (M5)
+  public static uint Mouse(int button, bool down) {
+    INPUT[] inputs = new INPUT[1];
+    inputs[0].type = 0;
+    if (button == 3) {
+      inputs[0].u.mi.dwFlags = down ? 0x0020u : 0x0040u;
+    } else {
+      inputs[0].u.mi.dwFlags = down ? 0x0080u : 0x0100u;
+      inputs[0].u.mi.mouseData = button == 4 ? 1u : 2u;
+    }
+    return SendInput(1, inputs, Marshal.SizeOf(typeof(INPUT)));
+  }
 }
 "@
     $script:FlaskSamplerReady = $true
@@ -560,6 +668,15 @@ while ($true) {
     continue
   }
   $hwnd = [IntPtr]$script:PinnedPoeHwnd
+  $guarded = [bool]$cmd.guarded
+  if (Test-GeneratedInput $op $cmd) {
+    try {
+      Wait-GuardedInputReady $hwnd $guarded ($op -ne "focus")
+    } catch {
+      Emit @{ ok = $false; error = [string]$_.Exception.Message; count = 0 }
+      continue
+    }
+  }
   if ($cmd.expectedHwnd -and [int64]$cmd.expectedHwnd -ne $script:PinnedPoeHwnd) {
     Emit @{ ok = $false; error = "target-window-changed"; hwnd = $script:PinnedPoeHwnd }
     continue
@@ -614,6 +731,13 @@ while ($true) {
     foreach ($vk in $keys) { $armed[$vk] = $false }
     $hit = -1
     while ([DateTime]::UtcNow -lt $deadline) {
+      # Dedicated map control hosts keep the global emergency stop observable
+      # while the input host is in OCR/capture or waiting between commands.
+      # Level-triggered, independent of focus; legacy waitkey is unchanged.
+      if ([bool]$cmd.emergencyStop -and (Test-EmergencyStopChord)) {
+        $hit = 0
+        break
+      }
       $fg = ([AssistiveWin]::GetForegroundWindow() -eq $hwnd)
       foreach ($vk in $keys) {
         $down = ([AssistiveWin]::GetAsyncKeyState($vk) -band 0x8000) -ne 0
@@ -651,17 +775,22 @@ while ($true) {
     continue
   }
   if ($op -eq "flaskguard") {
-    # Auto-flask guard: poll each probe's patch every intervalMs and press
-    # its flask key when the globe fluid has fallen below the calibrated
-    # point. Runs for durationMs or until the next stdin line arrives (the
+    # Auto-flask guard + auto-cast: poll each probe's patch every intervalMs
+    # and press its key — a flask when the globe fluid has fallen below the
+    # calibrated point, a skill (fireOn "filled") whenever its icon reads
+    # ready. Runs for durationMs or until the next stdin line arrives (the
     # line is parked for the main loop). The decision rule mirrors
     # decideFlaskFire() in src/shared/flaskGuard.ts — keep them in sync:
-    #   filled  = chroma >= minChroma AND brightness >= minBright
+    #   filled  = chroma >= minChroma AND brightness >= minBright (globe), or
+    #             every channel within `match` of the calibrated colour (skill)
     #   armed   = the probe has read "filled" at least once (no firing on
     #             login/loading screens before the HUD was ever seen)
-    #   fire    = armed AND not filled AND cooldown elapsed; after
+    #   flask   = armed AND not filled AND cooldown elapsed; after
     #             staleAfterMs without a "filled" read (dead, menu, passive
     #             tree) the cooldown stretches to staleCooldownMs.
+    #   skill   = filled AND (armed OR cooldownMs elapsed since the last
+    #             press); a press disarms, a "low" read (icon went dark)
+    #             re-arms — so a press the game ignored is retried slowly.
     # Per-probe continuity (armed / lastFire / lastFilled) is passed in and
     # returned so back-to-back cycles behave as one uninterrupted loop.
     if (-not (Initialize-FlaskSampler)) {
@@ -671,6 +800,15 @@ while ($true) {
     $intervalMs = if ($null -ne $cmd.intervalMs) { [Math]::Max(0, [int]$cmd.intervalMs) } else { 1 }
     $durationMs = if ($cmd.durationMs) { [int]$cmd.durationMs } else { 5000 }
     $dryRun = [bool]$cmd.dryRun
+    $snapshotDir = [string]$cmd.snapshotDir
+    $snapMeta = $null
+    if ($snapshotDir) {
+      try {
+        if (-not (Test-Path $snapshotDir)) { New-Item -ItemType Directory -Force -Path $snapshotDir | Out-Null }
+        $snapMeta = Window-Meta $hwnd $cmd
+      } catch { $snapshotDir = "" }
+    }
+    $lastSnapAt = [DateTime]::MinValue
     $started = [DateTime]::UtcNow
     $probes = New-Object System.Collections.ArrayList
     $rl = [int]::MaxValue; $rt = [int]::MaxValue; $rr = [int]::MinValue; $rb = [int]::MinValue
@@ -688,10 +826,21 @@ while ($true) {
         x = [int]$p.x
         y = [int]$p.y
         size = $size
-        vk = [byte][int]$p.vk
+        vk = [uint16][int]$p.vk
+        mouse = $(if ($p.mouse) { [int]$p.mouse } else { 0 })
         cooldownMs = [int]$p.cooldownMs
         minChroma = [int]$p.minChroma
         minBright = [int]$p.minBright
+        blackoutBelow = $(if ($null -ne $p.blackoutBelow) { [int]$p.blackoutBelow } else { 12 })
+        overlayAbove = $(if ($null -ne $p.overlayAbove) { [int]$p.overlayAbove } else { 150 })
+        # Skill icons (auto-cast): "filled" = every channel within `match` of
+        # the calibrated ready colour; fireOn "filled" presses while ready.
+        match = $(if ($null -ne $p.match) { [int]$p.match } else { 0 })
+        refR = $(if ($p.ref) { [int]$p.ref.r } else { 0 })
+        refG = $(if ($p.ref) { [int]$p.ref.g } else { 0 })
+        refB = $(if ($p.ref) { [int]$p.ref.b } else { 0 })
+        fireOnFilled = ([string]$p.fireOn -eq "filled")
+        snapshot = $(if ($null -eq $p.snapshot) { $true } else { [bool]$p.snapshot })
         staleAfterMs = $(if ($p.staleAfterMs) { [int]$p.staleAfterMs } else { 12000 })
         staleCooldownMs = $(if ($p.staleCooldownMs) { [int]$p.staleCooldownMs } else { 10000 })
         armed = [bool]$p.armed
@@ -735,27 +884,65 @@ while ($true) {
           $p.r = $rgb[0]; $p.g = $rgb[1]; $p.b = $rgb[2]
           $max = [Math]::Max($rgb[0], [Math]::Max($rgb[1], $rgb[2]))
           $min = [Math]::Min($rgb[0], [Math]::Min($rgb[1], $rgb[2]))
-          $filled = (($max - $min) -ge $p.minChroma) -and ($max -ge $p.minBright)
+          $chroma = $max - $min
+          if ($p.match -gt 0) {
+            $filled = ([Math]::Abs($rgb[0] - $p.refR) -le $p.match) -and ([Math]::Abs($rgb[1] - $p.refG) -le $p.match) -and ([Math]::Abs($rgb[2] - $p.refB) -le $p.match)
+          } else {
+            $filled = ($chroma -ge $p.minChroma) -and ($max -ge $p.minBright)
+          }
+          $stale = $false
           if ($filled) {
             $p.state = "filled"
-            $p.armed = $true
             $p.lastFilledAt = $now
-            continue
+            if ($p.fireOnFilled) {
+              # Skill: press when armed (the icon has gone dark since the
+              # last press, or nothing pressed yet); otherwise retry only
+              # after the gap — the press may have gone into the chat box.
+              if (-not $p.armed -and (($now - $p.lastFireAt).TotalMilliseconds -lt $p.cooldownMs)) { continue }
+              $p.armed = $false
+            } else {
+              # A flask never presses on filled; a filled read arms it.
+              $p.armed = $true
+              continue
+            }
+          } else {
+            # Not the globe at all: a near-black loading/fade screen, or a
+            # bright desaturated overlay (loading art, dialogs). Never press
+            # on those — empty glass is dark grey, never black or bright.
+            if (($max -lt $p.blackoutBelow) -or ($p.match -eq 0 -and $max -gt $p.overlayAbove -and $chroma -lt $p.minChroma)) {
+              $p.state = "unknown"
+              continue
+            }
+            $p.state = "low"
+            if ($p.fireOnFilled) { $p.armed = $true; continue }
+            if (-not $p.armed) { continue }
+            $stale = (($now - $p.lastFilledAt).TotalMilliseconds -ge $p.staleAfterMs)
+            $cool = if ($stale) { $p.staleCooldownMs } else { $p.cooldownMs }
+            if (($now - $p.lastFireAt).TotalMilliseconds -lt $cool) { continue }
           }
-          $p.state = "low"
-          if (-not $p.armed) { continue }
-          $stale = (($now - $p.lastFilledAt).TotalMilliseconds -ge $p.staleAfterMs)
-          $cool = if ($stale) { $p.staleCooldownMs } else { $p.cooldownMs }
-          if (($now - $p.lastFireAt).TotalMilliseconds -lt $cool) { continue }
           $p.lastFireAt = $now
           $p.fires += 1
           if (-not $dryRun) {
-            [AssistiveWin]::keybd_event($p.vk, 0, 0, [UIntPtr]::Zero)
-            Start-Sleep -Milliseconds 25
-            [AssistiveWin]::keybd_event($p.vk, 0, 2, [UIntPtr]::Zero)
+            if ($p.mouse -gt 0) {
+              [void][FlaskInput]::Mouse($p.mouse, $true)
+              Start-Sleep -Milliseconds 25
+              [void][FlaskInput]::Mouse($p.mouse, $false)
+            } else {
+              [void][FlaskInput]::Key($p.vk, $true)
+              Start-Sleep -Milliseconds 25
+              [void][FlaskInput]::Key($p.vk, $false)
+            }
+          }
+          $snap = ""
+          if ($p.snapshot -and $snapshotDir -and (($now - $lastSnapAt).TotalMilliseconds -ge 1500)) {
+            $lastSnapAt = $now
+            $snap = Join-Path $snapshotDir ("fire-" + $now.ToString("yyyyMMdd-HHmmss-fff") + "-" + $p.id + ".png")
+            try {
+              [FlaskSampler]::Snapshot($snap, [int]$snapMeta.left, [int]$snapMeta.top, [int]$snapMeta.width, [int]$snapMeta.height, 960, 540)
+            } catch { $snap = "" }
           }
           if ($fires.Count -lt 200) {
-            [void]$fires.Add(@{ id = $p.id; t = [int](($now - $started).TotalMilliseconds); r = $rgb[0]; g = $rgb[1]; b = $rgb[2]; stale = $stale; dry = $dryRun })
+            [void]$fires.Add(@{ id = $p.id; t = [int](($now - $started).TotalMilliseconds); r = $rgb[0]; g = $rgb[1]; b = $rgb[2]; stale = $stale; dry = $dryRun; snapshot = $snap })
           }
         }
       } else {
@@ -874,7 +1061,7 @@ while ($true) {
     Emit @{ ok = $true; path = $path; previewPath = $previewPath; left = $r.left; top = $r.top; width = $r.width; height = $r.height; focused = $false }
     continue
   }
-  $requireForeground = [bool]$cmd.requireForeground
+  $requireForeground = [bool]$cmd.requireForeground -or $guarded -or [bool]$script:GuardedInputState.stopped
   if ($requireForeground) {
     $focused = ([AssistiveWin]::GetForegroundWindow() -eq $hwnd)
     if (-not $focused) {
@@ -969,29 +1156,157 @@ while ($true) {
     try { $orig = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch { $orig = "" }
     if ($null -eq $orig) { $orig = "" }
     $texts = New-Object System.Collections.ArrayList
-    foreach ($p in $points) {
-      [void][AssistiveWin]::SetCursorPos([int]$p.x, [int]$p.y)
-      Start-Sleep -Milliseconds $hover
-      try { Set-Clipboard -Value $sentinel -ErrorAction SilentlyContinue } catch {}
-      [AssistiveWin]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
-      Start-Sleep -Milliseconds 15
-      [AssistiveWin]::keybd_event(0x43, 0, 0, [UIntPtr]::Zero)
-      Start-Sleep -Milliseconds 15
-      [AssistiveWin]::keybd_event(0x43, 0, 2, [UIntPtr]::Zero)
-      [AssistiveWin]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
-      $text = $sentinel
-      $deadline = [DateTime]::UtcNow.AddMilliseconds(220)
-      while ([DateTime]::UtcNow -lt $deadline) {
+    $copyError = ""
+    $ctrlHeld = $false
+    $copyHeld = $false
+    try {
+      foreach ($p in $points) {
+        Wait-GuardedInputReady $hwnd $guarded
+        if ($guarded -and ([int]$p.x -lt ($r.left + 8) -or [int]$p.x -gt ($r.left + $r.width - 8) -or
+          [int]$p.y -lt ($r.top + 8) -or [int]$p.y -gt ($r.top + $r.height - 8))) {
+          throw "copy-outside-client"
+        }
+        [void][AssistiveWin]::SetCursorPos([int]$p.x, [int]$p.y)
+        Wait-GuardedInputDelay $hover $hwnd $guarded
+        if ($guarded) { Set-Clipboard -Value $sentinel -ErrorAction Stop }
+        else { try { Set-Clipboard -Value $sentinel -ErrorAction SilentlyContinue } catch {} }
+        Wait-GuardedInputReady $hwnd $guarded
+        [AssistiveWin]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
+        $ctrlHeld = $true
         Start-Sleep -Milliseconds 15
-        try { $text = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch { $text = $sentinel }
-        if ($null -eq $text) { $text = "" }
-        if ($text -ne $sentinel) { break }
+        Wait-GuardedInputReady $hwnd $guarded
+        [AssistiveWin]::keybd_event(0x43, 0, 0, [UIntPtr]::Zero)
+        $copyHeld = $true
+        Start-Sleep -Milliseconds 15
+        [AssistiveWin]::keybd_event(0x43, 0, 2, [UIntPtr]::Zero)
+        $copyHeld = $false
+        [AssistiveWin]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
+        $ctrlHeld = $false
+        $text = $sentinel
+        $deadline = [DateTime]::UtcNow.AddMilliseconds(220)
+        while ([DateTime]::UtcNow -lt $deadline) {
+          Wait-GuardedInputDelay 15 $hwnd $guarded
+          try { $text = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch { $text = $sentinel }
+          if ($null -eq $text) { $text = "" }
+          if ($text -ne $sentinel) { break }
+        }
+        if ($text -eq $sentinel) { $text = "" }
+        [void]$texts.Add([string]$text)
       }
-      if ($text -eq $sentinel) { $text = "" }
-      [void]$texts.Add([string]$text)
+    } catch {
+      $copyError = [string]$_.Exception.Message
+    } finally {
+      if ($copyHeld) { [AssistiveWin]::keybd_event(0x43, 0, 2, [UIntPtr]::Zero) }
+      if ($ctrlHeld) { [AssistiveWin]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero) }
+      try { Set-Clipboard -Value $orig -ErrorAction SilentlyContinue } catch {}
     }
-    try { Set-Clipboard -Value $orig -ErrorAction SilentlyContinue } catch {}
-    Emit @{ ok = $true; texts = @($texts); count = $texts.Count }
+    if ($copyError) {
+      Emit @{ ok = $false; error = $copyError; texts = @($texts); count = $texts.Count }
+    } else {
+      Emit @{ ok = $true; texts = @($texts); count = $texts.Count }
+    }
+    continue
+  }
+  if ($op -eq "identifyburst") {
+    # Repeat-use mode requires ONE Shift hold across the whole chain. Each
+    # item must copy as identified before the next item can be clicked.
+    # Some clients may ignore Ctrl+C while Shift is down: that safely ends
+    # the chain, releases modifiers, and lets the caller re-copy normally.
+    $points = @($cmd.points)
+    if ($points.Count -lt 1) {
+      Emit @{ ok = $false; error = "missing-points"; count = 0; texts = @() }
+      continue
+    }
+    $gap = if ($cmd.gapMs) { [Math]::Max(80, [int]$cmd.gapMs) } else { 80 }
+    $hover = if ($cmd.hoverMs) { [Math]::Max(100, [int]$cmd.hoverMs) } else { 100 }
+    $invalid = ""
+    foreach ($p in $points) {
+      if (-not ([string]$p.itemClass).Trim()) { $invalid = "missing-item-class"; break }
+      if ([int]$p.x -lt ($r.left + 8) -or [int]$p.x -gt ($r.left + $r.width - 8) -or
+          [int]$p.y -lt ($r.top + 8) -or [int]$p.y -gt ($r.top + $r.height - 8)) {
+        $invalid = "click-outside-client"
+        break
+      }
+    }
+    if ($invalid) {
+      Emit @{ ok = $false; error = $invalid; count = 0; texts = @() }
+      continue
+    }
+    $orig = ""
+    try { $orig = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch { $orig = "" }
+    if ($null -eq $orig) { $orig = "" }
+    $texts = New-Object System.Collections.ArrayList
+    $emitted = 0
+    $verifyFailed = $false
+    $identifyError = ""
+    $shiftHeld = $false
+    $ctrlHeld = $false
+    $copyHeld = $false
+    $leftHeld = $false
+    try {
+      Wait-GuardedInputReady $hwnd $guarded
+      [AssistiveWin]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero)
+      $shiftHeld = $true
+      Start-Sleep -Milliseconds 20
+      foreach ($p in $points) {
+        Wait-GuardedInputReady $hwnd $guarded
+        [void][AssistiveWin]::SetCursorPos([int]$p.x, [int]$p.y)
+        Wait-GuardedInputDelay $hover $hwnd $guarded
+        Wait-GuardedInputReady $hwnd $guarded
+        [AssistiveWin]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        $leftHeld = $true
+        Start-Sleep -Milliseconds 8
+        [AssistiveWin]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        $leftHeld = $false
+        $emitted++
+        # Keep the proven post-identify settle before copying. The pointer
+        # already hovered this item, and this also satisfies click spacing.
+        Wait-GuardedInputDelay ([Math]::Max($gap, 200)) $hwnd $guarded
+        $sentinel = "poe2-identify-$emitted-$([DateTime]::UtcNow.Ticks)"
+        Set-Clipboard -Value $sentinel -ErrorAction Stop
+        Wait-GuardedInputReady $hwnd $guarded
+        [AssistiveWin]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
+        $ctrlHeld = $true
+        Start-Sleep -Milliseconds 15
+        Wait-GuardedInputReady $hwnd $guarded
+        [AssistiveWin]::keybd_event(0x43, 0, 0, [UIntPtr]::Zero)
+        $copyHeld = $true
+        Start-Sleep -Milliseconds 15
+        [AssistiveWin]::keybd_event(0x43, 0, 2, [UIntPtr]::Zero)
+        $copyHeld = $false
+        [AssistiveWin]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
+        $ctrlHeld = $false
+        $text = $sentinel
+        $deadline = [DateTime]::UtcNow.AddMilliseconds(220)
+        while ([DateTime]::UtcNow -lt $deadline) {
+          Wait-GuardedInputDelay 15 $hwnd $guarded
+          try { $text = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch { $text = $sentinel }
+          if ($null -eq $text) { $text = "" }
+          if ($text -ne $sentinel) { break }
+        }
+        if ($text -eq $sentinel) { $text = "" }
+        [void]$texts.Add([string]$text)
+        $classMatch = [regex]::Match([string]$text, '(?im)^Item Class:\s*([^\r\n]+)\s*$')
+        $classOk = $classMatch.Success -and $classMatch.Groups[1].Value.Trim() -ieq ([string]$p.itemClass).Trim()
+        if (-not $classOk -or $text -notmatch '(?im)^Rarity:\s*\S+' -or $text -match '(?im)^\s*Unidentified\s*$') {
+          $verifyFailed = $true
+          break
+        }
+      }
+    } catch {
+      $identifyError = [string]$_.Exception.Message
+    } finally {
+      if ($leftHeld) { [AssistiveWin]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero) }
+      if ($copyHeld) { [AssistiveWin]::keybd_event(0x43, 0, 2, [UIntPtr]::Zero) }
+      if ($ctrlHeld) { [AssistiveWin]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero) }
+      if ($shiftHeld) { [AssistiveWin]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero) }
+      try { Set-Clipboard -Value $orig -ErrorAction SilentlyContinue } catch {}
+    }
+    if ($identifyError) {
+      Emit @{ ok = $false; error = $identifyError; count = $emitted; texts = @($texts) }
+    } else {
+      Emit @{ ok = $true; count = $emitted; texts = @($texts); verificationFailed = $verifyFailed }
+    }
     continue
   }
   if ($op -eq "clickburst") {
@@ -999,12 +1314,16 @@ while ($true) {
     # burst (identify chains need shift HELD, not tapped per click — a
     # per-click shift press/release cancels the game's repeat-use mode).
     # gapMs paces the clicks for actions the game must process in between.
+    # hoverMs settles the pointer at EACH new target before mouse-down.
+    # The legacy 14ms default remains; map drops may request 100ms so the
+    # game sees the ground target after the long jump out of inventory.
     $points = @($cmd.points)
     if ($points.Count -lt 1) {
       Emit @{ ok = $false; error = "missing-points" }
       continue
     }
     $gap = if ($cmd.gapMs) { [int]$cmd.gapMs } else { 25 }
+    $hover = if ($null -ne $cmd.hoverMs) { [Math]::Max(14, [int]$cmd.hoverMs) } else { 14 }
     $pad = 8
     $valid = @()
     $rejected = $false
@@ -1020,30 +1339,47 @@ while ($true) {
     }
     if ($rejected) { continue }
     $shift = [bool]$cmd.shift
-    if ($shift) {
-      [AssistiveWin]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero)
-      Start-Sleep -Milliseconds 20
-    }
     $focusLost = $false
     $emitted = 0
-    foreach ($p in $valid) {
-      if ($requireForeground -and [AssistiveWin]::GetForegroundWindow() -ne $hwnd) {
-        $focusLost = $true
-        break
+    $burstError = ""
+    $shiftHeld = $false
+    $leftHeld = $false
+    try {
+      Wait-GuardedInputReady $hwnd $guarded
+      if ($shift) {
+        [AssistiveWin]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero)
+        $shiftHeld = $true
+        Start-Sleep -Milliseconds 20
       }
-      [void][AssistiveWin]::SetCursorPos([int]$p.x, [int]$p.y)
-      Start-Sleep -Milliseconds 14
-      [AssistiveWin]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
-      Start-Sleep -Milliseconds 8
-      [AssistiveWin]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
-      $emitted += 1
-      Start-Sleep -Milliseconds $gap
+      foreach ($p in $valid) {
+        Wait-GuardedInputReady $hwnd $guarded
+        if ($requireForeground -and [AssistiveWin]::GetForegroundWindow() -ne $hwnd) {
+          $focusLost = $true
+          break
+        }
+        [void][AssistiveWin]::SetCursorPos([int]$p.x, [int]$p.y)
+        Wait-GuardedInputDelay $hover $hwnd $guarded
+        Wait-GuardedInputReady $hwnd $guarded
+        [AssistiveWin]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        $leftHeld = $true
+        Start-Sleep -Milliseconds 8
+        [AssistiveWin]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        $leftHeld = $false
+        $emitted += 1
+        Wait-GuardedInputDelay $gap $hwnd $guarded
+      }
+    } catch {
+      $burstError = [string]$_.Exception.Message
+    } finally {
+      if ($leftHeld) { [AssistiveWin]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero) }
+      if ($shiftHeld) {
+        Start-Sleep -Milliseconds 30
+        [AssistiveWin]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero)
+      }
     }
-    if ($shift) {
-      Start-Sleep -Milliseconds 30
-      [AssistiveWin]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero)
-    }
-    if ($focusLost) {
+    if ($burstError) {
+      Emit @{ ok = $false; error = $burstError; focused = $false; count = $emitted }
+    } elseif ($focusLost) {
       Emit @{ ok = $false; error = "focus-lost"; focused = $false; count = $emitted }
     } else {
       Emit @{ ok = $true; focused = $focused; count = $emitted }
@@ -1126,6 +1462,10 @@ while ($true) {
     }
     [void][AssistiveWin]::SetCursorPos($x, $y)
     Start-Sleep -Milliseconds 16
+    try { Wait-GuardedInputReady $hwnd $guarded } catch {
+      Emit @{ ok = $false; error = [string]$_.Exception.Message; count = 0 }
+      continue
+    }
     [AssistiveWin]::mouse_event(0x0008, 0, 0, 0, [UIntPtr]::Zero)
     Start-Sleep -Milliseconds 8
     [AssistiveWin]::mouse_event(0x0010, 0, 0, 0, [UIntPtr]::Zero)
@@ -1142,6 +1482,10 @@ while ($true) {
     }
     [void][AssistiveWin]::SetCursorPos($x, $y)
     Start-Sleep -Milliseconds 12
+    try { Wait-GuardedInputReady $hwnd $guarded } catch {
+      Emit @{ ok = $false; error = [string]$_.Exception.Message; count = 0 }
+      continue
+    }
     $ctrl = $op -eq "ctrlclick" -or $op -eq "shiftctrlclick"
     $shift = $op -eq "shiftctrlclick" -or [bool]$cmd.shift
     if ($shift) {
@@ -1318,6 +1662,14 @@ while ($true) {
       [AssistiveWin]::keybd_event(0x41, 0, 0, [UIntPtr]::Zero)
       Start-Sleep -Milliseconds 12
       [AssistiveWin]::keybd_event(0x41, 0, 2, [UIntPtr]::Zero)
+      [AssistiveWin]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
+    } elseif ($keys -eq "ctrlf") {
+      # Stash search / chat "find": Ctrl+F (chat commands' stash-highlight path).
+      [AssistiveWin]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 12
+      [AssistiveWin]::keybd_event(0x46, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 12
+      [AssistiveWin]::keybd_event(0x46, 0, 2, [UIntPtr]::Zero)
       [AssistiveWin]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
     } elseif ($keys -eq "backspace") {
       [AssistiveWin]::keybd_event(0x08, 0, 0, [UIntPtr]::Zero)

@@ -1,0 +1,30 @@
+{
+  "version": 1,
+  "stats": {
+    "explicit.stat_3299347043": {
+      "tiers": {
+        "1": { "min": 130, "max": 149, "count": 2, "level": 82 },
+        "2": { "min": 110, "max": 129, "count": 3, "level": 76 },
+        "3": { "min": 95, "max": 110, "count": 5, "level": 68 }
+      }
+    },
+    "explicit.stat_3372524247": {
+      "tiers": {
+        "1": { "min": 36, "max": 42, "count": 4, "level": 84 },
+        "2": { "min": 26, "max": 35, "count": 6, "level": 60 },
+        "3": { "min": 18, "max": 25, "count": 3, "level": 36 }
+      }
+    }
+  },
+  "classes": {
+    "Rings": {
+      "explicit.stat_3299347043": {
+        "tiers": {
+          "1": { "min": 130, "max": 149, "count": 2, "level": 82 },
+          "2": { "min": 110, "max": 129, "count": 3, "level": 76 },
+          "3": { "min": 95, "max": 110, "count": 5, "level": 68 }
+        }
+      }
+    }
+  }
+}

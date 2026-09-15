@@ -5,6 +5,7 @@ import GameActionRail from "./components/GameActionRail.vue";
 import { useGameActions } from "./composables/useGameActions";
 import { useIntelligenceStore } from "./composables/useIntelligenceStore";
 import { useRuntimeState } from "./composables/useRuntimeState";
+import { getAppFeatureApi } from "./services/featureApi";
 
 const route = useRoute();
 const router = useRouter();
@@ -13,8 +14,11 @@ const intelligence = useIntelligenceStore();
 const gameActions = useGameActions();
 
 const navigation = [
+  { to: "/home", label: "Home", short: "HO", detail: "Session & setup" },
   { to: "/sort", label: "Sort", short: "SO", detail: "Run & triage" },
   { to: "/shop", label: "Shop", short: "SH", detail: "Listings & sales" },
+  { to: "/market", label: "Market", short: "MK", detail: "Trade browser" },
+  { to: "/trade", label: "Trade", short: "TR", detail: "Offers & history" },
   { to: "/wealth", label: "Wealth", short: "WE", detail: "Net worth & sell list" },
   { to: "/items", label: "Item log", short: "IT", detail: "Parse & review" },
   { to: "/search", label: "Search", short: "SR", detail: "Queries & rules" },
@@ -25,6 +29,12 @@ onMounted(() => {
   void runtime.initializeRuntime();
   void intelligence.initializeIntelligence();
   void gameActions.initializeGameActions();
+  // One subscription for the whole app: a feature that fronts the window from
+  // main (a hotkey, a notification) asks the renderer to route here. Features
+  // never drive the router themselves.
+  getAppFeatureApi()?.on("app:navigate", ({ path }) => {
+    if (typeof path === "string" && path.startsWith("/")) void router.push(path);
+  });
 });
 
 watch(intelligence.externalEvaluationVersion, () => {
@@ -36,7 +46,7 @@ watch(intelligence.externalEvaluationVersion, () => {
   <a class="skip-link" href="#workspace">Skip to workspace</a>
   <div class="app-shell">
     <aside class="side-rail" aria-label="Primary">
-      <RouterLink class="brand" to="/sort" aria-label="PoE2 Intelligence home">
+      <RouterLink class="brand" to="/home" aria-label="PoE2 Intelligence home">
         <span class="brand-mark" aria-hidden="true">II</span>
         <span class="brand-copy">
           <strong>Item Intelligence</strong>

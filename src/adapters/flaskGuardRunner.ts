@@ -1,8 +1,10 @@
 /**
- * Auto-flask guard runner: owns a dedicated win-input host and keeps the
- * host-side `flaskguard` loop (scripts/win-input-host.ps1) running in
- * back-to-back cycles, carrying per-probe continuity across them so the
- * cooldown / armed state never resets at a cycle boundary. Also the
+ * Auto-flask guard + auto-cast runner: owns a dedicated win-input host and
+ * keeps the host-side `flaskguard` loop (scripts/win-input-host.ps1)
+ * running in back-to-back cycles, carrying per-probe continuity across them
+ * so the cooldown / armed state never resets at a cycle boundary. Probes
+ * are the life/mana globes (press the flask when low) and the auto-cast
+ * skill icons (press the skill key whenever the icon reads ready). Also the
  * click-calibration and "sample now" helpers the CLI and the app share.
  *
  * Why its own host: the action daemon's host blocks on `waitkey` and on
@@ -12,16 +14,23 @@
  * (Ctrl+1 is unbound in the game, so it is harmless).
  */
 
+import path from "node:path";
 import { startWinHost, type WinReply } from "./winHost.js";
 import { loadFlaskGuardConfig, saveFlaskGuardConfig } from "../core/flaskGuardConfig.js";
 import {
   buildHostProbes,
   classifyPatch,
+  describeFlaskKey,
   describeRgb,
   FLASK_GLOBES,
   freshContinuity,
+  isSkillProbeId,
   looksLikeFilledGlobe,
+  looksLikeReadySkill,
+  probeConfigFor,
   probeThresholds,
+  skillProbeId,
+  skillThresholds,
   type FlaskGlobe,
   type FlaskGuardConfig,
   type PatchState,
@@ -53,10 +62,15 @@ export interface FlaskGuardRunnerOptions {
   configLoader?: () => { config: FlaskGuardConfig; issues: string[]; mtimeMs: number };
   /** Injected for tests. */
   sleep?: (ms: number) => Promise<void>;
+  /** Where the host drops a 960x540 PNG of what it saw on each press (rate-limited); default artifacts/flask-guard. */
+  snapshotDir?: string | null;
 }
 
 export interface FlaskGuardProbeStatus {
-  globe: FlaskGlobe;
+  /** "life" | "mana" | "skill:<id>" */
+  id: string;
+  /** @deprecated alias of id, kept for the globe rows. */
+  globe: string;
   state: string;
   rgb: Rgb;
   armed: boolean;
@@ -66,6 +80,8 @@ export interface FlaskGuardProbeStatus {
 export interface FlaskGuardStatus {
   running: boolean;
   paused: boolean;
+  /** Auto-cast held while a daemon action drives the game; flasks keep running. */
+  skillsSuspended: boolean;
   enabled: boolean;
   active: boolean;
   dryRun: boolean;
@@ -86,10 +102,11 @@ export class FlaskGuardRunner {
   private hostBusy = false;
   private stopping = false;
   private paused = false;
+  private skillsSuspended = false;
   private loopPromise: Promise<void> | undefined;
-  private continuity: Partial<Record<FlaskGlobe, ProbeContinuity>> = {};
+  private continuity: Partial<Record<string, ProbeContinuity>> = {};
   private lastProbeKey = "";
-  private lastActive: boolean | undefined;
+  private lastStateMessage = "";
   private lastEnabled = false;
   private lastError = "";
   private cycles = 0;
@@ -103,11 +120,16 @@ export class FlaskGuardRunner {
   private readonly dryRun: boolean;
   private readonly loadConfig: () => { config: FlaskGuardConfig; issues: string[]; mtimeMs: number };
   private readonly makeHost: () => WinHostLike;
+  private readonly snapshotDir: string | undefined;
 
   constructor(private readonly options: FlaskGuardRunnerOptions) {
     this.sleep = options.sleep ?? defaultSleep;
     this.cycleMs = Math.max(500, options.cycleMs ?? 5_000);
     this.dryRun = Boolean(options.dryRun);
+    this.snapshotDir =
+      options.snapshotDir === null
+        ? undefined
+        : (options.snapshotDir ?? path.join(options.root, "artifacts", "flask-guard"));
     this.loadConfig = options.configLoader ?? (() => loadFlaskGuardConfig(options.root));
     this.makeHost =
       options.hostFactory ?? (() => startWinHost({ requestTimeoutMs: this.cycleMs + 20_000 }));
@@ -153,6 +175,23 @@ export class FlaskGuardRunner {
     return this.paused;
   }
 
+  /**
+   * Hold auto-cast (not the flasks) while a daemon action drives the game:
+   * those flows type into price dialogs, chat and rename boxes, where a
+   * skill key would land as a stray letter. Takes effect within one tick.
+   */
+  suspendSkills(): void {
+    if (this.skillsSuspended) return;
+    this.skillsSuspended = true;
+    this.interrupt();
+  }
+
+  resumeSkills(): void {
+    if (!this.skillsSuspended) return;
+    this.skillsSuspended = false;
+    this.interrupt();
+  }
+
   /** Break a running host cycle (and any idle sleep) so config/pause changes apply now. */
   interrupt(): void {
     if (this.hostBusy && this.host) {
@@ -170,8 +209,9 @@ export class FlaskGuardRunner {
     return {
       running: Boolean(this.loopPromise) && !this.stopping,
       paused: this.paused,
+      skillsSuspended: this.skillsSuspended,
       enabled: this.lastEnabled,
-      active: Boolean(this.lastActive),
+      active: this.lastStateMessage.startsWith("guarding"),
       dryRun: this.dryRun,
       probes: [...this.probeStatus],
       cycles: this.cycles,
@@ -207,21 +247,23 @@ export class FlaskGuardRunner {
         this.continuity = {};
         this.lastProbeKey = key;
       }
-      const probes = buildHostProbes(config, this.continuity);
+      const allProbes = buildHostProbes(config, this.continuity);
+      const held = this.skillsSuspended ? allProbes.filter((probe) => probe.fireOn === "filled") : [];
+      const probes = this.skillsSuspended ? allProbes.filter((probe) => probe.fireOn !== "filled") : allProbes;
       const active = config.enabled && !this.paused && probes.length > 0;
       this.lastEnabled = config.enabled;
-      if (active !== this.lastActive) {
-        this.lastActive = active;
-        this.options.log({
-          phase: "state",
-          message: active
-            ? `guarding ${probes.map((probe) => `${probe.id}→key ${String.fromCharCode(probe.vk).toLowerCase()} (cooldown ${probe.cooldownMs}ms)`).join(", ")}${this.dryRun ? " [DRY-RUN: no key presses]" : ""}`
-            : this.paused
-              ? "paused (Numpad − resumes)"
-              : !config.enabled
-                ? "disabled in Tools → Hotkeys → Auto-flask"
-                : "no calibrated globe — run the calibration first",
-        });
+      const message = active
+        ? `guarding ${probes.map((probe) => `${probeLabel(config, probe.id)}→${describeFlaskKey(probeConfigFor(config, probe.id)?.probe.key ?? "")} (${probe.fireOn === "filled" ? "auto-cast, retry gap" : "cooldown"} ${probe.cooldownMs}ms)`).join(", ")}${held.length ? ` — auto-cast held while a numpad action runs (${held.map((probe) => probeLabel(config, probe.id)).join(", ")})` : ""}${this.dryRun ? " [DRY-RUN: no key presses]" : ""}`
+        : this.paused
+          ? "paused (Numpad − resumes)"
+          : !config.enabled
+            ? "disabled in Tools → Hotkeys → Auto-flask & auto-cast"
+            : held.length
+              ? "auto-cast held while a numpad action runs"
+              : "no calibrated globe or skill — run the calibration first";
+      if (message !== this.lastStateMessage) {
+        this.lastStateMessage = message;
+        this.options.log({ phase: "state", message });
       }
       if (!active) {
         await this.idle(500);
@@ -236,6 +278,7 @@ export class FlaskGuardRunner {
           intervalMs: config.intervalMs,
           durationMs: this.cycleMs,
           dryRun: this.dryRun,
+          ...(this.snapshotDir ? { snapshotDir: this.snapshotDir } : {}),
           probes,
         });
       } catch (error) {
@@ -270,17 +313,17 @@ export class FlaskGuardRunner {
         ? (reply.states as Record<string, Record<string, unknown>>)
         : {};
     const status: FlaskGuardProbeStatus[] = [];
-    for (const globe of FLASK_GLOBES) {
-      const state = states[globe];
-      if (!state) continue;
+    for (const [id, state] of Object.entries(states)) {
+      if (!state || (id !== "life" && id !== "mana" && !isSkillProbeId(id))) continue;
       const rgb = { r: Number(state.r) || 0, g: Number(state.g) || 0, b: Number(state.b) || 0 };
-      this.continuity[globe] = {
+      this.continuity[id] = {
         armed: Boolean(state.armed),
         lastFireMsAgo: Number.isFinite(Number(state.lastFireMsAgo)) ? Number(state.lastFireMsAgo) : -1,
         lastFilledMsAgo: Number.isFinite(Number(state.lastFilledMsAgo)) ? Number(state.lastFilledMsAgo) : 0,
       };
       status.push({
-        globe,
+        id,
+        globe: id,
         state: String(state.state ?? "unknown"),
         rgb,
         armed: Boolean(state.armed),
@@ -289,22 +332,49 @@ export class FlaskGuardRunner {
     }
     this.probeStatus = status;
     const fires = Array.isArray(reply.fires) ? (reply.fires as Array<Record<string, unknown>>) : [];
+    const config = this.loadConfig().config;
+    // Skills fire every cooldown, so their presses are summarised per cycle
+    // (one line) while every flask press is still logged individually.
+    const skillCasts = new Map<string, { count: number; dry: boolean; last: Rgb }>();
     for (const fire of fires) {
       this.totalFires += 1;
+      const id = String(fire.id);
       const rgb = { r: Number(fire.r) || 0, g: Number(fire.g) || 0, b: Number(fire.b) || 0 };
+      if (isSkillProbeId(id)) {
+        const entry = skillCasts.get(id) ?? { count: 0, dry: Boolean(fire.dry), last: rgb };
+        entry.count += 1;
+        entry.last = rgb;
+        skillCasts.set(id, entry);
+        continue;
+      }
+      const snapshot = typeof fire.snapshot === "string" && fire.snapshot ? ` — saw ${path.basename(fire.snapshot)}` : "";
       this.options.log({
         phase: "fire",
-        message: `${String(fire.id)} flask ${fire.dry ? "WOULD fire" : "pressed"}${fire.stale ? " (stale: no fill seen recently)" : ""} — patch read ${describeRgb(rgb)} at +${String(fire.t)}ms`,
+        message: `${id} flask ${fire.dry ? "WOULD fire" : "pressed"}${fire.stale ? " (stale: no fill seen recently)" : ""} — patch read ${describeRgb(rgb)} at +${String(fire.t)}ms${snapshot}`,
+      });
+    }
+    for (const [id, cast] of skillCasts) {
+      this.options.log({
+        phase: "fire",
+        message: `${probeLabel(config, id)} ${cast.dry ? "WOULD cast" : "cast"} ${cast.count}x this cycle (icon ready, read ${describeRgb(cast.last)})`,
       });
     }
   }
 }
 
+function probeLabel(config: FlaskGuardConfig, id: string): string {
+  return probeConfigFor(config, id)?.label ?? id;
+}
+
 export interface FlaskCalibrationResult {
   ok: boolean;
-  globe: FlaskGlobe;
+  /** What was calibrated: "life" | "mana" | "skill:<id>". */
+  target: string;
+  /** @deprecated alias of target. */
+  globe: string;
   point?: { x: number; y: number };
   rgb?: Rgb;
+  /** Globe: the click looks like fluid. Skill: the click looks like a lit (ready) icon. */
   looksFilled?: boolean;
   error?: string;
   config?: FlaskGuardConfig;
@@ -312,24 +382,36 @@ export interface FlaskCalibrationResult {
 }
 
 /**
- * Click-to-calibrate one globe: label the screen, wait for the user's click
+ * Click-to-calibrate one probe: label the screen, wait for the user's click
  * inside the game window, sample the patch there, and (unless save=false)
- * store it as that globe's trigger point + "filled" reference colour.
+ * store it as that probe's trigger point + "filled" reference colour. For a
+ * globe click at the height where the flask should fire; for a skill
+ * ("skill:<id>") click the TOP EDGE of the skill-bar icon while the skill
+ * is READY (the cooldown sweep relights the top last).
  */
 export async function calibrateFlaskProbe(
   host: WinHostLike,
-  globe: FlaskGlobe,
+  target: FlaskGlobe | string,
   options: { root: string; timeoutMs?: number; save?: boolean },
 ): Promise<FlaskCalibrationResult> {
   const timeoutMs = options.timeoutMs ?? 30_000;
-  const target = await host.send({ op: "rect" });
-  if (!target.ok) {
-    return { ok: false, globe, error: String(target.error ?? "Path of Exile 2 window not found") };
+  const loaded = loadFlaskGuardConfig(options.root);
+  const entry = probeConfigFor(loaded.config, target);
+  if (!entry) {
+    return { ok: false, target, globe: target, error: `unknown probe "${target}" — life, mana, or skill:<id>` };
   }
-  const left = Number(target.left) || 0;
-  const top = Number(target.top) || 0;
-  const width = Number(target.width) || 1920;
-  const label = `AUTO-FLASK: click the ${globe.toUpperCase()} globe at the height where the flask should fire (${Math.round(timeoutMs / 1000)}s)`;
+  const window = await host.send({ op: "rect" });
+  if (!window.ok) {
+    return { ok: false, target, globe: target, error: String(window.error ?? "Path of Exile 2 window not found") };
+  }
+  const left = Number(window.left) || 0;
+  const top = Number(window.top) || 0;
+  const width = Number(window.width) || 1920;
+  const seconds = Math.round(timeoutMs / 1000);
+  const label =
+    entry.kind === "globe"
+      ? `AUTO-FLASK: click the ${target.toUpperCase()} globe at the height where the flask should fire (${seconds}s)`
+      : `AUTO-CAST: click the TOP EDGE of the ${entry.label.toUpperCase()} icon on the skill bar while the skill is READY (${seconds}s)`;
   await host.send({
     op: "marks",
     rects: [{ x: Math.round(left + width / 2 - 520), y: top + 60, w: 1040, h: 44, kind: "find", label }],
@@ -337,37 +419,43 @@ export async function calibrateFlaskProbe(
   try {
     const click = await host.send({ op: "waitclick", timeoutMs });
     if (!click.ok) {
-      return { ok: false, globe, error: String(click.error ?? "no click inside the game window") };
+      return { ok: false, target, globe: target, error: String(click.error ?? "no click inside the game window") };
     }
     const point = { x: Math.round(Number(click.x)), y: Math.round(Number(click.y)) };
-    const loaded = loadFlaskGuardConfig(options.root);
-    const patchSize = loaded.config[globe].patchSize;
+    const patchSize = entry.probe.patchSize;
     const sample = await host.send({ op: "sample", points: [{ ...point, size: patchSize }] });
     const first = Array.isArray(sample.samples) ? (sample.samples[0] as Record<string, unknown>) : undefined;
     if (!sample.ok || !first) {
-      return { ok: false, globe, point, error: String(sample.error ?? "sample failed") };
+      return { ok: false, target, globe: target, point, error: String(sample.error ?? "sample failed") };
     }
     const rgb = { r: Number(first.r) || 0, g: Number(first.g) || 0, b: Number(first.b) || 0 };
-    const looksFilled = looksLikeFilledGlobe(rgb);
-    if (options.save === false) return { ok: true, globe, point, rgb, looksFilled };
-    const next: FlaskGuardConfig = {
-      ...loaded.config,
-      [globe]: {
-        ...loaded.config[globe],
-        point,
-        reference: rgb,
-        calibratedAt: new Date().toISOString(),
-      },
-    };
+    const looksFilled = entry.kind === "globe" ? looksLikeFilledGlobe(rgb) : looksLikeReadySkill(rgb);
+    if (options.save === false) return { ok: true, target, globe: target, point, rgb, looksFilled };
+    const patch = { point, reference: rgb, calibratedAt: new Date().toISOString() };
+    // Re-read: the file may have been saved (panel edits) during the up-to-30 s wait.
+    const current = loadFlaskGuardConfig(options.root).config;
+    const next: FlaskGuardConfig =
+      entry.kind === "globe"
+        ? { ...current, [target]: { ...current[target as FlaskGlobe], ...patch } }
+        : {
+            ...current,
+            skills: current.skills.map((skill) =>
+              skillProbeId(skill) === target ? { ...skill, ...patch } : skill,
+            ),
+          };
     const saved = saveFlaskGuardConfig(options.root, next);
-    return { ok: true, globe, point, rgb, looksFilled, config: saved.config };
+    return { ok: true, target, globe: target, point, rgb, looksFilled, config: saved.config };
   } finally {
     await host.send({ op: "hidemark" }).catch(() => undefined);
   }
 }
 
 export interface FlaskProbeSample {
-  globe: FlaskGlobe;
+  /** "life" | "mana" | "skill:<id>" */
+  id: string;
+  /** @deprecated alias of id. */
+  globe: string;
+  label: string;
   rgb: Rgb;
   state: PatchState;
   thresholds: ProbeThresholds;
@@ -381,29 +469,35 @@ export interface FlaskProbeSampleResult {
   error?: string;
 }
 
-/** Sample every calibrated globe once and classify it — the app's "Test now". */
+/** Sample every calibrated globe and skill once and classify it — the app's "Test now". */
 export async function sampleFlaskProbes(
   host: WinHostLike,
   config: FlaskGuardConfig,
 ): Promise<FlaskProbeSampleResult> {
-  const calibrated = FLASK_GLOBES.filter((globe) => config[globe].point && config[globe].reference);
+  const calibrated = [
+    ...FLASK_GLOBES.map((globe) => globe as string),
+    ...config.skills.map((skill) => skillProbeId(skill)),
+  ]
+    .map((id) => ({ id, entry: probeConfigFor(config, id) }))
+    .filter((row) => row.entry?.probe.point && row.entry.probe.reference);
   if (calibrated.length === 0) {
-    return { ok: false, foregroundIsPoe: false, probes: [], error: "no calibrated globe" };
+    return { ok: false, foregroundIsPoe: false, probes: [], error: "no calibrated globe or skill" };
   }
   const reply = await host.send({
     op: "sample",
-    points: calibrated.map((globe) => ({ ...config[globe].point, size: config[globe].patchSize })),
+    points: calibrated.map((row) => ({ ...row.entry!.probe.point, size: row.entry!.probe.patchSize })),
   });
   if (!reply.ok) {
     return { ok: false, foregroundIsPoe: false, probes: [], error: String(reply.error ?? "sample failed") };
   }
   const samples = Array.isArray(reply.samples) ? (reply.samples as Array<Record<string, unknown>>) : [];
-  const probes: FlaskProbeSample[] = calibrated.map((globe, index) => {
+  const probes: FlaskProbeSample[] = calibrated.map((row, index) => {
     const raw = samples[index] ?? {};
     const rgb = { r: Number(raw.r) || 0, g: Number(raw.g) || 0, b: Number(raw.b) || 0 };
-    const reference = config[globe].reference as Rgb;
-    const thresholds = probeThresholds(config, reference);
-    return { globe, rgb, state: classifyPatch(rgb, thresholds), thresholds, reference };
+    const entry = row.entry!;
+    const reference = entry.probe.reference as Rgb;
+    const thresholds = entry.kind === "globe" ? probeThresholds(config, reference) : skillThresholds(config, reference);
+    return { id: row.id, globe: row.id, label: entry.label, rgb, state: classifyPatch(rgb, thresholds), thresholds, reference };
   });
   return { ok: true, foregroundIsPoe: Boolean(reply.foregroundIsPoe), probes };
 }

@@ -1,0 +1,54 @@
+{
+  "note": "Shape of POST /api/trade2/exchange/poe2/<league> (engine \"new\"), trimmed: three sellers, one of them with two offers, so the group-by-seller fold and the multi-offer id suffix are both exercised.",
+  "id": "AbCdEf",
+  "complexity": 3,
+  "total": 3,
+  "result": {
+    "listing-a": {
+      "id": "listing-a",
+      "listing": {
+        "indexed": "2026-09-07T09:10:00Z",
+        "account": { "name": "BulkOne", "lastCharacterName": "BulkChar", "online": {} },
+        "whisper": "@BulkChar Hi, I'd like to buy your {0} for my {1} in Runes of Aldur.",
+        "offers": [
+          {
+            "exchange": { "currency": "divine", "amount": 1, "whisper": "{0} divine" },
+            "item": { "currency": "exalted", "amount": 402, "stock": 4020, "whisper": "{0} exalted" }
+          },
+          {
+            "exchange": { "currency": "divine", "amount": 1, "whisper": "{0} divine" },
+            "item": { "currency": "chaos", "amount": 90, "stock": 900, "whisper": "{0} chaos" }
+          }
+        ]
+      }
+    },
+    "listing-b": {
+      "id": "listing-b",
+      "listing": {
+        "indexed": "2026-09-07T09:05:00Z",
+        "account": { "name": "BulkTwo", "online": {} },
+        "whisper": "@BulkTwo Hi, I'd like to buy your {0} for my {1} in Runes of Aldur.",
+        "offers": [
+          {
+            "exchange": { "currency": "divine", "amount": 1, "whisper": "{0} divine" },
+            "item": { "currency": "exalted", "amount": 398, "stock": 1990, "whisper": "{0} exalted" }
+          }
+        ]
+      }
+    },
+    "listing-c": {
+      "id": "listing-c",
+      "listing": {
+        "indexed": "2026-09-07T08:00:00Z",
+        "account": { "name": "BulkThree", "lastCharacterName": "ThreeBulk", "online": null },
+        "whisper": "@ThreeBulk Hi, I'd like to buy your {0} for my {1} in Runes of Aldur.",
+        "offers": [
+          {
+            "exchange": { "currency": "exalted", "amount": 410, "whisper": "{0} exalted" },
+            "item": { "currency": "divine", "amount": 1, "stock": 12, "whisper": "{0} divine" }
+          }
+        ]
+      }
+    }
+  }
+}

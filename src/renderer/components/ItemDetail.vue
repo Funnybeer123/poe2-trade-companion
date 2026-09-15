@@ -45,6 +45,9 @@ const PROVIDER_CHIPS: Record<string, { label: string; title: string; tone: strin
 const providerChip = computed(() => {
   const provider = props.valuation?.providerName;
   if (!provider || provider === "fixture") return undefined;
+  if (provider === "price-training") return {
+    label: "saved price examples", title: "Your recorded examples, with their original evidence quality.", tone: "neutral",
+  };
   return PROVIDER_CHIPS[provider] ?? { label: provider, title: `Valued by ${provider}.`, tone: "neutral" };
 });
 
@@ -234,7 +237,11 @@ const orderedProperties = computed(() =>
           Suggested listing estimate
           <strong>{{ formatAmount(valuation.recommendedListing) }} {{ valuation.currency }}</strong>
         </p>
-        <p class="muted">
+        <p v-if="valuation.providerName === 'price-training'" class="muted">
+          Based on {{ valuation.normalizedKeyStats.trainedExampleCount }} saved price examples ·
+          {{ formatDate(valuation.marketTimestamp) }}
+        </p>
+        <p v-else class="muted">
           Based on {{ valuation.comparablesUsed }} usable comparables from
           {{ valuation.candidateCount }} candidates · {{ valuation.providerName }} ·
           {{ formatDate(valuation.marketTimestamp) }}

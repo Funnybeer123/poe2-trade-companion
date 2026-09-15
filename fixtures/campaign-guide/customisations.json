@@ -1,0 +1,47 @@
+{
+  "autoShowInCampaign": true,
+  "hideOutsideCampaign": false,
+  "overlayAnchor": "cursor",
+  "overlayCompact": true,
+  "rewardFilters": { "gems": false, "league": false, "nonsense": true },
+  "showOptional": false,
+  "characterLevelOverride": "41",
+  "unknownTopLevelKey": { "ignored": true },
+  "customisations": {
+    "hiddenAreaIds": ["G1_3", "G1_3", "not a valid id!"],
+    "hiddenObjectiveIds": ["G1_1.miller"],
+    "areaOrder": { "1-1": ["G1_town", "G1_1"] },
+    "objectiveOrder": { "G1_1": ["G1_1.reach-G1_2", "G1_1.miller"] },
+    "areaNotes": { "G1_2": "  Portal out before the boss.  ", "": "dropped" },
+    "customObjectives": {
+      "G1_2": [
+        { "id": "c_custom_1", "title": "Buy a movement speed pair of boots", "kind": "quest", "rewards": ["currency"], "verified": true }
+      ]
+    },
+    "objectiveOverrides": {
+      "G1_2.beira": { "title": "Kill Beira (ranged is easier)", "rewards": ["stats"], "bogus": 1 }
+    },
+    "areaOverrides": {
+      "G1_1": { "level": 2, "wiki": "../../evil", "nope": true }
+    },
+    "customAreas": [
+      {
+        "id": "G1_90",
+        "name": "My own shortcut",
+        "part": 1,
+        "act": 1,
+        "level": 4,
+        "exits": [],
+        "objectives": [
+          { "id": "G1_90.a", "title": "Verify this area exists", "kind": "note", "rewards": [], "verified": true }
+        ],
+        "verified": true
+      }
+    ]
+  },
+  "progress": {
+    "visited": { "G1_1": "2026-09-12T18:00:01.000Z", "G1_2": "2026-09-12T18:06:30.000Z", "bad": "not a date" },
+    "done": { "G1_2.beira": "2026-09-12T18:10:00.000Z", "junk": "nope" },
+    "undone": ["G1_1.reach-G1_2", "G1_1.reach-G1_2"]
+  }
+}

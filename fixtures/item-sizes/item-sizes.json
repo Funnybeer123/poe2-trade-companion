@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "updatedAt": "2026-08-25T22:02:42.672Z",
+  "updatedAt": "2026-09-15T01:11:52.469Z",
   "records": [
     {
       "key": "aegis quarterstaff",
@@ -157,6 +157,16 @@
       "updatedAt": "1970-01-01T00:00:00.000Z"
     },
     {
+      "key": "class:augment",
+      "kind": "itemClass",
+      "itemClass": "Augment",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
       "key": "class:belts",
       "kind": "itemClass",
       "itemClass": "Belts",
@@ -207,6 +217,26 @@
       "updatedAt": "1970-01-01T00:00:00.000Z"
     },
     {
+      "key": "class:charms",
+      "kind": "itemClass",
+      "itemClass": "Charms",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:claws",
+      "kind": "itemClass",
+      "itemClass": "Claws",
+      "w": 2,
+      "h": 3,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
       "key": "class:crossbows",
       "kind": "itemClass",
       "itemClass": "Crossbows",
@@ -225,6 +255,26 @@
       "samples": 0,
       "source": "class-default",
       "updatedAt": "1970-01-01T00:00:00.000Z"
+    },
+    {
+      "key": "class:daggers",
+      "kind": "itemClass",
+      "itemClass": "Daggers",
+      "w": 1,
+      "h": 3,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:flails",
+      "kind": "itemClass",
+      "itemClass": "Flails",
+      "w": 2,
+      "h": 3,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
     },
     {
       "key": "class:flasks",
@@ -247,6 +297,16 @@
       "updatedAt": "1970-01-01T00:00:00.000Z"
     },
     {
+      "key": "class:gems",
+      "kind": "itemClass",
+      "itemClass": "Gems",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
       "key": "class:gloves",
       "kind": "itemClass",
       "itemClass": "Gloves",
@@ -265,6 +325,16 @@
       "samples": 0,
       "source": "class-default",
       "updatedAt": "1970-01-01T00:00:00.000Z"
+    },
+    {
+      "key": "class:hybrid flasks",
+      "kind": "itemClass",
+      "itemClass": "Hybrid Flasks",
+      "w": 1,
+      "h": 2,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
     },
     {
       "key": "class:inscribed ultimatum",
@@ -317,6 +387,16 @@
       "updatedAt": "1970-01-01T00:00:00.000Z"
     },
     {
+      "key": "class:one hand axes",
+      "kind": "itemClass",
+      "itemClass": "One Hand Axes",
+      "w": 2,
+      "h": 3,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
       "key": "class:one hand maces",
       "kind": "itemClass",
       "itemClass": "One Hand Maces",
@@ -325,6 +405,46 @@
       "samples": 0,
       "source": "class-default",
       "updatedAt": "1970-01-01T00:00:00.000Z"
+    },
+    {
+      "key": "class:one hand swords",
+      "kind": "itemClass",
+      "itemClass": "One Hand Swords",
+      "w": 2,
+      "h": 3,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:one handed axes",
+      "kind": "itemClass",
+      "itemClass": "One Handed Axes",
+      "w": 2,
+      "h": 3,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:one handed maces",
+      "kind": "itemClass",
+      "itemClass": "One Handed Maces",
+      "w": 2,
+      "h": 3,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:one handed swords",
+      "kind": "itemClass",
+      "itemClass": "One Handed Swords",
+      "w": 2,
+      "h": 3,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
     },
     {
       "key": "class:quarterstaves",
@@ -347,6 +467,16 @@
       "updatedAt": "1970-01-01T00:00:00.000Z"
     },
     {
+      "key": "class:relics",
+      "kind": "itemClass",
+      "itemClass": "Relics",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
       "key": "class:rings",
       "kind": "itemClass",
       "itemClass": "Rings",
@@ -357,6 +487,16 @@
       "updatedAt": "1970-01-01T00:00:00.000Z"
     },
     {
+      "key": "class:runes",
+      "kind": "itemClass",
+      "itemClass": "Runes",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
       "key": "class:sceptres",
       "kind": "itemClass",
       "itemClass": "Sceptres",
@@ -365,6 +505,36 @@
       "samples": 0,
       "source": "class-default",
       "updatedAt": "1970-01-01T00:00:00.000Z"
+    },
+    {
+      "key": "class:shields",
+      "kind": "itemClass",
+      "itemClass": "Shields",
+      "w": 2,
+      "h": 3,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:skill gems",
+      "kind": "itemClass",
+      "itemClass": "Skill Gems",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:soul cores",
+      "kind": "itemClass",
+      "itemClass": "Soul Cores",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
     },
     {
       "key": "class:spears",
@@ -397,6 +567,46 @@
       "updatedAt": "1970-01-01T00:00:00.000Z"
     },
     {
+      "key": "class:support gems",
+      "kind": "itemClass",
+      "itemClass": "Support Gems",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:tablet",
+      "kind": "itemClass",
+      "itemClass": "Tablet",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:tablets",
+      "kind": "itemClass",
+      "itemClass": "Tablets",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:talismans",
+      "kind": "itemClass",
+      "itemClass": "Talismans",
+      "w": 2,
+      "h": 2,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
       "key": "class:trial coins",
       "kind": "itemClass",
       "itemClass": "Trial Coins",
@@ -405,6 +615,16 @@
       "samples": 0,
       "source": "class-default",
       "updatedAt": "1970-01-01T00:00:00.000Z"
+    },
+    {
+      "key": "class:two hand axes",
+      "kind": "itemClass",
+      "itemClass": "Two Hand Axes",
+      "w": 2,
+      "h": 4,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
     },
     {
       "key": "class:two hand maces",
@@ -417,6 +637,76 @@
       "updatedAt": "1970-01-01T00:00:00.000Z"
     },
     {
+      "key": "class:two hand swords",
+      "kind": "itemClass",
+      "itemClass": "Two Hand Swords",
+      "w": 2,
+      "h": 4,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:two handed axes",
+      "kind": "itemClass",
+      "itemClass": "Two Handed Axes",
+      "w": 2,
+      "h": 4,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:two handed maces",
+      "kind": "itemClass",
+      "itemClass": "Two Handed Maces",
+      "w": 2,
+      "h": 4,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:two handed swords",
+      "kind": "itemClass",
+      "itemClass": "Two Handed Swords",
+      "w": 2,
+      "h": 4,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:uncut skill gems",
+      "kind": "itemClass",
+      "itemClass": "Uncut Skill Gems",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:uncut spirit gems",
+      "kind": "itemClass",
+      "itemClass": "Uncut Spirit Gems",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:uncut support gems",
+      "kind": "itemClass",
+      "itemClass": "Uncut Support Gems",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
       "key": "class:utility flasks",
       "kind": "itemClass",
       "itemClass": "Utility Flasks",
@@ -427,6 +717,16 @@
       "updatedAt": "1970-01-01T00:00:00.000Z"
     },
     {
+      "key": "class:vault keys",
+      "kind": "itemClass",
+      "itemClass": "Vault Keys",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
       "key": "class:wands",
       "kind": "itemClass",
       "itemClass": "Wands",
@@ -435,6 +735,26 @@
       "samples": 0,
       "source": "class-default",
       "updatedAt": "1970-01-01T00:00:00.000Z"
+    },
+    {
+      "key": "class:waystones",
+      "kind": "itemClass",
+      "itemClass": "Waystones",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
+    },
+    {
+      "key": "class:wombgifts",
+      "kind": "itemClass",
+      "itemClass": "Wombgifts",
+      "w": 1,
+      "h": 1,
+      "samples": 0,
+      "source": "class-default",
+      "updatedAt": "2026-08-25T22:02:42.672Z"
     },
     {
       "key": "cryptic helm",
@@ -1047,6 +1367,18 @@
       "samples": 1,
       "source": "measured",
       "updatedAt": "2026-08-25T22:02:42.671Z"
+    },
+    {
+      "key": "soaring spear",
+      "kind": "baseType",
+      "baseType": "Soaring Spear",
+      "itemClass": "Spears",
+      "name": "Soaring Spear",
+      "w": 1,
+      "h": 4,
+      "samples": 1,
+      "source": "measured",
+      "updatedAt": "2026-09-15T01:11:52.466Z"
     },
     {
       "key": "soldier cuirass",

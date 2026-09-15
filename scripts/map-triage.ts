@@ -8,15 +8,16 @@
  *   npx tsx scripts/map-triage.ts            # dry-run: sweep, plan, report
  *   npx tsx scripts/map-triage.ts --run      # live
  *
- * Flags: --keep-unknown   only drop explicit dump-rule matches
+ * Flags: --keep-unknown   retain unknown valuations (default; wins over --drop-unknown)
+ *        --drop-unknown   explicitly allow dropping rule-less unknown gear
  *        --max-drops=N    cap on ground drops per run (default 59)
  *        --drop-x=N --drop-y=N   absolute screen point for the ground click
  *
  * Preconditions the script enforces before any mutating click:
- *   - the inventory is open (OCR banner truth; presses `i` only when the
- *     banner says it is closed) and the stash panel is NOT open (a stash
- *     means hideout/town, where ground drops are refused);
+ *   - the inventory is open (clipboard scroll truth; no blind I toggle)
+ *     and the stash panel is NOT open;
  *   - the very top-left bag cell (0,0) Ctrl+C-verifies as Scroll of Wisdom.
+ * FAST resolves complete clipboard footprints; it never moves pixel guesses.
  *
  * Numpad 5 pauses, numpad 0 stops (same harness as the sorter). Every
  * identify and drop lands in artifacts/map-triage/journal.jsonl.
@@ -24,37 +25,34 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { appendFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
-import { bgrToGray, readBmpBgr } from "../src/adapters/bmp.js";
 import { startWinHost } from "../src/adapters/winHost.js";
-import { occupiedFromRgbScores, scoreGridCellsRgb } from "../src/core/cellOccupancy.js";
 import { SortHarness, SortStop } from "../src/adapters/sortHarness.js";
 import { loadProfile } from "../src/core/calibrationStore.js";
 import { BAG_CELLS } from "../src/core/calibrationProfile.js";
 import { cellCenterTwoCorner } from "../src/core/gridMath.js";
 import { resolvePhysicalClient, type ScreenRect } from "../src/core/screenLayout.js";
-import { evaluateWithAppraisal } from "../src/core/appraisal.js";
-import { detectSpriteItems } from "../src/core/itemSprites.js";
 import {
   classifyBagRead,
-  confirmedCompactionItems,
-  decideDrop,
-  mergeAdjacentDuplicates,
-  planLeftCompaction,
   planMapTriage,
+  resolveBagFootprints,
   runDropPass,
   runIdentifyPass,
   type BagCellRead,
-  type CompactionItem,
   type IdentifiedCell,
   type MapTriageCell,
   type MapTriageOps,
-  type TriageSprite,
 } from "../src/core/mapTriage.js";
 import { loadTriageExport, type TriageExport } from "../src/adapters/triageLoader.js";
+import { copyPoints as kitCopyPoints, panelsViaOcr as kitPanelsViaOcr } from "../src/adapters/bagKit.js";
+import { mapTriageControlHost, mapTriageHost } from "../src/adapters/mapTriageHost.js";
+import { runMapTriage } from "../src/core/mapTriageRun.js";
+import { runFastCompactionPass, type FastTriageOps } from "../src/core/mapTriageExecution.js";
+import { itemSizeDatabasePath, loadItemSizeDatabase, lookupItemSize } from "../src/core/itemSizeStore.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const templateDir = path.join(root, "fixtures", "perception", "templates");
 const outDir = path.join(root, "artifacts", "map-triage");
+const runId = new Date().toISOString();
 
 const argv = process.argv.slice(2);
 const flag = (name: string): boolean => argv.includes(name);
@@ -62,7 +60,7 @@ const value = (name: string): string | undefined =>
   argv.find((entry) => entry.startsWith(`${name}=`))?.slice(name.length + 1);
 
 const live = flag("--run") && !flag("--dry-run");
-const keepUnknown = flag("--keep-unknown");
+const keepUnknown = flag("--keep-unknown") || !flag("--drop-unknown");
 const maxDrops = Math.max(0, Number(value("--max-drops") ?? 59));
 // Opt-in widening (careful mode only): also evaluate gear the sweep already
 // found identified. Fast mode always evaluates all gear in the bag.
@@ -77,17 +75,20 @@ if (!profile.bagGrid) {
   process.exit(1);
 }
 const bag = profile.bagGrid;
+const sizes = loadItemSizeDatabase(itemSizeDatabasePath(root));
 const { cols, rows } = BAG_CELLS;
 
-const host = startWinHost({ requestTimeoutMs: 45_000 });
-const controlHost = startWinHost({ requestTimeoutMs: 10_000 });
+const rawHost = startWinHost({ requestTimeoutMs: null });
+const host = mapTriageHost(rawHost, journal);
+const rawControlHost = startWinHost({ requestTimeoutMs: 10_000 });
+const controlHost = mapTriageControlHost(rawControlHost);
 const harness = new SortHarness(host, controlHost, { outDir, dryRun: !live, fast: true });
 mkdirSync(outDir, { recursive: true });
 const journalFile = path.join(outDir, "journal.jsonl");
 
 function journal(record: Record<string, unknown>): void {
   try {
-    appendFileSync(journalFile, `${JSON.stringify({ at: new Date().toISOString(), ...record })}\n`);
+    appendFileSync(journalFile, `${JSON.stringify({ at: new Date().toISOString(), runId, module: "map-triage", mode: live ? "live" : "preview", ...record })}\n`);
   } catch {
     // journaling must never abort a run
   }
@@ -168,44 +169,23 @@ async function resolveClient(): Promise<ScreenRect> {
 
 /** Panel truth is the OCR'd title banners, never grid heuristics. */
 async function panelsViaOcr(): Promise<{ stash: boolean; inventory: boolean }> {
-  const stashBand = await host.send({ op: "ocr", left: 450, top: 100, width: 700, height: 110 });
-  const invBand = await host.send({ op: "ocr", left: 2900, top: 100, width: 800, height: 110 });
-  return {
-    stash: /stash/i.test(String(stashBand.text ?? "")),
-    inventory: /inventor/i.test(String(invBand.text ?? "")),
-  };
+  return kitPanelsViaOcr(host);
 }
 
 async function ensureBagOpenInMap(): Promise<void> {
-  for (let attempt = 0; attempt < 3; attempt += 1) {
-    const panels = await panelsViaOcr();
-    if (panels.stash) {
-      throw new Error(
-        "stash-panel-open — a stash means hideout/town, where ground drops are refused. Run this inside a map.",
-      );
-    }
-    if (panels.inventory) return;
-    // `i` toggles the bag, so only press it after OCR says it is closed.
-    await host.send({ op: "focus" });
-    await harness.sleep(250, false);
-    await host.send({ op: "hotkey", keys: "i" });
-    await harness.sleep(700, false);
-  }
-  throw new Error("inventory-not-openable — the INVENTORY banner never appeared");
+  const panels = await panelsViaOcr();
+  if (panels.stash) throw new Error("stash-panel-open — close the stash and enter a map");
+  // An absent OCR heading is not proof the bag is closed. Never blindly toggle I.
+  // The caller verifies the scroll by clipboard before it may touch any item.
 }
 
 async function copyItemAt(x: number, y: number): Promise<string> {
-  const sentinel = `poe2-map-triage-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`;
-  await host.send({ op: "move", x, y });
-  await harness.sleep(140, false);
   for (let attempt = 0; attempt < 2; attempt += 1) {
-    const cleared = await host.send({ op: "setclipboard", text: sentinel });
-    if (!cleared.ok) return "";
-    await host.send({ op: "hotkey", keys: "ctrlc" });
-    await harness.sleep(attempt === 0 ? 160 : 260, false);
-    const copied = await host.send({ op: "clipboard" });
-    const text = String(copied.text ?? "");
-    if (copied.ok && text !== sentinel && /Item Class:/i.test(text)) return text;
+    await harness.checkpoint("verify bag cell");
+    const reply = await host.send({ op: "copysweep", points: [{ x, y }], hoverMs: 140,
+      sentinel: `poe2-map-cell-${Date.now()}-${attempt}` });
+    const text = (reply.texts as string[])[0]!;
+    if (text.trim()) return text;
   }
   return "";
 }
@@ -237,7 +217,7 @@ async function sweepBag(client: ScreenRect): Promise<BagCellRead[]> {
 
 async function runCareful(client: ScreenRect, triage: TriageExport): Promise<void> {
   const reads = await sweepBag(client);
-  const plan = planMapTriage(reads);
+  const plan = planMapTriage(reads, (item) => lookupItemSize(sizes, item));
   for (const issue of plan.issues) console.log(`! ${issue}`);
   if (!plan.scroll) throw new Error("scroll-of-wisdom-not-verified — aborting before any click");
   console.log(
@@ -287,9 +267,9 @@ async function runCareful(client: ScreenRect, triage: TriageExport): Promise<voi
       skipped: identifyResult.skipped.map((skip) => ({ ...skip.cell, reason: skip.reason })),
       aborted: identifyResult.aborted ?? null,
     });
-    if (identifyResult.aborted === "item-stuck-on-cursor") {
+    if (identifyResult.aborted) {
       throw new Error(
-        "item-stuck-on-cursor — an identify click lifted an item and it could not be returned. " +
+        `${identifyResult.aborted} — identify stopped; dropping skipped. ` +
           "Check the game before running anything else.",
       );
     }
@@ -335,12 +315,11 @@ async function runCareful(client: ScreenRect, triage: TriageExport): Promise<voi
       const dropResult = await runDropPass({
         identified: dropCandidates,
         groundPoint,
-        evaluate: (itemText) =>
-          evaluateWithAppraisal(itemText, {
-            rules: triage.rules,
-            thresholds: triage.thresholds,
-            priceTable: triage.priceTable,
-          }),
+        evaluate: (itemText) => {
+          const verdict = triage.evaluate(itemText);
+          triage.observeEvaluation?.(itemText, verdict);
+          return verdict;
+        },
         ops,
         keepUnknown,
         maxDrops,
@@ -373,7 +352,7 @@ async function runCareful(client: ScreenRect, triage: TriageExport): Promise<voi
         skipped: dropResult.skipped.map((skip) => ({ ...skip.cell, reason: skip.reason })),
         aborted: dropResult.aborted ?? null,
       });
-      if (dropResult.aborted?.startsWith("pickup-failed")) {
+      if (dropResult.aborted) {
         throw new Error(`${dropResult.aborted} — cursor state unknown; check the game before continuing.`);
       }
     } else {
@@ -383,9 +362,8 @@ async function runCareful(client: ScreenRect, triage: TriageExport): Promise<voi
 }
 
 /* ------------------------------------------------------------------------ */
-/* Fast mode (default): one hover/click per ITEM, batched copies, then a    */
-/* left-compaction of whatever stayed. Ground truth still brackets every    */
-/* phase — it is just batched instead of per-cell.                          */
+/* Fast mode (default): one complete clipboard layout, one identify chain, */
+/* then verified item transactions. No pixel-size guesses or repeat moves. */
 /* ------------------------------------------------------------------------ */
 
 interface FastGrid {
@@ -400,93 +378,14 @@ function fastGrid(client: ScreenRect): FastGrid {
   };
 }
 
-/**
- * One capture serves BOTH the DPI-scaled client resolve and sprite
- * segmentation — the fast path's only screenshot (a second full-screen
- * capture per run cost ~700ms for nothing).
- */
-async function captureClientSprites(): Promise<{ client: ScreenRect; sprites: TriageSprite[] }> {
-  const rect = await host.send({ op: "rect" });
-  if (!rect.ok) throw new Error("poe-window-not-found — is Path of Exile 2 running?");
-  const probeFile = path.join(outDir, `sprites-${Date.now()}.bmp`);
-  const captured = await host.send({ op: "capture", path: probeFile });
-  if (!captured.ok) throw new Error(String(captured.error ?? "capture-failed"));
-  const bgr = readBmpBgr(probeFile);
-  rmSync(probeFile, { force: true });
-  const client = resolvePhysicalClient(
-    {
-      left: Number(captured.left),
-      top: Number(captured.top),
-      width: Number(captured.width),
-      height: Number(captured.height),
-    },
-    Number(rect.monitorWidth) || Number(captured.width),
-    Number(rect.monitorHeight) || Number(captured.height),
-    { left: Number(rect.monitorLeft ?? 0), top: Number(rect.monitorTop ?? 0) },
-  );
-  const frame = bgrToGray(bgr);
-  const region = { x: client.left + bag.x, y: client.top + bag.y, w: bag.w, h: bag.h };
-  const grid = fastGrid(client);
-  const sprites = detectSpriteItems(frame, client, region, cols, rows).map((item) => {
-    const center = cellCenterTwoCorner(
-      grid,
-      item.grab.col + (item.w - 1) / 2,
-      item.grab.row + (item.h - 1) / 2,
-      cols,
-      rows,
-    );
-    return {
-      id: item.id,
-      row: item.grab.row,
-      col: item.grab.col,
-      w: item.w,
-      h: item.h,
-      x: item.grab.x,
-      y: item.grab.y,
-      cx: center.x,
-      cy: center.y,
-    };
-  });
-  // RGB safety net: gray-scale sprite detection misses items on the game's
-  // RED cell tint (live-observed three times — a sceptre, gloves, a spear,
-  // all left uncompacted). Any RGB-occupied cell no sprite covers becomes a
-  // synthetic 1x1 region; the eval sweep copy-confirms or discards it, and
-  // the catalog corrects its size.
-  const spriteCovered = new Set<string>();
-  for (const sprite of sprites) {
-    for (let r = 0; r < sprite.h; r += 1) {
-      for (let c = 0; c < sprite.w; c += 1) spriteCovered.add(`${sprite.row + r},${sprite.col + c}`);
-    }
-  }
-  for (const cell of occupiedFromRgbScores(scoreGridCellsRgb(bgr, client, region, cols, rows))) {
-    if (spriteCovered.has(`${cell.row},${cell.col}`)) continue;
-    spriteCovered.add(`${cell.row},${cell.col}`);
-    sprites.push({
-      id: `rgb-${cell.row},${cell.col}`,
-      row: cell.row,
-      col: cell.col,
-      w: 1,
-      h: 1,
-      x: cell.x,
-      y: cell.y,
-      cx: cell.x,
-      cy: cell.y,
-    });
-  }
-  return { client, sprites };
-}
-
-/** Batched hover+Ctrl+C over many points — one host round trip. */
+/** Bounded copy batches retain the proven 100 ms hover and preserve clipboard. */
 async function copyPoints(points: Array<{ x: number; y: number }>, label: string): Promise<string[]> {
-  if (points.length === 0) return [];
-  const sentinel = `poe2-map-fast-${Date.now()}-${label}`;
-  const reply = await host.send({ op: "copysweep", points, hoverMs: 100, sentinel });
-  const texts = Array.isArray(reply.texts) ? (reply.texts as string[]) : [];
-  return points.map((_, index) => String(texts[index] ?? ""));
-}
-
-function coversTopLeft(sprite: TriageSprite): boolean {
-  return sprite.row === 0 && sprite.col === 0;
+  const texts: string[] = [];
+  for (let start = 0; start < points.length; start += cols) {
+    await harness.checkpoint(label);
+    texts.push(...await kitCopyPoints(host, points.slice(start, start + cols), `${label}-${start}`));
+  }
+  return texts;
 }
 
 function makeGridHelpers(client: ScreenRect) {
@@ -507,32 +406,7 @@ function makeGridHelpers(client: ScreenRect) {
       y: Math.round(center.y - (h % 2 === 0 ? stepY / 4 : 0)),
     };
   };
-  // Park spot for an item of UNKNOWN size stuck on the cursor: the centre
-  // of the biggest free rectangle (up to 2x4 covers every gear size), so
-  // the footprint fits wherever the game centres it.
-  const findParkPoint = (covered: ReadonlySet<string>): { x: number; y: number } | undefined => {
-    for (const [w, h] of [
-      [2, 4],
-      [2, 3],
-      [2, 2],
-      [1, 2],
-      [1, 1],
-    ] as const) {
-      for (let col = cols - w; col >= 0; col -= 1) {
-        for (let row = rows - h; row >= 0; row -= 1) {
-          let free = true;
-          for (let r = 0; r < h && free; r += 1) {
-            for (let c = 0; c < w && free; c += 1) {
-              if (covered.has(`${row + r},${col + c}`) || (row + r === 0 && col + c === 0)) free = false;
-            }
-          }
-          if (free) return placePoint(row, col, w, h);
-        }
-      }
-    }
-    return undefined;
-  };
-  return { grid, stepX, stepY, cellPoint, regionCenter, placePoint, findParkPoint };
+  return { grid, stepX, stepY, cellPoint, regionCenter, placePoint };
 }
 
 const calibrationFile = path.join(outDir, "move-calibration.json");
@@ -543,15 +417,14 @@ interface MoveCalibration {
   /**
    * Pickup→ground-drop gap. The game refuses drops that come too hot on the
    * pickup's heels (35ms refused, 200ms landed — live 2026-08-31), so this
-   * self-tunes: each run's verified first drop steps it down on success and
-   * raises the floor on a retry.
+   * uses a minimum 200ms floor; a successful drop does not lower the floor.
    */
   dropGapMs: number;
   dropFloorMs: number;
 }
 
 function loadCalibration(): MoveCalibration {
-  const fallback: MoveCalibration = { gapMs: 140, dropGapMs: 200, dropFloorMs: 60 };
+  const fallback: MoveCalibration = { gapMs: 140, dropGapMs: 200, dropFloorMs: 200 };
   try {
     if (existsSync(calibrationFile)) {
       const parsed = JSON.parse(readFileSync(calibrationFile, "utf8")) as Partial<MoveCalibration>;
@@ -560,7 +433,7 @@ function loadCalibration(): MoveCalibration {
         return Number.isFinite(num) && num >= low && num <= high ? Math.round(num) : dflt;
       };
       return {
-        gapMs: clamp(parsed.gapMs, 30, 300, fallback.gapMs),
+        gapMs: clamp(parsed.gapMs, 35, 300, fallback.gapMs),
         dropGapMs: clamp(parsed.dropGapMs, 40, 300, fallback.dropGapMs),
         dropFloorMs: clamp(parsed.dropFloorMs, 40, 300, fallback.dropFloorMs),
       };
@@ -569,18 +442,6 @@ function loadCalibration(): MoveCalibration {
     // fall through to the proven defaults
   }
   return fallback;
-}
-
-function saveCalibration(next: MoveCalibration): void {
-  try {
-    let existing: Record<string, unknown> = {};
-    if (existsSync(calibrationFile)) {
-      existing = JSON.parse(readFileSync(calibrationFile, "utf8")) as Record<string, unknown>;
-    }
-    writeFileSync(calibrationFile, JSON.stringify({ ...existing, ...next }, null, 2));
-  } catch {
-    // tuning persistence must never abort a run
-  }
 }
 
 const calibration = loadCalibration();
@@ -597,37 +458,23 @@ const moveGapMs = calibration.gapMs;
  * bag ends intact.
  */
 async function runMoveCalibration(): Promise<void> {
-  let capture = await captureClientSprites();
-  let helpers = makeGridHelpers(capture.client);
-  let texts = await copyPoints(
-    capture.sprites.map((sprite) => ({ x: sprite.x, y: sprite.y })),
-    "calib",
-  );
-  let confirmed = confirmedCompactionItems(
-    capture.sprites.map((sprite, index) => ({ sprite, text: texts[index] ?? "" })),
-    { cols, rows },
-  );
-  if (confirmed.length === 0) {
-    await ensureBagOpenInMap();
-    capture = await captureClientSprites();
-    helpers = makeGridHelpers(capture.client);
-    texts = await copyPoints(
-      capture.sprites.map((sprite) => ({ x: sprite.x, y: sprite.y })),
-      "calib2",
-    );
-    confirmed = confirmedCompactionItems(
-      capture.sprites.map((sprite, index) => ({ sprite, text: texts[index] ?? "" })),
-      { cols, rows },
-    );
+  const client = await resolveClient();
+  const helpers = makeGridHelpers(client);
+  await ensureBagOpenInMap();
+  const model = resolveBagFootprints(await sweepBag(client), { cols, rows }, (item) => lookupItemSize(sizes, item));
+  if (model.issues.length) throw new Error(`bag-layout-unverified: ${model.issues.join("; ")}`);
+  const confirmed = model.items;
+  const scroll = model.reads.find((read) => read.sprite.row === 0 && read.sprite.col === 0);
+  if (!scroll || classifyBagRead(scroll.text).kind !== "scroll" || !(classifyBagRead(scroll.text).stack ?? 0)) {
+    throw new Error("scroll-of-wisdom-not-verified");
   }
-  const { cellPoint, regionCenter, placePoint } = helpers;
+  const { cellPoint, placePoint } = helpers;
   const candidates = confirmed
-    .filter((entry) => !(entry.item.row === 0 && entry.item.col === 0))
+    .filter((entry) => !entry.item.fixed && !(entry.item.row === 0 && entry.item.col === 0))
     .sort((a, b) => a.item.w * a.item.h - b.item.w * b.item.h);
   const test = candidates[0];
   if (!test) throw new Error("calibration needs at least one item in the bag (besides the scroll)");
   const { w, h } = test.item;
-  const fingerprint = test.fingerprint ?? "";
 
   const covered = new Set<string>(["0,0"]);
   for (const entry of confirmed) {
@@ -658,35 +505,21 @@ async function runMoveCalibration(): Promise<void> {
   let stuck = false;
   /** One verified move; returns success and updates `at`. */
   const move = async (to: { row: number; col: number }, gap: number): Promise<boolean> => {
-    await harness.checkpoint(`calibrated move at gap ${gap}`);
-    const burst = await host.send({
-      op: "clickburst",
-      points: [regionCenter(at.row, at.col, w, h), placePoint(to.row, to.col, w, h)],
-      gapMs: gap,
+    const result = await runFastCompactionPass({
+      confirmed, moves: [{ id: test.item.id, from: { ...at }, to, w, h }],
+      cols, rows, cellPoint, placePoint, moveGapMs: gap, ops: makeFastOps(),
     });
-    if (!burst.ok) throw new Error(`calibration-burst-failed:${burst.error}`);
-    await harness.sleep(120, false);
-    const [fromText, toText] = await copyPoints([cellPoint(at.row, at.col), cellPoint(to.row, to.col)], "calv");
-    const toParsed = classifyBagRead(toText ?? "").parsed;
-    if (!fromText?.trim() && toText?.trim() && (!fingerprint || toParsed?.fingerprint === fingerprint)) {
-      at = to;
-      return true;
-    }
-    // Recovery: item still at origin (pickup missed — benign), or on the
-    // cursor (placement missed — put it down at the destination).
-    if (fromText?.trim()) return false;
-    await clickAt(placePoint(to.row, to.col, w, h).x, placePoint(to.row, to.col, w, h).y, "recover: place held item");
-    await harness.sleep(180, false);
-    const check = (await copyPoints([cellPoint(to.row, to.col)], "calr"))[0] ?? "";
-    if (check.trim()) {
-      at = to;
-      return false;
-    }
-    const back = (await copyPoints([cellPoint(at.row, at.col)], "calb"))[0] ?? "";
-    if (!back.trim()) {
+    if (result.aborted) {
+      // A calibration miss is still an unexplained live move. Abort instead
+      // of treating a nonempty target as success or continuing more attempts.
       stuck = true;
+      throw new Error(`calibration-${result.aborted}`);
     }
-    return false;
+    at = { ...to };
+    test.item.row = to.row;
+    test.item.col = to.col;
+    test.pick = cellPoint(to.row, to.col);
+    return true;
   };
 
   const gaps = [140, 120, 100, 85, 70, 55, 45, 35];
@@ -734,11 +567,10 @@ async function runMoveCalibration(): Promise<void> {
     calibrationFile.replace(/\.json$/, ".history.jsonl"),
     `${JSON.stringify({ at: new Date().toISOString(), sweet, table })}\n`,
   );
-  const { writeFileSync } = await import("node:fs");
   writeFileSync(calibrationFile, JSON.stringify({ gapMs: sweet, calibratedAt: new Date().toISOString(), table }, null, 2));
   console.log(
     `CALIBRATED: ${sweet}ms click gap (confirmed over ${8 - confirmFailures} clean moves) — ` +
-      "drop and compaction bursts will use it from the next run.",
+      "bag compaction will use it next run; ground drops keep a separate 200ms floor.",
   );
 }
 
@@ -748,434 +580,97 @@ async function clickAt(x: number, y: number, why: string, shift = false): Promis
   if (!reply.ok) throw new Error(`click-failed(${why}):${reply.error}`);
 }
 
+function makeFastOps(): FastTriageOps {
+  return {
+    copyPoints,
+    identifyBurst: async (points, options) => {
+      await harness.checkpoint(options.label);
+      const reply = await host.send({ op: "identifyburst", points, gapMs: options.gapMs, hoverMs: 100 });
+      return { count: Number(reply.count), texts: reply.texts as string[],
+        ...(reply.verificationFailed === true ? { verificationFailed: true } : {}) };
+    },
+    rightClick: (point, why) => clickAtRight(point.x, point.y, why),
+    leftClick: (point, why) => clickAt(point.x, point.y, why),
+    clickBurst: async (points, options) => {
+      await harness.checkpoint(options.label);
+      await host.send({ op: "clickburst", points, gapMs: options.gapMs, hoverMs: options.hoverMs, shift: options.shift ?? false });
+    },
+    sleep: (ms) => harness.sleep(ms, false),
+    checkpoint: (label) => harness.checkpoint(label),
+    shouldStop: () => harness.stopRequested,
+  };
+}
+
 async function runFast(triage: TriageExport): Promise<void> {
   const t0 = Date.now();
-
-  // 1. One screenshot resolves the client AND segments the bag into items.
-  let capture = await captureClientSprites();
-
-  // 2. Scroll contract doubles as the bag-open check: the Scroll of Wisdom
-  //    at (0,0) only Ctrl+C-verifies with the inventory open, so the OCR
-  //    banner dance (~1s) runs ONLY when this fails.
-  const scrollPointOf = (c: ScreenRect) => cellCenterTwoCorner(fastGrid(c), 0, 0, cols, rows);
-  let scrollProbe = scrollPointOf(capture.client);
-  let scrollRead = classifyBagRead(await copyItemAt(scrollProbe.x, scrollProbe.y));
-  if (scrollRead.kind !== "scroll") {
-    console.log("· scroll not readable — falling back to OCR panel check");
-    await ensureBagOpenInMap();
-    capture = await captureClientSprites();
-    scrollProbe = scrollPointOf(capture.client);
-    scrollRead = classifyBagRead(await copyItemAt(scrollProbe.x, scrollProbe.y));
-    if (scrollRead.kind !== "scroll") {
-      throw new Error("scroll-of-wisdom-not-verified — park the stack at bag (0,0)");
-    }
+  const client = await resolveClient();
+  const { cellPoint, placePoint } = makeGridHelpers(client);
+  const scrollPoint = cellPoint(0, 0);
+  const scrollText = await copyItemAt(scrollPoint.x, scrollPoint.y);
+  const scroll = classifyBagRead(scrollText);
+  if (scroll.kind !== "scroll" || (scroll.stack ?? 0) < 1) {
+    throw new Error("scroll-of-wisdom-not-verified — open inventory with a nonempty scroll stack at (0,0)");
   }
-  const { client, sprites } = capture;
-  const scrollPoint = scrollProbe;
-  const scrolls = scrollRead.stack ?? 1;
-
-  const { grid, stepX, stepY, cellPoint, regionCenter, placePoint, findParkPoint } = makeGridHelpers(client);
-
-  // 3. One batched copy per detected item, with the cursor-preflight park
-  //    point riding along as one extra sweep point (its expected-empty read
-  //    used to cost two full retry copies ≈ 2.4s).
-  const targets = sprites.filter((sprite) => !coversTopLeft(sprite));
-  const covered = new Set<string>();
-  for (const sprite of sprites) {
-    for (let r = 0; r < sprite.h; r += 1) {
-      for (let c = 0; c < sprite.w; c += 1) covered.add(`${sprite.row + r},${sprite.col + c}`);
-    }
+  // A complete cell map proves origin, size, emptiness and identical adjacent
+  // items. It replaces pixel regions that missed/split three items in live QA.
+  const cells: BagCellRead[] = [{ row: 0, col: 0, ...scrollPoint, text: scrollText }];
+  for (let row = 0; row < rows; row += 1) {
+    const columns = Array.from({ length: cols }, (_, col) => col).filter((col) => row !== 0 || col !== 0);
+    const points = columns.map((col) => cellPoint(row, col));
+    const texts = await copyPoints(points, `bag-row-${row}`);
+    columns.forEach((col, index) => cells.push({ row, col, ...points[index]!, text: texts[index]! }));
   }
-  const parkPoint = live ? findParkPoint(covered) : undefined;
-  const sweepPoints = targets.map((sprite) => ({ x: sprite.x, y: sprite.y }));
-  if (parkPoint) sweepPoints.push(parkPoint);
-  const texts = await copyPoints(sweepPoints, "eval");
-  const parkText = parkPoint ? (texts[targets.length] ?? "") : "";
-  const targetTexts = texts.slice(0, targets.length);
-  const phantomCount = targetTexts.filter((text) => !text.trim()).length;
-  const reads = mergeAdjacentDuplicates(
-    targets
-      .map((sprite, index) => ({ sprite, text: targetTexts[index] ?? "" }))
-      .filter((read) => read.text.trim() !== ""),
-  );
-
-  // Cursor preflight (live only): if a previous run left an item on the
-  // cursor, ANY later click would swap it into the bag unpredictably.
-  // Click the empty-verified park cell: a full cursor parks its item there
-  // (it becomes a normal bag item and gets triaged); an empty cursor
-  // no-ops. Runs BEFORE the first game-affecting click of the run.
-  const addSyntheticRead = (point: { x: number; y: number }, text: string): void => {
-    const parkedRow = Math.min(rows - 1, Math.floor((point.y - grid.topLeft.y) / stepY));
-    const parkedCol = Math.min(cols - 1, Math.floor((point.x - grid.topLeft.x) / stepX));
-    const parsed = classifyBagRead(text).parsed;
-    reads.push({
-      sprite: {
-        id: `parked-${parkedRow},${parkedCol}`,
-        row: parkedRow,
-        col: parkedCol,
-        w: parsed?.gridW ?? 1,
-        h: parsed?.gridH ?? 1,
-        x: point.x,
-        y: point.y,
-        cx: point.x,
-        cy: point.y,
-      },
-      text,
-    });
-  };
-  if (parkPoint && parkText.trim()) {
-    // Sprite detection missed an item sitting on the park cell — fold it in.
-    addSyntheticRead(parkPoint, parkText);
-  } else if (parkPoint) {
-    await clickAt(parkPoint.x, parkPoint.y, "preflight: clear any held item");
-    await harness.sleep(150, false);
-    const after = (await copyPoints([parkPoint], "preflight"))[0] ?? "";
-    if (after.trim()) {
-      console.log("! preflight parked a held item — a previous run left it on the cursor");
-      addSyntheticRead(parkPoint, after);
-    }
-  }
-
-  const byKind = (kind: string) => reads.filter((read) => classifyBagRead(read.text).kind === kind);
-  const unid = byKind("unid-gear");
-  console.log(
-    `bag: ${reads.length} item(s) (${phantomCount} phantom region(s) ignored) — ` +
-      `${unid.length} unidentified gear, ${byKind("identified-gear").length} identified gear, ` +
-      `${byKind("other").length} other · ${scrolls} scroll(s) · ${Date.now() - t0}ms to here`,
-  );
-
   const readDoneAt = Date.now();
-  const evaluate = (itemText: string) =>
-    evaluateWithAppraisal(itemText, {
-      rules: triage.rules,
-      thresholds: triage.thresholds,
-      priceTable: triage.priceTable,
-    });
-
-  if (!live) {
-    for (const read of reads) {
-      const classified = classifyBagRead(read.text);
-      if (classified.kind === "identified-gear") {
-        const decision = decideDrop(evaluate(read.text), keepUnknown);
-        console.log(
-          `  · r${read.sprite.row}c${read.sprite.col} ${classified.parsed?.name ?? "?"} — ` +
-            `${decision.drop ? "WOULD DROP" : "keep"} (${decision.tier}: ${decision.reason})`,
-        );
-      } else if (classified.kind === "unid-gear") {
-        console.log(
-          `  · r${read.sprite.row}c${read.sprite.col} unidentified ${classified.parsed?.itemClass ?? "?"} — would identify`,
-        );
+  writeFileSync(path.join(outDir, `bag-read-${Date.now()}.json`), JSON.stringify({ at: new Date().toISOString(), cells }, null, 2));
+  const beforeMutations = async (): Promise<void> => {
+    await harness.checkpoint("map preflight");
+    // Guard before identification too: the stash under a click target can
+    // change the meaning of a held-item click. OCR transport errors abort.
+    const band = await host.send({ op: "ocr", left: client.left + 450, top: client.top + 100, width: 700, height: 110 });
+    if (/stash/i.test(String(band.text ?? ""))) throw new Error("stash-panel-open — refusing map actions");
+  };
+  const ops = makeFastOps();
+  let identifyDoneAt = readDoneAt;
+  let dropDoneAt = readDoneAt;
+  const result = await runMapTriage({
+    cells, grid: { cols, rows }, lookupSize: (item) => lookupItemSize(sizes, item),
+    evaluate: triage.evaluate, observeEvaluation: triage.observeEvaluation,
+    ops, live, keepUnknown, maxDrops, noCompact,
+    groundPoint: {
+      x: Number(value("--drop-x") ?? Math.round(client.left + client.width * 0.44)),
+      y: Number(value("--drop-y") ?? Math.round(client.top + client.height * 0.6)),
+    },
+    cellPoint, placePoint, moveGapMs: Math.max(35, moveGapMs),
+    dropGapMs: Math.max(200, calibration.dropGapMs, calibration.dropFloorMs), beforeMutations,
+    event: (record) => {
+      journal(record);
+      if (record.phase === "identify") identifyDoneAt = Date.now();
+      if (record.phase === "identify" && record.fallbackReason === "inline-copy-unavailable") {
+        console.log("· Shift-held copying unavailable — used verified individual identification");
       }
-    }
-    console.log("DRY-RUN complete (fast). Rerun with --run to identify, drop, and compact.");
+      if (record.phase === "drop") dropDoneAt = Date.now();
+    },
+  });
+  console.log(`bag: ${result.items} item(s) · ${result.unidentified} unidentified gear · ${result.scrolls} scroll(s)`);
+  for (const decision of result.decisions) {
+    const appraisal = decision.verdict.appraisal;
+    console.log(`  · r${decision.row}c${decision.col} ${decision.name} — ${decision.drop ? (live ? "drop candidate" : "WOULD DROP") : "keep"} ` +
+      `(${decision.verdict.tier}: ${decision.reason})${appraisal ? ` · confidence ${appraisal.confidence}%` : ""}`);
+  }
+  if (result.aborted) throw new Error(result.aborted);
+  if (!live) {
+    console.log("DRY-RUN complete (fast). No identify, drop or compact clicks. Prices use saved rules/table/learned tiers; no fresh trade lookups.");
     return;
   }
-
-  // 4. Identify chain: arm the scroll ONCE, then ONE burst of left-clicks
-  //    with shift HELD DOWN across the whole burst (a per-click shift tap
-  //    cancels the game's repeat-use mode — live-tested 2026-08-31).
-  if (unid.length > 0) {
-    if (unid.length > scrolls) {
-      console.log(`! only ${scrolls} scroll(s) for ${unid.length} unid item(s) — the rest stay unidentified`);
-    }
-    const chain = unid.slice(0, scrolls);
-    await clickAtRight(scrollPoint.x, scrollPoint.y, "arm Scroll of Wisdom");
-    // The game needs a beat to arm identify mode — clicks that land sooner
-    // than ~300ms after the right-click are silently ignored (live-tested).
-    await harness.sleep(320, false);
-    await harness.checkpoint("identify chain");
-    const burst = await host.send({
-      op: "clickburst",
-      points: chain.map((read) => ({ x: read.sprite.x, y: read.sprite.y })),
-      shift: true,
-      gapMs: 80,
-    });
-    if (!burst.ok) throw new Error(`identify-burst-failed:${burst.error}`);
-    await harness.sleep(200, false);
-
-    // 5. One batched re-read of the chained reps. Empty read = the chain
-    //    lifted that item — click it back and re-read. Still-unidentified
-    //    read = the chain skipped it — per-item re-arm fallback.
-    const verifyChain = async (batch: typeof chain, label: string): Promise<typeof chain> => {
-      const after = await copyPoints(
-        batch.map((read) => ({ x: read.sprite.x, y: read.sprite.y })),
-        label,
-      );
-      const stillUnid: typeof chain = [];
-      for (let index = 0; index < batch.length; index += 1) {
-        const read = batch[index]!;
-        let text = after[index] ?? "";
-        if (!text.trim()) {
-          console.log(`! r${read.sprite.row}c${read.sprite.col} read empty after identify — returning it`);
-          await clickAt(read.sprite.cx, read.sprite.cy, "return lifted item");
-          await harness.sleep(160, false);
-          text = await copyItemAt(read.sprite.x, read.sprite.y);
-          if (!text.trim()) {
-            throw new Error("item-stuck-on-cursor — check the game before running anything else");
-          }
-        }
-        read.text = text;
-        if (classifyBagRead(text).kind === "unid-gear") stillUnid.push(read);
-      }
-      return stillUnid;
-    };
-
-    const leftovers = await verifyChain(chain, "verify");
-    if (leftovers.length > 0) {
-      console.log(`· ${leftovers.length} item(s) missed by the chain — per-item re-arm fallback`);
-      for (const read of leftovers) {
-        await clickAtRight(scrollPoint.x, scrollPoint.y, "re-arm Scroll of Wisdom");
-        await harness.sleep(320, false);
-        await clickAt(read.sprite.x, read.sprite.y, `identify r${read.sprite.row}c${read.sprite.col}`);
-        await harness.sleep(250, false);
-      }
-      const stubborn = await verifyChain(leftovers, "verify2");
-      for (const read of stubborn) {
-        console.log(
-          `! r${read.sprite.row}c${read.sprite.col} would not identify — it stays in the bag unidentified`,
-        );
-      }
-    }
-  }
-
-  const identifyDoneAt = Date.now();
-
-  // 6. Decide and drop. Only clipboard-confirmed identified gear is ever
-  //    dropped; still-unidentified and unreadable items always stay.
-  const groundPoint = {
-    x: Number(value("--drop-x") ?? Math.round(client.left + client.width * 0.44)),
-    y: Number(value("--drop-y") ?? Math.round(client.top + client.height * 0.6)),
-  };
-  const decisions = reads
-    .map((read) => ({ read, classified: classifyBagRead(read.text) }))
-    .filter((entry) => entry.classified.kind === "identified-gear")
-    .map((entry) => ({
-      ...entry,
-      decision: decideDrop(evaluate(entry.read.text), keepUnknown),
-    }));
-  const toDrop = decisions.filter((entry) => entry.decision.drop).slice(0, maxDrops);
-  const kept = decisions.filter((entry) => !entry.decision.drop);
-
-  if (toDrop.length > 0) {
-    // Ground-click safety, paid only when drops are imminent: with the
-    // stash panel open the "ground" point is stash UI and a held item
-    // would DEPOSIT there instead of dropping — refuse before any pickup.
-    const stashBand = await host.send({ op: "ocr", left: 450, top: 100, width: 700, height: 110 });
-    if (/stash/i.test(String(stashBand.text ?? ""))) {
-      throw new Error("stash-panel-open — refusing to drop (hideout/town?); nothing was touched");
-    }
-    // First drop alone, then verify in three steps: a pre-click copy of
-    // the origin cell distinguishes "pickup never happened" (item still
-    // there) from "item gone"; the put-back probe click + copy then
-    // distinguishes "dropped" from "refused, still on the cursor". Airtight
-    // against both failure modes before the burst touches anything else.
-    const first = toDrop[0]!;
-    const dropFirstOnce = async (gap: number): Promise<"dropped" | "pickup-missed" | "refused"> => {
-      await harness.checkpoint("first drop");
-      const burst = await host.send({
-        op: "clickburst",
-        points: [
-          { x: first.read.sprite.cx, y: first.read.sprite.cy },
-          { x: groundPoint.x, y: groundPoint.y },
-        ],
-        gapMs: gap,
-      });
-      if (!burst.ok) throw new Error(`drop-burst-failed:${burst.error}`);
-      await harness.sleep(160, false);
-      const still = (await copyPoints([{ x: first.read.sprite.x, y: first.read.sprite.y }], "probe0"))[0] ?? "";
-      if (still.trim()) return "pickup-missed";
-      await clickAt(first.read.sprite.cx, first.read.sprite.cy, "probe: confirm first drop landed");
-      await harness.sleep(150, false);
-      const probe = (await copyPoints([{ x: first.read.sprite.x, y: first.read.sprite.y }], "probe1"))[0] ?? "";
-      return probe.trim() ? "refused" : "dropped";
-    };
-    // Self-tuning drop gap: the verified first drop doubles as the probe.
-    // Success steps next run's gap down 25ms; a bounce raises the floor so
-    // the failed speed is never probed again, and ONE conservative retry
-    // separates "too fast" from "the player can't drop here".
-    let dropGap = Math.max(calibration.dropFloorMs, calibration.dropGapMs);
-    const probedGap = dropGap;
-    let firstResult = await dropFirstOnce(dropGap);
-    if (firstResult !== "dropped" && dropGap < 200) {
-      console.log(`! first drop ${firstResult} at ${dropGap}ms — retrying once at 200ms`);
-      dropGap = 200;
-      firstResult = await dropFirstOnce(dropGap);
-      if (firstResult === "dropped") {
-        // The 200ms retry landing proves the spot was fine — the probed
-        // speed was too hot. Raise the floor so it is never probed again.
-        saveCalibration({ ...calibration, dropGapMs: 200, dropFloorMs: Math.max(calibration.dropFloorMs, probedGap + 25) });
-      }
-      // An abort leaves the calibration untouched: an environmental refusal
-      // (bad spot, not in a map) must not poison the speed floor.
-    }
-    if (firstResult !== "dropped") {
-      journal({ phase: "fast", aborted: `drop-${firstResult}`, dropped: 0 });
-      throw new Error(
-        `drop-refused (${firstResult}) — the first drop would not land. Stand on open ground inside a map ` +
-          "(or adjust --drop-x/--drop-y) and rerun; nothing else was touched.",
-      );
-    }
-    if (dropGap === probedGap) {
-      // Clean first drop at the probed speed: step next run's gap down.
-      const tunedNext = Math.max(calibration.dropFloorMs, dropGap - 25);
-      if (tunedNext !== calibration.dropGapMs) {
-        saveCalibration({ ...calibration, dropGapMs: tunedNext });
-      }
-    }
-    if (toDrop.length > 1) {
-      // The rest as one burst: pickup, ground, pickup, ground, ...
-      await harness.checkpoint("drop burst");
-      const rest = toDrop.slice(1);
-      const restBurst = await host.send({
-        op: "clickburst",
-        points: rest.flatMap((entry) => [
-          { x: entry.read.sprite.cx, y: entry.read.sprite.cy },
-          { x: groundPoint.x, y: groundPoint.y },
-        ]),
-        gapMs: dropGap,
-      });
-      if (!restBurst.ok) throw new Error(`drop-burst-failed:${restBurst.error}`);
-      await harness.sleep(200, false);
-      // End probe: catches drops that stopped landing mid-burst — the last
-      // item would be on the cursor; clicking its cell puts it back.
-      const last = rest[rest.length - 1]!.read.sprite;
-      await clickAt(last.cx, last.cy, "probe: confirm drops landed");
-      await harness.sleep(150, false);
-      const probe = (await copyPoints([{ x: last.x, y: last.y }], "probe2"))[0] ?? "";
-      if (probe.trim()) {
-        journal({ phase: "fast", aborted: "drop-refused-late", dropped: toDrop.length - 1 });
-        throw new Error(
-          "drop-refused — a later drop bounced back (did the drop spot become blocked?); compaction skipped",
-        );
-      }
-    }
-  }
-  for (const entry of kept) {
-    console.log(
-      `· kept ${entry.classified.parsed?.name ?? "?"} (${entry.decision.tier}: ${entry.decision.reason})`,
-    );
-  }
-  console.log(`Dropped ${toDrop.length}, kept ${kept.length} — ${Date.now() - t0}ms`);
-  journal({
-    phase: "fast",
-    scrolls,
-    identified: unid.length,
-    dropped: toDrop.map((entry) => ({
-      row: entry.read.sprite.row,
-      col: entry.read.sprite.col,
-      itemName: entry.classified.parsed?.name ?? "",
-      tier: entry.decision.tier,
-      reason: entry.decision.reason,
-    })),
-    kept: kept.map((entry) => ({
-      row: entry.read.sprite.row,
-      col: entry.read.sprite.col,
-      itemName: entry.classified.parsed?.name ?? "",
-      tier: entry.decision.tier,
-    })),
-  });
-  const dropDoneAt = Date.now();
-  let compactMoves = 0;
-
-  // 7. Compact what stayed to the left edge. NO fresh sweep: the eval phase
-  //    already copy-confirmed every item's position and size, and the drop
-  //    phase freed known cells — so the post-drop layout is a known model.
-  //    Plan once, execute every move as ONE click burst, then verify only
-  //    the moved targets with one batched copy. An already-compact bag
-  //    plans zero moves and costs zero clicks and zero reads.
-  if (!noCompact) {
-    const plannedOccupancy = (items: readonly CompactionItem[]): Set<string> => {
-      const covered = new Set<string>(["0,0"]);
-      for (const item of items) {
-        for (let r = 0; r < item.h; r += 1) {
-          for (let c = 0; c < item.w; c += 1) covered.add(`${item.row + r},${item.col + c}`);
-        }
-      }
-      return covered;
-    };
-
-    /** Plan from the given model, burst the moves, verify moved targets by copy. */
-    const compactFromModel = async (
-      confirmed: ReturnType<typeof confirmedCompactionItems>,
-      label: string,
-    ): Promise<{ count: number; ok: boolean }> => {
-      const moves = planLeftCompaction(
-        confirmed.map((entry) => entry.item),
-        { cols, rows, reserved: [{ row: 0, col: 0 }] },
-      );
-      if (moves.length === 0) return { count: 0, ok: true };
-      const byId = new Map(confirmed.map((entry) => [entry.item.id, entry]));
-      await harness.checkpoint(`${label}: ${moves.length} move(s)`);
-      const burst = await host.send({
-        op: "clickburst",
-        points: moves.flatMap((move) => [
-          byId.get(move.id)!.pick,
-          placePoint(move.to.row, move.to.col, move.w, move.h),
-        ]),
-        gapMs: moveGapMs,
-      });
-      if (!burst.ok) throw new Error(`compact-burst-failed:${burst.error}`);
-      await harness.sleep(280, false);
-      const checks = await copyPoints(
-        moves.map((move) => cellPoint(move.to.row, move.to.col)),
-        label,
-      );
-      return { count: moves.length, ok: checks.every((text) => text.trim() !== "") };
-    };
-
-    const droppedIds = new Set(toDrop.map((entry) => entry.read.sprite.id));
-    const model = confirmedCompactionItems(
-      reads.filter((read) => !droppedIds.has(read.sprite.id)),
-      { cols, rows },
-    );
-    const first = await compactFromModel(model, "compact");
-    compactMoves = first.count;
-    if (first.count === 0) {
-      console.log("Bag already left-compacted — no moves needed.");
-    } else if (!first.ok) {
-      // A target read empty: a placement bounced or landed shifted. Park
-      // any held item (a no-op click when the cursor is empty), then ONE
-      // corrective pass from fresh clipboard-confirmed reality.
-      const park = findParkPoint(
-        plannedOccupancy(model.map((entry) => entry.item)),
-      );
-      if (park) {
-        await clickAt(park.x, park.y, "park any held item");
-        await harness.sleep(200, false);
-      }
-      const freshSprites = (await captureClientSprites()).sprites.filter(
-        (sprite) => !coversTopLeft(sprite),
-      );
-      const freshTexts = await copyPoints(
-        freshSprites.map((sprite) => ({ x: sprite.x, y: sprite.y })),
-        "compact-fix",
-      );
-      const freshModel = confirmedCompactionItems(
-        freshSprites.map((sprite, index) => ({ sprite, text: freshTexts[index] ?? "" })),
-        { cols, rows },
-      );
-      const second = await compactFromModel(freshModel, "compact-fix");
-      compactMoves += second.count;
-      if (!second.ok) console.log("! compaction still off after the corrective pass — rerun to finish");
-    }
-    console.log(`Compaction: ${compactMoves} move(s) — total ${Date.now() - t0}ms`);
-    journal({ phase: "compact", moves: compactMoves });
-  }
-
   const endAt = Date.now();
-  const stillUnidAtEnd = reads.filter((read) => classifyBagRead(read.text).kind === "unid-gear").length;
+  dropDoneAt = Math.max(dropDoneAt, identifyDoneAt);
+  console.log(`Identified ${result.identified}, dropped ${result.dropped}, compacted ${result.moves} move(s) · ${endAt - t0}ms`);
+  journal({ phase: "complete", ...result });
   recordBenchmark({
-    at: new Date().toISOString(),
-    items: reads.length,
-    identified: Math.max(0, unid.length - stillUnidAtEnd),
-    dropped: toDrop.length,
-    moves: compactMoves,
-    readMs: readDoneAt - t0,
-    identifyMs: identifyDoneAt - readDoneAt,
-    dropMs: dropDoneAt - identifyDoneAt,
-    compactMs: endAt - dropDoneAt,
-    totalMs: endAt - t0,
-    msPerItem: reads.length > 0 ? Math.round((endAt - t0) / reads.length) : endAt - t0,
+    at: new Date().toISOString(), items: result.items, identified: result.identified, dropped: result.dropped,
+    moves: result.moves, readMs: readDoneAt - t0, identifyMs: identifyDoneAt - readDoneAt,
+    dropMs: dropDoneAt - identifyDoneAt, compactMs: endAt - dropDoneAt,
+    totalMs: endAt - t0, msPerItem: result.items ? Math.round((endAt - t0) / result.items) : endAt - t0,
   });
 }
 
@@ -1193,7 +688,7 @@ try {
   const triage = loadTriageExport(root);
   console.log(
     `map-triage ${live ? "LIVE" : "DRY-RUN"}${careful ? " CAREFUL" : " FAST"} · rules from ${triage.source}` +
-      `${keepUnknown ? " · keep-unknown" : ""} · max drops ${maxDrops} — numpad: 5 pause · 0 stop`,
+      `${keepUnknown ? " · unknowns kept" : " · drop-unknown requested"} · max drops ${maxDrops} — numpad: 5 pause · 0 stop`,
   );
 
   if (flag("--calibrate-moves")) {
@@ -1207,12 +702,16 @@ try {
   }
   await harness.dispose({ outcome: "complete", live });
 } catch (error) {
-  const stopped = error instanceof SortStop;
+  const stopped = error instanceof SortStop || /stop-requested/.test(String(error));
   console.log(String(error instanceof Error ? error.message : error));
   if (!stopped) exitCode = 1;
+  journal({ phase: "failed", reason: String(error instanceof Error ? error.message : error) });
+  try {
+    await rawHost.send({ op: "capture", path: path.join(outDir, `failure-${Date.now()}.png`) });
+  } catch { /* preserve the original failure */ }
   await harness.dispose({ outcome: stopped ? "stopped" : "failed" });
 } finally {
-  await controlHost.close();
-  await host.close();
+  await rawControlHost.close();
+  await rawHost.close();
 }
 process.exit(exitCode);

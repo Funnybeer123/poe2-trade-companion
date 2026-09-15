@@ -1,0 +1,11 @@
+Item Class: Amulets
+Rarity: Rare
+Bramble Bauble
+Stellar Amulet
+--------
+Requirements:
+Level: 60
+--------
+Item Level: 81
+--------
+Unidentified

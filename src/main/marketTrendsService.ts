@@ -275,11 +275,15 @@ export class MarketTrendsService {
     return configured === "auto" || this.cache.league.toLowerCase() === configured.toLowerCase();
   }
 
-  private result(usable: boolean): MarketTrendsResult {
+  private result(usable: boolean, withSeries = false): MarketTrendsResult & { series?: TrendSeries[] } {
     const now = this.now();
     const cache = usable ? this.cache : undefined;
     const age = cache ? now.getTime() - Date.parse(cache.fetchedAt) : Number.POSITIVE_INFINITY;
     return {
+      // Copied per call: the cache is this service's, never the caller's.
+      ...(withSeries
+        ? { series: (cache ? cache.series : []).map((entry) => ({ ...entry, points: [...entry.points] })) }
+        : {}),
       ok: cache !== undefined,
       ...(cache ? { league: cache.league, fetchedAt: cache.fetchedAt } : {}),
       stale: cache ? !(age < this.ttlMs) : true,
@@ -298,12 +302,34 @@ export class MarketTrendsService {
    * flagged, when the fetch fails.
    */
   async getTrends(query: MarketTrendsQuery = {}): Promise<MarketTrendsResult> {
+    return this.load(query, false);
+  }
+
+  /**
+   * Exactly getTrends (same refresh / TTL / cachedOnly / league rules, the
+   * same requests and no others), plus the per-item daily series the cache
+   * already holds: `points` oldest → newest, for drawing history rather
+   * than reading one arrow. Empty when nothing usable is cached.
+   */
+  async series(query: MarketTrendsQuery = {}): Promise<MarketTrendsResult & { series: TrendSeries[] }> {
+    return this.load(query, true) as Promise<MarketTrendsResult & { series: TrendSeries[] }>;
+  }
+
+  private async load(query: MarketTrendsQuery, withSeries: false): Promise<MarketTrendsResult>;
+  private async load(
+    query: MarketTrendsQuery,
+    withSeries: true,
+  ): Promise<MarketTrendsResult & { series: TrendSeries[] }>;
+  private async load(
+    query: MarketTrendsQuery,
+    withSeries: boolean,
+  ): Promise<MarketTrendsResult & { series?: TrendSeries[] }> {
     const configured = this.configuredLeague();
     const usable = this.cacheMatches(configured);
-    if (query.cachedOnly) return this.result(usable);
+    if (query.cachedOnly) return this.result(usable, withSeries);
     if (this.inflight) {
       await this.inflight;
-      return this.result(this.cacheMatches(configured));
+      return this.result(this.cacheMatches(configured), withSeries);
     }
     const age = usable ? this.now().getTime() - Date.parse(this.cache!.fetchedAt) : Number.POSITIVE_INFINITY;
     const fresh = age < this.ttlMs;
@@ -317,6 +343,6 @@ export class MarketTrendsService {
       });
       await this.inflight;
     }
-    return this.result(this.cacheMatches(configured));
+    return this.result(this.cacheMatches(configured), withSeries);
   }
 }

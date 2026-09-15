@@ -75,6 +75,7 @@ import {
 import { openLocalPersistence, type LocalPersistenceDatabase } from "./persistence/index.js";
 import { ItemIntelligenceService } from "./itemIntelligenceService.js";
 import { PriceFeedService, type PriceFeedConfig } from "./priceFeedService.js";
+import { loadPriceTrainingContext } from "../adapters/priceTrainingStore.js";
 import { registerItemIntelligenceIpc } from "./itemIntelligenceIpc.js";
 import { registerScanIpc } from "./scanIpc.js";
 import { StashTabAdminService } from "./stashTabAdminService.js";
@@ -87,6 +88,9 @@ import {
 import { ScannerRuntimeService } from "./scanRuntimeService.js";
 import { MarketTrendsService, type MarketTrendsQuery } from "./marketTrendsService.js";
 import { WatchlistService } from "./watchlistService.js";
+import { createFeatureRuntime, type FeatureRuntime } from "./features/context.js";
+import { FEATURE_MODULES } from "./features/registry.js";
+import { SettingsStore, settingsFilePath } from "./settingsStore.js";
 import type { WatchlistSaveRequest } from "../shared/ipc.js";
 
 const execFileAsync = promisify(execFile);
@@ -111,6 +115,7 @@ let priceFeedService: PriceFeedService | undefined;
 let scannerService: ScannerRuntimeService | undefined;
 let marketTrendsService: MarketTrendsService | undefined;
 let watchlistService: WatchlistService | undefined;
+let featureRuntime: FeatureRuntime | undefined;
 
 function quotesFile(): string {
   const candidates = [
@@ -240,6 +245,7 @@ async function evaluateItemText(
     userInitiated &&
     !fixture &&
     !cachedComps &&
+    !tier?.training?.lessonIds.length &&
     priceFeedService &&
     looksLikePoeItemText(text)
   ) {
@@ -599,7 +605,7 @@ function createWindow(): void {
   }
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   const memoryRoot = app.getPath("userData");
   const artifactDir = path.join(memoryRoot, "assistive-artifacts");
   localPersistence = openLocalPersistence(
@@ -607,6 +613,8 @@ app.whenReady().then(() => {
   );
   itemIntelligenceService = new ItemIntelligenceService({
     persistence: localPersistence,
+    priceTraining: () => loadPriceTrainingContext(
+      path.join(process.cwd(), "artifacts", "tab-admin"), priceFeedService?.status().resolvedLeague),
     publish: (channel, payload) => {
       mainWindow?.webContents.send(channel, payload);
       if (channel === "tiers:changed" || channel === "prices:changed") {
@@ -761,6 +769,9 @@ app.whenReady().then(() => {
   globalShortcut.register("CommandOrControl+D", () => {
     lastClipboard = "";
     void evaluateClipboard(true);
+    // The classic price check spends the one comps lookup; the Evaluate panel
+    // opens with autoSearch off and spends nothing until the user searches.
+    void featureRuntime?.ctx.get("hotkeys")?.trigger("evaluate.clipboard");
   });
   try {
     installVoiceHotkey(voiceConfig);
@@ -1044,6 +1055,41 @@ app.whenReady().then(() => {
   registerCalibrationIpc();
   // Auto-flask guard config + click calibration; same root as the hotkey bindings.
   registerFlaskGuardIpc(process.cwd());
+  // Feature modules (docs/HANDOFF-overlay-port.md): the ported overlay
+  // features register their channels here; no shared file changes per feature.
+  const companionSettings = new SettingsStore({ file: settingsFilePath(memoryRoot) });
+  featureRuntime = createFeatureRuntime({
+    ipcMain,
+    configDir: feedConfigDir,
+    userDataDir: memoryRoot,
+    repoRoot: process.cwd(),
+    appPath: app.getAppPath(),
+    buildMode,
+    core: {
+      priceFeed: priceFeedService!,
+      itemIntelligence: itemIntelligenceService!,
+      marketTrends: marketTrendsService!,
+      watchlist: watchlistService!,
+    },
+    settings: companionSettings,
+    mainWindow: () => mainWindow,
+    poeWindows: () => listPoeProcesses(),
+    killSwitchLatched: () => killSwitch.isLatched(),
+    notify: (title, body) => {
+      if (!Notification.isSupported()) return;
+      new Notification({ title, body }).show();
+    },
+    clipboard: {
+      readText: () => clipboard.readText(),
+      writeText: (text) => clipboard.writeText(text),
+    },
+    openExternal: (url) => shell.openExternal(url),
+    openPath: (target) => shell.openPath(target),
+  });
+  const registration = await featureRuntime.register(FEATURE_MODULES);
+  for (const failure of registration.failed) {
+    console.error(`[features] ${failure.id} failed to register: ${failure.error}`);
+  }
   createWindow();
   setTimeout(clipboardPollTick, CLIPBOARD_POLL_ACTIVE_MS);
 });
@@ -1060,6 +1106,8 @@ app.on("window-all-closed", () => {
   marketTrendsService = undefined;
   dryRunOverlay?.dispose();
   dryRunOverlay = undefined;
+  void featureRuntime?.dispose();
+  featureRuntime = undefined;
   localPersistence?.close();
   localPersistence = undefined;
   globalShortcut.unregisterAll();

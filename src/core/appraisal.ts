@@ -30,6 +30,8 @@ import {
   type TriageTier,
 } from "./valueTiers.js";
 import type { ItemModKind, ParsedItem } from "./types.js";
+import { parseAdvancedItemText } from "./itemAnnotations.js";
+import { estimateTrainingPrice, type PriceLesson } from "./priceTraining.js";
 
 export type ConfidenceBand = "very-high" | "high" | "medium" | "low";
 
@@ -57,7 +59,7 @@ export interface EstimatedValue {
   amount: number;
   currency: string;
   /** What produced the number. Stack-aware for currency piles. */
-  basis: "price-table" | "price-table-stack";
+  basis: "price-table" | "price-table-stack" | "training";
   unitValue: number;
   stackCount?: number;
 }
@@ -69,7 +71,7 @@ export interface ItemAppraisal {
   confidence: number;
   band: ConfidenceBand;
   /** The single strongest evidence source behind the score. */
-  evidence: "price-table" | "rule" | "mods" | "unidentified" | "unparseable" | "none";
+  evidence: "price-table" | "rule" | "mods" | "training" | "unidentified" | "unparseable" | "none";
   reasons: string[];
   mods: ModAppraisal[];
   estimatedValue?: EstimatedValue;
@@ -185,7 +187,7 @@ export function appraiseItem(itemText: string, options: AppraiseOptions = {}): I
       mods: [],
     };
   }
-  const parsed = options.parsed ?? parseItemText(itemText);
+  const parsed = options.parsed ?? parseItemText(parseAdvancedItemText(itemText).plainText);
   const reasons: string[] = [];
 
   // Price table: the strongest possible evidence, stack-aware for currency.
@@ -267,7 +269,7 @@ export function appraiseItem(itemText: string, options: AppraiseOptions = {}): I
     scored.points > 0
       ? clamp(25 + 12 * scored.t1 + 6 * scored.t2 + 2 * scored.t3, 25, 80)
       : parsed.mods.length > 0
-        ? 30 // mods parsed cleanly, none notable — a confident "meh"
+        ? 30 // Unrecognized mod families are missing knowledge, not proof of low value.
         : 20;
   if (scored.t1 > 0) reasons.push(`${scored.t1} top-tier roll${scored.t1 > 1 ? "s" : ""}.`);
 
@@ -327,6 +329,9 @@ export const DEFAULT_PROMOTION: PromotionPolicy = {
 export interface EvaluateWithAppraisalOptions extends EvaluateTierOptions, TierContext {
   /** Enables heuristic promotion of unknown items. Never demotes, never dumps. */
   promote?: PromotionPolicy | false;
+  training?: { league: string; lessons: readonly PriceLesson[]; now?: Date };
+  /** A damaged knowledge file must not silently make previously taught items disposable. */
+  trainingError?: string;
 }
 
 /**
@@ -339,13 +344,38 @@ export function evaluateWithAppraisal(
   itemText: string,
   options: EvaluateWithAppraisalOptions,
 ): TierVerdict {
-  const base = evaluateValueTier(itemText, options);
+  const parsed = options.parsed ?? parseItemText(parseAdvancedItemText(itemText).plainText);
+  const base = evaluateValueTier(itemText, { ...options, parsed });
   const appraisal = appraiseItem(itemText, {
+    parsed,
     ...(options.priceTable ? { priceTable: options.priceTable } : {}),
     ...tierContext(options),
     verdict: base,
   });
   const verdict: TierVerdict = { ...base, appraisal };
+  if (base.source !== "safety" && options.trainingError) {
+    return { ...verdict, tier: "keep", source: "safety",
+      reasons: [`Price lessons unavailable: ${options.trainingError}. Keep for review.`] };
+  }
+  if (base.source !== "safety" && options.training) {
+    const training = estimateTrainingPrice(itemText, options.training.league,
+      options.training.lessons, options.training.now);
+    verdict.training = training;
+    if (training.lessonIds.length > 0 && training.status !== "unknown") {
+      const current = training.status === "matched" && training.amount !== undefined && training.currency;
+      return { ...verdict, tier: "keep", source: "training", training,
+        reasons: [current ? "Saved price evidence: keep for review or listing." :
+          "Historical or conflicting price evidence: keep for review.", ...training.reasons],
+        price: current ? training.amount! : undefined,
+        currency: current ? training.currency! : undefined,
+        appraisal: { ...appraisal, evidence: "training", confidence: training.confidence,
+          band: confidenceBand(training.confidence), reasons: [...training.reasons, ...appraisal.reasons],
+          // Never present an older generic table entry as a trained quote.
+          estimatedValue: current ? { amount: training.amount!, currency: training.currency!,
+            basis: "training", unitValue: training.amount! } : undefined },
+      };
+    }
+  }
   const promote = options.promote === false ? undefined : (options.promote ?? DEFAULT_PROMOTION);
   if (
     promote &&

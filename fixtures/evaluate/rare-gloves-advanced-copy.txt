@@ -1,0 +1,27 @@
+Item Class: Gloves
+Rarity: Rare
+Ash Grip
+Riveted Mitts
+--------
+Quality: +8%
+Armour: 220
+Evasion Rating: 98
+--------
+Requirements:
+Level: 44
+Str: 36
+Dex: 36
+--------
+Sockets: S S
+--------
+Item Level: 73
+--------
+{ Implicit Modifier — Life }
++12 to maximum Life
+--------
+{ Prefix Modifier "Glaciated" (Tier: 3) — Cold }
+Adds 10 to 20 Cold Damage to Attacks
+{ Suffix Modifier "Robust" (Tier: 2) — Life }
++48 to maximum Life
+{ Crafted Suffix Modifier — Attribute }
++7 to Strength (crafted)

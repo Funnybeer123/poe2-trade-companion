@@ -1,0 +1,17 @@
+Item Class: Gloves
+Rarity: Rare
+Ash Grip
+Riveted Mitts
+--------
+Quality: +20%
+Armour: 210
+--------
+Requirements:
+Level: 44
+--------
+Item Level: 73
+--------
++52 to maximum Life
++18% to Cold Resistance
+--------
+Mirrored

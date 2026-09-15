@@ -1,8 +1,8 @@
 /**
  * Map triage: with the Scroll of Wisdom stack parked in bag cell (0,0),
- * identify every unidentified piece of gear in the bag, evaluate each newly
- * identified item against the value-tier regex rules, and drop the ones that
- * aren't worth carrying onto the ground of the current map.
+ * identify unidentified gear, evaluate confirmed items, and drop eligible
+ * items onto the ground of the current map. The careful pass evaluates only
+ * gear identified this run; the fast runner can evaluate all identified gear.
  *
  * This module is pure planning plus injectable pass runners — no screen, no
  * input. The live glue (hover + Ctrl+C, right-click, ground click) lives in
@@ -13,10 +13,10 @@
  * before it is touched and re-read after, and any state the copies cannot
  * explain aborts the run instead of guessing.
  *
- * Safety invariants:
- *   - only items THIS RUN identified are ever evaluated for dropping; nothing
- *     else in the bag (currency, the scroll stack, waystones, already
- *     identified gear) is ever picked up;
+ * Identification/drop invariants:
+ *   - the careful drop pass receives only gear identified this run; the fast
+ *     runner may include already identified gear after clipboard verification;
+ *   - currency, the scroll stack, and waystones are never identify/drop targets;
  *   - unreadable text never drops; a still-unidentified item never drops;
  *   - a cell whose re-read doesn't match what was evaluated is skipped;
  *   - an empty copy right after an identify click means the item may be stuck
@@ -51,22 +51,32 @@ export interface TriageSprite {
 export interface SpriteRead {
   sprite: TriageSprite;
   text: string;
+  /** Exact origin and dimensions established from a complete clipboard sweep. */
+  footprint?: BagFootprint;
 }
 
-function spritesTouch(a: TriageSprite, b: TriageSprite): boolean {
-  return (
-    a.row <= b.row + b.h &&
-    b.row <= a.row + a.h &&
-    a.col <= b.col + b.w &&
-    b.col <= a.col + a.w
-  );
+export interface BagFootprint {
+  row: number;
+  col: number;
+  w: number;
+  h: number;
+}
+
+function containsCell(rect: BagFootprint, cell: { row: number; col: number }): boolean {
+  return cell.row >= rect.row && cell.row < rect.row + rect.h &&
+    cell.col >= rect.col && cell.col < rect.col + rect.w;
+}
+
+function validFootprint(rect: BagFootprint, grid: { cols: number; rows: number }): boolean {
+  return [rect.row, rect.col, rect.w, rect.h].every(Number.isInteger) &&
+    rect.row >= 0 && rect.col >= 0 && rect.w > 0 && rect.h > 0 &&
+    rect.row + rect.h <= grid.rows && rect.col + rect.w <= grid.cols;
 }
 
 /**
- * Sprite segmentation sometimes splits one item into two regions. Two reads
- * with the same fingerprint whose regions touch are one item — keep the
- * top-left read so later clicks target it once. Distinct identical items
- * that do NOT touch are preserved.
+ * Collapse reads inside the same item footprint, never merely touching
+ * regions. The legacy sprite path uses catalog dimensions as a read hint;
+ * only resolveBagFootprints establishes authority to move items.
  */
 export function mergeAdjacentDuplicates(reads: readonly SpriteRead[]): SpriteRead[] {
   const fingerprintOf = (read: SpriteRead): string | undefined => {
@@ -79,11 +89,18 @@ export function mergeAdjacentDuplicates(reads: readonly SpriteRead[]): SpriteRea
   const out: SpriteRead[] = [];
   for (const read of ordered) {
     const fingerprint = fingerprintOf(read);
-    const duplicate =
-      fingerprint !== undefined &&
-      out.some(
-        (kept) => fingerprintOf(kept) === fingerprint && spritesTouch(kept.sprite, read.sprite),
-      );
+    const duplicate = fingerprint !== undefined && out.some((kept) => {
+      if (fingerprintOf(kept) !== fingerprint) return false;
+      const parsed = classifyBagRead(kept.text).parsed;
+      const size = parsed && classDefaultSize(parsed.itemClass);
+      const footprint = kept.footprint ?? (size ? { ...kept.sprite, ...size } : undefined);
+      if (!footprint || !containsCell(footprint, read.sprite)) return false;
+      // Two separately confirmed origins remain distinct even if malformed
+      // input claims they overlap; compaction will reject that conflict.
+      return !read.footprint || (read.footprint.row === footprint.row &&
+        read.footprint.col === footprint.col && read.footprint.w === footprint.w &&
+        read.footprint.h === footprint.h);
+    });
     if (!duplicate) out.push(read);
   }
   return out;
@@ -100,30 +117,37 @@ export interface ConfirmedBagItem {
 }
 
 /**
- * Turn copy-confirmed sprite reads into compaction inputs. Perception alone
- * over-detects (decorative cell art scores as occupancy), so ONLY reads
- * whose rep cell copied real item text survive; split regions merge by
- * fingerprint; and when the size catalog knows the item class, the
- * catalog's w×h overrides the pixel-detected region (clamped in-grid).
+ * Build movement inputs only from verified footprints. Silently excluding
+ * an unknown item would make its occupied space look free, so any uncertain
+ * geometry rejects the whole model. Origins are never clamped or guessed.
  */
 export function confirmedCompactionItems(
   reads: readonly SpriteRead[],
   grid: { cols: number; rows: number },
 ): ConfirmedBagItem[] {
   const merged = mergeAdjacentDuplicates(reads.filter((read) => read.text.trim() !== ""));
+  const occupied = new Set<string>();
   return merged.map((read) => {
     const classified = classifyBagRead(read.text);
-    const catalog = classified.parsed ? classDefaultSize(classified.parsed.itemClass) : undefined;
-    const w = Math.min(catalog?.w ?? read.sprite.w, grid.cols);
-    const h = Math.min(catalog?.h ?? read.sprite.h, grid.rows);
+    const footprint = read.footprint;
+    if (!classified.parsed) throw new Error(`unreadable-item:${read.sprite.id}`);
+    if (!footprint) throw new Error(`unverified-footprint:${read.sprite.id}`);
+    if (!validFootprint(footprint, grid) || !containsCell(footprint, read.sprite)) {
+      throw new Error(`invalid-footprint:${read.sprite.id}`);
+    }
+    for (let row = footprint.row; row < footprint.row + footprint.h; row += 1) {
+      for (let col = footprint.col; col < footprint.col + footprint.w; col += 1) {
+        const key = `${row},${col}`;
+        if (occupied.has(key)) throw new Error(`overlapping-footprints:r${row}c${col}`);
+        occupied.add(key);
+      }
+    }
     return {
       pick: { x: read.sprite.x, y: read.sprite.y },
       item: {
         id: read.sprite.id,
-        row: Math.min(read.sprite.row, grid.rows - h),
-        col: Math.min(read.sprite.col, grid.cols - w),
-        w,
-        h,
+        ...footprint,
+        ...(classified.kind === "scroll" ? { fixed: true } : {}),
       },
       ...(classified.parsed ? { itemClass: classified.parsed.itemClass } : {}),
       ...(classified.parsed ? { fingerprint: classified.parsed.fingerprint } : {}),
@@ -137,6 +161,8 @@ export interface CompactionItem {
   col: number;
   w: number;
   h: number;
+  /** Fixed items remain occupancy obstacles and are never picked up. */
+  fixed?: boolean;
 }
 
 export interface CompactionMove {
@@ -157,9 +183,16 @@ export function planLeftCompaction(
   items: readonly CompactionItem[],
   opts: { cols: number; rows: number; reserved?: ReadonlyArray<{ row: number; col: number }> },
 ): CompactionMove[] {
+  if (![opts.cols, opts.rows].every((n) => Number.isInteger(n) && n > 0)) {
+    throw new Error("invalid-bag-grid");
+  }
   const occ = new Set<string>();
   const key = (row: number, col: number) => `${row},${col}`;
-  for (const cell of opts.reserved ?? []) occ.add(key(cell.row, cell.col));
+  const reserved = new Set<string>();
+  for (const cell of opts.reserved ?? []) {
+    if (!validFootprint({ ...cell, w: 1, h: 1 }, opts)) throw new Error("invalid-reserved-cell");
+    reserved.add(key(cell.row, cell.col));
+  }
   const footprint = (item: { row: number; col: number; w: number; h: number }): string[] => {
     const cells: string[] = [];
     for (let r = 0; r < item.h; r += 1) {
@@ -169,16 +202,29 @@ export function planLeftCompaction(
   };
   const placed = new Map<string, CompactionItem>();
   for (const item of items) {
-    for (const cell of footprint(item)) occ.add(cell);
-    placed.set(item.id, { ...item });
+    if (!validFootprint(item, opts)) throw new Error(`invalid-footprint:${item.id}`);
+    if (placed.has(item.id)) throw new Error(`duplicate-item-id:${item.id}`);
+    const cells = footprint(item);
+    for (const cell of cells) {
+      if (occ.has(cell)) throw new Error(`overlapping-footprints:${cell}`);
+      occ.add(cell);
+    }
+    placed.set(item.id, { ...item, fixed: item.fixed || cells.some((cell) => reserved.has(cell)) });
   }
+  for (const cell of reserved) occ.add(cell);
 
-  const order = [...items].sort(
-    (a, b) => b.h - a.h || b.w * b.h - a.w * a.h || a.col - b.col || a.row - b.row,
-  );
+  const order = [...items].sort((a, b) => {
+    const bySize = b.h - a.h || b.w * b.h - a.w * a.h;
+    if (bySize) return bySize;
+    // Fill a one-cell hole directly from the furthest one-cell item.
+    // Left-to-right processing shifts every intervening item unnecessarily.
+    if (a.w === 1 && a.h === 1) return b.col - a.col || b.row - a.row;
+    return a.col - b.col || a.row - b.row;
+  });
   const moves: CompactionMove[] = [];
   for (const original of order) {
     const item = placed.get(original.id)!;
+    if (item.fixed) continue;
     for (const cell of footprint(item)) occ.delete(cell);
     let target: { row: number; col: number } | undefined;
     search: for (let col = 0; col + item.w <= opts.cols; col += 1) {
@@ -220,9 +266,105 @@ export interface BagCellRead extends MapTriageCell {
   text: string;
 }
 
+export interface BagFootprintResult {
+  /** One origin read per actual item, including the fixed scroll stack. */
+  reads: SpriteRead[];
+  /** Empty on any issue: an incomplete model must never expose false space. */
+  items: ConfirmedBagItem[];
+  issues: string[];
+}
+
+/**
+ * Resolve a complete cell sweep into exact, non-overlapping item rectangles.
+ * Clipboard text is not a unique object ID: adjacent identical items share
+ * it. Tile each known size from the first uncovered cell, requiring every
+ * cell of that footprint to copy the same item. Measured base sizes take
+ * precedence over class defaults; unknown sizes fail closed.
+ */
+export function resolveBagFootprints(
+  reads: readonly BagCellRead[],
+  grid: { cols: number; rows: number },
+  lookupSize?: (item: ParsedItem) => { w: number; h: number } | undefined,
+): BagFootprintResult {
+  const issues: string[] = [];
+  const resolved: SpriteRead[] = [];
+  if (![grid.cols, grid.rows].every((n) => Number.isInteger(n) && n > 0)) {
+    return { reads: [], items: [], issues: ["invalid-bag-grid"] };
+  }
+  const cells = new Map<string, { read: BagCellRead; classified: ClassifiedRead }>();
+  for (const read of reads) {
+    const key = `${read.row},${read.col}`;
+    if (!validFootprint({ ...read, w: 1, h: 1 }, grid)) {
+      issues.push(`invalid-cell:r${read.row}c${read.col}`);
+    } else if (cells.has(key)) {
+      issues.push(`duplicate-cell:r${read.row}c${read.col}`);
+    } else {
+      cells.set(key, { read, classified: classifyBagRead(read.text) });
+    }
+  }
+  if (cells.size !== grid.cols * grid.rows) {
+    issues.push(`incomplete-bag-sweep:${cells.size}/${grid.cols * grid.rows} cells`);
+  }
+  if (issues.length) return { reads: [], items: [], issues };
+
+  const covered = new Set<string>();
+  for (let row = 0; row < grid.rows; row += 1) {
+    for (let col = 0; col < grid.cols; col += 1) {
+      const key = `${row},${col}`;
+      if (covered.has(key)) continue;
+      const { read, classified } = cells.get(key)!;
+      if (classified.kind === "empty") continue;
+      const parsed = classified.parsed;
+      if (!parsed) {
+        issues.push(`unreadable-item:r${row}c${col}`);
+        continue;
+      }
+      const size = lookupSize?.(parsed) ?? classDefaultSize(parsed.itemClass);
+      if (!size) {
+        issues.push(`unknown-item-size:r${row}c${col}:${parsed.itemClass}`);
+        continue;
+      }
+      const footprint = { row, col, w: size.w, h: size.h };
+      if (!validFootprint(footprint, grid)) {
+        issues.push(`invalid-footprint:r${row}c${col}:${size.w}x${size.h}`);
+        continue;
+      }
+      const footprintKeys: string[] = [];
+      for (let r = row; r < row + size.h; r += 1) {
+        for (let c = col; c < col + size.w; c += 1) footprintKeys.push(`${r},${c}`);
+      }
+      const conflict = footprintKeys.find((cell) => covered.has(cell) ||
+        cells.get(cell)?.classified.parsed?.fingerprint !== parsed.fingerprint);
+      if (conflict) {
+        issues.push(`unconfirmed-footprint:r${row}c${col}:${size.w}x${size.h}:cell-${conflict}`);
+        continue;
+      }
+      for (const cell of footprintKeys) covered.add(cell);
+      const lastCell = cells.get(`${row + size.h - 1},${col + size.w - 1}`)!.read;
+      resolved.push({
+        sprite: {
+          id: `r${row}c${col}`,
+          ...footprint,
+          x: read.x,
+          y: read.y,
+          cx: (read.x + lastCell.x) / 2,
+          cy: (read.y + lastCell.y) / 2,
+        },
+        text: read.text,
+        footprint,
+      });
+    }
+  }
+  return {
+    reads: resolved,
+    items: issues.length ? [] : confirmedCompactionItems(resolved, grid),
+    issues,
+  };
+}
+
 export const MAP_TRIAGE = {
-  /** ms between the scroll right-click and the identify left-click. */
-  armDelayMs: 220,
+  /** Live-proven minimum ms for the scroll right-click to arm identification. */
+  armDelayMs: 320,
   /** ms after the identify click before the verifying copy. */
   identifySettleMs: 300,
   /** ms between the pickup click and the ground click. */
@@ -245,12 +387,14 @@ const NON_GEAR_CLASS_KEYS = new Set(
     "Stackable Currency",
     "Omen",
     "Trial Coins",
+    "Vault Keys",
     "Inscribed Ultimatum",
     "Waystones",
     "Tablet",
     "Tablets",
     "Wombgifts",
     "Runes",
+    "Augment",
     "Soul Cores",
     "Gems",
     "Skill Gems",
@@ -312,7 +456,7 @@ export interface MapTriagePlan {
   /** The verified scroll stack in cell (0,0); absent means the run must not start. */
   scroll?: { cell: MapTriageCell; stack: number };
   unidGear: UnidGearCell[];
-  /** min(scroll stack, unid gear cells): identifies this run may attempt. */
+  /** min(scroll stack, unidentified items): identifies this run may attempt. */
   budget: number;
   issues: string[];
 }
@@ -322,7 +466,10 @@ export interface MapTriagePlan {
  * very top-left cell (0,0) — that is the contract the user set up, and it
  * doubles as the arming check: no scroll there, no run.
  */
-export function planMapTriage(reads: readonly BagCellRead[]): MapTriagePlan {
+export function planMapTriage(
+  reads: readonly BagCellRead[],
+  lookupSize?: (item: ParsedItem) => { w: number; h: number } | undefined,
+): MapTriagePlan {
   const issues: string[] = [];
   const topLeft = reads.find((read) => read.row === 0 && read.col === 0);
   let scroll: MapTriagePlan["scroll"];
@@ -342,10 +489,31 @@ export function planMapTriage(reads: readonly BagCellRead[]): MapTriagePlan {
   }
 
   const unidGear: UnidGearCell[] = [];
-  for (const read of reads) {
+  const covered = new Set<string>();
+  const classifiedCells = new Map(reads.map((read) => [
+    `${read.row},${read.col}`, classifyBagRead(read.text),
+  ]));
+  for (const read of [...reads].sort((a, b) => a.row - b.row || a.col - b.col)) {
     if (read.row === 0 && read.col === 0) continue;
-    const classified = classifyBagRead(read.text);
+    const key = `${read.row},${read.col}`;
+    if (covered.has(key)) continue;
+    const classified = classifiedCells.get(key)!;
     if (classified.kind !== "unid-gear" || !classified.parsed) continue;
+    const size = lookupSize?.(classified.parsed) ?? classDefaultSize(classified.parsed.itemClass);
+    const footprintCells: string[] = [];
+    if (size) {
+      for (let row = read.row; row < read.row + size.h; row += 1) {
+        for (let col = read.col; col < read.col + size.w; col += 1) footprintCells.push(`${row},${col}`);
+      }
+    }
+    // Only suppress cells when the complete rectangle confirms one item.
+    // Sparse anchors alone cannot distinguish two identical pieces of gear.
+    if (footprintCells.length && footprintCells.every((cell) => !covered.has(cell) &&
+      classifiedCells.get(cell)?.parsed?.fingerprint === classified.parsed!.fingerprint)) {
+      for (const cell of footprintCells) covered.add(cell);
+    } else {
+      covered.add(key);
+    }
     unidGear.push({
       row: read.row,
       col: read.col,
@@ -361,7 +529,7 @@ export function planMapTriage(reads: readonly BagCellRead[]): MapTriagePlan {
   const budget = scroll ? Math.min(scroll.stack, unidGear.length) : 0;
   if (scroll && unidGear.length > scroll.stack) {
     issues.push(
-      `scroll-short: ${unidGear.length} unidentified gear cell(s) but only ${scroll.stack} scroll(s) — the last ${unidGear.length - scroll.stack} stay unidentified`,
+      `scroll-short: ${unidGear.length} unidentified item(s) but only ${scroll.stack} scroll(s) — the last ${unidGear.length - scroll.stack} stay unidentified`,
     );
   }
   return { ...(scroll ? { scroll } : {}), unidGear, budget, issues };
@@ -437,6 +605,10 @@ export async function runIdentifyPass(args: {
       skipped.push({ cell, reason: `not-unid-gear:${before.kind}` });
       continue;
     }
+    if (before.parsed?.fingerprint !== cell.fingerprint) {
+      skipped.push({ cell, reason: "cell-changed" });
+      continue;
+    }
 
     let done = false;
     for (let attempt = 0; attempt <= MAP_TRIAGE.maxIdentifyRetries && !done; attempt += 1) {
@@ -500,14 +672,14 @@ export interface DropDecision {
  * `keepUnknown` narrows dropping to explicit dump verdicts only.
  */
 export function decideDrop(verdict: TierVerdict, keepUnknown = false): DropDecision {
+  if (verdict.source === "safety") {
+    return { drop: false, tier: verdict.tier, reason: verdict.reasons[0] ?? "safety verdict — stays" };
+  }
   if (verdict.tier === "keep" || verdict.tier === "sell") {
     return { drop: false, tier: verdict.tier, reason: verdict.reasons[0] ?? "matched a good rule" };
   }
   if (verdict.tier === "dump") {
     return { drop: true, tier: verdict.tier, reason: verdict.reasons[0] ?? "matched a dump rule" };
-  }
-  if (verdict.source === "safety") {
-    return { drop: false, tier: verdict.tier, reason: verdict.reasons[0] ?? "safety verdict — stays" };
   }
   if (keepUnknown) {
     return { drop: false, tier: verdict.tier, reason: "matched no rule (kept by --keep-unknown)" };
@@ -556,8 +728,13 @@ export async function runDropPass(args: {
 
   for (const { cell, text } of identified) {
     if (ops.shouldStop?.()) return { dropped, kept, skipped, aborted: "stop-requested" };
+    const classified = classifyBagRead(text);
+    if (classified.kind !== "identified-gear") {
+      skipped.push({ cell, reason: `not-identified-gear:${classified.kind}` });
+      continue;
+    }
     const verdict = evaluate(text);
-    const parsed = classifyBagRead(text).parsed;
+    const parsed = classified.parsed;
     const itemName = parsed?.name || parsed?.baseType || "unknown item";
     const decision = decideDrop(verdict, args.keepUnknown);
     if (!decision.drop) {

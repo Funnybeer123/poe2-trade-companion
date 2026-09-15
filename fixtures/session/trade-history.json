@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "savedAt": "2026-09-11T22:02:00.000Z",
+  "entries": [
+    { "at": "2026-09-11T20:30:00.000Z", "kind": "sale", "price": { "amount": 5, "currency": "exalted", "exalted": 5 } },
+    { "at": "2026-09-11T21:10:00.000Z", "kind": "sale", "price": { "amount": 1, "currency": "divine", "exalted": 405 } },
+    { "at": "2026-09-11T21:40:00.000Z", "kind": "purchase", "price": { "amount": 20, "currency": "exalted", "exalted": 20 } },
+    { "at": "2026-09-11T21:50:00.000Z", "kind": "sale", "price": { "amount": 3, "currency": "chaos" } },
+    { "at": "2026-09-11T21:55:00.000Z", "kind": "unknown", "price": { "amount": 1, "currency": "exalted", "exalted": 1 } }
+  ],
+  "ignoredIds": []
+}

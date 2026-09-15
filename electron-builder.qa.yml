@@ -7,6 +7,11 @@ files:
   - dist-electron/**
   - fixtures/market/quotes.json
   - scripts/win-input-host.ps1
+  - CHANGELOG.md
+  - src/data/campaign/route.json
+  - src/data/market/category-labels.json
+  - src/data/market/exchange-currencies.json
+  - src/data/market/weight-templates.json
 extraMetadata:
   poe2BuildMode: authorized-qa
 win:

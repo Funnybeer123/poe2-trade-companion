@@ -28,6 +28,7 @@ import {
 } from "./scanRules.js";
 import type { ItemAppraisal } from "./appraisal.js";
 import type { ParsedItem } from "./types.js";
+import type { TrainingPriceEstimate } from "./priceTraining.js";
 
 export const VALUE_TIER_SCHEMA_VERSION = 1 as const;
 
@@ -62,6 +63,7 @@ export type TierVerdictSource =
   | "price-table"
   | "rule"
   | "heuristic"
+  | "training"
   | "default";
 
 export interface TierVerdict {
@@ -75,6 +77,7 @@ export interface TierVerdict {
   currency?: string;
   /** Scored appraisal evidence, when evaluateWithAppraisal produced this. */
   appraisal?: ItemAppraisal;
+  training?: TrainingPriceEstimate;
 }
 
 export interface EvaluateTierOptions {
@@ -209,6 +212,7 @@ export function validateValueTierRules(rules: ValueTierRules): ValueTierValidati
 export function starterValueTierRules(): ValueTierRules {
   return {
     keep: [
+      { name: "Normal belt crafting bases", regex: '"^Item Class: Belts$" "^Rarity: Normal$" "^(Heavy|Utility) Belt$"' },
       { name: "Any unique", regex: '"Rarity: Unique"' },
       { name: "High elemental resist total", regex: '"TOTAL_ELE_RES >= 70"' },
       { name: "Triple resist", regex: '"ANY_RESIST >= 3"' },

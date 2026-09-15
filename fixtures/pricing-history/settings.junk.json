@@ -1,0 +1,19 @@
+{
+  "favorites": [
+    "divine",
+    "divine",
+    "  ",
+    "chaos",
+    42,
+    "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+  ],
+  "displayCurrency": "dogecoin",
+  "hideLowStock": "yes",
+  "sort": {
+    "key": "moon",
+    "direction": "sideways"
+  },
+  "category": "Not A Category!",
+  "keepHistory": 0,
+  "somethingElse": true
+}

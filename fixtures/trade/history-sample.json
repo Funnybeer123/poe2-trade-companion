@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "savedAt": "2026-09-20T12:00:00.000Z",
+  "entries": [
+    {
+      "id": "th_2026-09-19T20-00-00-000Z_aaaa",
+      "at": "2026-09-19T20:00:00.000Z",
+      "kind": "sale",
+      "player": "Buyerino",
+      "item": { "name": "Ghoul Lash", "baseType": "Long Belt" },
+      "price": { "amount": 1, "currency": "exalted", "currencyId": "exalted", "exalted": 1 },
+      "league": "Forbidden Rites",
+      "secure": "no",
+      "matched": "offer"
+    },
+    {
+      "id": "th_2026-09-18T18-30-00-000Z_bbbb",
+      "at": "2026-09-18T18:30:00.000Z",
+      "kind": "purchase",
+      "player": "Sellerino",
+      "item": { "name": "Sapphire Ring" },
+      "price": { "amount": 1.5, "currency": "divine", "currencyId": "divine", "exalted": 607.5 },
+      "league": "Forbidden Rites",
+      "secure": "no",
+      "matched": "offer"
+    },
+    {
+      "id": "th_2026-09-12T10-00-00-000Z_cccc",
+      "at": "2026-09-12T10:00:00.000Z",
+      "kind": "sale",
+      "player": "Otherguy",
+      "item": { "name": "Rune Charm", "quantity": 2 },
+      "price": { "amount": 30, "currency": "exalted", "exalted": 30 },
+      "league": "Forbidden Rites",
+      "secure": "maybe",
+      "matched": "manual",
+      "note": "sold two, one, \"as is\""
+    },
+    {
+      "id": "shop_ab12cd34_2026-09-10T08-00-00-000Z",
+      "at": "2026-09-10T08:00:00.000Z",
+      "kind": "sale",
+      "player": "",
+      "item": { "name": "Preserved Cranium", "itemClass": "Currency" },
+      "price": { "amount": 20, "currency": "exalted", "exalted": 20 },
+      "secure": "yes",
+      "matched": "shop-ledger"
+    },
+    {
+      "id": "th_2026-09-01T12-00-00-000Z_dddd",
+      "at": "2026-09-01T12:00:00.000Z",
+      "kind": "sale",
+      "player": "Oldbuyer",
+      "item": { "name": "Iron Ring" },
+      "price": { "amount": 2, "currency": "exalted", "exalted": 2 },
+      "secure": "no",
+      "matched": "offer"
+    },
+    {
+      "id": "th_2026-08-31T12-00-00-000Z_eeee",
+      "at": "2026-08-31T12:00:00.000Z",
+      "kind": "unknown",
+      "player": "",
+      "item": { "name": "Unknown trade" },
+      "price": { "amount": 0, "currency": "" },
+      "secure": "no",
+      "matched": "unmatched"
+    }
+  ],
+  "ignoredIds": []
+}

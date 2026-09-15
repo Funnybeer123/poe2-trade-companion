@@ -187,6 +187,59 @@ describe("MarketTrendsService", () => {
     expect(other.calls).toHaveLength(1);
   });
 
+  it("series() returns the cached daily points alongside the same result as getTrends", async () => {
+    const { service, calls } = makeService({ league: "Runes of Aldur", pages: { currency: [[DIVINE, CHAOS]] } });
+    const result = await service.series();
+    expect(calls).toHaveLength(1);
+    expect(result.ok).toBe(true);
+    expect(result.league).toBe("Runes of Aldur");
+    expect(result.source).toBe("network");
+    expect(result.stale).toBe(false);
+    expect(result.trends.map((trend) => trend.key).sort()).toEqual(["chaos", "divine"]);
+    expect(result.series.map((entry) => entry.key)).toEqual(["divine", "chaos"]);
+    const divine = result.series.find((entry) => entry.key === "divine")!;
+    expect(divine).toMatchObject({ name: "Divine Orb", category: "currency", current: 649 });
+    // Oldest → newest, one point per bar, prices intact.
+    expect(divine.points).toHaveLength(7);
+    expect(divine.points[0]).toEqual({ time: "2026-09-01T00:00:00.000Z", price: 368, quantity: 100 });
+    expect(divine.points.at(-1)).toEqual({ time: "2026-09-07T00:00:00.000Z", price: 588, quantity: 100 });
+
+    // A second call is served from the fresh cache: no extra request, and
+    // the caller gets its own copy of the points.
+    const again = await service.series();
+    expect(calls).toHaveLength(1);
+    again.series[0]!.points.length = 0;
+    expect((await service.series()).series[0]!.points).toHaveLength(7);
+    // getTrends is unchanged: no series key on its result.
+    expect("series" in (await service.getTrends())).toBe(false);
+  });
+
+  it("series() honours cachedOnly and the league match", async () => {
+    const dir = mkdtempSync(path.join(tmpdir(), "trends-"));
+    const cold = makeService({ configDir: dir, league: "Runes of Aldur" });
+    const nothing = await cold.service.series({ cachedOnly: true });
+    expect(nothing.ok).toBe(false);
+    expect(nothing.source).toBe("none");
+    expect(nothing.series).toEqual([]);
+    expect(nothing.trends).toEqual([]);
+    expect(cold.calls).toHaveLength(0);
+
+    const warm = makeService({ configDir: dir, league: "Runes of Aldur", pages: { currency: [[DIVINE]] } });
+    await warm.service.getTrends();
+    const reopened = makeService({ configDir: dir, league: "Runes of Aldur" });
+    const fromDisk = await reopened.service.series({ cachedOnly: true });
+    expect(fromDisk.source).toBe("cache");
+    expect(fromDisk.series.map((entry) => entry.key)).toEqual(["divine"]);
+    expect(reopened.calls).toHaveLength(0);
+
+    // Another league's cache is never served as this league's history.
+    const other = makeService({ configDir: dir, league: "Forbidden Rites", pages: { currency: [[CHAOS]] } });
+    const refetched = await other.service.series();
+    expect(refetched.league).toBe("Forbidden Rites");
+    expect(refetched.series.map((entry) => entry.key)).toEqual(["chaos"]);
+    expect(other.calls).toHaveLength(1);
+  });
+
   it("tolerates categories the API does not serve", async () => {
     const { service, calls } = makeService({
       league: "Runes of Aldur",

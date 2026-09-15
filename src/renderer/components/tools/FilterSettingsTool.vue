@@ -13,6 +13,15 @@ import {
   rendererApi,
   type PriceFeedStatusView,
 } from "../../services/rendererApi";
+import TradeWebhooksCard from "../../features/trade/components/TradeWebhooksCard.vue";
+import { getTradeApi } from "../../features/trade/api/tradeApi";
+import AppSettingsSections from "../../features/appSettings/AppSettingsSections.vue";
+import EvaluateSettingsSection from "../../features/evaluate/EvaluateSettingsSection.vue";
+import InspectSettingsSection from "../../features/inspect/InspectSettingsSection.vue";
+import SessionSettingsSection from "../../features/session/components/SessionSettingsSection.vue";
+
+/** Trade owns the only webhook editor (compliance: one secret store). */
+const tradeApi = getTradeApi();
 
 const props = defineProps<{
   panel: "filter" | "settings";
@@ -464,6 +473,12 @@ async function copyFilter(): Promise<void> {
           <span v-if="feedSaved" class="success-text" role="status">{{ feedSaved }}</span>
         </div>
       </template>
+
+      <TradeWebhooksCard v-if="tradeApi" />
+      <AppSettingsSections />
+      <EvaluateSettingsSection />
+      <InspectSettingsSection />
+      <SessionSettingsSection />
 
       <div class="settings-facts">
         <article>

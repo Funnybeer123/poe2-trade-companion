@@ -15,7 +15,40 @@ declare module "vue-router" {
 const routes: RouteRecordRaw[] = [
   {
     path: "/",
-    redirect: "/sort",
+    redirect: "/home",
+  },
+  {
+    path: "/home",
+    name: "home",
+    component: () => import("../features/session/views/HomeView.vue"),
+    meta: {
+      title: "Home",
+      eyebrow: "Overview",
+      description:
+        "Character, session and map activity from Client.txt, stash gains, market movers, and what to set up next.",
+    },
+  },
+  {
+    path: "/market",
+    name: "market",
+    component: () => import("../features/market/views/MarketView.vue"),
+    meta: {
+      title: "Market",
+      eyebrow: "Operate",
+      description:
+        "Browse trade2 listings, keep favourite searches, run live searches, and whisper sellers — one chat line per click.",
+    },
+  },
+  {
+    path: "/trade",
+    name: "trade",
+    component: () => import("../features/trade/views/TradeView.vue"),
+    meta: {
+      title: "Trade",
+      eyebrow: "Operate",
+      description:
+        "Offer cards from your whispers, one chat line per click, and the trades the game confirmed.",
+    },
   },
   {
     path: "/sort",
@@ -104,7 +137,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: "/:pathMatch(.*)*",
-    redirect: "/sort",
+    redirect: "/home",
   },
 ];
 

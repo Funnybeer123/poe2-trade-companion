@@ -1,0 +1,15 @@
+Item Class: Rings
+Rarity: Rare
+Storm Coil
+Sapphire Ring
+--------
+Requirements:
+Level: 62
+--------
+Item Level: 73
+--------
++18% to Cold Resistance
+--------
++101 to maximum Life
++28% to Fire Resistance
++7 to Strength

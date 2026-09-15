@@ -42,6 +42,7 @@ describe("preload API exposure", () => {
         "assistive",
         "calibration",
         "evaluateText",
+        "features",
         "fromClipboard",
         "generateFilter",
         "hotkeys",

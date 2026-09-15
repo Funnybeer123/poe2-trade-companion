@@ -74,10 +74,20 @@ export function defaultClassRecords(at = new Date(0).toISOString()): ItemSizeRec
 }
 
 export function withClassDefaults(db: ItemSizeDatabase): ItemSizeDatabase {
-  const have = new Set(db.records.filter((row) => row.kind === "itemClass").map((row) => row.key));
-  const missing = defaultClassRecords(db.updatedAt).filter((row) => !have.has(row.key));
-  if (missing.length === 0) return db;
-  return { ...db, records: [...db.records, ...missing] };
+  const defaults = defaultClassRecords(db.updatedAt);
+  const byKey = new Map(defaults.map((row) => [row.key, row]));
+  let corrected = false;
+  const records = db.records.map((row) => {
+    if (row.kind !== "itemClass" || row.source !== "class-default") return row;
+    const current = byKey.get(row.key);
+    if (!current || (row.w === current.w && row.h === current.h)) return row;
+    corrected = true;
+    return { ...row, w: current.w, h: current.h };
+  });
+  const have = new Set(records.filter((row) => row.kind === "itemClass").map((row) => row.key));
+  const missing = defaults.filter((row) => !have.has(row.key));
+  if (!corrected && missing.length === 0) return db;
+  return { ...db, records: [...records, ...missing] };
 }
 
 export function loadItemSizeDatabase(file = itemSizeDatabasePath()): ItemSizeDatabase {
@@ -180,12 +190,14 @@ const FIXED_CLASSES = new Set([
   "Stackable Currency",
   "Omen",
   "Trial Coins",
+  "Vault Keys",
   "Inscribed Ultimatum",
   "Waystones",
   "Tablet",
   "Tablets",
   "Wombgifts",
   "Runes",
+  "Augment",
   "Soul Cores",
   "Rings",
   "Amulets",

@@ -53,9 +53,24 @@ import {
   TRADE_STATS_FILE,
   loadLearnedTiers,
 } from "../adapters/learnedTiersStore.js";
-import { TradePacer, policyForUrl, type PacerSnapshot } from "../core/tradePacing.js";
+import {
+  FETCH_POLICY,
+  SEARCH_POLICY,
+  TradePacer,
+  policyForUrl,
+  type PacerSnapshot,
+} from "../core/tradePacing.js";
 import { isAffixMod, looksLikePoeItemText, parseItemText } from "../core/parseItem.js";
+import { trainingIdentity } from "../core/priceTraining.js";
 import type { PriceTable } from "../core/priceTable.js";
+import {
+  parseExchangeResult,
+  parseTradeListings,
+  type ExchangeOffer,
+  type TradeListing,
+} from "../core/tradeListings.js";
+import { exchangeUrl, tradeSearchUrl } from "../core/tradeQuery.js";
+import { stableTradeQueryJson } from "../core/tradeQueryImport.js";
 
 const SCOUT_BASE = "https://api.poe2scout.com/poe2";
 const TRADE_BASE = "https://www.pathofexile.com/api/trade2";
@@ -73,6 +88,10 @@ const COMPS_CACHE_UNIQUE_MS = 60 * 60_000;
 const COMPS_CACHE_STAT_MS = 60 * 60_000;
 /** The stats catalogue is static data (Cache-Control: 4h upstream); a week. */
 const STATS_CACHE_MS = 7 * 24 * 60 * 60_000;
+/** /data/static is static data too (icons, currency ids): same week-long TTL. */
+const STATIC_CACHE_MS = STATS_CACHE_MS;
+/** The /data/static payload cache, next to trade-stats.json in configDir. */
+const TRADE_STATIC_FILE = "trade-static.json";
 /** After a failed catalogue fetch, leave the stat stage off this long. */
 const STATS_RETRY_MS = 5 * 60_000;
 /** A stat-filtered search must find this many listings to price by itself. */
@@ -127,6 +146,65 @@ export interface PriceFeedConfig {
   poesessid: string;
 }
 
+export interface TradeBudget {
+  /** Lookups (one search + one fetch each) that could go out right now. */
+  lookups: number;
+  /** Search-policy slots spare right now (0 inside a penalty window). */
+  searchesSpare: number;
+  /** Fetch-policy slots spare right now (0 inside a penalty window). */
+  fetchesSpare: number;
+  restrictedUntilIso?: string;
+}
+
+/** A trade2 penalty window is in force (or was just earned): no traffic until it lifts. */
+export class TradeRateLimitedError extends Error {
+  readonly restrictedUntilIso: string | undefined;
+
+  constructor(message: string, restrictedUntilIso?: string) {
+    super(message);
+    this.name = "TradeRateLimitedError";
+    this.restrictedUntilIso = restrictedUntilIso;
+  }
+}
+
+/** One generic search's answer (tradeSearch). */
+export interface TradeSearchResult {
+  id: string;
+  total: number;
+  resultIds: string[];
+  league: string;
+  url: string;
+  cached: boolean;
+  /** trade2 refused the query as too complex (HTTP 400): nothing was searched. */
+  complexityError?: string;
+}
+
+export interface TradeExchangeResult {
+  id: string;
+  total: number;
+  offers: ExchangeOffer[];
+  league: string;
+  url: string;
+}
+
+/** Generic searches are cached by body hash for a short while (60 s default). */
+const GENERIC_SEARCH_CACHE_MS = 60_000;
+/** The generic search cache never grows past this many bodies. */
+const GENERIC_SEARCH_CACHE_MAX = 200;
+/** trade2 fetch takes at most ten ids per GET (the site batches the same way). */
+const TRADE_FETCH_BATCH = 10;
+/** Recent generic trade2 requests kept for diagnostics (reason + kind). */
+const TRADE_LOG_MAX = 100;
+
+export interface TradeRequestLogEntry {
+  at: string;
+  kind: "search" | "fetch" | "exchange";
+  reason: string;
+  league: string;
+  /** Ids fetched (fetch) or the search id (search/exchange). */
+  detail?: string;
+}
+
 export interface PriceFeedStatus {
   config: PriceFeedConfig;
   /** The league requests use: the pinned one, or the single current league. */
@@ -152,6 +230,10 @@ export interface CompsResult {
   league?: string;
   /** Which search stage produced the summary (stat-filtered beats base-type). */
   basis?: CompsQuery["basis"];
+  /** Original listing-sample time; cache reads never refresh this timestamp. */
+  fetchedAt?: string;
+  /** Expiry of the underlying raw listing sample. */
+  expiresAt?: string;
 }
 
 /** One raw trade2 search + fetch (searchListings): listings, uncached. */
@@ -260,14 +342,22 @@ export class PriceFeedService {
 
   /**
    * How many trade2 lookups (one search + one fetch each) could go out right
-   * now without waiting, and when a restriction lifts if one is in force.
+   * now without waiting, the spare slots per policy for callers that spend
+   * only one kind (a live search fetches, an exchange searches), and when a
+   * restriction lifts if one is in force.
    */
-  tradeBudget(): { lookups: number; restrictedUntilIso?: string } {
+  tradeBudget(): TradeBudget {
     // Search, fetch, and the house rules' combined guard (a lookup spends
     // one of each) — see core/tradePacing.ts HOUSE_RULES.
-    const lookups = this.pacer.lookupsAvailable(Date.now());
+    const now = Date.now();
+    const lookups = this.pacer.lookupsAvailable(now);
     const until = this.rateLimitedUntilIso();
-    return { lookups: Math.max(0, lookups), ...(until ? { restrictedUntilIso: until } : {}) };
+    return {
+      lookups: Math.max(0, lookups),
+      searchesSpare: until ? 0 : this.pacer.available(SEARCH_POLICY, now),
+      fetchesSpare: until ? 0 : this.pacer.available(FETCH_POLICY, now),
+      ...(until ? { restrictedUntilIso: until } : {}),
+    };
   }
 
   private pacingFile(): string {
@@ -596,11 +686,17 @@ export class PriceFeedService {
   // trade2 comps
   // -------------------------------------------------------------------------
 
-  private async tradeRequest(url: string, init: RequestInit): Promise<Response> {
+  private async tradeRequest(url: string, init: RequestInit, sparse = false): Promise<Response> {
     // Serialize all trade2 traffic; the pacer spaces it from the server's
     // own rate-limit rules so no window ever fills.
     const policy = policyForUrl(url);
     const run = this.tradeChain.then(async () => {
+      if (sparse) {
+        // Recheck INSIDE the shared queue: an earlier request may have spent
+        // the last slot or earned a restriction after the button was pressed.
+        this.refuseIfRateLimited();
+        if (this.pacer.delayFor(policy) > 0) throw new Error("No spare trade2 request right now — nothing was queued for later.");
+      }
       const gap = this.options.tradeSpacingMs ?? TRADE_MIN_GAP_MS;
       const wait = Math.max(
         this.pacer.delayFor(policy),
@@ -685,13 +781,49 @@ export class PriceFeedService {
 
   // ---- stats catalogue + learned tiers (lazy: nothing loads until a lookup) --
 
-  private statCatalogue: StatCatalogue | undefined;
+  private statCatalogueCache: StatCatalogue | undefined;
   private statsFailedAt = 0;
   private statWarningLogged = false;
   private learnedTiersStore: LearnedTiers | undefined;
+  /** The raw /data/stats payload behind `statCatalogueCache`, for re-indexing. */
+  private statsPayload: unknown | undefined;
+  /** When that payload was fetched (the disk cache's `at`), epoch ms. */
+  private statsPayloadAt = 0;
+  /** types-key → catalogue, rebuilt whenever `statsPayloadAt` moves. */
+  private readonly statCataloguesByTypes = new Map<string, StatCatalogue>();
+  private statCataloguesBuiltAt = -1;
+  private staticPayload: unknown | undefined;
+  private staticPayloadAt = 0;
+  private staticFailedAt = 0;
 
   private statsFile(): string {
     return path.join(this.options.configDir, TRADE_STATS_FILE);
+  }
+
+  private staticFile(): string {
+    return path.join(this.options.configDir, TRADE_STATIC_FILE);
+  }
+
+  /** `{ at, payload }` as both static-data caches are written. */
+  private readCachedPayload(file: string): { at: number; payload: unknown } | undefined {
+    try {
+      if (!existsSync(file)) return undefined;
+      const parsed = JSON.parse(readFileSync(file, "utf8")) as { at?: unknown; payload?: unknown };
+      if (typeof parsed.at !== "number" || !Number.isFinite(parsed.at)) return undefined;
+      if (parsed.payload === undefined) return undefined;
+      return { at: parsed.at, payload: parsed.payload };
+    } catch {
+      return undefined; // a corrupt cache is a cold cache
+    }
+  }
+
+  private writeCachedPayload(file: string, payload: unknown, at: number): void {
+    try {
+      mkdirSync(this.options.configDir, { recursive: true });
+      writeFileSync(file, JSON.stringify({ at, payload }));
+    } catch {
+      // Best effort; the in-memory copy serves this process.
+    }
   }
 
   private catalogueFrom(payload: unknown): StatCatalogue | undefined {
@@ -715,15 +847,21 @@ export class PriceFeedService {
    * with no copy turns the stat stage off for five minutes.
    */
   async fetchStats(): Promise<StatCatalogue | undefined> {
-    if (this.statCatalogue) return this.statCatalogue;
+    if (this.statCatalogueCache) return this.statCatalogueCache;
     let stale: StatCatalogue | undefined;
     try {
       const file = this.statsFile();
       if (existsSync(file)) {
         const parsed = JSON.parse(readFileSync(file, "utf8")) as { at?: unknown; payload?: unknown };
         const catalogue = this.catalogueFrom(parsed.payload);
+        if (parsed.payload !== undefined && typeof parsed.at === "number") {
+          // The payload is remembered even when stale: a stale catalogue is
+          // what this method serves when the network is down, and
+          // statCatalogue(types) re-indexes the same bytes for other types.
+          this.rememberStatsPayload(parsed.payload, parsed.at);
+        }
         if (catalogue && typeof parsed.at === "number" && Date.now() - parsed.at < STATS_CACHE_MS) {
-          this.statCatalogue = catalogue;
+          this.statCatalogueCache = catalogue;
           return catalogue;
         }
         stale = catalogue;
@@ -736,16 +874,98 @@ export class PriceFeedService {
       const payload = await this.getJson(`${TRADE_BASE}/data/stats`);
       const catalogue = this.catalogueFrom(payload);
       if (!catalogue) throw new Error("trade2 stats catalogue held no explicit entries");
-      try {
-        mkdirSync(this.options.configDir, { recursive: true });
-        writeFileSync(this.statsFile(), JSON.stringify({ at: Date.now(), payload }));
-      } catch {
-        // Best effort; the in-memory catalogue serves this process.
-      }
-      this.statCatalogue = catalogue;
+      const at = Date.now();
+      this.writeCachedPayload(this.statsFile(), payload, at);
+      this.rememberStatsPayload(payload, at);
+      this.statCatalogueCache = catalogue;
       return catalogue;
     } catch {
       this.statsFailedAt = Date.now();
+      return stale;
+    }
+  }
+
+  private rememberStatsPayload(payload: unknown, at: number): void {
+    this.statsPayload = payload;
+    this.statsPayloadAt = at;
+  }
+
+  /**
+   * The raw /data/stats payload if one is already at hand: this process's
+   * copy, else configDir/trade-stats.json when it is younger than a week.
+   * NEVER touches the network and never waits — a caller that only wants to
+   * index stat ids offline (Inspect, Evaluate) uses this and falls back to
+   * its own "catalogue unavailable" path.
+   */
+  statsPayloadCached(): unknown | undefined {
+    if (this.statsPayload !== undefined && Date.now() - this.statsPayloadAt < STATS_CACHE_MS) {
+      return this.statsPayload;
+    }
+    const cached = this.readCachedPayload(this.statsFile());
+    if (!cached || Date.now() - cached.at >= STATS_CACHE_MS) return undefined;
+    this.rememberStatsPayload(cached.payload, cached.at);
+    return cached.payload;
+  }
+
+  /**
+   * The stats catalogue indexed over `types` (default: explicit mods only,
+   * exactly what fetchStats builds). Same acquisition path as fetchStats —
+   * memory, then the disk cache, then one unpaced GET — and the built
+   * catalogue is cached per payload timestamp + types, so asking for
+   * "implicit" and "explicit" separately costs no extra request.
+   * Undefined when no payload can be had, or when it holds no entry of
+   * those types.
+   */
+  async statCatalogue(types?: readonly string[]): Promise<StatCatalogue | undefined> {
+    // fetchStats owns the acquisition (and the stale-beats-nothing rule);
+    // it leaves the payload on `statsPayload` whichever way it got there.
+    await this.fetchStats();
+    const payload = this.statsPayload;
+    if (payload === undefined) return undefined;
+    if (this.statCataloguesBuiltAt !== this.statsPayloadAt) {
+      this.statCataloguesByTypes.clear();
+      this.statCataloguesBuiltAt = this.statsPayloadAt;
+    }
+    const key = types ? types.map((type) => type.toLowerCase()).join(",") : "";
+    const hit = this.statCataloguesByTypes.get(key);
+    if (hit) return hit;
+    const catalogue = types
+      ? buildStatCatalogue(payload, MOD_FAMILIES, types)
+      : buildStatCatalogue(payload, MOD_FAMILIES);
+    if (catalogue.entryCount === 0) return undefined;
+    this.statCataloguesByTypes.set(key, catalogue);
+    return catalogue;
+  }
+
+  /**
+   * The trade2 static data payload (GET /api/trade2/data/static): currency
+   * ids, their names and icons. Static like /data/stats — the same headers,
+   * outside the search/fetch pacing policies — cached for a week in
+   * configDir/trade-static.json. A stale disk copy beats a failed fetch; a
+   * failure with no copy is retried after five minutes.
+   */
+  async fetchStatic(): Promise<unknown | undefined> {
+    if (this.staticPayload !== undefined && Date.now() - this.staticPayloadAt < STATIC_CACHE_MS) {
+      return this.staticPayload;
+    }
+    const cached = this.readCachedPayload(this.staticFile());
+    if (cached && Date.now() - cached.at < STATIC_CACHE_MS) {
+      this.staticPayload = cached.payload;
+      this.staticPayloadAt = cached.at;
+      return cached.payload;
+    }
+    const stale = cached?.payload;
+    if (Date.now() - this.staticFailedAt < STATS_RETRY_MS) return stale;
+    try {
+      const payload = await this.getJson(`${TRADE_BASE}/data/static`);
+      if (payload === undefined || payload === null) throw new Error("trade2 static data was empty");
+      const at = Date.now();
+      this.writeCachedPayload(this.staticFile(), payload, at);
+      this.staticPayload = payload;
+      this.staticPayloadAt = at;
+      return payload;
+    } catch {
+      this.staticFailedAt = Date.now();
       return stale;
     }
   }
@@ -996,7 +1216,7 @@ export class PriceFeedService {
     if (!query) return undefined;
     const ourMods = parsed.mods.filter(isAffixMod).map((mod) => mod.text);
     const learnedTiers = this.learnedTiers();
-    const statIds = this.statCatalogue;
+    const statIds = this.statCatalogueCache;
     const summarize = (entry: CachedComps): CompsSummary =>
       summarizeComps(ourMods, entry.listings, entry.basis, {
         priceTable: this.options.getPriceTable(),
@@ -1017,5 +1237,429 @@ export class PriceFeedService {
     }
     const cached = this.compsCache.get(JSON.stringify(query.body));
     return this.cacheHit(cached, league) ? summarize(cached) : undefined;
+  }
+
+  // Training is deliberately cache-first and request-bounded. Feedback saves
+  // receive only peekCompsResult; the explicit market button calls the fetch.
+  private readonly trainingCompsInFlight = new Map<string, Promise<CachedComps>>();
+
+  private trainingCompsContext(itemText: string) {
+    let identity: ReturnType<typeof trainingIdentity>;
+    try { identity = trainingIdentity(itemText); }
+    catch { return undefined; }
+    // Match the lesson's normalized rolls and canonical magic-jewel base;
+    // advanced copy ranges and affix names must never become query values.
+    const parsed = { ...identity.parsed, baseType: identity.baseType };
+    const baseQuery = buildCompsQuery(parsed);
+    if (!baseQuery) return undefined;
+    // Cold or expired catalogues stay offline. Opening a training record must
+    // never quietly request /data/stats merely to build a better query.
+    const statIds = this.statCatalogueCache ?? this.catalogueFrom(this.statsPayloadCached());
+    if (statIds) this.statCatalogueCache = statIds;
+    const ourMods = parsed.mods.filter(isAffixMod).map((mod) => mod.text);
+    const statQuery = statIds && baseQuery.basis === "base-type" && ourMods.length > 0 ?
+      buildStatFilteredQuery(parsed, appraiseItem(itemText, {
+        parsed, learnedTiers: this.learnedTiers(), statIds,
+      }), statIds) : undefined;
+    return { parsed, baseQuery, statQuery, statIds, ourMods };
+  }
+
+  private trainingCompsResult(
+    context: NonNullable<ReturnType<PriceFeedService["trainingCompsContext"]>>,
+    entry: CachedComps,
+    cached: boolean,
+  ): CompsResult {
+    return {
+      ok: true, cached, league: entry.league, basis: entry.basis,
+      fetchedAt: new Date(entry.at).toISOString(),
+      expiresAt: new Date(entry.at + compsTtl(entry.basis)).toISOString(),
+      summary: summarizeComps(context.ourMods, entry.listings, entry.basis, {
+        priceTable: this.options.getPriceTable(), itemClass: context.parsed.itemClass,
+        learnedTiers: this.learnedTiers(), ...(context.statIds ? { statIds: context.statIds } : {}),
+        ...(entry.basis === "stat-filtered" ? { minSimilarity: 0 } : {}),
+      }),
+    };
+  }
+
+  /** Offline raw-cache read with age/provenance, re-scored for this item's modifiers. */
+  peekCompsResult(itemText: string): CompsResult | undefined {
+    const league = this.resolvedLeague;
+    if (!league) return undefined;
+    const context = this.trainingCompsContext(itemText);
+    if (!context) return undefined;
+    const queries = context.statQuery ? [context.statQuery, context.baseQuery] : [context.baseQuery];
+    for (const query of queries) {
+      const entry = this.compsCache.get(JSON.stringify(query.body));
+      if (this.cacheHit(entry, league) && Number.isFinite(entry.at) && entry.at <= Date.now()) {
+        // Thin/empty samples are meaningful cache hits too; they must not cause
+        // an automatic second search just because the first sample was small.
+        return this.trainingCompsResult(context, entry, true);
+      }
+    }
+    return undefined;
+  }
+
+  /**
+   * Explicit training-button lookup: warm cache first, otherwise ONE search
+   * and at most ONE fetch of ten listings. No cold metadata requests, query
+   * widening, 429 retry, or request deferred until a pacing window opens.
+   */
+  async fetchTrainingComps(itemText: string): Promise<CompsResult> {
+    const hit = this.peekCompsResult(itemText);
+    if (hit) return hit;
+    const league = this.resolvedLeague;
+    if (!league) return { ok: false, error: "Pin a league in Market data before checking training examples; nothing was sent." };
+    const context = this.trainingCompsContext(itemText);
+    if (!context) return { ok: false, error: "Not recognizable searchable item text." };
+    const query = context.statQuery ?? context.baseQuery;
+    const cacheKey = JSON.stringify(query.body);
+    const requestKey = `${league}\u0000${cacheKey}`;
+    let pending = this.trainingCompsInFlight.get(requestKey);
+    const joined = pending !== undefined;
+    if (!pending) {
+      const budget = this.tradeBudget();
+      if (budget.restrictedUntilIso) return {
+        ok: false, error: `trade2 rate limited until ${new Date(budget.restrictedUntilIso).toLocaleTimeString()} — nothing was sent.`,
+      };
+      if (budget.lookups < 1) return { ok: false, error: "No spare trade2 lookup right now — nothing was queued for later." };
+      pending = this.fetchTrainingSample(league, query, context.parsed.itemClass);
+      this.trainingCompsInFlight.set(requestKey, pending);
+    }
+    try {
+      const sample = await pending;
+      // A concurrent request may represent another roll of the same base;
+      // share raw listings, never the first caller's similarity verdict.
+      return this.trainingCompsResult(context, sample, joined);
+    } catch (error) {
+      return { ok: false, error: this.recordError(error) };
+    } finally {
+      if (this.trainingCompsInFlight.get(requestKey) === pending) this.trainingCompsInFlight.delete(requestKey);
+    }
+  }
+
+  private async fetchTrainingSample(league: string, query: CompsQuery, itemClass: string): Promise<CachedComps> {
+    const request = async (url: string, init: RequestInit): Promise<Response> => {
+      const response = await this.tradeRequest(url, init, true);
+      if (response.status === 429) {
+        const seconds = Number(headerOf(response, "retry-after"));
+        const penalty = Number.isFinite(seconds) && seconds > 0 ? seconds : 60;
+        this.pacer.observe(policyForUrl(url), { retryAfter: String(penalty) });
+        this.rateLimitedUntil = Math.max(this.rateLimitedUntil, this.pacer.restrictedUntil());
+        this.savePacing();
+        this.saveCompsCache();
+        throw new TradeRateLimitedError("trade2 rate limit hit — this training check was not retried.", this.rateLimitedUntilIso());
+      }
+      if (!response.ok) throw new Error(`trade2 training check → HTTP ${response.status}`);
+      return response;
+    };
+    const searchResponse = await request(`${TRADE_BASE}/search/poe2/${encodeURIComponent(league)}`, {
+      method: "POST", body: JSON.stringify(query.body),
+    });
+    const search = await searchResponse.json() as { id?: unknown; result?: unknown };
+    if (typeof search.id !== "string" || !search.id || !Array.isArray(search.result)) {
+      throw new Error("trade2 training search returned an invalid result");
+    }
+    const ids = [...new Set(search.result.filter((id): id is string => typeof id === "string" && id.length > 0))].slice(0, 10);
+    this.logTradeRequest({ kind: "search", reason: "price-training:explicit-check", league, detail: search.id });
+    let listings: CompListing[] = [];
+    if (ids.length) {
+      const response = await request(`${TRADE_BASE}/fetch/${ids.join(",")}?query=${encodeURIComponent(search.id)}`, { method: "GET" });
+      const payload = await response.json();
+      this.learnFromFetch(payload, itemClass);
+      listings = parseCompListings(payload);
+      this.logTradeRequest({ kind: "fetch", reason: "price-training:explicit-check", league, detail: ids.join(",") });
+    }
+    const entry: CachedComps = { at: Date.now(), league, basis: query.basis, listings };
+    this.compsCache.set(JSON.stringify(query.body), entry);
+    this.saveCompsCache();
+    return entry;
+  }
+
+  // -------------------------------------------------------------------------
+  // Generic trade2 plumbing (Market, Evaluate, live search) — same pacer,
+  // same cookie, same league resolution and 429 memory as the comps above.
+  // Errors are thrown (AmbiguousLeagueError, TradeRateLimitedError, Error):
+  // the callers are feature modules that surface them per request.
+  // -------------------------------------------------------------------------
+
+  private readonly genericSearchCache = new Map<
+    string,
+    { at: number; ttl: number; result: TradeSearchResult }
+  >();
+  private readonly tradeRequestLog: TradeRequestLogEntry[] = [];
+
+  /** Whether a POESESSID is configured (live search and secure-listing whispers need one). */
+  hasSession(): boolean {
+    return this.config.poesessid.length > 0;
+  }
+
+  /**
+   * The headers a non-fetch trade2 connection (the live-search websocket)
+   * must carry: the app's User-Agent and, when configured, the session
+   * cookie. Main-process only — never send this to a renderer.
+   */
+  tradeHeaders(): Record<string, string> {
+    return {
+      "User-Agent": USER_AGENT,
+      ...(this.config.poesessid ? { Cookie: `POESESSID=${this.config.poesessid}` } : {}),
+    };
+  }
+
+  /** The most recent generic trade2 requests, newest last (diagnostics). */
+  tradeRequestHistory(): TradeRequestLogEntry[] {
+    return this.tradeRequestLog.map((entry) => ({ ...entry }));
+  }
+
+  private logTradeRequest(entry: Omit<TradeRequestLogEntry, "at">): void {
+    this.tradeRequestLog.push({ at: this.now().toISOString(), ...entry });
+    if (this.tradeRequestLog.length > TRADE_LOG_MAX) this.tradeRequestLog.splice(0, this.tradeRequestLog.length - TRADE_LOG_MAX);
+  }
+
+  /** The league for a generic request: the caller's, else the resolved one. */
+  private async leagueFor(league: string | undefined): Promise<string> {
+    const pinned = typeof league === "string" ? league.trim() : "";
+    if (pinned) return pinned;
+    try {
+      return await this.cacheLeague();
+    } catch (error) {
+      this.recordError(error);
+      throw error;
+    }
+  }
+
+  private refuseIfRateLimited(): void {
+    const until = this.rateLimitedUntilIso();
+    if (until) {
+      throw new TradeRateLimitedError(
+        `trade2 rate limited until ${new Date(until).toLocaleTimeString()} — try again then`,
+        until,
+      );
+    }
+  }
+
+  private rateLimitHit(): TradeRateLimitedError {
+    return new TradeRateLimitedError(
+      "trade2 rate limit hit — wait a minute and try again.",
+      this.rateLimitedUntilIso(),
+    );
+  }
+
+  /** The `{ error: { message } }` envelope trade2 puts on 4xx answers, when present. */
+  private async errorMessageOf(response: Response): Promise<string | undefined> {
+    try {
+      const payload = (await response.json()) as { error?: { message?: unknown } };
+      const message = payload?.error?.message;
+      return typeof message === "string" && message.trim() ? message.trim() : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  private pruneGenericSearchCache(now: number): void {
+    for (const [key, entry] of this.genericSearchCache) {
+      if (now - entry.at >= entry.ttl) this.genericSearchCache.delete(key);
+    }
+    while (this.genericSearchCache.size > GENERIC_SEARCH_CACHE_MAX) {
+      const oldest = this.genericSearchCache.keys().next().value;
+      if (oldest === undefined) break;
+      this.genericSearchCache.delete(oldest);
+    }
+  }
+
+  /**
+   * One paced POST of an arbitrary search body. The answer (ids, total) is
+   * cached by league + canonical body for `cacheTtlMs` (60 s by default —
+   * a UI that re-renders must not re-search) and served from that cache
+   * even inside a penalty window. A "too complex" refusal is reported on
+   * the result rather than thrown: the query needs editing, not a retry.
+   */
+  async tradeSearch(
+    body: Record<string, unknown>,
+    opts: { reason: string; league?: string; cacheTtlMs?: number },
+  ): Promise<TradeSearchResult> {
+    const league = await this.leagueFor(opts.league);
+    let canonical: string;
+    try {
+      canonical = stableTradeQueryJson(body);
+    } catch (error) {
+      throw new Error(`trade2 search body rejected: ${error instanceof Error ? error.message : String(error)}`, {
+        cause: error,
+      });
+    }
+    const key = `${league}\u0000${canonical}`;
+    const now = Date.now();
+    this.pruneGenericSearchCache(now);
+    const ttl = Math.max(0, opts.cacheTtlMs ?? GENERIC_SEARCH_CACHE_MS);
+    const hit = this.genericSearchCache.get(key);
+    if (hit) {
+      // A caller that can live with older ids (a watch, a favourite) keeps
+      // the entry alive for its own TTL; a shorter one never cuts it.
+      hit.ttl = Math.max(hit.ttl, ttl);
+      return { ...hit.result, resultIds: [...hit.result.resultIds], cached: true };
+    }
+    this.refuseIfRateLimited();
+    const response = await this.tradeRequestWithBackoff(
+      `${TRADE_BASE}/search/poe2/${encodeURIComponent(league)}`,
+      { method: "POST", body: canonical },
+    );
+    if (response.status === 429) throw this.rateLimitHit();
+    if (!response.ok) {
+      const message = await this.errorMessageOf(response);
+      if (response.status === 400 && message && /complex/i.test(message)) {
+        this.logTradeRequest({ kind: "search", reason: opts.reason, league, detail: "too complex" });
+        return { id: "", total: 0, resultIds: [], league, url: "", cached: false, complexityError: message };
+      }
+      throw new Error(`trade2 search → HTTP ${response.status}${message ? `: ${message}` : ""}`);
+    }
+    const payload = (await response.json()) as { id?: unknown; result?: unknown; total?: unknown };
+    const id = typeof payload.id === "string" ? payload.id : "";
+    const resultIds = Array.isArray(payload.result)
+      ? payload.result.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+      : [];
+    const total =
+      typeof payload.total === "number" && Number.isFinite(payload.total)
+        ? Math.max(0, Math.floor(payload.total))
+        : resultIds.length;
+    if (!id) throw new Error("trade2 search returned no search id");
+    const result: TradeSearchResult = {
+      id,
+      total,
+      resultIds,
+      league,
+      url: tradeSearchUrl(league, id),
+      cached: false,
+    };
+    if (ttl > 0) {
+      this.genericSearchCache.set(key, { at: Date.now(), ttl, result: { ...result, resultIds: [...resultIds] } });
+    }
+    this.logTradeRequest({ kind: "search", reason: opts.reason, league, detail: id });
+    return result;
+  }
+
+  /**
+   * Re-open an existing search by its id: GET
+   * /api/trade2/search/poe2/{league}/{id}, which answers like a fresh
+   * search (`{ id, result, total }`) and — the reason to call it — carries
+   * the `query` the id stands for, so a pasted trade2 URL can be turned
+   * back into an editable query. Search-policy paced, never cached (the id
+   * is the cache), a penalty window refuses it offline.
+   *
+   * UNVERIFIED (2026-09-14): this endpoint has not been exercised against
+   * the live site yet. Callers must treat a thrown error or a missing
+   * `query` as "id-only" and keep their own fallback until the first live
+   * check passes.
+   */
+  async tradeSearchById(
+    league: string,
+    searchId: string,
+    opts: { reason: string },
+  ): Promise<TradeSearchResult & { query?: unknown }> {
+    const id = typeof searchId === "string" ? searchId.trim() : "";
+    if (!id) throw new Error("trade2 search id is required");
+    const resolved = await this.leagueFor(league);
+    this.refuseIfRateLimited();
+    const response = await this.tradeRequestWithBackoff(
+      `${TRADE_BASE}/search/poe2/${encodeURIComponent(resolved)}/${encodeURIComponent(id)}`,
+      { method: "GET" },
+    );
+    if (response.status === 429) throw this.rateLimitHit();
+    if (!response.ok) {
+      const message = await this.errorMessageOf(response);
+      throw new Error(`trade2 search → HTTP ${response.status}${message ? `: ${message}` : ""}`);
+    }
+    const payload = (await response.json()) as {
+      id?: unknown;
+      result?: unknown;
+      total?: unknown;
+      query?: unknown;
+    };
+    // Tolerant on purpose: the shape is unconfirmed, and an id that comes
+    // back without a result list is still a usable search id.
+    const answeredId = typeof payload.id === "string" && payload.id.trim() ? payload.id.trim() : id;
+    const resultIds = Array.isArray(payload.result)
+      ? payload.result.filter((entry): entry is string => typeof entry === "string" && entry.length > 0)
+      : [];
+    const total =
+      typeof payload.total === "number" && Number.isFinite(payload.total)
+        ? Math.max(0, Math.floor(payload.total))
+        : resultIds.length;
+    this.logTradeRequest({ kind: "search", reason: opts.reason, league: resolved, detail: answeredId });
+    return {
+      id: answeredId,
+      total,
+      resultIds,
+      league: resolved,
+      url: tradeSearchUrl(resolved, answeredId),
+      cached: false,
+      ...(payload.query !== undefined ? { query: payload.query } : {}),
+    };
+  }
+
+  /**
+   * Fetch listings for `ids` in order, at most ten per GET (as the site
+   * does), each GET paced. Every fetch also teaches the learned-tier store.
+   * Nothing is cached here: callers hold the rows they asked for.
+   */
+  async tradeFetch(
+    ids: string[],
+    queryId: string,
+    opts: { reason: string; keepRaw?: boolean },
+  ): Promise<TradeListing[]> {
+    const wanted: string[] = [];
+    for (const id of ids) {
+      const trimmed = typeof id === "string" ? id.trim() : "";
+      if (trimmed && !wanted.includes(trimmed)) wanted.push(trimmed);
+    }
+    if (wanted.length === 0) return [];
+    if (!queryId || !queryId.trim()) throw new Error("trade2 fetch needs the search id");
+    const league = this.resolvedLeague ?? (this.config.league !== "auto" ? this.config.league : "");
+    const listings: TradeListing[] = [];
+    for (let start = 0; start < wanted.length; start += TRADE_FETCH_BATCH) {
+      const batch = wanted.slice(start, start + TRADE_FETCH_BATCH);
+      this.refuseIfRateLimited();
+      const response = await this.tradeRequestWithBackoff(
+        `${TRADE_BASE}/fetch/${batch.join(",")}?query=${encodeURIComponent(queryId.trim())}`,
+        { method: "GET" },
+      );
+      if (response.status === 429) throw this.rateLimitHit();
+      if (!response.ok) {
+        const message = await this.errorMessageOf(response);
+        throw new Error(`trade2 fetch → HTTP ${response.status}${message ? `: ${message}` : ""}`);
+      }
+      const payload = await response.json();
+      this.learnFromFetch(payload, undefined);
+      listings.push(
+        ...parseTradeListings(payload, league, {
+          priceTable: this.options.getPriceTable(),
+          ...(opts.keepRaw ? { keepRaw: true } : {}),
+        }),
+      );
+      this.logTradeRequest({ kind: "fetch", reason: opts.reason, league, detail: batch.join(",") });
+    }
+    return listings;
+  }
+
+  /**
+   * One paced POST to the bulk exchange (search policy: the API counts it
+   * with searches). Uncached — exchange stock moves by the minute.
+   */
+  async tradeExchange(
+    body: Record<string, unknown>,
+    opts: { reason: string; league?: string },
+  ): Promise<TradeExchangeResult> {
+    const league = await this.leagueFor(opts.league);
+    this.refuseIfRateLimited();
+    const response = await this.tradeRequestWithBackoff(
+      `${TRADE_BASE}/exchange/poe2/${encodeURIComponent(league)}`,
+      { method: "POST", body: JSON.stringify(body) },
+    );
+    if (response.status === 429) throw this.rateLimitHit();
+    if (!response.ok) {
+      const message = await this.errorMessageOf(response);
+      throw new Error(`trade2 exchange → HTTP ${response.status}${message ? `: ${message}` : ""}`);
+    }
+    const parsed = parseExchangeResult(await response.json(), league);
+    this.logTradeRequest({ kind: "exchange", reason: opts.reason, league, detail: parsed.id });
+    return { ...parsed, league, url: parsed.id ? exchangeUrl(league, parsed.id) : "" };
   }
 }

@@ -1,0 +1,46 @@
+{
+  "note": "POST /api/trade2/exchange/poe2/<league> answer for have=[exalted] want=[divine], trimmed. Seller names are placeholders.",
+  "id": "ex-eval-1",
+  "total": 3,
+  "result": {
+    "list-a": {
+      "id": "list-a",
+      "listing": {
+        "indexed": "2026-09-07T10:00:00Z",
+        "account": { "name": "SellerA", "online": { "league": "Runes of Aldur" }, "lastCharacterName": "SellerAChar" },
+        "whisper": "@SellerA Hi, I'd like to buy your {0} for my {1} in Runes of Aldur.",
+        "offers": [
+          {
+            "exchange": { "currency": "exalted", "amount": 400, "whisper": "{0} Exalted Orb" },
+            "item": { "currency": "divine", "amount": 1, "stock": 12, "id": "off-1", "whisper": "{0} Divine Orb" }
+          }
+        ]
+      }
+    },
+    "list-b": {
+      "id": "list-b",
+      "listing": {
+        "indexed": "2026-09-07T09:30:00Z",
+        "account": { "name": "SellerB", "online": null },
+        "offers": [
+          {
+            "exchange": { "currency": "exalted", "amount": 820 },
+            "item": { "currency": "divine", "amount": 2, "stock": 8 }
+          }
+        ]
+      }
+    },
+    "list-c": {
+      "id": "list-c",
+      "listing": {
+        "account": { "name": "SellerC", "online": { "league": "Runes of Aldur" } },
+        "offers": [
+          {
+            "exchange": { "currency": "exalted", "amount": 450 },
+            "item": { "currency": "divine", "amount": 1, "stock": 40 }
+          }
+        ]
+      }
+    }
+  }
+}

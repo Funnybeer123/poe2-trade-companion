@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "folders": [
+    { "id": "fld_rings", "name": "Rings", "colour": "gold", "order": 0, "expanded": true },
+    { "id": "fld_bulk", "name": "Bulk", "colour": "teal", "order": 1, "expanded": false }
+  ],
+  "favorites": [
+    {
+      "id": "fav_life_ring",
+      "folderId": "fld_rings",
+      "name": "Life ring",
+      "colour": "gold",
+      "order": 0,
+      "createdAt": "2026-09-01T10:00:00.000Z",
+      "updatedAt": "2026-09-05T10:00:00.000Z",
+      "draft": {
+        "kind": "search",
+        "query": {
+          "type": "Ruby Ring",
+          "status": "online",
+          "stats": [{ "type": "and", "filters": [{ "id": "explicit.stat_3299347043", "value": { "min": 100 } }] }],
+          "sort": { "key": "price", "direction": "asc" }
+        }
+      }
+    },
+    {
+      "id": "fav_div_ex",
+      "folderId": "fld_bulk",
+      "name": "divine → exalted",
+      "colour": "teal",
+      "order": 0,
+      "createdAt": "2026-09-02T10:00:00.000Z",
+      "updatedAt": "2026-09-02T10:00:00.000Z",
+      "draft": { "kind": "exchange", "query": { "have": ["divine"], "want": ["exalted"], "status": "online" } }
+    },
+    {
+      "id": "fav_loose",
+      "folderId": null,
+      "name": "Doom Loop",
+      "colour": "amber",
+      "order": 0,
+      "createdAt": "2026-09-03T10:00:00.000Z",
+      "updatedAt": "2026-09-03T10:00:00.000Z",
+      "draft": { "kind": "search", "query": { "name": "Doom Loop", "rarity": "unique", "status": "online", "stats": [] } }
+    }
+  ]
+}

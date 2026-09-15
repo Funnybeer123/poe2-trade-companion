@@ -1,0 +1,2433 @@
+{
+  "schemaVersion": 1,
+  "source": "community",
+  "updatedAt": "2026-09-14",
+  "communityNote": "Community-maintained route. Nothing here is verified against the current game build - verify it in game, then fix it under Tools > Campaign guide > Edit (and export your corrections).",
+  "acts": [
+    {
+      "part": 1,
+      "act": 1,
+      "name": "Act 1",
+      "townId": "G1_town",
+      "areas": [
+        {
+          "id": "G1_1",
+          "name": "The Riverbank",
+          "level": 1,
+          "exits": [
+            "G1_2"
+          ],
+          "notes": "Level 1 start; the boss gates the exit.",
+          "wiki": "The_Riverbank",
+          "objectives": [
+            {
+              "id": "G1_1.miller",
+              "title": "Kill the Bloated Miller",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            },
+            {
+              "id": "G1_1.reach-G1_2",
+              "title": "Reach Clearfell",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G1_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_2",
+          "name": "Clearfell",
+          "level": 2,
+          "exits": [
+            "G1_3",
+            "G1_4"
+          ],
+          "waypoint": true,
+          "wiki": "Clearfell",
+          "objectives": [
+            {
+              "id": "G1_2.beira",
+              "title": "Kill Beira of the Rotten Pack",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            },
+            {
+              "id": "G1_2.reach-G1_4",
+              "title": "Reach The Grelwood",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G1_4",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_3",
+          "name": "Mud Burrow",
+          "level": 3,
+          "exits": [
+            "G1_2"
+          ],
+          "branch": true,
+          "wiki": "Mud_Burrow",
+          "objectives": [
+            {
+              "id": "G1_3.devourer",
+              "title": "Kill the Devourer",
+              "kind": "boss",
+              "rewards": [
+                "unlocks"
+              ],
+              "detail": "Quest turn-in in Clearfell Encampment.",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_4",
+          "name": "The Grelwood",
+          "level": 4,
+          "exits": [
+            "G1_5",
+            "G1_6"
+          ],
+          "waypoint": true,
+          "wiki": "The_Grelwood",
+          "objectives": [
+            {
+              "id": "G1_4.tree",
+              "title": "Verify: the Grelwood Tree side objective",
+              "kind": "note",
+              "rewards": [
+                "currency"
+              ],
+              "optional": true,
+              "verified": false
+            },
+            {
+              "id": "G1_4.reach-G1_6",
+              "title": "Reach The Grim Tangle",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G1_6",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_5",
+          "name": "The Red Vale",
+          "level": 5,
+          "exits": [
+            "G1_4"
+          ],
+          "branch": true,
+          "wiki": "The_Red_Vale",
+          "objectives": [
+            {
+              "id": "G1_5.rust-king",
+              "title": "Kill the Rust King",
+              "kind": "boss",
+              "rewards": [
+                "stats"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_6",
+          "name": "The Grim Tangle",
+          "level": 6,
+          "exits": [
+            "G1_7"
+          ],
+          "waypoint": true,
+          "wiki": "The_Grim_Tangle",
+          "objectives": [
+            {
+              "id": "G1_6.reach-G1_7",
+              "title": "Reach Cemetery of the Eternals",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G1_7",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_7",
+          "name": "Cemetery of the Eternals",
+          "level": 7,
+          "exits": [
+            "G1_8",
+            "G1_9",
+            "G1_11"
+          ],
+          "waypoint": true,
+          "wiki": "Cemetery_of_the_Eternals",
+          "objectives": [
+            {
+              "id": "G1_7.lachlann",
+              "title": "Kill Lachlann of Endless Lament",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            },
+            {
+              "id": "G1_7.tombs",
+              "title": "Clear both tombs for the passive points",
+              "kind": "quest",
+              "rewards": [
+                "passives"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_8",
+          "name": "Mausoleum of the Praetor",
+          "level": 8,
+          "exits": [
+            "G1_7"
+          ],
+          "branch": true,
+          "wiki": "Mausoleum_of_the_Praetor",
+          "objectives": [
+            {
+              "id": "G1_8.draven",
+              "title": "Kill Draven, the Eternal Praetor",
+              "kind": "boss",
+              "rewards": [
+                "passives"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_9",
+          "name": "Tomb of the Consort",
+          "level": 8,
+          "exits": [
+            "G1_7"
+          ],
+          "branch": true,
+          "wiki": "Tomb_of_the_Consort",
+          "objectives": [
+            {
+              "id": "G1_9.asinia",
+              "title": "Kill Asinia, the Praetor's Consort",
+              "kind": "boss",
+              "rewards": [
+                "passives"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_11",
+          "name": "Hunting Grounds",
+          "level": 10,
+          "exits": [
+            "G1_12",
+            "G1_13_1"
+          ],
+          "waypoint": true,
+          "wiki": "Hunting_Grounds",
+          "objectives": [
+            {
+              "id": "G1_11.crowbell",
+              "title": "Kill Crowbell",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            },
+            {
+              "id": "G1_11.reach-G1_13_1",
+              "title": "Reach Ogham Farmlands",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G1_13_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_12",
+          "name": "Freythorn",
+          "level": 11,
+          "exits": [
+            "G1_11"
+          ],
+          "branch": true,
+          "wiki": "Freythorn",
+          "objectives": [
+            {
+              "id": "G1_12.king-in-the-mists",
+              "title": "Kill the King in the Mists",
+              "kind": "boss",
+              "rewards": [
+                "league"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_13_1",
+          "name": "Ogham Farmlands",
+          "level": 12,
+          "exits": [
+            "G1_13_2"
+          ],
+          "waypoint": true,
+          "wiki": "Ogham_Farmlands",
+          "objectives": [
+            {
+              "id": "G1_13_1.reach-G1_13_2",
+              "title": "Reach Ogham Village",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G1_13_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_13_2",
+          "name": "Ogham Village",
+          "level": 13,
+          "exits": [
+            "G1_14"
+          ],
+          "wiki": "Ogham_Village",
+          "objectives": [
+            {
+              "id": "G1_13_2.executioner",
+              "title": "Kill the Executioner",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_14",
+          "name": "The Manor Ramparts",
+          "level": 14,
+          "exits": [
+            "G1_15"
+          ],
+          "waypoint": true,
+          "wiki": "The_Manor_Ramparts",
+          "objectives": [
+            {
+              "id": "G1_14.reach-G1_15",
+              "title": "Reach Ogham Manor",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G1_15",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_15",
+          "name": "Ogham Manor",
+          "level": 15,
+          "exits": [
+            "G1_town"
+          ],
+          "wiki": "Ogham_Manor",
+          "objectives": [
+            {
+              "id": "G1_15.candlemass",
+              "title": "Kill Candlemass, the Living Rite",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            },
+            {
+              "id": "G1_15.geonor",
+              "title": "Kill Count Geonor",
+              "kind": "boss",
+              "rewards": [
+                "unlocks"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G1_town",
+          "name": "Clearfell Encampment",
+          "level": 15,
+          "exits": [
+            "G2_1"
+          ],
+          "town": true,
+          "wiki": "Clearfell_Encampment",
+          "objectives": [
+            {
+              "id": "G1_town.quests",
+              "title": "Hand in the act quests (skill gems, passives)",
+              "kind": "quest",
+              "rewards": [
+                "gems",
+                "passives"
+              ],
+              "verified": false
+            },
+            {
+              "id": "G1_town.reach-G2_1",
+              "title": "Reach Vastiri Outskirts",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G2_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        }
+      ]
+    },
+    {
+      "part": 1,
+      "act": 2,
+      "name": "Act 2",
+      "townId": "G2_town",
+      "areas": [
+        {
+          "id": "G2_1",
+          "name": "Vastiri Outskirts",
+          "level": 16,
+          "exits": [
+            "G2_10_1",
+            "G2_2"
+          ],
+          "waypoint": true,
+          "wiki": "Vastiri_Outskirts",
+          "objectives": [
+            {
+              "id": "G2_1.reach-G2_2",
+              "title": "Reach Traitor's Passage",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G2_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_10_1",
+          "name": "Mawdun Quarry",
+          "level": 17,
+          "exits": [
+            "G2_10_2"
+          ],
+          "branch": true,
+          "wiki": "Mawdun_Quarry",
+          "objectives": [
+            {
+              "id": "G2_10_1.reach-G2_10_2",
+              "title": "Reach Mawdun Mine",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G2_10_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_10_2",
+          "name": "Mawdun Mine",
+          "level": 18,
+          "exits": [
+            "G2_1"
+          ],
+          "branch": true,
+          "wiki": "Mawdun_Mine",
+          "objectives": [
+            {
+              "id": "G2_10_2.rathbreaker",
+              "title": "Kill Rathbreaker",
+              "kind": "boss",
+              "rewards": [
+                "currency"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_2",
+          "name": "Traitor's Passage",
+          "level": 19,
+          "exits": [
+            "G2_3",
+            "G2_13"
+          ],
+          "wiki": "Traitor's_Passage",
+          "objectives": [
+            {
+              "id": "G2_2.balbala",
+              "title": "Kill Balbala, the Traitor",
+              "kind": "boss",
+              "rewards": [
+                "ascendancy"
+              ],
+              "detail": "Drops the key to the Trial of the Sekhemas.",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_3",
+          "name": "The Halani Gates",
+          "level": 20,
+          "exits": [
+            "G2_4_1",
+            "G2_6"
+          ],
+          "aliases": [
+            "G2_3a"
+          ],
+          "waypoint": true,
+          "wiki": "The_Halani_Gates",
+          "objectives": [
+            {
+              "id": "G2_3.jamanra",
+              "title": "Kill Jamanra, the Risen King",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_4_1",
+          "name": "Keth",
+          "level": 22,
+          "exits": [
+            "G2_4_2"
+          ],
+          "waypoint": true,
+          "wiki": "Keth",
+          "objectives": [
+            {
+              "id": "G2_4_1.reach-G2_4_2",
+              "title": "Reach The Lost City",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G2_4_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_4_2",
+          "name": "The Lost City",
+          "level": 23,
+          "exits": [
+            "G2_4_3"
+          ],
+          "wiki": "The_Lost_City",
+          "objectives": [
+            {
+              "id": "G2_4_2.kabala",
+              "title": "Kill Kabala, Constrictor Queen",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_4_3",
+          "name": "Buried Shrines",
+          "level": 24,
+          "exits": [
+            "G2_8"
+          ],
+          "wiki": "Buried_Shrines",
+          "objectives": [
+            {
+              "id": "G2_4_3.azarian",
+              "title": "Kill Azarian, the Forsaken Son",
+              "kind": "boss",
+              "rewards": [
+                "unlocks"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_5_1",
+          "name": "Mastodon Badlands",
+          "level": 22,
+          "exits": [
+            "G2_5_2"
+          ],
+          "branch": true,
+          "wiki": "Mastodon_Badlands",
+          "objectives": [
+            {
+              "id": "G2_5_1.reach-G2_5_2",
+              "title": "Reach The Bone Pits",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G2_5_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_5_2",
+          "name": "The Bone Pits",
+          "level": 23,
+          "exits": [
+            "G2_6"
+          ],
+          "branch": true,
+          "wiki": "The_Bone_Pits",
+          "objectives": [
+            {
+              "id": "G2_5_2.ekbab",
+              "title": "Kill Ekbab and Iktab",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_6",
+          "name": "Valley of the Titans",
+          "level": 22,
+          "exits": [
+            "G2_5_1",
+            "G2_7"
+          ],
+          "waypoint": true,
+          "wiki": "Valley_of_the_Titans",
+          "objectives": [
+            {
+              "id": "G2_6.reach-G2_7",
+              "title": "Reach The Titan Grotto",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G2_7",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_7",
+          "name": "The Titan Grotto",
+          "level": 23,
+          "exits": [
+            "G2_8"
+          ],
+          "wiki": "The_Titan_Grotto",
+          "objectives": [
+            {
+              "id": "G2_7.zalmarath",
+              "title": "Kill Zalmarath, the Colossus",
+              "kind": "boss",
+              "rewards": [
+                "unlocks"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_8",
+          "name": "Deshar",
+          "level": 28,
+          "exits": [
+            "G2_9_1"
+          ],
+          "waypoint": true,
+          "wiki": "Deshar",
+          "objectives": [
+            {
+              "id": "G2_8.reach-G2_9_1",
+              "title": "Reach Path of Mourning",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G2_9_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_9_1",
+          "name": "Path of Mourning",
+          "level": 29,
+          "exits": [
+            "G2_9_2"
+          ],
+          "wiki": "Path_of_Mourning",
+          "objectives": [
+            {
+              "id": "G2_9_1.reach-G2_9_2",
+              "title": "Reach The Spires of Deshar",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G2_9_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_9_2",
+          "name": "The Spires of Deshar",
+          "level": 30,
+          "exits": [
+            "G2_12"
+          ],
+          "wiki": "The_Spires_of_Deshar",
+          "objectives": [
+            {
+              "id": "G2_9_2.tor-gul",
+              "title": "Kill Tor Gul, the Defiler",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_12",
+          "name": "The Dreadnought",
+          "level": 31,
+          "exits": [
+            "G2_12_2"
+          ],
+          "aliases": [
+            "G2_12_1"
+          ],
+          "waypoint": true,
+          "notes": "Two instance ids (G2_12 and G2_12_1) are the same place.",
+          "wiki": "The_Dreadnought",
+          "objectives": [
+            {
+              "id": "G2_12.reach-G2_12_2",
+              "title": "Reach Dreadnought Vanguard",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G2_12_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_12_2",
+          "name": "Dreadnought Vanguard",
+          "level": 32,
+          "exits": [
+            "G2_town"
+          ],
+          "wiki": "Dreadnought_Vanguard",
+          "objectives": [
+            {
+              "id": "G2_12_2.jamanra-abomination",
+              "title": "Kill Jamanra, the Abomination",
+              "kind": "boss",
+              "rewards": [
+                "unlocks"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_13",
+          "name": "Trial of the Sekhemas",
+          "level": 22,
+          "exits": [],
+          "branch": true,
+          "wiki": "Trial_of_the_Sekhemas",
+          "objectives": [
+            {
+              "id": "G2_13.trial",
+              "title": "Run the Trial of the Sekhemas for your Ascendancy",
+              "kind": "trial",
+              "rewards": [
+                "ascendancy"
+              ],
+              "detail": "Needs the Balbala key; repeatable at endgame levels.",
+              "optional": true,
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G2_town",
+          "name": "The Ardura Caravan",
+          "level": 32,
+          "exits": [
+            "G3_1"
+          ],
+          "town": true,
+          "wiki": "The_Ardura_Caravan",
+          "objectives": [
+            {
+              "id": "G2_town.quests",
+              "title": "Hand in the act quests (skill gems, passives)",
+              "kind": "quest",
+              "rewards": [
+                "gems",
+                "passives"
+              ],
+              "verified": false
+            },
+            {
+              "id": "G2_town.reach-G3_1",
+              "title": "Reach Sandswept Marsh",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G3_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        }
+      ]
+    },
+    {
+      "part": 1,
+      "act": 3,
+      "name": "Act 3",
+      "townId": "G3_town",
+      "areas": [
+        {
+          "id": "G3_1",
+          "name": "Sandswept Marsh",
+          "level": 33,
+          "exits": [
+            "G3_3"
+          ],
+          "waypoint": true,
+          "wiki": "Sandswept_Marsh",
+          "objectives": [
+            {
+              "id": "G3_1.rootdredge",
+              "title": "Kill Rootdredge",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_3",
+          "name": "Jungle Ruins",
+          "level": 34,
+          "exits": [
+            "G3_2_1",
+            "G3_4"
+          ],
+          "wiki": "Jungle_Ruins",
+          "objectives": [
+            {
+              "id": "G3_3.blackjaw",
+              "title": "Kill Blackjaw, the Remnant",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_2_1",
+          "name": "Infested Barrens",
+          "level": 35,
+          "exits": [
+            "G3_5",
+            "G3_7",
+            "G3_10_Airlock"
+          ],
+          "waypoint": true,
+          "wiki": "Infested_Barrens",
+          "objectives": [
+            {
+              "id": "G3_2_1.reach-G3_5",
+              "title": "Reach The Azak Bog",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G3_5",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_4",
+          "name": "The Venom Crypts",
+          "level": 35,
+          "exits": [
+            "G3_3"
+          ],
+          "branch": true,
+          "wiki": "The_Venom_Crypts",
+          "objectives": [
+            {
+              "id": "G3_4.venom",
+              "title": "Verify: Venom Crypts quest reward",
+              "kind": "note",
+              "rewards": [
+                "currency"
+              ],
+              "optional": true,
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_5",
+          "name": "The Azak Bog",
+          "level": 36,
+          "exits": [
+            "G3_6_1"
+          ],
+          "wiki": "The_Azak_Bog",
+          "objectives": [
+            {
+              "id": "G3_5.ignagduk",
+              "title": "Kill Ignagduk, the Bog Witch",
+              "kind": "boss",
+              "rewards": [
+                "unlocks"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_7",
+          "name": "Chimeral Wetlands",
+          "level": 36,
+          "exits": [
+            "G3_2_1"
+          ],
+          "branch": true,
+          "wiki": "Chimeral_Wetlands",
+          "objectives": [
+            {
+              "id": "G3_7.xyclucian",
+              "title": "Kill Xyclucian, the Chimera",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_6_1",
+          "name": "Jiquani's Machinarium",
+          "level": 37,
+          "exits": [
+            "G3_6_2"
+          ],
+          "wiki": "Jiquani's_Machinarium",
+          "objectives": [
+            {
+              "id": "G3_6_1.zicoatl",
+              "title": "Kill Zicoatl, Warden of the Core",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_6_2",
+          "name": "Jiquani's Sanctum",
+          "level": 38,
+          "exits": [
+            "G3_2_2"
+          ],
+          "wiki": "Jiquani's_Sanctum",
+          "objectives": [
+            {
+              "id": "G3_6_2.reach-G3_2_2",
+              "title": "Reach The Matlan Waterways",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G3_2_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_10_Airlock",
+          "name": "The Temple of Chaos",
+          "level": 38,
+          "exits": [
+            "G3_10"
+          ],
+          "branch": true,
+          "wiki": "The_Temple_of_Chaos",
+          "objectives": [
+            {
+              "id": "G3_10_Airlock.reach-G3_10",
+              "title": "Reach Trial of Chaos",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G3_10",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_10",
+          "name": "Trial of Chaos",
+          "level": 38,
+          "exits": [],
+          "branch": true,
+          "wiki": "Trial_of_Chaos",
+          "objectives": [
+            {
+              "id": "G3_10.trial",
+              "title": "Run the Trial of Chaos for your Ascendancy",
+              "kind": "trial",
+              "rewards": [
+                "ascendancy"
+              ],
+              "detail": "Needs an Inscribed Ultimatum; repeatable at endgame levels.",
+              "optional": true,
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_2_2",
+          "name": "The Matlan Waterways",
+          "level": 39,
+          "exits": [
+            "G3_8"
+          ],
+          "wiki": "The_Matlan_Waterways",
+          "objectives": [
+            {
+              "id": "G3_2_2.reach-G3_8",
+              "title": "Reach The Drowned City",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G3_8",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_8",
+          "name": "The Drowned City",
+          "level": 40,
+          "exits": [
+            "G3_9",
+            "G3_11",
+            "G3_12"
+          ],
+          "waypoint": true,
+          "wiki": "The_Drowned_City",
+          "objectives": [
+            {
+              "id": "G3_8.silverfist",
+              "title": "Kill Mighty Silverfist",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_9",
+          "name": "Molten Vault",
+          "level": 41,
+          "exits": [
+            "G3_8"
+          ],
+          "branch": true,
+          "objectives": [
+            {
+              "id": "G3_9.verify",
+              "title": "Verify: Molten Vault boss and reward",
+              "kind": "note",
+              "rewards": [],
+              "optional": true,
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_11",
+          "name": "Apex of Filth",
+          "level": 41,
+          "exits": [
+            "G3_8"
+          ],
+          "branch": true,
+          "objectives": [
+            {
+              "id": "G3_11.verify",
+              "title": "Verify: Apex of Filth boss and reward",
+              "kind": "note",
+              "rewards": [],
+              "optional": true,
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_12",
+          "name": "Utzaal",
+          "level": 42,
+          "exits": [
+            "G3_14"
+          ],
+          "wiki": "Utzaal",
+          "objectives": [
+            {
+              "id": "G3_12.napuatzi",
+              "title": "Kill Viper Napuatzi",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_14",
+          "name": "Aggorat",
+          "level": 43,
+          "exits": [
+            "G3_16"
+          ],
+          "wiki": "Aggorat",
+          "objectives": [
+            {
+              "id": "G3_14.ketzuli",
+              "title": "Kill Ketzuli, High Priest of the Sun",
+              "kind": "boss",
+              "rewards": [],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_16",
+          "name": "The Black Chambers",
+          "level": 44,
+          "exits": [
+            "G3_17"
+          ],
+          "wiki": "The_Black_Chambers",
+          "objectives": [
+            {
+              "id": "G3_16.doryani",
+              "title": "Kill Doryani",
+              "kind": "boss",
+              "rewards": [
+                "unlocks"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_17",
+          "name": "Act 3 area 17",
+          "level": 45,
+          "exits": [
+            "G3_town"
+          ],
+          "objectives": [
+            {
+              "id": "G3_17.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G3_17.reach-G3_town",
+              "title": "Reach Ziggurat Encampment",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G3_town",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G3_town",
+          "name": "Ziggurat Encampment",
+          "level": 44,
+          "exits": [
+            "G4_1_1"
+          ],
+          "town": true,
+          "wiki": "Ziggurat_Encampment",
+          "objectives": [
+            {
+              "id": "G3_town.quests",
+              "title": "Hand in the act quests (skill gems, passives)",
+              "kind": "quest",
+              "rewards": [
+                "gems",
+                "passives"
+              ],
+              "verified": false
+            },
+            {
+              "id": "G3_town.reach-G4_1_1",
+              "title": "Reach Act 4 area 1-1",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_1_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        }
+      ]
+    },
+    {
+      "part": 1,
+      "act": 4,
+      "name": "Act 4",
+      "townId": "G4_town",
+      "areas": [
+        {
+          "id": "G4_1_1",
+          "name": "Act 4 area 1-1",
+          "level": 46,
+          "exits": [
+            "G4_7",
+            "G4_1_2"
+          ],
+          "notes": "The first half of act 4 is open-order; the levels here are the lowest observed instance levels.",
+          "objectives": [
+            {
+              "id": "G4_1_1.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_1_1.reach-G4_1_2",
+              "title": "Reach Act 4 area 1-2",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_1_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_1_2",
+          "name": "Act 4 area 1-2",
+          "level": 47,
+          "exits": [
+            "G4_2_1"
+          ],
+          "objectives": [
+            {
+              "id": "G4_1_2.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_1_2.reach-G4_2_1",
+              "title": "Reach Act 4 area 2-1",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_2_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_2_1",
+          "name": "Act 4 area 2-1",
+          "level": 46,
+          "exits": [
+            "G4_2_2"
+          ],
+          "objectives": [
+            {
+              "id": "G4_2_1.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_2_1.reach-G4_2_2",
+              "title": "Reach Act 4 area 2-2",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_2_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_2_2",
+          "name": "Act 4 area 2-2",
+          "level": 47,
+          "exits": [
+            "G4_3_1"
+          ],
+          "objectives": [
+            {
+              "id": "G4_2_2.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_2_2.reach-G4_3_1",
+              "title": "Reach Act 4 area 3-1",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_3_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_3_1",
+          "name": "Act 4 area 3-1",
+          "level": 47,
+          "exits": [
+            "G4_3_2"
+          ],
+          "objectives": [
+            {
+              "id": "G4_3_1.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_3_1.reach-G4_3_2",
+              "title": "Reach Act 4 area 3-2",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_3_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_3_2",
+          "name": "Act 4 area 3-2",
+          "level": 48,
+          "exits": [
+            "G4_4_1"
+          ],
+          "objectives": [
+            {
+              "id": "G4_3_2.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_3_2.reach-G4_4_1",
+              "title": "Reach Act 4 area 4-1",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_4_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_4_1",
+          "name": "Act 4 area 4-1",
+          "level": 47,
+          "exits": [
+            "G4_4_2"
+          ],
+          "objectives": [
+            {
+              "id": "G4_4_1.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_4_1.reach-G4_4_2",
+              "title": "Reach Act 4 area 4-2",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_4_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_4_2",
+          "name": "Act 4 area 4-2",
+          "level": 48,
+          "exits": [
+            "G4_4_3"
+          ],
+          "objectives": [
+            {
+              "id": "G4_4_2.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_4_2.reach-G4_4_3",
+              "title": "Reach Act 4 area 4-3",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_4_3",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_4_3",
+          "name": "Act 4 area 4-3",
+          "level": 51,
+          "exits": [
+            "G4_5_1"
+          ],
+          "objectives": [
+            {
+              "id": "G4_4_3.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_4_3.reach-G4_5_1",
+              "title": "Reach Act 4 area 5-1",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_5_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_5_1",
+          "name": "Act 4 area 5-1",
+          "level": 47,
+          "exits": [
+            "G4_5_2"
+          ],
+          "objectives": [
+            {
+              "id": "G4_5_1.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_5_1.reach-G4_5_2",
+              "title": "Reach Act 4 area 5-2",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_5_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_5_2",
+          "name": "Act 4 area 5-2",
+          "level": 48,
+          "exits": [
+            "G4_8a"
+          ],
+          "objectives": [
+            {
+              "id": "G4_5_2.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_5_2.reach-G4_8a",
+              "title": "Reach Act 4 area 8a",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_8a",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_8a",
+          "name": "Act 4 area 8a",
+          "level": 52,
+          "exits": [
+            "G4_8b"
+          ],
+          "objectives": [
+            {
+              "id": "G4_8a.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_8a.reach-G4_8b",
+              "title": "Reach Act 4 area 8b",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_8b",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_8b",
+          "name": "Act 4 area 8b",
+          "level": 52,
+          "exits": [
+            "G4_10"
+          ],
+          "objectives": [
+            {
+              "id": "G4_8b.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_8b.reach-G4_10",
+              "title": "Reach Act 4 area 10",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_10",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_10",
+          "name": "Act 4 area 10",
+          "level": 52,
+          "exits": [
+            "G4_11_1a"
+          ],
+          "objectives": [
+            {
+              "id": "G4_10.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_10.reach-G4_11_1a",
+              "title": "Reach Act 4 area 11-1a",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_11_1a",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_11_1a",
+          "name": "Act 4 area 11-1a",
+          "level": 53,
+          "exits": [
+            "G4_11_1b"
+          ],
+          "objectives": [
+            {
+              "id": "G4_11_1a.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_11_1a.reach-G4_11_1b",
+              "title": "Reach Act 4 area 11-1b",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_11_1b",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_11_1b",
+          "name": "Act 4 area 11-1b",
+          "level": 53,
+          "exits": [
+            "G4_11_2"
+          ],
+          "objectives": [
+            {
+              "id": "G4_11_1b.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_11_1b.reach-G4_11_2",
+              "title": "Reach Act 4 area 11-2",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_11_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_11_2",
+          "name": "Act 4 area 11-2",
+          "level": 53,
+          "exits": [
+            "G4_13"
+          ],
+          "objectives": [
+            {
+              "id": "G4_11_2.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_11_2.reach-G4_13",
+              "title": "Reach Act 4 area 13",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_13",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_13",
+          "name": "Act 4 area 13",
+          "level": 53,
+          "exits": [
+            "G4_town"
+          ],
+          "objectives": [
+            {
+              "id": "G4_13.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "G4_13.reach-G4_town",
+              "title": "Reach Ngakanu",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "G4_town",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_7",
+          "name": "Act 4 area 7",
+          "level": 46,
+          "exits": [
+            "G4_1_1"
+          ],
+          "branch": true,
+          "objectives": [
+            {
+              "id": "G4_7.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "G4_town",
+          "name": "Ngakanu",
+          "level": 53,
+          "exits": [
+            "P1_1"
+          ],
+          "town": true,
+          "notes": "Town name unverified.",
+          "objectives": [
+            {
+              "id": "G4_town.quests",
+              "title": "Hand in the act quests (skill gems, passives)",
+              "kind": "quest",
+              "rewards": [
+                "gems",
+                "passives"
+              ],
+              "verified": false
+            },
+            {
+              "id": "G4_town.reach-P1_1",
+              "title": "Reach Part 2 act 1 area 1",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P1_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        }
+      ]
+    },
+    {
+      "part": 2,
+      "act": 1,
+      "name": "Act 1 - second half",
+      "townId": "P1_Town",
+      "areas": [
+        {
+          "id": "P1_1",
+          "name": "Part 2 act 1 area 1",
+          "level": 54,
+          "exits": [
+            "P1_2"
+          ],
+          "notes": "Introduced with the Act 4 patch as the replacement for Cruel difficulty - verify the in-game act name.",
+          "objectives": [
+            {
+              "id": "P1_1.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P1_1.reach-P1_2",
+              "title": "Reach Part 2 act 1 area 2",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P1_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P1_2",
+          "name": "Part 2 act 1 area 2",
+          "level": 54,
+          "exits": [
+            "P1_3"
+          ],
+          "objectives": [
+            {
+              "id": "P1_2.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P1_2.reach-P1_3",
+              "title": "Reach Part 2 act 1 area 3",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P1_3",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P1_3",
+          "name": "Part 2 act 1 area 3",
+          "level": 55,
+          "exits": [
+            "P1_4"
+          ],
+          "objectives": [
+            {
+              "id": "P1_3.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P1_3.reach-P1_4",
+              "title": "Reach Part 2 act 1 area 4",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P1_4",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P1_4",
+          "name": "Part 2 act 1 area 4",
+          "level": 55,
+          "exits": [
+            "P1_5"
+          ],
+          "objectives": [
+            {
+              "id": "P1_4.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P1_4.reach-P1_5",
+              "title": "Reach Part 2 act 1 area 5",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P1_5",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P1_5",
+          "name": "Part 2 act 1 area 5",
+          "level": 56,
+          "exits": [
+            "P1_6"
+          ],
+          "objectives": [
+            {
+              "id": "P1_5.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P1_5.reach-P1_6",
+              "title": "Reach Part 2 act 1 area 6",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P1_6",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P1_6",
+          "name": "Part 2 act 1 area 6",
+          "level": 56,
+          "exits": [
+            "P1_Town"
+          ],
+          "objectives": [
+            {
+              "id": "P1_6.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P1_6.reach-P1_Town",
+              "title": "Reach Part 2 act 1 town",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P1_Town",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P1_Town",
+          "name": "Part 2 act 1 town",
+          "level": 64,
+          "exits": [
+            "P2_1"
+          ],
+          "town": true,
+          "objectives": [
+            {
+              "id": "P1_Town.quests",
+              "title": "Hand in the act quests (skill gems, passives)",
+              "kind": "quest",
+              "rewards": [
+                "gems",
+                "passives"
+              ],
+              "verified": false
+            },
+            {
+              "id": "P1_Town.reach-P2_1",
+              "title": "Reach Part 2 act 2 area 1",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P2_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        }
+      ]
+    },
+    {
+      "part": 2,
+      "act": 2,
+      "name": "Act 2 - second half",
+      "townId": "P2_Town",
+      "areas": [
+        {
+          "id": "P2_1",
+          "name": "Part 2 act 2 area 1",
+          "level": 54,
+          "exits": [
+            "P2_2"
+          ],
+          "notes": "Introduced with the Act 4 patch as the replacement for Cruel difficulty - verify the in-game act name.",
+          "objectives": [
+            {
+              "id": "P2_1.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P2_1.reach-P2_2",
+              "title": "Reach Part 2 act 2 area 2",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P2_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P2_2",
+          "name": "Part 2 act 2 area 2",
+          "level": 55,
+          "exits": [
+            "P2_3"
+          ],
+          "objectives": [
+            {
+              "id": "P2_2.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P2_2.reach-P2_3",
+              "title": "Reach Part 2 act 2 area 3",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P2_3",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P2_3",
+          "name": "Part 2 act 2 area 3",
+          "level": 55,
+          "exits": [
+            "P2_5"
+          ],
+          "objectives": [
+            {
+              "id": "P2_3.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P2_3.reach-P2_5",
+              "title": "Reach Part 2 act 2 area 5",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P2_5",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P2_5",
+          "name": "Part 2 act 2 area 5",
+          "level": 56,
+          "exits": [
+            "P2_6"
+          ],
+          "objectives": [
+            {
+              "id": "P2_5.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P2_5.reach-P2_6",
+              "title": "Reach Part 2 act 2 area 6",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P2_6",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P2_6",
+          "name": "Part 2 act 2 area 6",
+          "level": 56,
+          "exits": [
+            "P2_7"
+          ],
+          "objectives": [
+            {
+              "id": "P2_6.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P2_6.reach-P2_7",
+              "title": "Reach Part 2 act 2 area 7",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P2_7",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P2_7",
+          "name": "Part 2 act 2 area 7",
+          "level": 56,
+          "exits": [
+            "P2_Town"
+          ],
+          "objectives": [
+            {
+              "id": "P2_7.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P2_7.reach-P2_Town",
+              "title": "Reach Part 2 act 2 town",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P2_Town",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P2_Town",
+          "name": "Part 2 act 2 town",
+          "level": 64,
+          "exits": [
+            "P3_1"
+          ],
+          "town": true,
+          "objectives": [
+            {
+              "id": "P2_Town.quests",
+              "title": "Hand in the act quests (skill gems, passives)",
+              "kind": "quest",
+              "rewards": [
+                "gems",
+                "passives"
+              ],
+              "verified": false
+            },
+            {
+              "id": "P2_Town.reach-P3_1",
+              "title": "Reach Part 2 act 3 area 1",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P3_1",
+              "verified": false
+            }
+          ],
+          "verified": false
+        }
+      ]
+    },
+    {
+      "part": 2,
+      "act": 3,
+      "name": "Act 3 - second half",
+      "townId": "P3_Town",
+      "areas": [
+        {
+          "id": "P3_1",
+          "name": "Part 2 act 3 area 1",
+          "level": 54,
+          "exits": [
+            "P3_2"
+          ],
+          "notes": "Introduced with the Act 4 patch as the replacement for Cruel difficulty - verify the in-game act name.",
+          "objectives": [
+            {
+              "id": "P3_1.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P3_1.reach-P3_2",
+              "title": "Reach Part 2 act 3 area 2",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P3_2",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P3_2",
+          "name": "Part 2 act 3 area 2",
+          "level": 54,
+          "exits": [
+            "P3_3"
+          ],
+          "objectives": [
+            {
+              "id": "P3_2.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P3_2.reach-P3_3",
+              "title": "Reach Part 2 act 3 area 3",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P3_3",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P3_3",
+          "name": "Part 2 act 3 area 3",
+          "level": 55,
+          "exits": [
+            "P3_4"
+          ],
+          "objectives": [
+            {
+              "id": "P3_3.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P3_3.reach-P3_4",
+              "title": "Reach Part 2 act 3 area 4",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P3_4",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P3_4",
+          "name": "Part 2 act 3 area 4",
+          "level": 55,
+          "exits": [
+            "P3_5"
+          ],
+          "objectives": [
+            {
+              "id": "P3_4.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P3_4.reach-P3_5",
+              "title": "Reach Part 2 act 3 area 5",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P3_5",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P3_5",
+          "name": "Part 2 act 3 area 5",
+          "level": 56,
+          "exits": [
+            "P3_6"
+          ],
+          "objectives": [
+            {
+              "id": "P3_5.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P3_5.reach-P3_6",
+              "title": "Reach Part 2 act 3 area 6",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P3_6",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P3_6",
+          "name": "Part 2 act 3 area 6",
+          "level": 56,
+          "exits": [
+            "P3_7"
+          ],
+          "objectives": [
+            {
+              "id": "P3_6.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P3_6.reach-P3_7",
+              "title": "Reach Part 2 act 3 area 7",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P3_7",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P3_7",
+          "name": "Part 2 act 3 area 7",
+          "level": 56,
+          "exits": [
+            "P3_Town"
+          ],
+          "objectives": [
+            {
+              "id": "P3_7.verify",
+              "title": "Verify: boss, quest and reward for this area",
+              "kind": "note",
+              "rewards": [],
+              "detail": "Community placeholder - check in game and correct it here.",
+              "verified": false
+            },
+            {
+              "id": "P3_7.reach-P3_Town",
+              "title": "Reach Part 2 act 3 town",
+              "kind": "reach",
+              "rewards": [],
+              "targetAreaId": "P3_Town",
+              "verified": false
+            }
+          ],
+          "verified": false
+        },
+        {
+          "id": "P3_Town",
+          "name": "Part 2 act 3 town",
+          "level": 64,
+          "exits": [],
+          "town": true,
+          "objectives": [
+            {
+              "id": "P3_Town.quests",
+              "title": "Hand in the act quests (skill gems, passives)",
+              "kind": "quest",
+              "rewards": [
+                "gems",
+                "passives"
+              ],
+              "verified": false
+            },
+            {
+              "id": "P3_Town.endgame",
+              "title": "Verify: the campaign ends here and the Atlas opens",
+              "kind": "note",
+              "rewards": [
+                "unlocks"
+              ],
+              "verified": false
+            }
+          ],
+          "verified": false
+        }
+      ]
+    }
+  ]
+}

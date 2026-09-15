@@ -23,8 +23,11 @@ const RARE_RING = [
 
 /** Every primary workspace, in rail order, with its page heading and route. */
 const WORKSPACES = [
+  ["Home", "Home", "/home"],
   ["Sort", "Sort & triage", "/sort"],
   ["Shop", "Shop", "/shop"],
+  ["Market", "Market", "/market"],
+  ["Trade", "Trade", "/trade"],
   ["Wealth", "Wealth", "/wealth"],
   ["Item log", "Item log", "/items"],
   ["Search", "Search & rules", "/search"],
@@ -36,6 +39,10 @@ const TOOLS = [
   ["Market", "Trends, stacks & farming", "/tools/market"],
   ["Deals", "Deals watchlist", "/tools/deals"],
   ["Loot filter", "Loot filter generator", "/tools/filter"],
+  ["Commands & notes", "Commands & notes", "/tools/commands"],
+  ["Pricing", "Pricing history", "/tools/pricing"],
+  ["Stash tracker", "Stash tracker", "/tools/stash-tracker"],
+  ["Campaign guide", "Campaign guide", "/tools/campaign"],
 ] as const;
 
 test("companion shell exposes every workspace with the e-stop armed", async ({}, testInfo) => {
@@ -53,6 +60,18 @@ test("companion shell exposes every workspace with the e-stop armed", async ({},
           await expect(readiness.getByText(check, { exact: true })).toBeVisible();
         }
       }
+      if (label === "Home") {
+        // The first-run checklist renders from local state, with no network.
+        await expect(page.getByRole("list", { name: "Setup checklist" })).toBeVisible();
+      }
+      if (label === "Market") {
+        await expect(
+          page.getByText("No tabs yet — start a search or open a favourite."),
+        ).toBeVisible();
+      }
+      if (label === "Trade") {
+        await expect(page.getByText(/No offers yet/)).toBeVisible();
+      }
       if (label === "Wealth") {
         // A fresh user-data dir has no inventory ledger: the empty state must render.
         await expect(page.getByText(/Nothing in the ledger yet/)).toBeVisible();
@@ -66,7 +85,15 @@ test("companion shell exposes every workspace with the e-stop armed", async ({},
       await expect(page).toHaveURL(new RegExp(`#${route}$`));
       await expect(page.getByRole("heading", { name: heading, exact: true })).toBeVisible();
     }
+    // Settings renders the ported sections: the checklist and the changelog.
+    await tools.getByRole("link", { name: /^Settings/ }).click();
+    await expect(page.getByRole("heading", { name: "Setup checklist" })).toBeVisible();
+    // The disclosure's own class: its summary text is "Changelog" plus an
+    // optional "N new" badge, indented, so a text match is not reliable.
+    await expect(page.locator("details.changelog > summary")).toBeVisible();
+
     // The loot filter previews from the local price table without any network.
+    await tools.getByRole("link", { name: /^Loot filter/ }).click();
     await expect(page.locator(".filter-output")).toContainText(
       "# PoE2 Trade Companion loot filter",
     );

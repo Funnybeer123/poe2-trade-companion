@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "updatedAt": "2026-09-11T22:05:00.000Z",
+  "sessionId": "stash-2026-09-11",
+  "divineRate": 405,
+  "sessionStart": { "id": "snap-1", "at": "2026-09-11T21:00:00.000Z", "totalExalted": 12400.5 },
+  "latest": { "id": "snap-3", "at": "2026-09-11T22:00:00.000Z", "kind": "auto", "totalExalted": 13210.5, "ledgerAt": "2026-09-11T22:00:00.000Z" },
+  "sessionGainExalted": 810,
+  "sessionGainDivine": 2,
+  "snapshotCount": 3,
+  "excludedCount": 0
+}

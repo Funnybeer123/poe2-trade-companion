@@ -1,0 +1,4 @@
+https://www.pathofexile.com/trade2/search/poe2/Runes%20of%20Aldur?q={"query":{"type":"Ruby Ring","status":{"option":"online"},"stats":[{"type":"and","filters":[{"id":"explicit.stat_3299347043","value":{"min":100}}]}]},"sort":{"price":"asc"}}
+https://www.pathofexile.com/trade2/search/poe2/Runes%20of%20Aldur/AbCdEfGh
+https://www.pathofexile.com/trade2/exchange/poe2/Runes%20of%20Aldur/XyZ12345
+https://example.com/trade2/search/poe2/Runes%20of%20Aldur/NotOurHost

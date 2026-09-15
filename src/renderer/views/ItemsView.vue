@@ -3,6 +3,8 @@ import { computed, ref, watch } from "vue";
 import { useRouter } from "vue-router";
 import { watchForItem } from "@core/watchlist";
 import ItemDetail from "../components/ItemDetail.vue";
+import EvaluateItemLogSection from "../features/evaluate/EvaluateItemLogSection.vue";
+import InspectSection from "../features/inspect/InspectSection.vue";
 import OpportunityTool from "../components/tools/OpportunityTool.vue";
 import { useIntelligenceStore } from "../composables/useIntelligenceStore";
 import { getPriceFeedApi, getWatchlistApi, type CompsResultView } from "../services/rendererApi";
@@ -276,6 +278,14 @@ async function removeCatalogEntry(
         :desirability="store.currentEvaluation.value?.desirability"
         :tier="store.currentEvaluation.value?.tier"
       />
+      <EvaluateItemLogSection
+        v-if="store.currentEvaluation.value"
+        :evaluation="store.currentEvaluation.value"
+      />
+      <details v-if="store.currentEvaluation.value" class="advanced-options" open>
+        <summary>Inspect — tiers, rolls, DPS, map warnings</summary>
+        <InspectSection :raw="store.currentEvaluation.value.raw" />
+      </details>
       <details v-if="store.currentEvaluation.value && priceFeed" class="advanced-options market-comps">
         <summary>Market comps — real trade listings for this item</summary>
         <p class="muted">

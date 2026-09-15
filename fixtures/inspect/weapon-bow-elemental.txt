@@ -1,0 +1,20 @@
+Item Class: Bows
+Rarity: Rare
+Dusk Song
+Recurve Bow
+--------
+Quality: +12%
+Physical Damage: 30-50 (augmented)
+Elemental Damage: 12-24 (augmented), 5-60 (augmented)
+Critical Hit Chance: 6.50%
+Attacks per Second: 1.40
+--------
+Requirements:
+Level: 64
+Dex: 143
+--------
+Item Level: 78
+--------
+Adds 12 to 24 Fire Damage
+Adds 5 to 60 Lightning Damage
++18% to Critical Damage Bonus

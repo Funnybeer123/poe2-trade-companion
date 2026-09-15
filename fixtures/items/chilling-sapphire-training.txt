@@ -1,0 +1,12 @@
+Item Class: Jewels
+Rarity: Magic
+Chilling Sapphire of Chanting
+--------
+Item Level: 79
+--------
+{ Prefix Modifier "Chilling" (Tier: 1) — Damage, Elemental, Cold }
+15(5-15)% increased Cold Damage
+{ Suffix Modifier "of Chanting" (Tier: 1) — Caster, Curse }
+11(15-5)% faster Curse Activation
+--------
+Place into an allocated Jewel Socket on the Passive Skill Tree. Right click to remove from the Socket.

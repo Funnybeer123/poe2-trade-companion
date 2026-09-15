@@ -1,0 +1,9 @@
+NOTE Only the English lines below were observed in a real Client.txt. Every other language is transcribed from the trade site and is UNTESTED; the offer card shows an "untested template" chip for them.
+2026/09/05 17:00:01 96090001 3ef23348 [INFO Client 34572] @From Buyerino: Hi, I would like to buy your Ghoul Lash, Long Belt listed for 1 exalted in Forbidden Rites (stash tab "~price 1 exalted"; position: left 10, top 10)
+2026/09/05 17:00:02 96090002 3ef23348 [INFO Client 34572] @From Bulkbuyer: Hi, I'd like to buy your 2 Preserved Cranium for my 20 Exalted Orb in Forbidden Rites
+2026/09/05 17:00:03 96090003 3ef23348 [INFO Client 34572] @From Ruskie: Здравствуйте, хочу купить у вас Ghoul Lash, Long Belt за 1 exalted в лиге Forbidden Rites (секция "~price 1 exalted"; позиция: 10 столбец, 10 ряд)
+2026/09/05 17:00:04 96090004 3ef23348 [INFO Client 34572] @From Ruskie: Здравствуйте, хочу купить у вас 2 Preserved Cranium за 20 Exalted Orb в лиге Forbidden Rites
+2026/09/05 17:00:05 96090005 3ef23348 [INFO Client 34572] @From Brasileiro: Olá, eu gostaria de comprar o seu item Ghoul Lash, Long Belt listado por 1 exalted na Forbidden Rites (aba do baú: "~price 1 exalted"; posição: esquerda 10, topo 10)
+2026/09/05 17:00:06 96090006 3ef23348 [INFO Client 34572] @From Deutscher: Hi, ich möchte 'Ghoul Lash, Long Belt' zum angebotenen Preis von 1 exalted in der Forbidden Rites-Liga kaufen (Truhenfach "~price 1 exalted"; Position: 10 von links, 10 von oben)
+2026/09/05 17:00:07 96090007 3ef23348 [INFO Client 34572] @From Francais: Bonjour, je souhaiterais t'acheter Ghoul Lash, Long Belt pour 1 exalted dans la ligue Forbidden Rites
+2026/09/05 17:00:08 96090008 3ef23348 [INFO Client 34572] @From Espanol: Hola, quisiera comprar tu Ghoul Lash, Long Belt listado por 1 exalted en Forbidden Rites (pestaña de alijo "~price 1 exalted"; posición: izquierda 10, arriba 10)

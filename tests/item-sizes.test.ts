@@ -12,6 +12,7 @@ import {
   mergeSameItemFragments,
   lookupItemSize,
   saveItemSizeDatabase,
+  upsertMeasuredSize,
   withClassDefaults,
   emptySizeDatabase,
 } from "../src/core/itemSizeStore.js";
@@ -44,6 +45,53 @@ describe("item size database", () => {
     expect(again.gridW).toBe(2);
     expect(again.gridH).toBe(4);
     expect(indexByGridSize(db)["2x4"]?.some((row) => row.baseType === "Advanced Maraketh Coat")).toBe(true);
+  });
+
+  it.each(["Boar Idol", "Greater Robust Rune"])("keeps live Augment %s at one cell even when adjacent sprites merge", (name) => {
+    const text = `Item Class: Augment\nRarity: Currency\n${name}\n--------\nStack Size: 1/10`;
+    const db = withClassDefaults(emptySizeDatabase());
+    expect(lookupItemSize(db, parseItemText(text))).toMatchObject({ w: 1, h: 1 });
+    const learned = learnFromClipboard(db, text, { w: 2, h: 1 });
+    expect(lookupItemSize(learned.db, learned.item)).toMatchObject({ w: 1, h: 1 });
+  });
+
+  it("keeps a Twilight Reliquary Key at one cell before and after an oversized sprite measurement", () => {
+    const text = "Item Class: Vault Keys\nRarity: Currency\nTwilight Reliquary Key\n--------\nCan only be used once.";
+    const db = withClassDefaults(emptySizeDatabase());
+    expect(lookupItemSize(db, parseItemText(text))).toMatchObject({ w: 1, h: 1 });
+    const learned = learnFromClipboard(db, text, { w: 2, h: 2 });
+    expect(lookupItemSize(learned.db, learned.item)).toMatchObject({ w: 1, h: 1 });
+  });
+
+  it("refreshes obsolete persisted class defaults without changing measured base sizes", () => {
+    const item = parseItemText("Item Class: Spears\nRarity: Rare\nSoaring Spear\n--------\nUnidentified");
+    const initial = withClassDefaults(emptySizeDatabase());
+    const stale = { ...initial, records: initial.records.map((row) =>
+      row.key === "class:spears" ? { ...row, w: 2 } : row) };
+    const reconciled = withClassDefaults(stale);
+    expect(lookupItemSize(reconciled, item)).toMatchObject({
+      w: 1, h: 4, record: { kind: "itemClass", source: "class-default" },
+    });
+    expect(stale.records.find((row) => row.key === "class:spears")?.w).toBe(2);
+    const measured = upsertMeasuredSize(stale, item, { w: 2, h: 4 }).db;
+    expect(lookupItemSize(withClassDefaults(measured), item)).toMatchObject({
+      w: 2, h: 4, record: { kind: "baseType", source: "measured" },
+    });
+  });
+
+  it("preserves measured class rows and unknown class defaults during reconciliation", () => {
+    const initial = withClassDefaults(emptySizeDatabase());
+    const measuredClass = { ...initial.records.find((row) => row.key === "class:spears")!,
+      w: 2, source: "measured" as const, samples: 1 };
+    const unknownClass = { ...measuredClass, key: "class:uncatalogued", itemClass: "Uncatalogued",
+      source: "class-default" as const, samples: 0 };
+    const input = { ...initial, records: [
+      ...initial.records.filter((row) => row.key !== "class:spears"), measuredClass, unknownClass,
+    ] };
+    const reconciled = withClassDefaults(input);
+    expect(reconciled.records).toContainEqual(measuredClass);
+    expect(reconciled.records).toContainEqual(unknownClass);
+    expect(reconciled).toBe(input);
   });
 
   it("records a new unknown unique from its measured sprite size", () => {

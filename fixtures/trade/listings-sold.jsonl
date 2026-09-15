@@ -1,0 +1,5 @@
+{"at":"2026-09-03T18:02:11.000Z","kind":"sold","fingerprint":"ab12cd34","name":"Ghoul Lash","itemClass":"Belts","count":1,"by":"unknown","certainty":"verified","realized":{"amount":1,"currency":"exalted"},"reason":"earnings tab re-read"}
+{"at":"2026-09-03T19:10:00.000Z","kind":"sold","fingerprint":"ef56ab78","name":"Sapphire Ring","itemClass":"Rings","count":1,"by":"app","certainty":"heuristic","realized":{"amount":5,"currency":"exalted"}}
+{"at":"2026-09-04T09:00:00.000Z","kind":"listed","fingerprint":"aa11bb22","name":"Rune Charm","itemClass":"Charms","count":1,"by":"app","certainty":"verified","price":{"amount":3,"currency":"exalted"}}
+{"at":"2026-09-04T11:30:00.000Z","kind":"sold","fingerprint":"9f9f9f9f","itemClass":"Rings","count":1,"by":"app","certainty":"verified","realized":{"amount":2,"currency":"exalted"},"reason":"name missing: written by an older CLI run"}
+{"at":"2026-09-04T10:00:00.000Z","kind":"sold","fingerprint":"cc33dd

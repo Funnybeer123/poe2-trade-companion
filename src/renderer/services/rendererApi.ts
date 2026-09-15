@@ -107,13 +107,13 @@ import {
 import {
   defaultFlaskGuardConfig,
   normalizeFlaskGuardConfig,
-  type FlaskGlobe,
   type FlaskGuardConfig,
 } from "../../shared/flaskGuard.js";
 import type {
   FlaskCalibratePayload,
   FlaskGuardStatePayload,
   FlaskProbePayload,
+  FlaskProbeTarget,
 } from "../../shared/ipc.js";
 
 const PREVIEW_STORAGE_KEY = "poe2-item-intelligence-preview-v1";
@@ -1314,10 +1314,10 @@ export const hotkeysApi = {
     if (bridge?.hotkeys?.flaskSave) return { ...(await bridge.hotkeys.flaskSave(config)), preview: false };
     return { ...normalizeFlaskGuardConfig(config), preview: true };
   },
-  async flaskCalibrate(globe: FlaskGlobe): Promise<FlaskCalibratePayload> {
+  async flaskCalibrate(target: FlaskProbeTarget): Promise<FlaskCalibratePayload> {
     const bridge = nativeBridge();
-    if (bridge?.hotkeys?.flaskCalibrate) return bridge.hotkeys.flaskCalibrate(globe);
-    return { ok: false, globe, error: "Calibration needs the desktop app (no native bridge in preview)." };
+    if (bridge?.hotkeys?.flaskCalibrate) return bridge.hotkeys.flaskCalibrate(target);
+    return { ok: false, target, globe: target, error: "Calibration needs the desktop app (no native bridge in preview)." };
   },
   async flaskProbe(): Promise<FlaskProbePayload> {
     const bridge = nativeBridge();

@@ -1,0 +1,7 @@
+Item Class: Waystones
+Rarity: Normal
+Waystone (Tier 3)
+--------
+Waystone Tier: 3
+--------
+Item Level: 68

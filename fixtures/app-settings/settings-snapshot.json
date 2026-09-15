@@ -1,0 +1,17 @@
+{
+  "app": {
+    "window": { "rememberBounds": true, "alwaysOnTop": true, "showOnGameStart": false },
+    "setup": {},
+    "changelog": { "lastSeenVersion": "0.1.0" }
+  },
+  "overlay": {
+    "scale": 1,
+    "opacity": 0.96,
+    "primaryMonitorOnly": false,
+    "ultrawideMode": "unrestricted",
+    "closeOnClickOutside": true,
+    "showOnlyWhilePoeRuns": true
+  },
+  "client-log": { "allowInject": false },
+  "chat-commands": { "enabled": false, "idleCloseMs": 120000, "maxPerMinute": 30 }
+}

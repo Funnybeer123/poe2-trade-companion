@@ -1,0 +1,26 @@
+2026/09/11 20:51:05 40136015 91c6cc1 [INFO Client 23032] Connecting to instance server at 64.87.48.12:21360
+2026/09/11 20:51:05 40136093 2caa229f [DEBUG Client 23032] Generating level 79 area "MapSunTemple" with seed 2600198359
+2026/09/11 20:51:06 40136200 2caa229f [DEBUG Client 23032] Tile hash: 2316889541
+2026/09/11 20:51:06 40136201 2caa229f [DEBUG Client 23032] Doodad hash: 3416047795
+2026/09/11 20:52:15 40206281 2caa229f [DEBUG Client 23032] Generating level 65 area "HideoutBeaconOfSalvation" with seed 1
+2026/09/11 13:25:12 13383609 3ef23348 [INFO Client 23032] : Fakelia (Disciple of Varashta) is now level 88
+2026/09/11 12:35:55 10425875 3ef23348 [INFO Client 23032] : Fakelia has been slain.
+2026/09/11 20:52:51 40242312 3ef23348 [INFO Client 23032] : Trade accepted.
+2026/09/11 20:45:04 39775062 3ef23348 [INFO Client 23032] : Trade cancelled.
+2026/09/11 13:32:15 13806593 3ef23348 [INFO Client 23032] : Buyerino has joined the area.
+2026/09/11 13:33:15 13806594 3ef23348 [INFO Client 23032] : Buyerino has left the area.
+2026/09/11 16:34:27 24738796 3ef23348 [INFO Client 23032] : AFK mode is now ON. Autoreply "This player is AFK."
+2026/09/11 16:39:09 25020281 3ef23348 [INFO Client 23032] : AFK mode is now OFF.
+2026/09/05 16:37:47 96087406 3ef23348 [INFO Client 34572] @From Buyerino: Hi, I would like to buy your Ghoul Lash, Long Belt listed for 1 exalted in Forbidden Rites (stash tab "~price 1 exalted"; position: left 10, top 10)
+2026/01/20 16:18:07 514150609 3ef232c2 [INFO Client 26096] @To Sellerino: Hi, I would like to buy your The Grand Project, Precursor Tablet listed for 30 exalted in Second Wind Fate of the Vaal (stash tab "~b/o 30 exalted"; position: left 1, top 21)
+2026/09/05 16:40:00 96087500 3ef23348 [INFO Client 34572] @From Bulkbuyer: Hi, I'd like to buy your 2 Preserved Cranium for my 20 Exalted Orb in Fate of the Vaal
+2026/09/05 16:41:00 96087600 3ef23348 [INFO Client 34572] @From Buyerino: ty
+2026/09/05 16:41:30 96087700 3ef23348 [INFO Client 34572] @To Buyerino: np, gl
+2026/09/05 16:42:00 96087800 3ef23348 [INFO Client 34572] #Shouter: wts mirror @ 500 div pm me
+2026/09/05 16:42:10 96087900 3ef23348 [INFO Client 34572] $Trader: wtb ex 1:1
+2026/09/05 16:42:20 96088000 3ef23348 [INFO Client 34572] &<FAKE> Guildie: anyone on?
+2026/09/05 16:42:30 96088100 3ef23348 [INFO Client 34572] %Partymate: go go
+2026/09/05 16:42:40 96088200 3ef23348 [INFO Client 34572] Localtalker: hello there
+2026/09/05 16:43:00 96088300 3ef23348 [INFO Client 34572] : Partymate has joined the party.
+2026/09/05 16:44:00 96088400 3ef23348 [INFO Client 34572] : Partymate has left the party.
+2026/09/05 16:45:00 96088500 3ef23348 [INFO Client 34572] : Player not found.

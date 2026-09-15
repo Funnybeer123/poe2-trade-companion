@@ -1,0 +1,19 @@
+Item Class: Rings
+Rarity: Rare
+Storm Coil
+Sapphire Ring
+--------
+Requirements:
+Level: 62
+--------
+Item Level: 73
+--------
+{ Implicit Modifier — Cold }
++18(15-20)% to Cold Resistance
+--------
+{ Prefix Modifier "Robust" (Tier: 3) — Life }
++101(95-110) to maximum Life
+{ Suffix Modifier "of the Kiln" (Tier: 2) — Fire }
++28(26-30)% to Fire Resistance
+{ Crafted Suffix Modifier — Attribute }
++7(5-10) to Strength (crafted)

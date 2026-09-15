@@ -1,0 +1,34 @@
+{
+  "commands": {
+    "commands": [
+      { "id": "cmd_a1b2c3_9zzz", "label": "   Invite   ", "template": "/invite {player}" },
+      { "id": "not an id", "label": "", "template": "gg → ty" },
+      { "id": "cmd_a1b2c3_9zzz", "label": "Duplicate id", "template": "/hideout" },
+      "nonsense",
+      { "id": "cmd_a1b2c4_0001", "label": "Multi", "template": "line one\nline two" }
+    ],
+    "searches": [
+      { "id": "srch_a1b2c3_0001", "label": "Waystones", "text": "\"^Waystone\"" },
+      { "id": "srch_a1b2c3_0002", "label": "Arrow", "text": "tier → 15" },
+      { "id": "srch_a1b2c3_0003", "label": "Empty", "text": "   " }
+    ],
+    "feedbackNotices": false
+  },
+  "bookmarks": {
+    "bookmarks": [
+      { "id": "bm_a1b2c3_0001", "label": "poe2db", "url": "https://poe2db.tw/us/", "mode": "window" },
+      { "id": "bm_a1b2c3_0002", "label": "Evil", "url": "javascript:alert(1)" },
+      { "id": "bm_a1b2c3_0003", "label": "Creds", "url": "https://user:pw@example.com/" }
+    ],
+    "window": { "width": 10, "height": 999999, "alwaysOnTop": false, "x": "nope" }
+  },
+  "notes": {
+    "notes": [
+      { "id": "note_a1b2c3_0001", "title": "  Ritual  ", "icon": "🩸🩸🩸🩸🩸🩸", "markdown": "line\r\nnext" },
+      { "id": "note_a1b2c3_0002", "title": "Bad image", "markdown": "x", "image": { "mime": "image/svg+xml", "bytes": 10 } },
+      { "id": "note_a1b2c3_0003", "title": "Good image", "markdown": "x", "image": { "mime": "image/png", "bytes": 70, "width": 1, "height": 1 } }
+    ],
+    "panel": { "anchor": "nowhere", "width": 10, "height": 100000 },
+    "lastNoteId": "note_missing_0000"
+  }
+}

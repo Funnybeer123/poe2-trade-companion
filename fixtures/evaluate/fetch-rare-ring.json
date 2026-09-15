@@ -1,0 +1,77 @@
+{
+  "note": "Shape of GET /api/trade2/fetch/... trimmed to what Evaluate reads (2026-09-07 live shape). Seller names are placeholders.",
+  "result": [
+    {
+      "id": "row-a",
+      "listing": {
+        "method": "psapi",
+        "indexed": "2026-09-07T10:00:00Z",
+        "stash": { "name": "~price 5 exalted", "x": 2, "y": 4 },
+        "whisper": "@SellerA Hi, I would like to buy your Woe Loop Ruby Ring listed for 5 exalted in Runes of Aldur",
+        "account": {
+          "name": "SellerA",
+          "lastCharacterName": "SellerAChar",
+          "online": { "league": "Runes of Aldur" }
+        },
+        "price": { "type": "~price", "amount": 5, "currency": "exalted" }
+      },
+      "item": {
+        "league": "Runes of Aldur",
+        "name": "Woe Loop",
+        "typeLine": "Ruby Ring",
+        "baseType": "Ruby Ring",
+        "rarity": "Rare",
+        "ilvl": 80,
+        "identified": true,
+        "properties": [{ "name": "[Quality]", "values": [["+14%", 1]] }],
+        "requirements": [{ "name": "Level", "values": [["62", 0]] }],
+        "implicitMods": ["+9% to [Resistances|all Elemental Resistances]"],
+        "explicitMods": ["+70 to maximum Life", "+30% to [Resistances|Fire Resistance]"],
+        "enchantMods": [],
+        "runeMods": [],
+        "desecratedMods": [],
+        "fracturedMods": []
+      }
+    },
+    {
+      "id": "row-b",
+      "listing": {
+        "indexed": "2026-09-04T10:00:00Z",
+        "account": { "name": "SellerB", "online": { "league": "Runes of Aldur", "status": "afk" } },
+        "price": { "amount": 1, "currency": "divine" }
+      },
+      "item": {
+        "name": "Grim Loop",
+        "typeLine": "Ruby Ring",
+        "baseType": "Ruby Ring",
+        "rarity": "Rare",
+        "ilvl": 82,
+        "identified": true,
+        "explicitMods": ["+84 to maximum Life", "+35% to [Resistances|Cold Resistance]"]
+      }
+    },
+    {
+      "id": "row-c",
+      "listing": {
+        "indexed": "2026-08-14T10:00:00Z",
+        "account": { "name": "SellerC", "online": null },
+        "price": { "type": "secure", "amount": 9, "currency": "exalted" },
+        "fee": 2
+      },
+      "item": {
+        "name": "Old Loop",
+        "typeLine": "Ruby Ring",
+        "baseType": "Ruby Ring",
+        "rarity": "Rare",
+        "ilvl": 79,
+        "identified": true,
+        "explicitMods": ["+60 to maximum Life"]
+      }
+    },
+    {
+      "id": "row-d",
+      "listing": { "account": { "name": "SellerD" } },
+      "item": { "typeLine": "Ruby Ring", "rarity": "Rare", "identified": true }
+    }
+  ]
+}

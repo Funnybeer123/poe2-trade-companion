@@ -55,5 +55,12 @@ export function scoreDesirability(
   else if (score >= 40) category = "vendor";
   else if (item.rarity === "Currency") category = "bulk";
 
+  // Saved observations protect an item independently of the generic score.
+  // This also applies when an old/conflicting lesson has no current quote.
+  if (Number(valuation.normalizedKeyStats.trainedExampleCount) > 0) {
+    category = "keep";
+    reasons.unshift("Saved price evidence: keep for review; the score does not override your correction.");
+  }
+
   return { score, category, reasons };
 }

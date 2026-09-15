@@ -1,0 +1,18 @@
+Item Class: Waystones
+Rarity: Rare
+Bewitched Waystone of Ruin
+Waystone (Tier 15)
+--------
+Waystone Tier: 15
+Item Quantity: +64% (augmented)
+Item Rarity: +32% (augmented)
+Monster Pack Size: +25% (augmented)
+--------
+Item Level: 79
+--------
+Players have -12% to all Maximum Resistances
+Monsters deal 31% extra damage as Fire
+Monsters have 45% increased Attack Speed
+Rare Monsters have 1 additional Modifier
+Area contains 30% more Rare Monsters
+Monsters spit out clouds of impossible geometry

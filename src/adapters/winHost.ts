@@ -7,7 +7,8 @@ import { fileURLToPath } from "node:url";
 export type WinReply = Record<string, unknown>;
 
 export interface WinHostOptions {
-  requestTimeoutMs?: number;
+  /** Null permits user-paused guarded input to wait without killing held-key cleanup. */
+  requestTimeoutMs?: number | null;
 }
 
 /** Longest close() waits for the host process to exit after kill(). */
@@ -43,7 +44,7 @@ export function startWinHost(options: WinHostOptions = {}) {
   interface PendingRequest {
     resolve: (value: WinReply) => void;
     reject: (error: Error) => void;
-    timer: NodeJS.Timeout;
+    timer?: NodeJS.Timeout;
   }
   const pending: PendingRequest[] = [];
   let closed = false;
@@ -92,17 +93,21 @@ export function startWinHost(options: WinHostOptions = {}) {
         payload.op === "waitclick" && Number.isFinite(Number(payload.timeoutMs))
           ? Math.max(0, Number(payload.timeoutMs)) + 5_000
           : undefined;
-      const timeoutMs = waitClickMs ?? Math.max(1_000, options.requestTimeoutMs ?? 10_000);
+      const timeoutMs = options.requestTimeoutMs === null
+        ? null
+        : waitClickMs ?? Math.max(1_000, options.requestTimeoutMs ?? 10_000);
       const request: PendingRequest = {
         resolve,
         reject,
-        timer: setTimeout(() => {
+      };
+      if (timeoutMs !== null) {
+        request.timer = setTimeout(() => {
           if (closed) return;
           closed = true;
           failAll(new Error(`win-input-host-timeout:${String(payload.op ?? "unknown")}`));
           child.kill();
-        }, timeoutMs),
-      };
+        }, timeoutMs);
+      }
       pending.push(request);
       child.stdin.write(`${JSON.stringify(payload)}\n`, (err) => {
         if (!err) return;

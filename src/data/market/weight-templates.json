@@ -1,0 +1,85 @@
+[
+  {
+    "id": "total-elemental-res",
+    "label": "Total elemental resistance",
+    "type": "weight",
+    "min": 80,
+    "verified": false,
+    "filters": [
+      { "text": "+#% to Fire Resistance", "type": "explicit", "weight": 1 },
+      { "text": "+#% to Cold Resistance", "type": "explicit", "weight": 1 },
+      { "text": "+#% to Lightning Resistance", "type": "explicit", "weight": 1 }
+    ]
+  },
+  {
+    "id": "total-res-with-chaos",
+    "label": "Total resistance (incl. chaos)",
+    "type": "weight",
+    "min": 90,
+    "verified": false,
+    "filters": [
+      { "text": "+#% to Fire Resistance", "type": "explicit", "weight": 1 },
+      { "text": "+#% to Cold Resistance", "type": "explicit", "weight": 1 },
+      { "text": "+#% to Lightning Resistance", "type": "explicit", "weight": 1 },
+      { "text": "+#% to Chaos Resistance", "type": "explicit", "weight": 1 }
+    ]
+  },
+  {
+    "id": "life-and-es",
+    "label": "Life + Energy Shield",
+    "type": "weight",
+    "min": 120,
+    "verified": false,
+    "filters": [
+      { "text": "+# to maximum Life", "type": "explicit", "weight": 1 },
+      { "text": "+# to maximum Energy Shield", "type": "explicit", "weight": 1 }
+    ]
+  },
+  {
+    "id": "attributes",
+    "label": "Attributes",
+    "type": "weight",
+    "min": 60,
+    "verified": false,
+    "filters": [
+      { "text": "+# to Strength", "type": "explicit", "weight": 1 },
+      { "text": "+# to Dexterity", "type": "explicit", "weight": 1 },
+      { "text": "+# to Intelligence", "type": "explicit", "weight": 1 },
+      { "text": "+# to all Attributes", "type": "explicit", "weight": 3 }
+    ]
+  },
+  {
+    "id": "caster-bundle",
+    "label": "Spell caster bundle",
+    "type": "weight",
+    "verified": false,
+    "filters": [
+      { "text": "#% increased Spell Damage", "type": "explicit", "weight": 1 },
+      { "text": "+#% to Critical Damage Bonus", "type": "explicit", "weight": 1 },
+      { "text": "#% increased Critical Hit Chance for Spells", "type": "explicit", "weight": 1 },
+      { "text": "#% increased Cast Speed", "type": "explicit", "weight": 2 }
+    ]
+  },
+  {
+    "id": "attack-speed-bundle",
+    "label": "Attack bundle",
+    "type": "weight",
+    "verified": false,
+    "filters": [
+      { "text": "#% increased Attack Speed", "type": "explicit", "weight": 3 },
+      { "text": "+#% to Critical Damage Bonus", "type": "explicit", "weight": 1 },
+      { "text": "#% increased Critical Hit Chance", "type": "explicit", "weight": 1 }
+    ]
+  },
+  {
+    "id": "minion-bundle",
+    "label": "Minion bundle",
+    "type": "weight",
+    "verified": false,
+    "filters": [
+      { "text": "Minions deal #% increased Damage", "type": "explicit", "weight": 1 },
+      { "text": "Minions have #% increased maximum Life", "type": "explicit", "weight": 1 },
+      { "text": "+# to Level of all Minion Skills", "type": "explicit", "weight": 8 }
+    ]
+  }
+]

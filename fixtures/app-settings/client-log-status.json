@@ -1,0 +1,14 @@
+{
+  "file": "C:\\Games\\Path of Exile 2\\logs\\Client.txt",
+  "source": "steam",
+  "watching": true,
+  "sizeBytes": 2097152,
+  "lastLineAt": "2026-09-14T09:58:11.000Z",
+  "gameSettings": {
+    "language": "en",
+    "resolution": { "width": 3840, "height": 2160 },
+    "borderlessWindowed": true,
+    "chatKey": 13,
+    "searchKey": 191
+  }
+}

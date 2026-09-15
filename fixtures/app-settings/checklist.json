@@ -1,0 +1,86 @@
+{
+  "steps": [
+    {
+      "id": "game-detected",
+      "label": "Game detected",
+      "state": "ok",
+      "detail": "Path of Exile 2 is running",
+      "optional": true
+    },
+    {
+      "id": "client-log",
+      "label": "Client.txt",
+      "state": "ok",
+      "detail": "steam: C:\\Games\\Path of Exile 2\\logs\\Client.txt",
+      "optional": false,
+      "action": "browse-log"
+    },
+    {
+      "id": "league",
+      "label": "Pricing league",
+      "state": "warn",
+      "detail": "2 current leagues — pick one under Market data",
+      "optional": false,
+      "action": "open-market-data"
+    },
+    {
+      "id": "price-feed",
+      "label": "Market prices",
+      "state": "todo",
+      "detail": "No prices yet — refresh the market feed once",
+      "optional": false,
+      "action": "refresh-feed"
+    },
+    {
+      "id": "session-cookie",
+      "label": "PoE session cookie",
+      "state": "optional",
+      "detail": "Optional — live search and bulk exchange need it",
+      "optional": true,
+      "action": "open-market-data"
+    },
+    {
+      "id": "hotkeys",
+      "label": "Hotkeys",
+      "state": "ok",
+      "detail": "9 shortcuts active",
+      "optional": false,
+      "action": "open-hotkeys"
+    },
+    {
+      "id": "overlay",
+      "label": "Overlay",
+      "state": "todo",
+      "detail": "Press Test overlay once so you know where panels appear",
+      "optional": false,
+      "action": "test-overlay"
+    },
+    {
+      "id": "admin-rights",
+      "label": "Administrator rights",
+      "state": "unknown",
+      "detail": "Not checked yet",
+      "optional": true
+    },
+    {
+      "id": "calibration",
+      "label": "Calibration",
+      "state": "optional",
+      "detail": "Optional — only stash transfers and sorting need it",
+      "optional": true,
+      "action": "open-calibration"
+    },
+    {
+      "id": "chat-commands",
+      "label": "Chat commands",
+      "state": "optional",
+      "detail": "Optional — trade replies and /hideout need it",
+      "optional": true,
+      "action": "open-settings"
+    }
+  ],
+  "done": 2,
+  "required": 5,
+  "complete": false,
+  "generatedAt": "2026-09-14T10:00:00.000Z"
+}

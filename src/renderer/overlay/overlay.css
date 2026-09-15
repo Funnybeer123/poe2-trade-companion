@@ -1,0 +1,104 @@
+/*
+ * Overlay window chrome. Loaded by OverlayApp.vue; every rule is scoped
+ * under `html.overlay-mode` (set by src/renderer/main.ts for "#/overlay") so
+ * it never leaks into the desktop app, and it overrides the opaque page
+ * background from styles.css — the window must stay transparent.
+ */
+html.overlay-mode,
+html.overlay-mode body,
+html.overlay-mode #app {
+  min-width: 0;
+  min-height: 0;
+  height: 100%;
+  overflow: hidden;
+  background: transparent !important;
+}
+
+html.overlay-mode body {
+  user-select: none;
+}
+
+.overlay-root {
+  --overlay-scale: 1;
+  --overlay-opacity: 0.96;
+  position: fixed;
+  inset: 0;
+  /* Click-through by default: only panels take the pointer. */
+  pointer-events: none;
+}
+
+/* Click-outside capture: main stops ignoring the mouse for the whole window
+   and this backdrop receives the click (see src/main/overlayWindow.ts). */
+.overlay-panel {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  max-width: calc(100vw - 24px);
+  max-height: calc(100vh - 24px);
+  border: 1px solid var(--line-strong, #3b424d);
+  border-radius: 10px;
+  background: var(--panel, #171a1f);
+  color: var(--text, #ebe6dc);
+  box-shadow: 0 14px 38px rgba(0, 0, 0, 0.45);
+  opacity: var(--overlay-opacity);
+  transform: scale(var(--overlay-scale));
+  transform-origin: top left;
+  pointer-events: auto;
+  overflow: hidden;
+}
+
+.overlay-panel.pinned {
+  border-color: rgba(200, 166, 106, 0.55);
+}
+
+.overlay-panel.dragging {
+  cursor: grabbing;
+}
+
+.overlay-panel-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.35rem 0.4rem 0.35rem 0.7rem;
+  border-bottom: 1px solid var(--line, #2b3038);
+  background: var(--panel-raised, #1c2026);
+  cursor: grab;
+}
+
+.overlay-panel-title {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.overlay-panel-bar .icon-button {
+  width: 26px;
+  min-width: 26px;
+  min-height: 26px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.overlay-panel-bar .icon-button.active {
+  border-color: var(--gold, #c8a66a);
+  color: var(--gold-bright, #e4c587);
+}
+
+.overlay-panel-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0.6rem 0.7rem;
+}
+
+.overlay-panel-missing {
+  color: var(--red, #d57b76);
+  font-size: 0.8rem;
+}

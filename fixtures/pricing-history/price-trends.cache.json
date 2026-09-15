@@ -1,0 +1,210 @@
+{
+  "fetchedAt": "2026-09-12T06:00:00.000Z",
+  "league": "Runes of Aldur",
+  "categories": [
+    "currency",
+    "essences",
+    "breach"
+  ],
+  "series": [
+    {
+      "key": "divine",
+      "name": "Divine Orb",
+      "category": "currency",
+      "current": 649.45,
+      "points": [
+        {
+          "time": "2026-09-06T00:00:00.000Z",
+          "price": 600,
+          "quantity": 120000
+        },
+        {
+          "time": "2026-09-07T00:00:00.000Z",
+          "price": 610,
+          "quantity": 118000
+        },
+        {
+          "time": "2026-09-08T00:00:00.000Z",
+          "price": 620,
+          "quantity": 121000
+        },
+        {
+          "time": "2026-09-09T00:00:00.000Z",
+          "price": 630,
+          "quantity": 119500
+        },
+        {
+          "time": "2026-09-10T00:00:00.000Z",
+          "price": 640,
+          "quantity": 122000
+        },
+        {
+          "time": "2026-09-11T00:00:00.000Z",
+          "price": 645,
+          "quantity": 120500
+        },
+        {
+          "time": "2026-09-12T00:00:00.000Z",
+          "price": 649.45,
+          "quantity": 60000
+        }
+      ]
+    },
+    {
+      "key": "chaos",
+      "name": "Chaos Orb",
+      "category": "currency",
+      "current": 44.8,
+      "points": [
+        {
+          "time": "2026-09-06T00:00:00.000Z",
+          "price": 48,
+          "quantity": 900000
+        },
+        {
+          "time": "2026-09-07T00:00:00.000Z",
+          "price": 47.2,
+          "quantity": 880000
+        },
+        {
+          "time": "2026-09-08T00:00:00.000Z",
+          "price": 46.5,
+          "quantity": 910000
+        },
+        {
+          "time": "2026-09-09T00:00:00.000Z",
+          "price": 46,
+          "quantity": 905000
+        },
+        {
+          "time": "2026-09-10T00:00:00.000Z",
+          "price": 45.4,
+          "quantity": 890000
+        },
+        {
+          "time": "2026-09-11T00:00:00.000Z",
+          "price": 45,
+          "quantity": 900000
+        },
+        {
+          "time": "2026-09-12T00:00:00.000Z",
+          "price": 44.8,
+          "quantity": 450000
+        }
+      ]
+    },
+    {
+      "key": "mirror",
+      "name": "Mirror of Kalandra",
+      "category": "currency",
+      "current": 250000,
+      "points": [
+        {
+          "time": "2026-09-08T00:00:00.000Z",
+          "price": 248000,
+          "quantity": 2
+        },
+        {
+          "time": "2026-09-10T00:00:00.000Z",
+          "price": 251000,
+          "quantity": 1
+        },
+        {
+          "time": "2026-09-12T00:00:00.000Z",
+          "price": 250000,
+          "quantity": 3
+        }
+      ]
+    },
+    {
+      "key": "essence-of-ruin",
+      "name": "Essence of Ruin",
+      "category": "essences",
+      "current": 12.5,
+      "points": [
+        {
+          "time": "2026-09-11T00:00:00.000Z",
+          "price": 12,
+          "quantity": 2
+        },
+        {
+          "time": "2026-09-12T00:00:00.000Z",
+          "price": 12.5,
+          "quantity": 2
+        }
+      ]
+    },
+    {
+      "key": "breach-splinter",
+      "name": "Breach Splinter",
+      "category": "breach",
+      "current": 3.4,
+      "points": [
+        {
+          "time": "2026-09-06T00:00:00.000Z",
+          "price": 3.1,
+          "quantity": 40000
+        },
+        {
+          "time": "2026-09-07T00:00:00.000Z",
+          "price": 3.15,
+          "quantity": 41000
+        },
+        {
+          "time": "2026-09-08T00:00:00.000Z",
+          "price": 3.2,
+          "quantity": 39000
+        },
+        {
+          "time": "2026-09-09T00:00:00.000Z",
+          "price": 3.25,
+          "quantity": 42000
+        },
+        {
+          "time": "2026-09-10T00:00:00.000Z",
+          "price": 3.3,
+          "quantity": 43000
+        },
+        {
+          "time": "2026-09-11T00:00:00.000Z",
+          "price": 3.35,
+          "quantity": 41500
+        },
+        {
+          "time": "2026-09-12T00:00:00.000Z",
+          "price": 3.4,
+          "quantity": 20000
+        }
+      ]
+    },
+    {
+      "key": "temporalis-silk-robe",
+      "name": "Temporalis",
+      "unique": true,
+      "baseType": "Silk Robe",
+      "current": 1602665,
+      "points": [
+        {
+          "time": "2026-09-09T00:00:00.000Z",
+          "price": 1500000,
+          "quantity": 1
+        },
+        {
+          "time": "2026-09-10T00:00:00.000Z",
+          "price": 1550000,
+          "quantity": 1
+        },
+        {
+          "time": "2026-09-11T00:00:00.000Z",
+          "price": 1580000,
+          "quantity": 2
+        },
+        {
+          "time": "2026-09-12T00:00:00.000Z",
+          "price": 1602665,
+          "quantity": 1
+        }
+      ]
+    }
+  ]
+}

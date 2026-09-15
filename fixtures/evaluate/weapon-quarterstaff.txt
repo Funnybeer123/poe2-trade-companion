@@ -1,0 +1,24 @@
+Item Class: Quarterstaves
+Rarity: Rare
+Storm Bane
+Gelid Staff
+--------
+Quality: +12%
+Physical Damage: 40-90
+Elemental Damage: 12-24
+Critical Hit Chance: 11.50%
+Attacks per Second: 1.40
+--------
+Requirements:
+Level: 65
+Dex: 84
+Int: 84
+--------
+Sockets: S S
+--------
+Item Level: 79
+--------
+118% increased Physical Damage
+Adds 12 to 24 Fire Damage
++14% to Critical Damage Bonus
++38 to Dexterity

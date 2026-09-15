@@ -1,0 +1,10 @@
+Item Class: Tablets
+Rarity: Magic
+Overflowing Precursor Tablet
+--------
+Item Level: 80
+--------
+5 Maps in Range are Irradiated
+--------
+Monsters have 20% increased Movement Speed
+Area contains 15% more Rare Monsters

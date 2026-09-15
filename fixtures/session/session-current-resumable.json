@@ -1,0 +1,24 @@
+{
+  "version": 1,
+  "savedAt": "2026-09-11T21:30:00.000Z",
+  "metrics": {
+    "wallMs": 1800000, "afkMs": 0, "activeMs": 1800000, "runsStarted": 1, "mapsStarted": 1,
+    "mapsCompleted": 0, "mapsAbandoned": 0, "trialsCompleted": 0, "leagueCompleted": 0,
+    "deathsInMaps": 0, "deaths": 0, "levelsGained": 0, "levelUps": 0
+  },
+  "state": {
+    "id": "ses-2026-09-11T21-00-00-000Z",
+    "startedAt": "2026-09-11T21:00:00.000Z",
+    "characters": [
+      { "name": "Himbo", "className": "Disciple of Varashta", "level": 88, "seenAt": "2026-09-11T21:05:00.000Z", "source": "level-up" }
+    ],
+    "current": { "areaId": "MapSunTemple", "name": "Sun Temple", "category": "map", "level": 79, "seed": 2600198359, "enteredAt": "2026-09-11T21:20:00.000Z", "runId": "run-open" },
+    "areas": [], "areasDropped": 0,
+    "runs": [
+      { "id": "run-open", "kind": "map", "areaId": "MapSunTemple", "name": "Sun Temple", "areaLevel": 79, "seed": 2600198359, "tier": 15, "startedAt": "2026-09-11T21:20:00.000Z", "wallMs": 0, "activeMs": 0, "portals": 0, "deaths": 0, "subAreas": [], "completed": false }
+    ],
+    "runsDropped": 0, "deaths": [], "deathsDropped": 0, "levelUps": [], "afk": [],
+    "trades": { "accepted": 0, "cancelled": 0 }, "whispers": { "in": 0, "out": 0 },
+    "lastEventAt": "2026-09-11T21:20:00.000Z", "eventCount": 42
+  }
+}

@@ -1,0 +1,12 @@
+Item Class: Skill Gems
+Rarity: Gem
+Lightning Arrow
+--------
+Level: 18
+Quality: +16%
+--------
+Requirements:
+Level: 64
+Dex: 118
+--------
+Fires an arrow that shocks the target.

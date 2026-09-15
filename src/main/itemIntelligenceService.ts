@@ -19,7 +19,7 @@ import {
   validatePriceTable,
   type PriceTable,
 } from "../core/priceTable.js";
-import { evaluateWithAppraisal } from "../core/appraisal.js";
+import { evaluateWithAppraisal, type EvaluateWithAppraisalOptions } from "../core/appraisal.js";
 import { DEFAULT_MIN_DETOUR_CONFIDENCE } from "../core/sortTriage.js";
 import {
   DEFAULT_TIER_THRESHOLDS,
@@ -72,6 +72,7 @@ export interface ItemIntelligenceServiceOptions {
   persistence: LocalPersistenceDatabase;
   publish?: IntelligenceEventPublisher;
   now?: () => Date | string | number;
+  priceTraining?: () => Pick<EvaluateWithAppraisalOptions, "training" | "trainingError">;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -654,6 +655,7 @@ export class ItemIntelligenceService {
       rules: config.rules,
       priceTable: this.getPriceTable(),
       thresholds: config.thresholds,
+      ...this.options.priceTraining?.(),
     });
   }
 

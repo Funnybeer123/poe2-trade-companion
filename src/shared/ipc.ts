@@ -51,6 +51,7 @@ import type {
   ValueTierThresholds,
 } from "../core/valueTiers.js";
 import type { DealAlert, Watch } from "../core/watchlist.js";
+import type { FeatureBridge } from "./features.js";
 
 export const ITEM_INTELLIGENCE_IPC_VERSION = 1 as const;
 export const SCANNER_IPC_VERSION = 1 as const;
@@ -466,11 +467,17 @@ export interface FlaskGuardStatePayload {
   file: string;
 }
 
+/** A calibration / probe target: "life", "mana", or "skill:<id>" for an auto-cast skill. */
+export type FlaskProbeTarget = FlaskGlobe | `skill:${string}`;
+
 export interface FlaskCalibratePayload {
   ok: boolean;
-  globe: FlaskGlobe;
+  target: string;
+  /** @deprecated alias of target. */
+  globe: string;
   point?: { x: number; y: number };
   rgb?: Rgb;
+  /** Globe: reads as fluid. Skill: reads as a lit (ready) icon. */
   looksFilled?: boolean;
   error?: string;
   config?: FlaskGuardConfig;
@@ -480,10 +487,21 @@ export interface FlaskProbePayload {
   ok: boolean;
   foregroundIsPoe: boolean;
   probes: Array<{
-    globe: FlaskGlobe;
+    /** "life" | "mana" | "skill:<id>" */
+    id: string;
+    /** @deprecated alias of id. */
+    globe: string;
+    label: string;
     rgb: Rgb;
-    state: "filled" | "low";
-    thresholds: { minChroma: number; minBright: number };
+    state: "filled" | "low" | "unknown";
+    thresholds: {
+      minChroma: number;
+      minBright: number;
+      blackoutBelow: number;
+      overlayAbove: number;
+      match: number;
+      ref: Rgb | null;
+    };
     reference: Rgb;
   }>;
   error?: string;
@@ -500,7 +518,7 @@ export interface HotkeysBridge {
   daemonStatus: () => Promise<{ exists: boolean; lastEventAt?: string; lastLine?: string }>;
   flaskGet: () => Promise<FlaskGuardStatePayload>;
   flaskSave: (config: unknown) => Promise<{ config: FlaskGuardConfig; issues: string[] }>;
-  flaskCalibrate: (globe: FlaskGlobe) => Promise<FlaskCalibratePayload>;
+  flaskCalibrate: (target: FlaskProbeTarget) => Promise<FlaskCalibratePayload>;
   flaskProbe: () => Promise<FlaskProbePayload>;
 }
 
@@ -671,6 +689,8 @@ export interface Poe2Bridge {
   inventory?: InventoryBridge;
   market?: MarketBridge;
   watchlist?: WatchlistBridge;
+  /** Generic bridge for the feature modules (src/main/features/*); see src/shared/features.ts. */
+  features?: FeatureBridge;
 }
 
 function recordValue(value: unknown): Record<string, unknown> | undefined {

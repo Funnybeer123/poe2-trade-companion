@@ -18,6 +18,7 @@ import type {
 import type { LootFilterRequest } from "../core/lootFilter.js";
 import type { PriceTable } from "../core/priceTable.js";
 import type { SearchRegexRequest } from "../core/searchRegex.js";
+import { isFeatureChannel } from "../shared/features.js";
 
 const invoke = ((channel: string, ...args: unknown[]) =>
   ipcRenderer.invoke(channel, ...args)) as IpcInvoker;
@@ -47,7 +48,7 @@ contextBridge.exposeInMainWorld("poe2", {
     daemonStatus: () => ipcRenderer.invoke("hotkeys:daemon-status"),
     flaskGet: () => ipcRenderer.invoke("flask:get"),
     flaskSave: (config: unknown) => ipcRenderer.invoke("flask:save", config),
-    flaskCalibrate: (globe: "life" | "mana") => ipcRenderer.invoke("flask:calibrate", globe),
+    flaskCalibrate: (target: string) => ipcRenderer.invoke("flask:calibrate", target),
     flaskProbe: () => ipcRenderer.invoke("flask:probe"),
   },
   generateFilter: (request: LootFilterRequest) => ipcRenderer.invoke("filter:generate", request),
@@ -214,5 +215,23 @@ contextBridge.exposeInMainWorld("poe2", {
     scanNow: (watchId?: string) => ipcRenderer.invoke("watchlist:scan-now", watchId),
     copyWhisper: (alertId: string) => ipcRenderer.invoke("watchlist:copy-whisper", alertId),
     dismiss: (alertId: string) => ipcRenderer.invoke("watchlist:dismiss", alertId),
+  },
+  // One generic bridge for the feature modules (src/main/features/*): channels
+  // are `pkg:verb`, typed per package in src/shared/<pkg>.ts and bound in the
+  // renderer by createFeatureApi(). The pattern guard keeps arbitrary channel
+  // names out; main rejects anything no feature registered.
+  features: {
+    invoke: (channel: string, ...args: unknown[]) =>
+      isFeatureChannel(channel)
+        ? ipcRenderer.invoke(channel, ...args)
+        : Promise.reject(new Error(`invalid feature channel: ${String(channel)}`)),
+    on: (channel: string, callback: (payload: unknown) => void) => {
+      if (!isFeatureChannel(channel)) {
+        throw new Error(`invalid feature event: ${String(channel)}`);
+      }
+      const listener = (_event: Electron.IpcRendererEvent, payload: unknown) => callback(payload);
+      ipcRenderer.on(channel, listener);
+      return () => ipcRenderer.removeListener(channel, listener);
+    },
   },
 });

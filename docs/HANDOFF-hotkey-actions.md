@@ -421,3 +421,13 @@ real low-globe fire in a fight, and the app-side Calibrate button
 end-to-end (the CLI calibration path shares the same helper).
 Known limits: full ES over low life reads "filled"; open chat box would
 receive the key.
+
+
+## Num6 reliability update — 2026-09-14
+
+The new offline-tested implementation supersedes the historical FAST sprite
+segmentation, whole-bag movement bursts and timing claims above. See
+[Map triage handoff](HANDOFF-map-triage-2026-09-14.md). Full clipboard
+footprints prevent the three duplicate-item reads reproduced in live preview;
+item transactions verify cursor state before continuing. The new execution
+flow still requires supervised live validation.

@@ -191,17 +191,23 @@ on 2026-09-07 and which live paths are still unverified.
   (`marketTrendsService.ts`), deals watchlist (`watchlistService.ts`), the
   packaged script runner (`stashTabAdminService.ts`), assistive transfers and
   the stash sorter services, the dry-run overlay window.
-- **Renderer** (`src/renderer`, Vue 3 + hash router) — Sort (home: run,
-  value tiers, prices), Shop, Wealth, Item log (evaluate + catalog + scan
-  sessions), Search (query builder + rule studio), Builds, and Tools & QA
-  (calibration, transfers, sort stash, stash tabs, hotkeys, diagnostics,
-  loot filter, settings, market, deals). `services/rendererApi.ts` is the
+- **Renderer** (`src/renderer`, Vue 3 + hash router) — Home (the landing
+  route: character, session, maps, deaths, setup), Sort (run, value tiers,
+  prices), Shop, Market (trade browser), Trade (offers & history), Wealth,
+  Item log (evaluate + catalog + scan sessions), Search (query builder + rule
+  studio), Builds, and Tools & QA (calibration, transfers, sort stash, stash
+  tabs, hotkeys, commands & notes, diagnostics, loot filter, settings, market
+  trends, deals, pricing, stash tracker, campaign guide). `src/renderer/overlay/`
+  mounts the same bundle at `#/overlay` for the in-game panels.
+  `services/rendererApi.ts` is the
   typed bridge with a browser-preview fallback; bridge shapes are declared
   once in `src/shared/ipc.ts`.
 - **CLI flows** (`scripts/*.ts`, run with the local `tsx`) — the live game
   drivers: `sort-gear`, `shop-buckets`, `shop-ladder`, `shop`, `shop-list-bag`,
   `craft-gear`, `map-triage`, `vendor-cycle`, `stash-tab-admin`, the numpad
-  `action-daemon` (with the auto-flask guard), and the clean/rebuild tools.
+  `action-daemon` (with the auto-flask + auto-cast guard, the one
+  perception-driven, timer-paced input path — see `docs/GGG_COMPLIANCE.md`),
+  and the clean/rebuild tools.
   Every CLI loads tiers and prices through `src/adapters/triageLoader.ts`.
 - **Input host** (`scripts/win-input-host.ps1`) — the one PowerShell process
   that captures the screen, OCRs (Windows.Media.Ocr), and sends input; every
@@ -237,10 +243,60 @@ Merchant panel); `drainKit.ts`, `bagKit.ts`, `stashTabKit.ts`,
 step gating, Numpad 0 stop, pacing, bench log); `nameplateFinder.ts`;
 `flaskGuardRunner.ts`.
 
+### Feature modules (the PoE Overlay II port, 2026-09-14)
+
+The ported features are self-contained modules registered in order by
+`src/main/features/registry.ts` and reached from the renderer through the one
+generic `window.poe2.features` bridge (`src/shared/features.ts`,
+`src/renderer/services/featureApi.ts`). Foundations first (`clientLog`,
+`hotkeys`, `overlay`, `chatCommands`, `liveSearch`), then the ten feature
+packages. Every package is offline-tested only; `docs/HANDOFF-overlay-port.md`
+tracks what is still unverified against the live game.
+
+- `src/core/evaluate{Item,Query,Results}.ts` — the pure price-check model.
+- `src/main/features/evaluate/` — the `evaluate:*` channels and service.
+- `src/renderer/features/evaluate/` — the workbench, overlay panel and Item log section.
+- `src/core/market*.ts` — Market's pure model: drafts, tab sessions, favourites, stat autocomplete, exchange and import helpers.
+- `src/main/features/market/` — the Market feature module: tab sessions, trade2 requests, live searches, the three `market-*.json` files.
+- `src/renderer/features/market/` — the `/market` view: builder, results, favourites explorer, live-search column.
+- `src/data/market/` — curated category labels, exchange currency ids and weighted-sum templates.
+- `src/main/features/trade/` — offer state machine over Client.txt events, history + shop-ledger merge, notifier; pure logic in `src/core/{tradeOffers,tradeHistory,tradeNotify}.ts`, shared types in `src/shared/trade.ts`.
+- `src/renderer/features/trade/` — the `/trade` view, the offer cards and the `trade` overlay panel.
+- `src/core/commandsBookmarksNotes.ts`, `src/core/commandsBookmarksNotesMarkdown.ts` — sanitizers, placeholder context, note-image headers, the escape-first markdown subset.
+- `src/main/features/commandsBookmarksNotes/` — commands, stash searches, bookmarks and notes: one hotkey per item, one gesture per press.
+- `src/renderer/features/commandsBookmarksNotes/` — the Tools editor and the `notes` / `stash-search` overlay panels.
+- `src/core/inspect*.ts` — Inspect's pure analysis: tier ladders from learned ranges, map-mod matching, wiki links, the assembled report.
+- `src/data/inspect/` — the curated (unverified, community-maintained) waystone/tablet danger table.
+- `src/main/features/inspect/` — the `inspect:*` channels, the `Alt+I` hotkey and the overlay panel plumbing.
+- `src/renderer/features/inspect/` — the Inspect card, overlay panel, Item log section and settings section.
+- `src/core/stashTracker{Snapshot,Timeline,Overlay}.ts` — snapshot/diff model, worth timeline, in-stash price overlay plan (pure).
+- `src/main/features/stashTracker/` — snapshot journal + summary mirror under userData, the `{ op: "rect" }` window probe, and the click-through price label window.
+- `src/renderer/features/stashTracker/` — Tools → Stash tracker, and the `stash-prices` overlay legend.
+- `src/core/session*.ts` — session reducer, history records, Home aggregation, death index (pure).
+- `src/main/features/session/` — the session service: Client.txt → runs, recap, death screenshots.
+- `src/renderer/features/session/` — Home (`/home`), the Maps/History/Deaths tabs and the `session-recap` overlay panel.
+- `src/core/campaignGuide.ts` + `campaignGuideMap.ts` — campaign route sanitizer, merge, area resolution, XP estimate, map layout (pure).
+- `src/main/features/campaignGuide/` — the `campaign:*` channels, the auto-showing overlay panel and the `campaign-guide` settings namespace.
+- `src/renderer/features/campaignGuide/` — Tools → Campaign guide and the `campaign` overlay panel.
+- `src/data/campaign/route.json` — the bundled community route (every entry `verified: false`).
+- `src/core/pricingHistory.ts` — pure pricing-history helpers: row building, filters, display units, sparkline/timeline geometry, the stored-history merge.
+- `src/main/features/pricingHistory/` — the `pricing:*` channels and the per-league history store under userData.
+- `src/renderer/features/pricingHistory/` — Tools → Pricing (table, sparklines, timeline).
+- `src/core/appSettings{Checklist,Changelog,Elevation,Window}.ts` — the setup checklist, the changelog reader, the two fixed PowerShell strings, window-bounds maths (pure).
+- `src/main/features/appSettings/` — the `app:*` channels: setup checklist, changelog, window bounds, the on-demand elevation probe.
+- `src/renderer/features/appSettings/` — the Tools → Settings sections (checklist, overlay, notifications, game client, window, changelog, about).
+- `src/renderer/features/hotkeys/` — Tools → Hotkeys, the section that lists every contributed action by group.
+
 ### Data on disk
 
 Per-user (`%APPDATA%/poe2-trade-companion`): the SQLite database, the
-optional session cookie, scanner journal, capture artifacts. Shared with the
+optional session cookie, scanner journal, capture artifacts, and the ported
+features' own files — `companion-settings.json` (one sanitized namespace per
+feature), `overlay-hotkeys.json`, `session-current.json`,
+`session-history.jsonl`, `deaths/`, `stash-tracker/` plus its
+`stash-tracker-summary.json` mirror, `market-{favorites,tabs,live-searches}.json`,
+`trade-offers.json`, `trade-history.json`, `trade-webhooks.secret.json`,
+`notes-images/` and `pricing-history/<league>.json`. Shared with the
 CLIs (`artifacts/tab-admin`, gitignored): price-feed config, feed snapshot,
 comps cache, pacing log, stat catalogue, learned tiers, trends cache,
 triage export, inventory ledger, shop ledger and settings, watchlist and
@@ -254,3 +310,12 @@ capture-and-stop, never guessed; unidentified or unreadable items are never
 dumped; heuristics may promote an item up but never to dump; the vendor's
 accept click is the human's; trade2 traffic is paced and budgeted; the
 league must be unambiguous before anything prices.
+
+For the ported feature modules the same rails are enforced by construction:
+`tests/input-boundary.test.ts` walks the whole feature tree and fails if any
+module imports the input host, the input sink or the game input controller, or
+sends a host op. Every in-game gesture they make goes through
+`src/main/chatCommandService.ts` — one chat line or one search-box fill per user
+gesture, kill switch and foreground check before each key, traced. The single
+audited exception is `src/main/features/stashTracker/hostProbe.ts`, whose only
+op is the passive `{ op: "rect" }` window query.

@@ -1,0 +1,19 @@
+Item Class: Body Armours
+Rarity: Rare
+Dread Mantle
+Advanced Vaal Cuirass
+--------
+Quality: +12%
+Armour: 412
+Block chance: 25%
+--------
+Requirements:
+Level: 65
+Str: 122
+--------
+Sockets: S S
+--------
+Item Level: 80
+--------
++95 to maximum Life
++31% to Fire Resistance

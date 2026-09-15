@@ -61,7 +61,7 @@ estimates for manual decision support, not guaranteed sale prices.
 
 ## Item intelligence
 
-The companion now keeps item-finding work in five connected workspaces:
+The companion now keeps item-finding work in connected workspaces:
 
 - **Items** parses clipboard or pasted item text into identity, properties,
   ordered modifier sections, numeric rolls, valuation, desirability, and a
@@ -76,10 +76,49 @@ The companion now keeps item-finding work in five connected workspaces:
 - **Scans** reviews imported or QA-generated scan sessions and slot outcomes.
 - **Wealth** totals the stash from the sorter's inventory ledger (net worth
   by tab, top items, a 1–5 ex sell list).
-- **Market** (Tools) ranks three-day movers, gives hold/sell advice on
+- **Market trends** (Tools) ranks three-day movers, gives hold/sell advice on
   currency stacks, and lists what is worth farming from poe2scout's daily
   price history; **Deals** (Tools) watches saved trade2 searches for
   underpriced listings and copies the whisper, never sending it.
+
+The 2026-09 PoE Overlay II port adds ten more workspaces. All of them are
+implemented and unit-tested offline; **none has been run against the live
+game yet** — the open checks are in `docs/HANDOFF-overlay-port.md`.
+
+- **Home** (landing screen) — character, session, map runs and deaths from
+  Client.txt; stash gains and market movers from local caches; what is still
+  worth setting up. No game input, no network.
+- **Market** (left rail) — in-app trade2 browser: query builder with stat
+  autocomplete, favourites in folders, bulk exchange, live search (≤ 20),
+  whisper/hideout with one chat line per click. Never buys or accepts trades.
+- **Trade** (left rail) — offer cards from your Client.txt whispers (buyers and
+  sellers), one chat line per click (invite, trade, hideout, stash highlight,
+  quick whispers), Windows / Discord / Telegram notifications, and a 14-day
+  trade history with CSV export. Never accepts a trade.
+- **Evaluate** — hover an item and press `Alt+E` (or `Ctrl+D`): one audited
+  `Ctrl+C`, an editable trade2 query, the listings, the bulk-exchange price for
+  stackables and an estimated band with its sample size — over the game or
+  inside Item log.
+- **Inspect** (overlay, `Alt+I`) — mod tiers, rolls and prefix/suffix from the
+  copied item, weapon DPS and defences at 20 % quality, wiki/poe2db links, and
+  waystone danger ratings. Reads the clipboard only; never touches the game.
+- **Commands & notes** (Tools) — hotkey → one chat line with
+  `{player}`/`{area}`/… placeholders, saved stash searches typed on a key
+  press, bookmarks, and markdown/image cheat-sheet notes in the overlay
+  (`Alt+N`; `Alt+F` opens the stash search panel).
+- **Stash tracker** (Tools) — snapshots of the stash ledger, history and
+  compare (incl. removed items), session gains, per-tab totals, exclusions and
+  a worth timeline; `Alt+P` labels the open stash tab with your ledger's price
+  estimates (read-only overlay, no game input).
+- **Campaign guide** (Tools) — community-maintained levelling route with the
+  current area from Client.txt, an under/over-levelled estimate, a schematic
+  world map, and an in-game overlay (`Alt+G`) that appears in campaign areas.
+  No input, no network.
+- **Pricing** (Tools) — poe2scout price history per item: categories,
+  favorites, sort by 1/3/7-day change, sparklines and a local timeline that
+  grows past the seven days the feed serves. Estimates, never guarantees.
+- **Settings** (Tools) — overlay placement/scale/opacity, chat-command switch,
+  Client.txt override, window reset, a first-run checklist and the changelog.
 
 Item, build, rule, and scan state is stored in a local SQLite database under
 the Electron user-data directory. Legacy scan history, regex history, trade
@@ -190,6 +229,7 @@ Do not click Build in Sol Max under the current workflow. Sol Max is planning-on
 - `docs/QA_AUTOMATION_BOUNDARY.md` — automation gates and testing boundary.
 - `docs/GGG_COMPLIANCE.md` — public guidance vs authorized QA separation.
 - `docs/USER_GUIDE.md` — how to install and use the companion.
+- `docs/HANDOFF-overlay-port.md` — the overlay-port scaffold, its ten feature packages, and every live check still open.
 - `docs/ITEM_INTELLIGENCE_PROVENANCE.md` — authorized source revision and reuse boundaries.
 - `docs/IMPLEMENTATION_PHASES.md` — implementation order.
 - `docs/TEST_PLAN.md` — test strategy.
@@ -202,7 +242,7 @@ GGG's current developer reference marks Account Stashes, Guild Stashes, and Publ
 
 ## How to use the app
 
-See **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** for install, copying items from PoE 2, each workspace (Items, Finder, Builds, Rules, Scans, Tools), and authorized-QA gates.
+See **[docs/USER_GUIDE.md](docs/USER_GUIDE.md)** for install, copying items from PoE 2, each workspace (Home, Sort, Market, Trade, Items, Search, Builds, Scans, Tools), the overlay panels and hotkeys, and authorized-QA gates.
 
 Quick start:
 
@@ -212,6 +252,11 @@ npm run dev
 ```
 
 Hover an item in Path of Exile 2, copy it (`Ctrl+C`), then press **Ctrl+D** in the companion or use **Items → Read clipboard**. To empty the bag into stash, calibrate under Tools, open stash and inventory in-game, then use **Tools → Transfers → Empty**. **Ctrl+Shift+Esc** stops generated input.
+
+Overlay hotkeys (registered by the app itself, rebindable under **Tools →
+Hotkeys**): `Alt+E` Evaluate, `Alt+I` Inspect, `Alt+M` Market, `Alt+T` Trade
+panel, `Alt+N` Notes, `Alt+F` Stash search, `Alt+P` Stash prices, `Alt+G`
+Campaign guide. Offline-tested only, not yet verified over the running game.
 
 Numpad hotkeys (via `npm run actions:daemon`, editable under **Tools → Hotkeys**): Num1 Stash, Num2 Sort, Num3 Fill, **Num4 Shop** (price the bag from the live feed + trade2 comps and list it in price-bucket merchant tabs through Ange's Manage Shop), Num6 Identify & drop (in map), Num7 Vendor cycle (in map). Num0 stops, Num5 pauses, Num8/9 are step-mode verdicts.
 

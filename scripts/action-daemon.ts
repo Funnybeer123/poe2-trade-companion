@@ -232,10 +232,11 @@ let lastActionAt = 0;
 let shuttingDown = false;
 const DEBOUNCE_MS = 1_500;
 
-// Auto-flask guard: its own win-input host (this one blocks on waitkey and
-// on whole flows), configured + calibrated in the app under Tools → Hotkeys
-// → Auto-flask (artifacts/flask-guard.json, re-read live). Numpad − toggles
-// pause. `--flask-dry-run` samples and logs WOULD-fire without pressing.
+// Auto-flask + auto-cast guard: its own win-input host (this one blocks on
+// waitkey and on whole flows), configured + calibrated in the app under
+// Tools → Hotkeys → Auto-flask & auto-cast (artifacts/flask-guard.json,
+// re-read live). Numpad − toggles pause. `--flask-dry-run` samples and logs
+// WOULD-fire / WOULD-cast without pressing.
 const flaskGuard = new FlaskGuardRunner({
   root,
   dryRun: process.argv.includes("--flask-dry-run"),
@@ -291,7 +292,7 @@ async function runAction(name: string, key: number): Promise<void> {
 
 async function mainLoop(): Promise<void> {
   const runner = resolveTsxLaunch(root, []).source === "local" ? "local tsx" : "npx tsx (slow start; run npm install)";
-  log({ action: "daemon", phase: "listening", message: `${bindingSummary()} (editable in the app: Tools → Hotkeys). Numpad − pauses/resumes auto-flask. Ctrl+C to stop. Script runner: ${runner}.` });
+  log({ action: "daemon", phase: "listening", message: `${bindingSummary()} (editable in the app: Tools → Hotkeys). Numpad − pauses/resumes auto-flask & auto-cast. Ctrl+C to stop. Script runner: ${runner}.` });
   flaskGuard.start();
   while (!shuttingDown) {
     const reply = await host.send({ op: "waitkey", timeoutMs: 30_000 });
@@ -301,7 +302,7 @@ async function mainLoop(): Promise<void> {
     if (key === 11) {
       // Numpad − (reported as 11): pause/resume the auto-flask guard.
       const paused = flaskGuard.togglePause();
-      log({ action: "flask", phase: "toggle", message: paused ? "auto-flask PAUSED (Numpad − resumes)" : "auto-flask resumed" });
+      log({ action: "flask", phase: "toggle", message: paused ? "auto-flask & auto-cast PAUSED (Numpad − resumes)" : "auto-flask & auto-cast resumed" });
       continue;
     }
     const name = actionForKey(currentBindings().bindings, key);
@@ -317,8 +318,16 @@ async function mainLoop(): Promise<void> {
     }
     lastActionAt = now;
     busy = true;
-    await runAction(name, key);
-    busy = false;
+    // Numpad flows type into price dialogs, chat and rename boxes: hold
+    // auto-cast for their duration so a skill key never lands as a letter.
+    // The flask guard keeps running — a globe can still drop mid-flow.
+    flaskGuard.suspendSkills();
+    try {
+      await runAction(name, key);
+    } finally {
+      flaskGuard.resumeSkills();
+      busy = false;
+    }
   }
   await flaskGuard.stop();
   await host.close();

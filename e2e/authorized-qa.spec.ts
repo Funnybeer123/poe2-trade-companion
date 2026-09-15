@@ -20,8 +20,11 @@ test("QA build boots in authorized-qa mode with the e-stop armed", async ({}, te
     ).toBeVisible();
 
     const routes = [
+      ["Home", "Home", "/home"],
       ["Sort", "Sort & triage", "/sort"],
       ["Shop", "Shop", "/shop"],
+      ["Market", "Market", "/market"],
+      ["Trade", "Trade", "/trade"],
       ["Wealth", "Wealth", "/wealth"],
       ["Item log", "Item log", "/items"],
       ["Search", "Search & rules", "/search"],

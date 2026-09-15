@@ -1,0 +1,19 @@
+2026/09/05 16:37:47 96087406 3ef23348 [INFO Client 34572] @From Buyerino: Hi, I would like to buy your Ghoul Lash, Long Belt listed for 1 exalted in Forbidden Rites (stash tab "~price 1 exalted"; position: left 10, top 10)
+2026/09/05 16:38:02 96087410 3ef23348 [INFO Client 34572] @From Buyerino: Hi, I would like to buy your Ghoul Lash, Long Belt listed for 1 exalted in Forbidden Rites (stash tab "~price 1 exalted"; position: left 10, top 10)
+2026/09/05 16:38:20 96087420 3ef23348 [INFO Client 34572] @To Buyerino: inv sent, one moment
+2026/09/05 16:38:31 96087430 3ef23348 [INFO Client 34572] @From Buyerino: ty
+2026/09/05 16:38:40 96087440 3ef23348 [INFO Client 34572] : Buyerino has joined the area.
+2026/09/05 16:39:10 96087450 3ef23348 [INFO Client 34572] : Trade accepted.
+2026/09/05 16:39:30 96087460 3ef23348 [INFO Client 34572] : Buyerino has left the area.
+2026/09/05 16:40:00 96087500 3ef23348 [INFO Client 34572] @From Bulkbuyer: Hi, I'd like to buy your 2 Preserved Cranium for my 20 Exalted Orb in Forbidden Rites
+2026/09/05 16:41:00 96087600 3ef23348 [INFO Client 34572] @To Sellerino: Hi, I would like to buy your Sapphire Ring listed for 1.5 divine in Forbidden Rites (stash tab "~b/o 1.5 divine"; position: left 3, top 7)
+2026/09/05 16:41:30 96087610 3ef23348 [INFO Client 34572] : Sellerino has joined the party.
+2026/09/05 16:41:45 96087615 3ef23348 [DEBUG Client 34572] Generating level 65 area "HideoutBeaconOfSalvation" with seed 1
+2026/09/05 16:42:00 96087620 3ef23348 [INFO Client 34572] : Trade accepted.
+2026/09/05 16:43:00 96087630 3ef23348 [INFO Client 34572] : Trade cancelled.
+2026/09/05 16:44:10 96087640 3ef23348 [INFO Client 34572] @From Otherguy: Hi, I would like to buy your Rune Charm, Amethyst Charm listed for 30 exalted in Runes of Aldur (stash tab "~price 30 exalted"; position: left 1, top 2)
+2026/09/05 16:45:00 96087700 3ef23348 [INFO Client 34572] #Shouter: wts mirror @ 500 div pm me
+2026/09/05 16:45:10 96087710 3ef23348 [INFO Client 34572] $Trader: wtb Hi, I would like to buy your Ghoul Lash listed for 1 exalted in Forbidden Rites
+2026/09/05 16:45:20 96087720 3ef23348 [INFO Client 34572] &Guildmate: anyone up for maps
+2026/09/05 16:45:30 96087730 3ef23348 [INFO Client 34572] %Partymate: portal please
+2026/09/05 16:45:40 96087740 3ef23348 [INFO Client 34572] : Fakelia (Disciple of Varashta) is now level 88

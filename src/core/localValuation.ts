@@ -2,14 +2,16 @@
  * Local valuation: the ValuationResult behind a price check, built from the
  * signals the app actually has instead of bundled demo quotes.
  *
- * Precedence (strongest evidence first):
- *   1. price-table hit — the user's own table, fed by poe2scout; exact
+ * Precedence (an explicit saved example takes priority):
+ *   1. price-training — saved estimates, listings, or sales for this item;
+ *      stale or conflicting examples require review without a current quote;
+ *   2. price-table hit — the user's own table, fed by poe2scout; exact
  *      names/bases only, stack-aware for currency piles;
- *   2. trade2 comps — real listings for THIS item (core/tradeComps.ts),
+ *   3. trade2 comps — real listings for THIS item (core/tradeComps.ts),
  *      already filtered by mod similarity and priced in exalted;
- *   3. appraisal — the mod-tier heuristic (core/appraisal.ts) mapped onto the
+ *   4. appraisal — the mod-tier heuristic (core/appraisal.ts) mapped onto the
  *      crafting engine's score → exalted curve; explicitly low confidence;
- *   4. none — zeros, so nothing downstream mistakes silence for a price.
+ *   5. none — zeros, so nothing downstream mistakes silence for a price.
  *
  * Pure and deterministic: no I/O, no clock reads (the caller passes `now`).
  * Every number here is an estimate, never a guaranteed sale price.
@@ -23,10 +25,11 @@ import type { CompsSummary } from "./tradeComps.js";
 import type { ConfidenceBucket, ParsedItem, ValuationResult } from "./types.js";
 import type { TierVerdict } from "./valueTiers.js";
 
-export type LocalValuationProvider = "price-table" | "trade2-comps" | "appraisal" | "none";
+export type LocalValuationProvider = "price-training" | "price-table" | "trade2-comps" | "appraisal" | "none";
 
 /** Provider ids the renderer may see on a ValuationResult, fixture included. */
 export const VALUATION_PROVIDER_LABELS: Record<LocalValuationProvider | "fixture", string> = {
+  "price-training": "saved price examples",
   "price-table": "price table",
   "trade2-comps": "trade listings",
   appraisal: "appraisal",
@@ -82,6 +85,40 @@ function base(
     providerName,
     marketTimestamp,
     currency,
+  };
+}
+
+function fromTraining(input: LocalValuationInput): ValuationResult | undefined {
+  const training = input.verdict?.training;
+  if (!training || training.status === "unknown") return undefined;
+  const normalizedKeyStats = {
+    ...keyStats(input.parsed),
+    trainedExampleCount: training.exampleCount,
+  };
+  const explanation = [
+    `${training.exampleCount} distinct saved item example${training.exampleCount === 1 ? "" : "s"}; no live listing comparables used`,
+    ...training.reasons,
+  ].join(" — ");
+  if (training.status !== "matched" || training.amount === undefined ||
+      !Number.isFinite(training.amount) || training.amount <= 0 || !training.currency) {
+    return {
+      ...none(input),
+      normalizedKeyStats,
+      lowConfidenceReason: `Saved price examples need review; no current quote — ${explanation}`,
+    };
+  }
+  return {
+    ...base(input.parsed, "price-training", input.now.toISOString(), training.currency),
+    normalizedKeyStats,
+    // Saved examples may be estimates or completed sales, not live listings.
+    candidateCount: 0,
+    comparablesUsed: 0,
+    low: training.low ?? training.amount,
+    fair: training.amount,
+    high: training.high ?? training.amount,
+    recommendedListing: training.amount,
+    confidence: training.confidence >= 75 ? "high" : training.confidence >= 50 ? "medium" : "low",
+    lowConfidenceReason: explanation,
   };
 }
 
@@ -197,9 +234,9 @@ function none(input: LocalValuationInput): ValuationResult {
 }
 
 /**
- * Value one parsed item from local evidence: price table, then trade2 comps,
- * then the appraisal heuristic, else an explicit "none".
+ * Value one parsed item from local evidence: saved price examples, price table,
+ * trade2 comps, then the appraisal heuristic, else an explicit "none".
  */
 export function valueItemLocally(input: LocalValuationInput): ValuationResult {
-  return fromPriceTable(input) ?? fromComps(input) ?? fromAppraisal(input) ?? none(input);
+  return fromTraining(input) ?? fromPriceTable(input) ?? fromComps(input) ?? fromAppraisal(input) ?? none(input);
 }

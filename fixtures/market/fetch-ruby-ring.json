@@ -1,0 +1,210 @@
+{
+  "note": "Shape of GET /api/trade2/fetch/<ids>?query=<id> as captured on 2026-09-07, trimmed to ten rows that exercise the Market row paths: priced/unpriced, online/afk/offline, a fractional divine price, a secure listing, a stale row, a weapon with extended DPS, a sub-Q20 armour, a gem, and two rows from the same seller for the collapse fold.",
+  "result": [
+    {
+      "id": "ring-1",
+      "listing": {
+        "indexed": "2026-09-07T09:00:00Z",
+        "account": { "name": "SellerOne", "lastCharacterName": "OneChar", "online": { "league": "Runes of Aldur" } },
+        "price": { "type": "~price", "amount": 5, "currency": "exalted" },
+        "whisper": "@OneChar Hi, I would like to buy your Doom Loop Ruby Ring listed for 5 exalted",
+        "stash": { "name": "Sell", "x": 1, "y": 2 }
+      },
+      "item": {
+        "name": "Doom Loop",
+        "typeLine": "Ruby Ring",
+        "baseType": "Ruby Ring",
+        "rarity": "Rare",
+        "ilvl": 81,
+        "identified": true,
+        "properties": [],
+        "requirements": [{ "name": "Level", "values": [["62", 0]] }],
+        "implicitMods": ["+20% to Fire Resistance"],
+        "explicitMods": ["+110 to maximum Life", "+35% to Lightning Resistance"]
+      }
+    },
+    {
+      "id": "ring-2",
+      "listing": {
+        "indexed": "2026-09-07T08:30:00Z",
+        "account": { "name": "SellerTwo", "lastCharacterName": "TwoChar", "online": { "status": "afk" } },
+        "price": { "type": "~price", "amount": 1.5, "currency": "divine" },
+        "whisper": "@TwoChar Hi, I would like to buy your Ruby Ring listed for 1.5 divine"
+      },
+      "item": {
+        "typeLine": "Ruby Ring",
+        "baseType": "Ruby Ring",
+        "rarity": "Rare",
+        "ilvl": 78,
+        "identified": true,
+        "properties": [],
+        "requirements": [],
+        "explicitMods": ["+96 to maximum Life", "+28% to Fire Resistance"]
+      }
+    },
+    {
+      "id": "ring-3",
+      "listing": {
+        "indexed": "2026-09-06T21:15:00Z",
+        "account": { "name": "SellerThree", "lastCharacterName": "ThreeChar", "online": null },
+        "price": { "type": "~b/o", "amount": 3, "currency": "exalted" },
+        "whisper": "@ThreeChar Hi, I would like to buy your Ruby Ring listed for 3 exalted"
+      },
+      "item": {
+        "typeLine": "Ruby Ring",
+        "baseType": "Ruby Ring",
+        "rarity": "Rare",
+        "ilvl": 72,
+        "identified": true,
+        "corrupted": true,
+        "properties": [],
+        "requirements": [],
+        "explicitMods": ["+61 to maximum Life"]
+      }
+    },
+    {
+      "id": "ring-4",
+      "listing": {
+        "indexed": "2026-09-07T07:45:00Z",
+        "account": { "name": "SellerFour", "online": {} },
+        "whisper": "@SellerFour Hi, I would like to buy your Ruby Ring"
+      },
+      "item": {
+        "typeLine": "Ruby Ring",
+        "baseType": "Ruby Ring",
+        "rarity": "Rare",
+        "ilvl": 80,
+        "identified": false,
+        "properties": [],
+        "requirements": []
+      }
+    },
+    {
+      "id": "ring-5",
+      "listing": {
+        "indexed": "2026-09-07T06:00:00Z",
+        "account": { "name": "SellerFive", "online": {} },
+        "price": { "type": "secure", "amount": 12, "currency": "exalted" },
+        "fee": 2,
+        "whisper": "@SellerFive Hi, I would like to buy your Ruby Ring"
+      },
+      "item": {
+        "typeLine": "Ruby Ring",
+        "baseType": "Ruby Ring",
+        "rarity": "Rare",
+        "ilvl": 84,
+        "identified": true,
+        "properties": [],
+        "requirements": [],
+        "explicitMods": ["+120 to maximum Life"]
+      }
+    },
+    {
+      "id": "ring-6",
+      "listing": {
+        "indexed": "2026-07-01T10:00:00Z",
+        "account": { "name": "SellerSix", "lastCharacterName": "SixChar", "online": {} },
+        "price": { "type": "~price", "amount": 2, "currency": "exalted" },
+        "whisper": "@SixChar Hi, I would like to buy your Ruby Ring listed for 2 exalted"
+      },
+      "item": {
+        "typeLine": "Ruby Ring",
+        "baseType": "Ruby Ring",
+        "rarity": "Rare",
+        "ilvl": 70,
+        "identified": true,
+        "properties": [],
+        "requirements": [],
+        "explicitMods": ["+54 to maximum Life"]
+      }
+    },
+    {
+      "id": "ring-7",
+      "listing": {
+        "indexed": "2026-09-07T08:55:00Z",
+        "account": { "name": "SellerOne", "lastCharacterName": "OneChar", "online": {} },
+        "price": { "type": "~price", "amount": 7, "currency": "exalted" },
+        "whisper": "@OneChar Hi, I would like to buy your Ruby Ring listed for 7 exalted"
+      },
+      "item": {
+        "typeLine": "Ruby Ring",
+        "baseType": "Ruby Ring",
+        "rarity": "Rare",
+        "ilvl": 79,
+        "identified": true,
+        "properties": [],
+        "requirements": [],
+        "explicitMods": ["+88 to maximum Life", "+31% to Cold Resistance"]
+      }
+    },
+    {
+      "id": "weapon-1",
+      "listing": {
+        "indexed": "2026-09-07T05:00:00Z",
+        "account": { "name": "SellerSeven", "lastCharacterName": "SevenChar", "online": {} },
+        "price": { "type": "~price", "amount": 40, "currency": "exalted" },
+        "whisper": "@SevenChar Hi, I would like to buy your Dread Crossbow listed for 40 exalted"
+      },
+      "item": {
+        "name": "Dread Maw",
+        "typeLine": "Dyad Crossbow",
+        "baseType": "Dyad Crossbow",
+        "rarity": "Rare",
+        "ilvl": 82,
+        "identified": true,
+        "properties": [
+          { "name": "Physical Damage", "values": [["48-96", 1]] },
+          { "name": "Attacks per Second", "values": [["1.60", 0]] },
+          { "name": "Quality", "values": [["+20%", 1]] }
+        ],
+        "requirements": [{ "name": "Level", "values": [["70", 0]] }],
+        "explicitMods": ["#% increased Physical Damage", "+12% increased Attack Speed"],
+        "extended": { "dps": 210.4, "pdps": 184.2, "edps": 26.2 }
+      }
+    },
+    {
+      "id": "armour-1",
+      "listing": {
+        "indexed": "2026-09-07T04:30:00Z",
+        "account": { "name": "SellerEight", "lastCharacterName": "EightChar", "online": {} },
+        "price": { "type": "~price", "amount": 15, "currency": "exalted" },
+        "whisper": "@EightChar Hi, I would like to buy your Plate listed for 15 exalted"
+      },
+      "item": {
+        "typeLine": "Steel Plate",
+        "baseType": "Steel Plate",
+        "rarity": "Rare",
+        "ilvl": 77,
+        "identified": true,
+        "properties": [
+          { "name": "Armour", "values": [["500", 1]] },
+          { "name": "Quality", "values": [["+10%", 1]] }
+        ],
+        "requirements": [],
+        "explicitMods": ["+72 to maximum Life"],
+        "sockets": [{ "group": 0, "type": "rune" }, { "group": 1, "type": "rune" }],
+        "runeMods": ["+15% to Fire Resistance (rune)"]
+      }
+    },
+    {
+      "id": "gem-1",
+      "listing": {
+        "indexed": "2026-09-07T03:00:00Z",
+        "account": { "name": "SellerNine", "online": {} },
+        "price": { "type": "~price", "amount": 1, "currency": "divine" },
+        "whisper": "@SellerNine Hi, I would like to buy your gem listed for 1 divine"
+      },
+      "item": {
+        "typeLine": "Lightning Arrow",
+        "baseType": "Lightning Arrow",
+        "rarity": "Gem",
+        "identified": true,
+        "properties": [
+          { "name": "Level", "values": [["20", 0]] },
+          { "name": "Quality", "values": [["+20%", 1]] }
+        ],
+        "requirements": []
+      }
+    }
+  ]
+}
