@@ -50,9 +50,19 @@ Unknown-value identified gear stays by default. The map runner saves its copy
 to the review queue; teaching does not require another game scan. Positive
 matching lessons protect an item from disposal, including matches whose evidence
 is stale or conflicting. Such matches have no current numeric quote until
-reviewed. The explicit `--drop-unknown` option restores unknown dropping;
-`--keep-unknown` wins if both flags are supplied. Normal Heavy Belts and Utility
-Belts keep their crafting-base protection.
+reviewed. The explicit `--drop-unknown` option now drops only items whose
+discard audit passed (see [Build-aware decisions](build-demand.md)); review
+items stay, and `--keep-unknown` wins if both flags are supplied. Normal Heavy
+Belts and Utility Belts keep their crafting-base protection.
+
+Since 2026-09-14 the queue receives only items whose decision is *review*;
+keep, list and audited discard proposals are resolved locally. Each queued
+reason starts with a priority tag (`[P1]` a near-miss chase item, an unpriced
+unique, stale or conflicting evidence; `[P2]` an uncovered class or a line the
+knowledge base cannot judge; `[P3]` low information) and the page lists the
+queue in that order. On the 32-item evaluation set the queue fell from 17 to 7
+entries with zero false discards; on the ten saved bag snapshots (30 distinct
+identified items) from 13 to 6.
 
 App and CLI use `artifacts/tab-admin/price-training.jsonl`. The append-only
 history stores lessons, corrections, deactivations and review sightings. A

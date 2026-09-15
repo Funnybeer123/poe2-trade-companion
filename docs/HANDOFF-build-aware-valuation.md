@@ -1,5 +1,9 @@
 # Handoff prompt: build-aware default item valuation
 
+> **Status 2026-09-15:** implemented offline and shadow-validated — see
+> `docs/features/build-demand.md` for the research registry, coverage matrix,
+> evaluation results and what is still unverified. No live run was made.
+
 Copy the prompt below into the next coding task.
 
 ---

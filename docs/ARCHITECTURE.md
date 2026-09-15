@@ -227,10 +227,15 @@ on 2026-09-07 and which live paths are still unverified.
   score + confidence), `localValuation.ts` (the Ctrl+D valuation),
   `lookupScreen.ts` (which bag items deserve a trade2 lookup),
   `priceTrends.ts`, `exchangeArbitrage.ts`, `lootFilter.ts`.
-- Decisions: `valueTiers.ts` (keep/sell/dump rules), `sortTriage.ts`
-  (detours incl. the craft tab), `bagTriage.ts`, `crafting.ts` (planner),
-  `shopListings.ts` + `shopPricing.ts` (ledger, buckets, ladder, gates),
-  `watchlist.ts`, `inventoryLedger.ts` (Wealth), `mapTriage.ts`.
+- Decisions: `valueTiers.ts` (keep/sell/dump rules), `buildDemand.ts`
+  (base + modifier demand patterns over `src/data/demand/buildDemand.ts`,
+  the dated knowledge table), `itemDecision.ts` (keep / list / review /
+  discard-eligible with the discard audit; `evaluateItemDecision` is the
+  entry point the app, the CLIs and the browser preview share),
+  `sortTriage.ts` (detours incl. the craft tab), `bagTriage.ts`,
+  `crafting.ts` (planner), `shopListings.ts` + `shopPricing.ts` (ledger,
+  buckets, ladder, gates), `watchlist.ts`, `inventoryLedger.ts` (Wealth),
+  `mapTriage.ts`.
 - Perception: `uiPerception.ts`, `cellOccupancy.ts`, `itemSprites.ts`,
   `nameplates.ts`, `nameplateCache.ts`, `calibrationProfile.ts`.
 

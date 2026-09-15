@@ -59,7 +59,12 @@ example when you have better evidence; the earlier entry remains in local histor
 
 The bag checker now keeps unknown-value gear by default and queues it for
 review. Normal Heavy Belts and Utility Belts remain protected crafting bases.
-Saved positive prices also keep matching items. **Similar items** is an
+Saved positive prices also keep matching items. Queue entries are tagged
+**[P1]**–**[P3]** by how useful your answer is (a near-miss chase item or an
+unpriced unique first, a line the app cannot judge second, low-information
+cases last) and the queue lists them in that order; items the decision layer
+resolves on its own (keep, list, or an audited discard proposal) are no longer
+queued — see [Build-aware decisions](features/build-demand.md). **Similar items** is an
 optional scope restricted to the same base, rarity, modifier patterns and
 condition, with nearby rolls and item level. It does not teach every Sapphire
 the same price. Evidence older than 30 days or conflicting prices requires review.
@@ -258,6 +263,45 @@ aside; heuristics can never send anything to Dump. Explicit rules always
 outrank the heuristic, so if a monster item lands at "sell", it is because
 your sell rule matched it — tighten or remove the rule to let the appraisal
 decide.
+
+### Decisions: keep, list, review, discard-eligible
+
+Every evaluated item also gets a **decision** (shown in Item log under
+"Decision", printed by the map runner, and used by the recommendation
+category):
+
+- **Keep** — a saved price example, your keep rule, a *chase* build-demand
+  match, or a defensible craft step (the planner's additive orb is worth at
+  least 0.3 ex at 60 % confidence; a white base at item level 81+).
+- **List / sell candidate** — your sell rule, a real price-table price, or a
+  *strong* / *useful* demand match.
+- **Review** — unidentified or unreadable, stale or conflicting saved prices,
+  an item class the knowledge does not cover, a line it cannot judge, a
+  build-specific line no sampled build wants, or a tier-1 affix with nothing
+  else to say about it.
+- **Discard eligible** — a *proposal*: your dump rule matched, or every audit
+  check passed (identified, covered class, normal/magic/rare, no protection,
+  no price floor, every line understood, no situational line, no demand
+  match, no tier-1 affix, at most one tier-2 affix, no craft case, not a
+  valuable base, weapon DPS below the usable bar, knowledge within its review
+  window). The audit is listed check by check.
+
+Precedence is fixed: safety gates, then saved prices, then your rules, then a
+real price, then build demand, then the appraisal, then crafting, then the
+audit. Your rules always win; when a rule contradicts the evidence (a dump
+rule over a craft-grade base, a sell rule over a chase match) the decision
+says so instead of overriding you. **Demand is not a price**: a match names
+the builds and the dated sources that want the combination and never shows an
+amount.
+
+The runner keeps every unknown-tier item by default. `--drop-unknown` now
+drops only audited *discard-eligible* items; *review* items always stay.
+`npx tsx scripts/demand-shadow.ts` replays your saved bag snapshots offline
+and writes what the runner would do to `artifacts/demand/`.
+
+The demand table (`src/data/demand/buildDemand.ts`) is dated (2026-09-14,
+Forbidden Rites 0.5.5b) and has a review date; past it, discards stop being
+proposed and demand confidence drops until the table is refreshed.
 
 ### Recent finds
 
