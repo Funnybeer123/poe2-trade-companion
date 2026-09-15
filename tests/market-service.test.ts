@@ -750,8 +750,12 @@ describe("catalogues and state", () => {
     const res = templates.find((template) => template.id === "total-elemental-res");
     expect(res?.resolved).toBe(true);
     expect(res?.filters[0]?.id).toMatch(/^explicit\./);
+    // The catalogue subset carries the minion stats since 2026-09-14 (build-demand
+    // families), so the bundle resolves; a template whose text is absent stays
+    // unresolved — checked by pointing one at a text the subset lacks.
     const minion = templates.find((template) => template.id === "minion-bundle");
-    expect(minion?.resolved).toBe(false);
+    expect(minion?.resolved).toBe(true);
+    expect(minion?.filters.every((filter) => /^explicit\./.test(filter.id))).toBe(true);
   });
 
   it("publishes the rates behind the ≈ figures", () => {

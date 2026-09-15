@@ -1,4 +1,6 @@
+import type { ItemDecision } from "./itemDecision.js";
 import type { DesirabilityResult, NormalizedItem, RecommendationCategory, ValuationResult } from "./types.js";
+import type { TierVerdict } from "./valueTiers.js";
 
 export interface DesirabilityPrefs {
   minScoreToKeep: number;
@@ -10,10 +12,26 @@ const DEFAULT_PREFS: DesirabilityPrefs = {
   preferItemClasses: [],
 };
 
+/** The recommendation category a decision outcome maps to (routing tabs share the names). */
+export function categoryForDecision(decision: ItemDecision): RecommendationCategory {
+  switch (decision.outcome) {
+    case "keep":
+      return decision.craft ? "craft" : "keep";
+    case "list":
+      return "sell";
+    case "discard-eligible":
+      return "dump";
+    default:
+      return "review";
+  }
+}
+
 export function scoreDesirability(
   item: NormalizedItem,
   valuation: ValuationResult,
   prefs: DesirabilityPrefs = DEFAULT_PREFS,
+  /** The tier verdict; when it carries a decision, the category follows it. */
+  verdict?: TierVerdict,
 ): DesirabilityResult {
   const reasons: string[] = [];
   let score = 20;
@@ -54,6 +72,18 @@ export function scoreDesirability(
   else if (item.mods.length >= 4) category = "craft";
   else if (score >= 40) category = "vendor";
   else if (item.rarity === "Currency") category = "bulk";
+
+  // The decision (rules, saved prices, build demand, craft case, audit)
+  // outranks the generic score: the recommendation shown must agree with
+  // what triage actually does.
+  const decision = verdict?.decision;
+  if (decision) {
+    category = categoryForDecision(decision);
+    reasons.unshift(decision.headline);
+    if (decision.demand) {
+      reasons.push(`General demand (not a price): ${decision.demand.label} — ${decision.demand.builds.join(", ") || "curated"}.`);
+    }
+  }
 
   // Saved observations protect an item independently of the generic score.
   // This also applies when an old/conflicting lesson has no current quote.

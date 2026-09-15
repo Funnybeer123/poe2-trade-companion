@@ -19,7 +19,8 @@ import {
   validatePriceTable,
   type PriceTable,
 } from "../core/priceTable.js";
-import { evaluateWithAppraisal, type EvaluateWithAppraisalOptions } from "../core/appraisal.js";
+import type { EvaluateWithAppraisalOptions } from "../core/appraisal.js";
+import { evaluateItemDecision } from "../core/itemDecision.js";
 import { DEFAULT_MIN_DETOUR_CONFIDENCE } from "../core/sortTriage.js";
 import {
   DEFAULT_TIER_THRESHOLDS,
@@ -651,7 +652,7 @@ export class ItemIntelligenceService {
 
   evaluateTier(itemText: string): TierVerdict {
     const config = this.getValueTierConfig();
-    return evaluateWithAppraisal(typeof itemText === "string" ? itemText : "", {
+    return evaluateItemDecision(typeof itemText === "string" ? itemText : "", {
       rules: config.rules,
       priceTable: this.getPriceTable(),
       thresholds: config.thresholds,

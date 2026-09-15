@@ -225,6 +225,9 @@ describe("item intelligence application service", () => {
     const verdict = service.evaluateTier(ITEM_TEXT);
     expect(verdict.tier).toBe("keep");
     expect(verdict.matchedRules).toContain("life rings");
+    // The app's evaluator returns the same decision the bag runner acts on.
+    expect(verdict.decision).toMatchObject({ outcome: "keep" });
+    expect(verdict.decision?.evidence[0]).toMatchObject({ kind: "user-rule" });
     persistence.close();
   });
 });

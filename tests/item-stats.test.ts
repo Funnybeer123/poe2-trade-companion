@@ -81,6 +81,20 @@ describe("weaponDps", () => {
     expect(dps.notes).toContain("Q20 assumes no local % physical modifier — an estimate");
   });
 
+  it("folds PoE2's per-element damage lines (Cold Damage: 55-102 (cold)) into the DPS", () => {
+    // Live bag copies (2026-09-15) print a single element as its own
+    // property instead of a combined Elemental Damage line.
+    const dps = weaponDps(parseItemText(fixture("ghoul-thirst-gemini-bow.txt")))!;
+    expect(dps.components.map((component) => component.kind)).toEqual(["physical", "cold"]);
+    expect(dps.physicalDps).toBe(63.8);
+    expect(dps.elementalDps).toBe(90.3);
+    expect(dps.totalDps).toBe(154.1);
+    const crossbow = weaponDps(parseItemText(fixture("dragon-core-elegant-crossbow.txt")))!;
+    expect(crossbow.components.map((component) => component.kind)).toEqual(["physical", "fire"]);
+    expect(crossbow.totalDps).toBe(287.9);
+    expect(crossbow.reloadTime).toBe(0.85);
+  });
+
   it("uses the printed physical damage of a unique bow with no elemental line", () => {
     const dps = weaponDps(parseItemText(fixture("unique-bow.txt")))!;
     expect(dps.physicalDps).toBe(8.4);

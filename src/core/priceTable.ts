@@ -111,6 +111,16 @@ function ciEquals(left: string | undefined, right: string | undefined): boolean 
   return left.trim().toLowerCase() === right.trim().toLowerCase();
 }
 
+/**
+ * A rarity- or class-wide row ("any unique = 1 ex") is a floor for
+ * unreviewed items, not a price for the item in hand: it never yields an
+ * estimated value and only decides a tier after the user's rules have had
+ * their say.
+ */
+export function isFloorEntry(match: PriceEntryMatch): boolean {
+  return match.name === undefined && match.baseType === undefined;
+}
+
 export function entrySpecificity(match: PriceEntryMatch): number {
   let score = 0;
   if (match.name) score += 8;

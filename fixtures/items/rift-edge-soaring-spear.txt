@@ -1,0 +1,30 @@
+Item Class: Spears
+Rarity: Rare
+Rift Edge
+Soaring Spear
+--------
+Physical Damage: 52-97 (augmented)
+Lightning Damage: 3-60 (lightning)
+Critical Hit Chance: 5.00%
+Attacks per Second: 2.06 (augmented)
+--------
+Requires: Level 70, 41 Str, 115 (unmet) Dex
+--------
+Item Level: 81
+--------
+Grants Skill: Spear Throw
+--------
+{ Prefix Modifier "Sparking" (Tier: 6) — Damage, Elemental, Lightning, Attack }
+Adds 3(1-3) to 60(55-60) Lightning Damage
+{ Prefix Modifier "Reliable" (Tier: 8) — Attack }
++59(33-60) to Accuracy Rating
+{ Prefix Modifier "Champion's" (Tier: 4) — Damage, Physical, Attack }
+49(45-54)% increased Physical Damage
++114(98-123) to Accuracy Rating
+{ Suffix Modifier "of Fame" (Tier: 3) — Attack, Speed }
+21(20-22)% increased Attack Speed
+{ Suffix Modifier "of Light" (Tier: 2) — Attack }
++35(21-40) to Accuracy Rating
+10% increased Light Radius
+{ Suffix Modifier "of Triumph" (Tier: 6) — Life }
+Gain 14(10-18) Life per enemy killed

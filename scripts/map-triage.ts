@@ -46,6 +46,7 @@ import { loadTriageExport, type TriageExport } from "../src/adapters/triageLoade
 import { copyPoints as kitCopyPoints, panelsViaOcr as kitPanelsViaOcr } from "../src/adapters/bagKit.js";
 import { mapTriageControlHost, mapTriageHost } from "../src/adapters/mapTriageHost.js";
 import { runMapTriage } from "../src/core/mapTriageRun.js";
+import { describeDecision } from "../src/core/itemDecision.js";
 import { runFastCompactionPass, type FastTriageOps } from "../src/core/mapTriageExecution.js";
 import { itemSizeDatabasePath, loadItemSizeDatabase, lookupItemSize } from "../src/core/itemSizeStore.js";
 
@@ -652,10 +653,18 @@ async function runFast(triage: TriageExport): Promise<void> {
     },
   });
   console.log(`bag: ${result.items} item(s) · ${result.unidentified} unidentified gear · ${result.scrolls} scroll(s)`);
+  const outcomes = { keep: 0, list: 0, review: 0, "discard-eligible": 0 };
   for (const decision of result.decisions) {
     const appraisal = decision.verdict.appraisal;
+    const item = decision.verdict.decision;
+    if (item) outcomes[item.outcome] += 1;
     console.log(`  · r${decision.row}c${decision.col} ${decision.name} — ${decision.drop ? (live ? "drop candidate" : "WOULD DROP") : "keep"} ` +
-      `(${decision.verdict.tier}: ${decision.reason})${appraisal ? ` · confidence ${appraisal.confidence}%` : ""}`);
+      `(${decision.verdict.tier}: ${decision.reason})${appraisal ? ` · confidence ${appraisal.confidence}%` : ""}` +
+      (item ? ` · decision: ${describeDecision(item)}` : ""));
+  }
+  if (result.decisions.length) {
+    console.log(`decisions: ${outcomes.keep} keep · ${outcomes.list} list · ${outcomes.review} review · ` +
+      `${outcomes["discard-eligible"]} discard-eligible (proposals${keepUnknown ? "; unknown-tier items retained" : "; --drop-unknown acts on audited proposals only"})`);
   }
   if (result.aborted) throw new Error(result.aborted);
   if (!live) {

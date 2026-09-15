@@ -19,9 +19,18 @@ export function loadPriceTrainingContext(dir: string, league?: string, now?: Dat
 }
 
 export function needsPriceReview(verdict: TierVerdict): boolean {
-  return verdict.source !== "safety" && (verdict.tier === "unknown" ||
-    verdict.training?.status === "stale" || verdict.training?.status === "conflict" ||
-    (verdict.source === "heuristic" && !verdict.appraisal?.estimatedValue));
+  if (verdict.source === "safety") return false;
+  if (verdict.training?.status === "stale" || verdict.training?.status === "conflict") return true;
+  // A decision resolves keep/list/discard locally; only a review outcome asks for a human.
+  if (verdict.decision) return verdict.decision.outcome === "review";
+  return verdict.tier === "unknown" || (verdict.source === "heuristic" && !verdict.appraisal?.estimatedValue);
+}
+
+/** The queue reason, priority-tagged ("[P1] …") when a decision explains the need. */
+export function reviewReasonFor(verdict: TierVerdict): string {
+  const need = verdict.decision?.review;
+  if (need) return `[P${need.priority}] ${need.reason}`;
+  return verdict.reasons.join(" ");
 }
 
 type Event = { version: 1; at: string } & (

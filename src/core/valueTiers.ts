@@ -18,6 +18,7 @@
 
 import { looksLikePoeItemText, parseItemText } from "./parseItem.js";
 import {
+  isFloorEntry,
   lookupPrice,
   type PriceTable,
 } from "./priceTable.js";
@@ -27,6 +28,7 @@ import {
   type ScanHistoryItem,
 } from "./scanRules.js";
 import type { ItemAppraisal } from "./appraisal.js";
+import type { ItemDecision } from "./itemDecision.js";
 import type { ParsedItem } from "./types.js";
 import type { TrainingPriceEstimate } from "./priceTraining.js";
 
@@ -64,6 +66,8 @@ export type TierVerdictSource =
   | "rule"
   | "heuristic"
   | "training"
+  /** Promoted by a curated build-demand pattern (itemDecision.ts). */
+  | "demand"
   | "default";
 
 export interface TierVerdict {
@@ -78,6 +82,13 @@ export interface TierVerdict {
   /** Scored appraisal evidence, when evaluateWithAppraisal produced this. */
   appraisal?: ItemAppraisal;
   training?: TrainingPriceEstimate;
+  /**
+   * Set when a rarity- or class-wide price-table row decided the tier: a
+   * floor for unreviewed items, never presented as this item's price.
+   */
+  priceFloor?: { id: string; value: number; currency: string };
+  /** The keep / list / review / discard-eligible decision (evaluateItemDecision). */
+  decision?: ItemDecision;
 }
 
 export interface EvaluateTierOptions {
@@ -118,7 +129,8 @@ function matchBucket(
 
 /**
  * Decide an item's tier from raw copied text. Order of authority:
- * safety gates, then the price table, then keep/sell/dump rules.
+ * safety gates, then an exact price-table price (name or base), then
+ * keep/sell/dump rules, then a rarity/class-wide price floor.
  */
 export function evaluateValueTier(
   itemText: string,
@@ -138,15 +150,18 @@ export function evaluateValueTier(
   }
 
   const thresholds = options.thresholds ?? DEFAULT_TIER_THRESHOLDS;
-  if (options.priceTable) {
-    const hit = lookupPrice(options.priceTable, {
-      name: parsed.name,
-      baseType: parsed.baseType,
-      itemClass: parsed.itemClass,
-      itemLevel: parsed.itemLevel,
-      rarity: parsed.rarity,
-    });
-    if (hit) {
+  const hit = options.priceTable
+    ? lookupPrice(options.priceTable, {
+        name: parsed.name,
+        baseType: parsed.baseType,
+        itemClass: parsed.itemClass,
+        itemLevel: parsed.itemLevel,
+        rarity: parsed.rarity,
+      })
+    : undefined;
+  const floor = hit !== undefined && isFloorEntry(hit.entry.match);
+  if (hit && !floor) {
+    {
       const label = hit.entry.match.name ?? hit.entry.match.baseType ?? hit.entry.id;
       if (hit.value >= thresholds.keepAtOrAbove) {
         return verdict(
@@ -175,6 +190,21 @@ export function evaluateValueTier(
       return verdict(tier, "rule", [
         `Matched ${tier} rule${matched.length > 1 ? "s" : ""}: ${matched.join(", ")}.`,
       ], { matchedRules: matched });
+    }
+  }
+
+  // A floor row (rarity/class-wide) comes after the user's rules: it is a
+  // placeholder for unreviewed items and never this item's price.
+  if (hit && floor) {
+    const tier: TriageTier | undefined =
+      hit.value >= thresholds.keepAtOrAbove ? "keep" : hit.value >= thresholds.sellAtOrAbove ? "sell" : undefined;
+    if (tier) {
+      return {
+        ...verdict(tier, "price-table", [
+          `Price-table floor "${hit.entry.id}" (${hit.value} ${hit.currency}) applies to every ${parsed.rarity.toLowerCase()} item; it is a placeholder, not this item's price.`,
+        ]),
+        priceFloor: { id: hit.entry.id, value: hit.value, currency: hit.currency },
+      };
     }
   }
 

@@ -665,11 +665,15 @@ export interface DropDecision {
 
 /**
  * "Good" = the item matched a keep/sell rule, cleared a price-table
- * threshold, or was heuristically promoted. Everything else the run just
- * identified is map litter and drops — EXCEPT safety verdicts (text the
- * evaluator refused to trust), which always stay in the bag.
+ * threshold, or was promoted (appraisal or build demand). Explicit dump
+ * verdicts drop. Safety verdicts (text the evaluator refused to trust)
+ * always stay in the bag.
  *
- * `keepUnknown` narrows dropping to explicit dump verdicts only.
+ * Unknown-tier items stay while `keepUnknown` is set (the default). When
+ * dropping unknowns is explicitly enabled, a verdict that carries a
+ * decision drops ONLY when its audited outcome is `discard-eligible`; a
+ * `review` outcome (uncovered class, unjudged lines, near-miss demand …)
+ * still stays. A verdict without a decision keeps the legacy behaviour.
  */
 export function decideDrop(verdict: TierVerdict, keepUnknown = false): DropDecision {
   if (verdict.source === "safety") {
@@ -681,8 +685,21 @@ export function decideDrop(verdict: TierVerdict, keepUnknown = false): DropDecis
   if (verdict.tier === "dump") {
     return { drop: true, tier: verdict.tier, reason: verdict.reasons[0] ?? "matched a dump rule" };
   }
+  const decision = verdict.decision;
   if (keepUnknown) {
-    return { drop: false, tier: verdict.tier, reason: "matched no rule (kept by --keep-unknown)" };
+    return {
+      drop: false,
+      tier: verdict.tier,
+      reason: decision
+        ? `retained (${decision.outcome}): ${decision.headline}`
+        : "matched no rule (kept by --keep-unknown)",
+    };
+  }
+  if (decision) {
+    if (decision.outcome === "discard-eligible") {
+      return { drop: true, tier: verdict.tier, reason: decision.headline };
+    }
+    return { drop: false, tier: verdict.tier, reason: `retained (${decision.outcome}): ${decision.headline}` };
   }
   return { drop: true, tier: verdict.tier, reason: "matched no keep/sell rule" };
 }

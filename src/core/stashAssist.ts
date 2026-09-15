@@ -43,5 +43,5 @@ export function destinationFor(result: DesirabilityResult): RecommendationCatego
 }
 
 export function shouldKeepInInventory(category: RecommendationCategory): boolean {
-  return category === "keep" || category === "craft";
+  return category === "keep" || category === "craft" || category === "review";
 }

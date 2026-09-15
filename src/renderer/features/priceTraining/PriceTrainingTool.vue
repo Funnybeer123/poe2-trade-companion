@@ -54,6 +54,14 @@ const askingRange = computed(() => {
   const prices = market.value?.summary?.comps.map((item) => item.price) ?? [];
   return prices.length ? `${Math.min(...prices)}–${Math.max(...prices)}` : undefined;
 });
+/** "[P1] …" reasons first (the decision layer's review priority), then most recent. */
+function reviewPriority(item: PriceReviewItem): number {
+  const match = /^\[P([1-3])\]/.exec(item.reason);
+  return match ? Number(match[1]) : 4;
+}
+const sortedReview = computed(() =>
+  [...(overview.value?.review ?? [])].sort((a, b) => reviewPriority(a) - reviewPriority(b) || b.lastSeen.localeCompare(a.lastSeen)),
+);
 const matchingLessons = computed(() => {
   const ids = new Set(preview.value?.estimate.lessonIds ?? []);
   return overview.value?.lessons.filter((lesson) => ids.has(lesson.id)) ?? [];
@@ -321,7 +329,7 @@ onBeforeUnmount(() => {
       <section class="training-card" aria-label="Review queue">
         <h3>Review queue <span class="muted">{{ overview?.review.length ?? 0 }}</span></h3>
         <p v-if="!overview?.review.length" class="muted">No items waiting for review.</p>
-        <ul v-else class="record-list"><li v-for="item in overview.review" :key="item.id">
+        <ul v-else class="record-list"><li v-for="item in sortedReview" :key="item.id">
           <div><strong>{{ itemLabel(item.itemText) }}</strong><p>{{ item.reason }}</p><small>{{ item.league }} · Seen {{ item.seenCount }} time{{ item.seenCount === 1 ? '' : 's' }} · {{ dateLabel(item.lastSeen) }}</small></div>
           <div class="button-row"><button type="button" class="button secondary compact" :disabled="saving" @click="loadReview(item)">Review item</button><button type="button" class="button secondary compact" :disabled="saving" @click="dismissReview(item.id)">Dismiss</button></div>
         </li></ul>

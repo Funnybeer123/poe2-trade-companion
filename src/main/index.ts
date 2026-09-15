@@ -221,6 +221,7 @@ async function evaluateItemText(
       item,
       valuation,
       localPersistence?.buildProfiles.list() ?? [],
+      tier,
     );
     return {
       schemaVersion: ITEM_INTELLIGENCE_IPC_VERSION,

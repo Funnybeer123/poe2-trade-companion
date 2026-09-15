@@ -14,6 +14,7 @@ import type {
   NormalizedItem,
   ValuationResult,
 } from "./types.js";
+import type { TierVerdict } from "./valueTiers.js";
 
 interface CandidateLine {
   text: string;
@@ -204,12 +205,18 @@ export interface BuildAwareDesirability {
   buildPreference: ActiveProfileCandidatePreference;
 }
 
+/**
+ * Generic desirability (which follows the item decision when one exists)
+ * plus YOUR active build profiles. Personal targets are labelled as such in
+ * the reasons so they never read as general trade demand.
+ */
 export function scoreBuildAwareDesirability(
   item: NormalizedItem,
   valuation: ValuationResult,
   profiles: readonly BuildProfile[],
+  verdict?: TierVerdict,
 ): BuildAwareDesirability {
-  const base = scoreDesirability(item, valuation);
+  const base = scoreDesirability(item, valuation, undefined, verdict);
   const buildPreference = scoreCandidateForActiveProfiles(
     profiles,
     { id: item.fingerprint, value: item },
@@ -233,19 +240,19 @@ export function scoreBuildAwareDesirability(
         ...base.reasons,
         ...(buildPreference.exactTargetIds.length > 0
           ? [
-              `matches ${buildPreference.exactTargetIds.length} active build target${
+              `Your build: matches ${buildPreference.exactTargetIds.length} active build target${
                 buildPreference.exactTargetIds.length === 1 ? "" : "s"
-              }`,
+              } (personal, not general demand)`,
             ]
           : []),
         ...(buildPreference.nearTargetIds.length > 0
           ? [
-              `near ${buildPreference.nearTargetIds.length} active build target${
+              `Your build: near ${buildPreference.nearTargetIds.length} active build target${
                 buildPreference.nearTargetIds.length === 1 ? "" : "s"
               }`,
             ]
           : []),
-        ...buildPreference.reasons,
+        ...buildPreference.reasons.map((reason) => `Your build: ${reason}`),
       ],
     },
   };

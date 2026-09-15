@@ -9,6 +9,8 @@ import type {
   ValuationResult,
 } from "../../src/core/types.js";
 import ItemDetail from "../../src/renderer/components/ItemDetail.vue";
+import { evaluateItemDecision } from "../../src/core/itemDecision.js";
+import { emptyValueTierRules } from "../../src/core/valueTiers.js";
 import { useIntelligenceStore } from "../../src/renderer/composables/useIntelligenceStore.js";
 import FinderView from "../../src/renderer/views/FinderView.vue";
 import { ITEM_INTELLIGENCE_IPC_VERSION } from "../../src/shared/ipc.js";
@@ -96,6 +98,33 @@ afterEach(() => {
 });
 
 describe("renderer item intelligence components", () => {
+  it("shows the decision, its demand evidence and the discard audit the runner uses", () => {
+    const junk = evaluateItemDecision(item.rawText!, { rules: emptyValueTierRules(), now: new Date("2026-09-14T22:00:00Z") });
+    expect(junk.decision?.outcome).toBe("discard-eligible");
+    const wrapper = mount(ItemDetail, { props: { item, valuation, desirability, tier: junk } });
+    expect(wrapper.get(".decision-panel h3").text()).toBe("Discard eligible (proposal)");
+    expect(wrapper.text()).toContain("Proposal only");
+    expect(wrapper.text()).toContain("Discard audit — every check passed");
+    expect(wrapper.findAll(".discard-audit li.check-ok").length).toBeGreaterThanOrEqual(10);
+    expect(wrapper.text()).toContain("Demand knowledge v2026-09-14 (Forbidden Rites)");
+    wrapper.unmount();
+
+    const bow = evaluateItemDecision([
+      "Item Class: Bows", "Rarity: Rare", "Storm Fletch", "Composite Bow", "--------",
+      "Physical Damage: 120-230 (augmented)", "Lightning Damage: 2-68 (lightning)", "Attacks per Second: 1.45 (augmented)",
+      "--------", "Item Level: 82", "--------", "142% increased Physical Damage", "Bow Attacks fire an Additional Arrow",
+    ].join("\n"), { rules: emptyValueTierRules(), now: new Date("2026-09-14T22:00:00Z") });
+    expect(bow.decision).toMatchObject({ outcome: "keep", demand: { strength: "chase" } });
+    const kept = mount(ItemDetail, { props: { item: { ...item, itemClass: "Bows" }, valuation, desirability, tier: bow } });
+    expect(kept.get(".decision-panel h3").text()).toBe("Keep");
+    expect(kept.text()).toContain("General demand (chase)");
+    expect(kept.text()).toContain("wanted by Ice Shot Deadeye");
+    expect(kept.text()).toContain("Demand is not a price");
+    expect(kept.findAll(".decision-sources a").length).toBeGreaterThan(0);
+    expect(kept.get(".decision-sources a").attributes("href")).toMatch(/^https:\/\//);
+    kept.unmount();
+  });
+
   it("renders explicit estimate language and parser ordering", () => {
     const wrapper = mount(ItemDetail, {
       props: { item, valuation, desirability },

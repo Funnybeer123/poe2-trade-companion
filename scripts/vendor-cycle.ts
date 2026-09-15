@@ -41,7 +41,7 @@ import {
 import { loadProfile } from "../src/core/calibrationStore.js";
 import { BAG_CELLS } from "../src/core/calibrationProfile.js";
 import { cellCenterTwoCorner } from "../src/core/gridMath.js";
-import { evaluateWithAppraisal } from "../src/core/appraisal.js";
+import { evaluateItemDecision } from "../src/core/itemDecision.js";
 import {
   classifyBagRead,
   decideDrop,
@@ -208,7 +208,7 @@ async function readJunk(identifyWith?: { x: number; y: number; scrolls: number }
       continue;
     }
     if (classified.kind !== "identified-gear") continue;
-    const verdict = evaluateWithAppraisal(read.text, {
+    const verdict = evaluateItemDecision(read.text, {
       rules: triage.rules,
       thresholds: triage.thresholds,
       priceTable: triage.priceTable,

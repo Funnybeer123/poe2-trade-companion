@@ -445,6 +445,151 @@
           "id": "explicit.stat_67169579",
           "text": "# to Level of all Chaos Skills",
           "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_518292764",
+          "text": "#% to Critical Hit Chance",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_387439868",
+          "text": "#% increased Elemental Damage with Attacks",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2694482655",
+          "text": "#% to Critical Damage Bonus",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3278136794",
+          "text": "Gain #% of Damage as Extra Lightning Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3015669065",
+          "text": "Gain #% of Damage as Extra Fire Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2505884597",
+          "text": "Gain #% of Damage as Extra Cold Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_770672621",
+          "text": "Minions have #% increased maximum Life",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1589917703",
+          "text": "Minions deal #% increased Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3398787959",
+          "text": "Gain #% of Damage as Extra Chaos Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1368271171",
+          "text": "Gain # Mana per enemy killed",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2106365538",
+          "text": "#% increased Evasion Rating",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_737908626",
+          "text": "#% increased Critical Hit Chance for Spells",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_707457662",
+          "text": "Leech #% of Physical Attack Damage as Mana",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_669069897",
+          "text": "Leeches #% of Physical Damage as Mana",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2339757871",
+          "text": "#% increased Energy Shield Recharge Rate",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1782086450",
+          "text": "#% faster start of Energy Shield Recharge",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3984865854",
+          "text": "#% increased Spirit",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3791899485",
+          "text": "#% increased Ignite Magnitude",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_2748665614",
+          "text": "#% increased maximum Mana",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_280731498",
+          "text": "#% increased Area of Effect",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3377888098",
+          "text": "#% increased Skill Effect Duration",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_3362812763",
+          "text": "#% of Armour also applies to Elemental Damage",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1303248024",
+          "text": "#% increased Magnitude of Ailments you inflict",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1200678966",
+          "text": "#% increased bonuses gained from Equipped Quiver",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1004011302",
+          "text": "#% increased Cooldown Recovery Rate",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_538241406",
+          "text": "Damaging Ailments deal damage #% faster",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_4101445926",
+          "text": "#% increased Mana Cost Efficiency",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1030153674",
+          "text": "Recover #% of maximum Mana on Kill",
+          "type": "explicit"
+        },
+        {
+          "id": "explicit.stat_1416406066",
+          "text": "#% increased Spirit",
+          "type": "explicit"
         }
       ]
     }

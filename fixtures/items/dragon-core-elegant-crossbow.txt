@@ -1,0 +1,26 @@
+Item Class: Crossbows
+Rarity: Rare
+Dragon Core
+Elegant Crossbow
+--------
+Physical Damage: 31-123
+Fire Damage: 79-116 (fire)
+Critical Hit Chance: 5.00%
+Attacks per Second: 1.65
+Reload Time: 0.85
+--------
+Requires: Level 78, 89 (unmet) Str, 89 Dex
+--------
+Item Level: 81
+--------
+{ Implicit Modifier }
+29(20-30)% chance to Pierce an Enemy
+--------
+{ Prefix Modifier "Blasting" (Tier: 3) — Damage, Elemental, Fire, Attack }
+Adds 79(73-97) to 116(112-149) Fire Damage
+{ Suffix Modifier "of the Titan" (Tier: 1) — Attribute }
++31(31-33) to Strength
+{ Suffix Modifier "of Restoration" (Tier: 3) — Life, Attack }
+Grants 3 Life per Enemy Hit
+{ Suffix Modifier "of the Lamprey" (Tier: 2) — Life, Physical, Attack }
+Leeches 8.36(8-8.9)% of Physical Damage as Life

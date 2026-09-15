@@ -1,0 +1,15 @@
+Item Class: Jewels
+Rarity: Rare
+Maelström Wound
+Emerald
+--------
+Item Level: 81
+--------
+{ Prefix Modifier "Combat" (Tier: 1) — Damage, Attack }
+9(5-15)% increased Attack Damage
+{ Prefix Modifier "Precise" (Tier: 1) — Attack }
+14(5-15)% increased Accuracy Rating with Bows
+{ Suffix Modifier "of the Thicker" (Tier: 1) — Charm }
+9(5-15)% increased Charm Charges gained
+--------
+Place into an allocated Jewel Socket on the Passive Skill Tree. Right click to remove from the Socket.

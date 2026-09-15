@@ -17,8 +17,8 @@
 
 import path from "node:path";
 import { existsSync, readFileSync } from "node:fs";
-import { evaluateWithAppraisal } from "../core/appraisal.js";
 import { DEFAULT_TRIAGE_ROUTING, type TriageRouting } from "../core/bagTriage.js";
+import { evaluateItemDecision } from "../core/itemDecision.js";
 import { applyFeedSnapshotIfNewer, parseFeedSnapshot } from "../core/priceFeed.js";
 import {
   starterPriceTable,
@@ -28,7 +28,7 @@ import {
 } from "../core/priceTable.js";
 import { DEFAULT_MIN_DETOUR_CONFIDENCE } from "../core/sortTriage.js";
 import { loadTierKnowledge } from "./learnedTiersStore.js";
-import { loadPriceTrainingContext, needsPriceReview, PriceTrainingStore } from "./priceTrainingStore.js";
+import { loadPriceTrainingContext, needsPriceReview, PriceTrainingStore, reviewReasonFor } from "./priceTrainingStore.js";
 import {
   DEFAULT_TIER_THRESHOLDS,
   starterValueTierRules,
@@ -58,7 +58,7 @@ export interface TriageExport {
    * comps fetch). Without them the appraisal uses the hand thresholds.
    */
   tierKnowledge: { learnedTiers: boolean; statIds: boolean };
-  /** Tier decision for one copied item's text (rules + price table). */
+  /** Tier decision for one copied item's text (rules + price table + build demand), with its decision. */
   evaluate: (itemText: string) => TierVerdict;
   /** Local review queue only; this never requests a market price. */
   observeEvaluation?: (itemText: string, verdict: TierVerdict) => void;
@@ -171,10 +171,13 @@ export function loadTriageExport(root: string, options: LoadTriageExportOptions 
       statIds: knowledge.statIds !== undefined,
     },
     evaluate: (itemText) =>
-      evaluateWithAppraisal(itemText, { rules, priceTable: table, thresholds, ...knowledge, ...training }),
+      evaluateItemDecision(itemText, {
+        rules, priceTable: table, thresholds, ...knowledge, ...training,
+        ...(options.now ? { now: options.now } : {}),
+      }),
     observeEvaluation: (itemText, verdict) => {
       if (!needsPriceReview(verdict)) return;
-      try { trainingStore.enqueue(league === "auto" ? "Unassigned" : league, itemText, verdict.reasons.join(" ")); }
+      try { trainingStore.enqueue(league === "auto" ? "Unassigned" : league, itemText, reviewReasonFor(verdict)); }
       catch (error) { log(`Price review queue: ${String(error)}`); }
     },
   };

@@ -1,0 +1,10 @@
+Item Class: Jewels
+Rarity: Magic
+Retaliating Ruby
+--------
+Item Level: 80
+--------
+{ Prefix Modifier "Retaliating" (Tier: 1) — Damage }
+14(10-20)% increased Thorns damage
+--------
+Place into an allocated Jewel Socket on the Passive Skill Tree. Right click to remove from the Socket.

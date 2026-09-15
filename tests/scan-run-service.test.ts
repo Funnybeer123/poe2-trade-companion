@@ -24,6 +24,7 @@ const scenario: AutomationScenario = {
     craft: "craft",
     dump: "dump",
     bulk: "bulk",
+    review: "review",
   },
 };
 

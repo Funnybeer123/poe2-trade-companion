@@ -61,7 +61,7 @@ import {
   validatePriceTable,
   type PriceTable,
 } from "@core/priceTable";
-import { evaluateWithAppraisal } from "@core/appraisal";
+import { evaluateItemDecision } from "@core/itemDecision";
 import { DEFAULT_MIN_DETOUR_CONFIDENCE } from "@core/sortTriage";
 import {
   DEFAULT_TIER_THRESHOLDS,
@@ -231,13 +231,13 @@ async function previewEvaluateText(text: string): Promise<ItemEvaluation> {
     currency: "exalted",
   });
   const valuation = valueItem(item, quote);
-  const desirability = scoreDesirability(item, valuation);
   const tierConfig = previewTierConfig();
-  const tier = evaluateWithAppraisal(text, {
+  const tier = evaluateItemDecision(text, {
     rules: tierConfig.rules,
     priceTable: previewPriceTable(),
     thresholds: tierConfig.thresholds,
   });
+  const desirability = scoreDesirability(item, valuation, undefined, tier);
   const evaluation: ItemEvaluation = {
     schemaVersion: ITEM_INTELLIGENCE_IPC_VERSION,
     parsed: true,
@@ -713,7 +713,7 @@ export const rendererApi = {
         const bridge = nativeBridge();
         if (bridge) return bridge.intelligence.tiers.evaluate(itemText);
         const config = previewTierConfig();
-        return evaluateWithAppraisal(itemText, {
+        return evaluateItemDecision(itemText, {
           rules: config.rules,
           priceTable: previewPriceTable(),
           thresholds: config.thresholds,

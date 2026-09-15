@@ -1,0 +1,270 @@
+{
+  "version": "2026-09-14",
+  "league": "Forbidden Rites",
+  "notes": [
+    "Labels: keep | list | review | discard mean the expected decision outcome under the starter rules and starter price table.",
+    "Label 'retained' is a constraint only: the item was retained unlabeled by the 2026-09-15 live run; the default runner must keep it and no label is manufactured.",
+    "labelSource says where a label came from; 'synthetic' entries were written to exercise one mechanism and never stand in for observed prices.",
+    "split: 'tune' entries were used while calibrating thresholds; 'holdout' entries (grouped by base/modifier pattern) were not."
+  ],
+  "entries": [
+    {
+      "id": "live-ghoul-thirst-bow",
+      "file": "items/ghoul-thirst-gemini-bow.txt",
+      "group": "bow-elemental",
+      "split": "holdout",
+      "label": "retained",
+      "labelSource": "live run 2026-09-15: unknown value, retained; the user has not labelled it",
+      "notes": "Gemini Bow, 95% elemental with attacks (T1), 55-102 cold; life on hit and mana on kill fillers."
+    },
+    {
+      "id": "live-dragon-core-crossbow",
+      "file": "items/dragon-core-elegant-crossbow.txt",
+      "group": "crossbow-dps",
+      "split": "holdout",
+      "label": "retained",
+      "labelSource": "live run 2026-09-15: unknown value, retained"
+    },
+    {
+      "id": "live-rift-edge-spear",
+      "file": "items/rift-edge-soaring-spear.txt",
+      "group": "spear-dps",
+      "split": "holdout",
+      "label": "retained",
+      "labelSource": "live run 2026-09-15: unknown value, retained"
+    },
+    {
+      "id": "live-retaliating-ruby",
+      "file": "items/retaliating-ruby-jewel.txt",
+      "group": "jewel-situational",
+      "split": "holdout",
+      "label": "retained",
+      "labelSource": "live run 2026-09-15: unknown value, retained"
+    },
+    {
+      "id": "live-amethyst-ring",
+      "file": "items/amethyst-ring-of-the-ice.txt",
+      "group": "ring-single-res",
+      "split": "holdout",
+      "label": "retained",
+      "labelSource": "live run 2026-09-15: unknown value, retained"
+    },
+    {
+      "id": "live-maelstrom-wound-jewel",
+      "file": "items/maelstrom-wound-emerald-jewel.txt",
+      "group": "jewel-junk",
+      "split": "holdout",
+      "label": "retained",
+      "labelSource": "live run 2026-09-15: unknown value, retained"
+    },
+    {
+      "id": "correction-sapphire-with-lesson",
+      "file": "items/chilling-sapphire-training.txt",
+      "group": "jewel-curse",
+      "split": "tune",
+      "label": "keep",
+      "training": true,
+      "labelSource": "user estimate, exact item, ~1 divine in Forbidden Rites (screenshot of very low reliability); not a sale"
+    },
+    {
+      "id": "correction-sapphire-no-lesson",
+      "file": "items/chilling-sapphire-training.txt",
+      "group": "jewel-curse",
+      "split": "tune",
+      "label": "review",
+      "labelSource": "same item without its lesson: the curse line is unjudged, so it must be reviewed, never discarded"
+    },
+    {
+      "id": "correction-normal-heavy-belt",
+      "text": "Item Class: Belts\nRarity: Normal\nHeavy Belt\n--------\nRequires: Level 50\n--------\nItem Level: 62",
+      "group": "belt-craft-base",
+      "split": "tune",
+      "label": "keep",
+      "labelSource": "user request 2026-09-14: retain Normal Heavy Belts (level-50 example)"
+    },
+    {
+      "id": "correction-normal-utility-belt",
+      "text": "Item Class: Belts\nRarity: Normal\nUtility Belt\n--------\nRequires: Level 50\n--------\nItem Level: 62",
+      "group": "belt-craft-base",
+      "split": "tune",
+      "label": "keep",
+      "labelSource": "user request 2026-09-14: retain Normal Utility Belts"
+    },
+    {
+      "id": "starter-normal-leather-belt",
+      "text": "Item Class: Belts\nRarity: Normal\nLeather Belt\n--------\nRequires: Level 50\n--------\nItem Level: 62",
+      "group": "belt-normal-other",
+      "split": "tune",
+      "label": "discard",
+      "labelSource": "starter dump rule 'Low-level normals' (user configuration)"
+    },
+    {
+      "id": "synthetic-la-deadeye-bow",
+      "text": "Item Class: Bows\nRarity: Rare\nStorm Fletch\nComposite Bow\n--------\nPhysical Damage: 120-230 (augmented)\nLightning Damage: 2-68 (lightning)\nCritical Hit Chance: 5.00%\nAttacks per Second: 1.45 (augmented)\n--------\nItem Level: 82\n--------\n142% increased Physical Damage\nAdds 2 to 68 Lightning damage\n26% increased Attack Speed\nBow Attacks fire an Additional Arrow\n+3 to Level of all Projectile Skills",
+      "group": "bow-chase",
+      "split": "holdout",
+      "label": "keep",
+      "labelSource": "synthetic: chase combination (extra arrow + usable DPS + projectile levels)"
+    },
+    {
+      "id": "synthetic-archmage-wand",
+      "text": "Item Class: Wands\nRarity: Rare\nStorm Spire\nAttuned Wand\n--------\nItem Level: 82\n--------\n85% increased Spell Damage\n22% increased Cast Speed\n+4 to Level of all Lightning Spell Skills\n+120 to maximum Mana",
+      "group": "caster-levels",
+      "split": "tune",
+      "label": "keep",
+      "labelSource": "synthetic: chase caster weapon (T1 levels + spell damage)"
+    },
+    {
+      "id": "synthetic-meta-boots",
+      "text": "Item Class: Boots\nRarity: Rare\nGale Track\nStellar Sandals\n--------\nItem Level: 81\n--------\n32% increased Movement Speed\n+112 to maximum Life\n+38% to Fire Resistance\n+35% to Cold Resistance",
+      "group": "boots-speed",
+      "split": "holdout",
+      "label": "keep",
+      "labelSource": "synthetic: chase boots (T1 movement speed, life, two resistances)"
+    },
+    {
+      "id": "synthetic-spirit-amulet",
+      "text": "Item Class: Amulets\nRarity: Rare\nWhirl Charm\nSolar Amulet\n--------\nItem Level: 82\n--------\n+85 to Spirit\n+96 to maximum Life\n+18% to all Elemental Resistances",
+      "group": "amulet-spirit",
+      "split": "tune",
+      "label": "keep",
+      "labelSource": "synthetic: two top-tier amulet lines (spirit, all resistances)"
+    },
+    {
+      "id": "synthetic-body-spirit-life",
+      "text": "Item Class: Body Armours\nRarity: Rare\nStorm Carapace\nAdvanced Maraketh Coat\n--------\nItem Level: 82\n--------\n+162 to maximum Life\n+92 to Spirit\n+14% to all Elemental Resistances\n+31% to Chaos Resistance\n28% increased Rarity of Items found",
+      "group": "body-spirit",
+      "split": "tune",
+      "label": "list",
+      "labelSource": "synthetic: chase body armour (spirit + life + resistances); under the starter rules the \"Double resist rare\" SELL rule wins over the chase demand match (rules outrank demand) and the decision shows that conflict"
+    },
+    {
+      "id": "synthetic-quiver-strong",
+      "text": "Item Class: Quivers\nRarity: Rare\nHail Barb\nVisceral Quiver\n--------\nItem Level: 81\n--------\nAdds 5 to 52 Lightning damage\n18% increased Attack Speed\n15% chance to gain Onslaught on Killing Hits",
+      "group": "quiver",
+      "split": "tune",
+      "label": "list",
+      "labelSource": "synthetic: strong quiver (flat damage + attack speed + onslaught)"
+    },
+    {
+      "id": "synthetic-jewel-triple",
+      "text": "Item Class: Jewels\nRarity: Rare\nHoned Eye\nEmerald\n--------\nItem Level: 80\n--------\n7% increased maximum Life\n5% increased Skill Speed\n9% increased Attack Speed",
+      "group": "jewel-triple",
+      "split": "tune",
+      "label": "keep",
+      "labelSource": "synthetic: three strong jewel lines"
+    },
+    {
+      "id": "synthetic-jewel-double",
+      "text": "Item Class: Jewels\nRarity: Rare\nHoned Eye\nSapphire\n--------\nItem Level: 80\n--------\n5% increased maximum Life\n7% increased Cast Speed",
+      "group": "jewel-double",
+      "split": "holdout",
+      "label": "list",
+      "labelSource": "synthetic: two strong jewel lines"
+    },
+    {
+      "id": "synthetic-junk-ring",
+      "text": "Item Class: Rings\nRarity: Rare\nDoom Loop\nIron Ring\n--------\nItem Level: 70\n--------\n+15 to Accuracy Rating\n10% increased Light Radius\n+12 to maximum Mana",
+      "group": "ring-junk",
+      "split": "tune",
+      "label": "discard",
+      "labelSource": "synthetic: every line is a recognised low-value line, no demand, covered class"
+    },
+    {
+      "id": "synthetic-junk-ring-corrupted",
+      "text": "Item Class: Rings\nRarity: Rare\nDoom Loop\nIron Ring\n--------\nItem Level: 70\n--------\n+15 to Accuracy Rating\n10% increased Light Radius\n+12 to maximum Mana\n--------\nCorrupted",
+      "group": "ring-junk",
+      "split": "tune",
+      "label": "discard",
+      "labelSource": "synthetic: corruption seals a junk rare; still junk"
+    },
+    {
+      "id": "synthetic-junk-magic-gloves",
+      "text": "Item Class: Gloves\nRarity: Magic\nGloves of the Brute\nLeather Gloves\n--------\nItem Level: 55\n--------\n+8 to Strength",
+      "group": "gloves-junk",
+      "split": "holdout",
+      "label": "discard",
+      "labelSource": "synthetic: one low attribute line on a low-level magic base"
+    },
+    {
+      "id": "synthetic-low-normal-boots",
+      "text": "Item Class: Boots\nRarity: Normal\nLeather Boots\n--------\nItem Level: 40",
+      "group": "normal-low",
+      "split": "tune",
+      "label": "discard",
+      "labelSource": "starter dump rule 'Low-level normals'"
+    },
+    {
+      "id": "synthetic-normal-high-body",
+      "text": "Item Class: Body Armours\nRarity: Normal\nExpert Maraketh Coat\n--------\nArmour: 640\nEvasion Rating: 590\n--------\nItem Level: 82",
+      "group": "normal-craft-base",
+      "split": "tune",
+      "label": "discard",
+      "labelSource": "starter dump rule 'Low-level normals' matches every Normal item; the decision must show the conflict with a craft-grade base rather than override the user's rule"
+    },
+    {
+      "id": "synthetic-charm-uncovered",
+      "text": "Item Class: Charms\nRarity: Magic\nThawing Charm of the Fox\n--------\nItem Level: 70\n--------\n+3 to Dexterity",
+      "group": "uncovered-class",
+      "split": "holdout",
+      "label": "review",
+      "labelSource": "synthetic: an item class the knowledge does not cover is never discarded"
+    },
+    {
+      "id": "synthetic-unsupported-gloves",
+      "file": "items/rich-affixes.txt",
+      "group": "unsupported-lines",
+      "split": "tune",
+      "label": "review",
+      "labelSource": "synthetic fixture: lines the knowledge base cannot judge"
+    },
+    {
+      "id": "synthetic-weak-bow",
+      "text": "Item Class: Bows\nRarity: Rare\nDusk Fletch\nCrude Bow\n--------\nPhysical Damage: 20-40\nAttacks per Second: 1.20\n--------\nItem Level: 65\n--------\n+25 to Accuracy Rating\n10% increased Light Radius",
+      "group": "weapon-weak",
+      "split": "holdout",
+      "label": "discard",
+      "labelSource": "synthetic: 36 printed DPS with filler lines"
+    },
+    {
+      "id": "synthetic-bow-no-dps-block",
+      "text": "Item Class: Bows\nRarity: Rare\nDusk Fletch\nCrude Bow\n--------\nItem Level: 65\n--------\n+25 to Accuracy Rating\n10% increased Light Radius",
+      "group": "weapon-unreadable",
+      "split": "tune",
+      "label": "review",
+      "labelSource": "synthetic: a weapon whose damage block is missing cannot be judged"
+    },
+    {
+      "id": "synthetic-es-body-post-nerf",
+      "text": "Item Class: Body Armours\nRarity: Rare\nGhost Shell\nVaal Regalia\n--------\nItem Level: 84\n--------\n+180 to maximum Energy Shield\n+42 to maximum Mana",
+      "group": "body-es",
+      "split": "tune",
+      "label": "review",
+      "labelSource": "synthetic: off-meta tier-1 energy shield line; not demand, not discardable"
+    },
+    {
+      "id": "synthetic-life-body-two-mod",
+      "text": "Item Class: Body Armours\nRarity: Rare\nIron Shell\nVaal Cuirass\n--------\nItem Level: 84\n--------\n+180 to maximum Life\n+42 to maximum Mana",
+      "group": "body-life-only",
+      "split": "holdout",
+      "label": "review",
+      "labelSource": "synthetic: a lone tier-1 life line on an open rare is neither demand nor junk"
+    },
+    {
+      "id": "synthetic-unique-widowhail",
+      "file": "items/unique-bow.txt",
+      "group": "unique",
+      "split": "tune",
+      "label": "keep",
+      "labelSource": "starter keep rule 'Any unique'; the any-unique price row is a placeholder, so no price may be shown"
+    },
+    {
+      "id": "synthetic-unidentified-rare",
+      "text": "Item Class: Rings\nRarity: Rare\nGold Ring\n--------\nItem Level: 80\n--------\nUnidentified",
+      "group": "safety",
+      "split": "tune",
+      "label": "review",
+      "labelSource": "safety gate: unidentified items are always retained"
+    }
+  ]
+}

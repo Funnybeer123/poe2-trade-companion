@@ -62,6 +62,16 @@ const valuationDisclaimer = computed(() =>
 );
 
 const appraisal = computed(() => props.tier?.appraisal);
+const decision = computed(() => props.tier?.decision);
+const OUTCOME_LABELS: Record<string, string> = {
+  keep: "Keep",
+  list: "List / sell candidate",
+  review: "Review",
+  "discard-eligible": "Discard eligible (proposal)",
+};
+const outcomeLabel = computed(() => (decision.value ? OUTCOME_LABELS[decision.value.outcome] ?? decision.value.outcome : ""));
+const decisionEvidence = computed(() => decision.value?.evidence.filter((entry) => entry.kind !== "demand") ?? []);
+const failedChecks = computed(() => decision.value?.discard?.checks.filter((check) => !check.ok) ?? []);
 const notableMods = computed(
   () => appraisal.value?.mods.filter((mod) => mod.familyId !== undefined) ?? [],
 );
@@ -120,6 +130,59 @@ const orderedProperties = computed(() =>
       ({{ tier.source }}<template v-if="tier.price !== undefined">, {{ tier.price }} {{ tier.currency }}</template>):
       {{ tier.reasons[0] }}
     </p>
+
+    <section v-if="decision" class="decision-panel" :class="`outcome-${decision.outcome}`" aria-labelledby="decision-title">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Decision</span>
+          <h3 id="decision-title">{{ outcomeLabel }}</h3>
+        </div>
+        <span v-if="decision.review" class="pill warning" :title="decision.review.reason">review priority P{{ decision.review.priority }}</span>
+      </div>
+      <p class="decision-headline">{{ decision.headline }}</p>
+      <p v-if="decision.demand" class="decision-demand">
+        <strong>General demand ({{ decision.demand.strength }}):</strong> {{ decision.demand.label }}
+        <template v-if="decision.demand.builds.length"> — wanted by {{ decision.demand.builds.join(", ") }}</template>.
+        <span class="muted">Demand is not a price: no listing or sale for this item was observed.</span>
+      </p>
+      <ul v-if="decision.demand?.sources.length" class="decision-sources">
+        <li v-for="source in decision.demand.sources" :key="source.url">
+          <a :href="source.url" target="_blank" rel="noreferrer">{{ source.label }}</a>
+          · {{ source.kind }} · {{ source.date }} · {{ source.strength }} evidence
+        </li>
+      </ul>
+      <p v-if="decision.nearMiss" class="muted">
+        Close to <strong>{{ decision.nearMiss.label }}</strong>; missing {{ decision.nearMiss.missing.join(", ") }}.
+      </p>
+      <p v-if="decision.craft" class="muted">
+        Crafting: {{ decision.craft.action }} (+{{ decision.craft.expectedProfit }} ex expected, {{ decision.craft.confidence }}% confidence) — {{ decision.craft.reason }}
+      </p>
+      <ul v-if="decisionEvidence.length" class="reason-list">
+        <li v-for="entry in decisionEvidence" :key="`${entry.kind}:${entry.label}`">
+          {{ entry.label }}<template v-if="entry.detail"> — {{ entry.detail }}</template>
+        </li>
+      </ul>
+      <p v-if="decision.coverage.unsupported.length" class="inline-notice warning" role="note">
+        Lines the knowledge base cannot judge: {{ decision.coverage.unsupported.join("; ") }}
+      </p>
+      <p v-if="!decision.coverage.covered" class="inline-notice warning" role="note">
+        {{ decision.coverage.itemClass }} is outside the demand knowledge; this item is never discarded automatically.
+      </p>
+      <details v-if="decision.discard" class="discard-audit">
+        <summary>
+          Discard audit — {{ decision.discard.eligible ? "every check passed" : `${failedChecks.length} check(s) blocked it` }}
+        </summary>
+        <ul>
+          <li v-for="check in decision.discard.checks" :key="check.id" :class="check.ok ? 'check-ok' : 'check-fail'">
+            <span class="check-mark">{{ check.ok ? "✓" : "✗" }}</span> {{ check.detail }}
+          </li>
+        </ul>
+      </details>
+      <p class="muted policy-line">{{ decision.policy }}</p>
+      <p class="muted">
+        Demand knowledge v{{ decision.coverage.knowledgeVersion }} ({{ decision.coverage.league }}), review by {{ decision.coverage.reviewBy }}<template v-if="decision.coverage.expired"> — past its review date</template>.
+      </p>
+    </section>
 
     <section v-if="appraisal" class="appraisal-panel" aria-labelledby="appraisal-title">
       <div class="section-heading">
@@ -331,6 +394,19 @@ const orderedProperties = computed(() =>
 .tier-keep { border-left-color: #4fa84f; }
 .tier-sell { border-left-color: #c9a227; }
 .tier-dump { border-left-color: #b35050; }
+.decision-panel { display: flex; flex-direction: column; gap: 0.45rem; border: 1px solid rgba(140, 140, 160, 0.25); border-left-width: 3px; border-radius: 0.6rem; padding: 0.85rem 1rem; }
+.decision-panel.outcome-keep { border-left-color: #4fa84f; }
+.decision-panel.outcome-list { border-left-color: #c9a227; }
+.decision-panel.outcome-review { border-left-color: #6f8fd6; }
+.decision-panel.outcome-discard-eligible { border-left-color: #b35050; }
+.decision-headline { margin: 0; }
+.decision-demand { margin: 0; }
+.decision-sources { list-style: none; margin: 0; padding: 0; font-size: 0.8rem; opacity: 0.85; }
+.discard-audit ul { list-style: none; margin: 0.35rem 0 0; padding: 0; display: flex; flex-direction: column; gap: 0.2rem; font-size: 0.82rem; }
+.check-mark { display: inline-block; width: 1.1rem; font-weight: 700; }
+.check-ok .check-mark { color: #7dd87d; }
+.check-fail .check-mark { color: #dd8f8f; }
+.policy-line { font-style: italic; }
 .appraisal-panel { display: flex; flex-direction: column; gap: 0.7rem; border: 1px solid rgba(140, 140, 160, 0.25); border-radius: 0.6rem; padding: 0.85rem 1rem; }
 .confidence-chip { font-size: 0.78rem; padding: 0.15rem 0.6rem; border-radius: 1rem; border: 1px solid rgba(140, 140, 160, 0.4); text-transform: capitalize; }
 .confidence-chip.very-high { border-color: #4fa84f; color: #7dd87d; }

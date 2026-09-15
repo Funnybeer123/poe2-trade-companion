@@ -22,7 +22,7 @@ import {
   type ModMatchContext,
 } from "./modKnowledge.js";
 import { isAffixMod, looksLikePoeItemText, parseItemText } from "./parseItem.js";
-import { lookupPrice, type PriceTable } from "./priceTable.js";
+import { isFloorEntry, lookupPrice, type PriceTable } from "./priceTable.js";
 import {
   evaluateValueTier,
   type EvaluateTierOptions,
@@ -71,7 +71,7 @@ export interface ItemAppraisal {
   confidence: number;
   band: ConfidenceBand;
   /** The single strongest evidence source behind the score. */
-  evidence: "price-table" | "rule" | "mods" | "training" | "unidentified" | "unparseable" | "none";
+  evidence: "price-table" | "rule" | "mods" | "training" | "demand" | "unidentified" | "unparseable" | "none";
   reasons: string[];
   mods: ModAppraisal[];
   estimatedValue?: EstimatedValue;
@@ -202,7 +202,14 @@ export function appraiseItem(itemText: string, options: AppraiseOptions = {}): I
       itemLevel: parsed.itemLevel,
       rarity: parsed.rarity,
     });
-    if (hit) {
+    if (hit && isFloorEntry(hit.entry.match)) {
+      // A rarity/class-wide floor is not this item's price: no estimate, no
+      // score — the decision layer reports it as a placeholder.
+      reasons.push(
+        `Price-table floor "${hit.entry.id}" (${hit.value} ${hit.currency}) is a placeholder for unreviewed ` +
+          `${parsed.rarity.toLowerCase()} items, not a market valuation.`,
+      );
+    } else if (hit) {
       const count = /currency/i.test(parsed.itemClass) ? stackCount(parsed) : undefined;
       const amount = Math.round(hit.value * (count ?? 1) * 100) / 100;
       estimatedValue = {

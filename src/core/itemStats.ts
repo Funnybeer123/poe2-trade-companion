@@ -195,6 +195,20 @@ export function attributeElements(
 }
 
 /**
+ * PoE2 prints a weapon's elemental damage either as one combined
+ * `Elemental Damage: a-b, c-d` property or — when the weapon carries a
+ * single element — as its own line: `Cold Damage: 55-102 (cold)`,
+ * `Fire Damage: 79-116 (fire)`, `Lightning Damage: 3-60 (lightning)`
+ * (live bag copies, 2026-09-15). The per-element lines already say which
+ * element they are, so no modifier matching is needed for them.
+ */
+const ELEMENT_PROPERTIES: ReadonlyArray<[string, DamageKind]> = [
+  ["Fire Damage", "fire"],
+  ["Cold Damage", "cold"],
+  ["Lightning Damage", "lightning"],
+];
+
+/**
  * DPS from the properties block as printed. Undefined when the item prints
  * no damage property at all (armour, jewellery, currency, maps).
  */
@@ -202,7 +216,15 @@ export function weaponDps(parsed: ParsedItem): WeaponDps | undefined {
   const physicalPairs = damagePairs(propertyNamed(parsed, "Physical Damage")?.value ?? "");
   const elementalPairs = damagePairs(propertyNamed(parsed, "Elemental Damage")?.value ?? "");
   const chaosPairs = damagePairs(propertyNamed(parsed, "Chaos Damage")?.value ?? "");
-  if (physicalPairs.length === 0 && elementalPairs.length === 0 && chaosPairs.length === 0) {
+  const perElement = ELEMENT_PROPERTIES.flatMap(([name, kind]) =>
+    damagePairs(propertyNamed(parsed, name)?.value ?? "").map((pair) => ({ kind, pair })),
+  );
+  if (
+    physicalPairs.length === 0 &&
+    elementalPairs.length === 0 &&
+    chaosPairs.length === 0 &&
+    perElement.length === 0
+  ) {
     return undefined;
   }
 
@@ -231,6 +253,11 @@ export function weaponDps(parsed: ParsedItem): WeaponDps | undefined {
   }
   if (elementalComponents.some((component) => component.kind === "elemental-unknown")) {
     notes.push("an elemental damage pair matched no 'Adds # to # … Damage' modifier");
+  }
+  for (const { kind, pair: [min, max] } of perElement) {
+    const component = componentOf(kind, min, max, aps);
+    components.push(component);
+    elementalRaw += ((min + max) / 2) * aps;
   }
   for (const [min, max] of chaosPairs) {
     const component = componentOf("chaos", min, max, aps);

@@ -1,0 +1,13 @@
+Item Class: Rings
+Rarity: Magic
+Amethyst Ring of the Ice
+--------
+Requires: Level 56
+--------
+Item Level: 81
+--------
+{ Implicit Modifier — Chaos, Resistance }
++9(7-13)% to Chaos Resistance
+--------
+{ Suffix Modifier "of the Ice" (Tier: 2) — Elemental, Cold, Resistance }
++36(36-40)% to Cold Resistance

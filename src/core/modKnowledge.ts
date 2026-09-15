@@ -173,6 +173,71 @@ export const MOD_FAMILIES: ModFamily[] = [
     tiers: { t1: 12, t2: 9, t3: 6 },
     classes: JEWEL,
   },
+  // ---- Jewel lines the 2026-09-14 guides ask for (docs/features/build-demand.md;
+  // thresholds are estimates until the learned-tier store covers them) ----
+  {
+    id: "jewel-evasion",
+    label: "Jewel: evasion rating %",
+    pattern: String.raw`\d+% increased Evasion Rating`,
+    weight: 5,
+    tiers: { t1: 12, t2: 9, t3: 6 },
+    classes: JEWEL,
+    statText: "#% increased Evasion Rating",
+  },
+  {
+    id: "jewel-mana-on-kill",
+    label: "Jewel: recover mana on kill",
+    pattern: String.raw`Recover [\d.]+% of maximum Mana on Kill`,
+    weight: 6,
+    tiers: { t1: 2, t2: 1.5, t3: 1 },
+    classes: JEWEL,
+    statText: "Recover #% of maximum Mana on Kill",
+  },
+  {
+    id: "jewel-skill-duration",
+    label: "Jewel: skill effect duration",
+    pattern: String.raw`\d+% increased Skill Effect Duration`,
+    weight: 4,
+    tiers: { t1: 10, t2: 7, t3: 5 },
+    classes: JEWEL,
+    statText: "#% increased Skill Effect Duration",
+  },
+  {
+    id: "jewel-ailment-magnitude",
+    label: "Jewel: ailment magnitude",
+    pattern: String.raw`\d+% increased Magnitude of Ailments you inflict`,
+    weight: 5,
+    tiers: { t1: 12, t2: 9, t3: 6 },
+    classes: JEWEL,
+    statText: "#% increased Magnitude of Ailments you inflict",
+  },
+  {
+    id: "jewel-aoe",
+    label: "Jewel: area of effect",
+    pattern: String.raw`\d+% increased Area of Effect`,
+    weight: 4,
+    tiers: { t1: 10, t2: 7, t3: 5 },
+    classes: JEWEL,
+    statText: "#% increased Area of Effect",
+  },
+  {
+    id: "jewel-es-recharge-start",
+    label: "Jewel: faster energy shield recharge start",
+    pattern: String.raw`\d+% faster start of Energy Shield Recharge`,
+    weight: 4,
+    tiers: { t1: 12, t2: 9, t3: 6 },
+    classes: JEWEL,
+    statText: "#% faster start of Energy Shield Recharge",
+  },
+  {
+    id: "jewel-quiver-bonus",
+    label: "Jewel: bonuses from equipped quiver",
+    pattern: String.raw`\d+% increased bonuses gained from Equipped Quiver`,
+    weight: 5,
+    tiers: { t1: 20, t2: 14, t3: 8 },
+    classes: JEWEL,
+    statText: "#% increased bonuses gained from Equipped Quiver",
+  },
   {
     // Generic "increased … Damage" (physical, spell, elemental, projectile,
     // minion, "with Bow Skills" …) — declared after the specific families so
@@ -180,7 +245,8 @@ export const MOD_FAMILIES: ModFamily[] = [
     // band: nearly every rare jewel carries some damage roll.
     id: "jewel-damage",
     label: "Jewel: increased damage",
-    pattern: String.raw`\d+% increased (?:[A-Za-z' ]+ )?Damage(?! taken)`,
+    // Thorns is its own (situational) line, not the item's damage.
+    pattern: String.raw`\d+% increased (?!Thorns)(?:[A-Za-z' ]+ )?Damage(?! taken)`,
     weight: 6,
     tiers: { t1: 16, t2: 13, t3: 11 },
     classes: JEWEL,
@@ -274,15 +340,20 @@ export const MOD_FAMILIES: ModFamily[] = [
     id: "energy-shield-flat",
     label: "Maximum energy shield",
     pattern: String.raw`\+\d+ to maximum Energy Shield`,
-    // Patch 0.5 hit Energy Shield with 64 separate nerfs; ES stacking left
-    // the meta and buyers followed (was weight 6 pre-0.5).
-    weight: 4,
+    // 0.5.0 nerfed energy shield RECHARGE, not capacity; by Forbidden Rites
+    // (2026-09-14 research) Chaos Inoculation is on 18% of the ladder and
+    // every caster/minion guide converts, so flat ES is wanted again (life
+    // still outranks it for the majority of characters).
+    weight: 6,
     tiers: { t1: 150, t2: 90, t3: 50 },
   },
   {
     id: "additional-projectiles",
     label: "Additional arrows / projectiles",
-    pattern: String.raw`fires? (an|\d+) Additional (Arrow|Projectile)s?`,
+    // "+50% Surpassing chance to fire an additional Arrow" (a Gemini Bow
+    // implicit) is a chance, not a count: excluded, or its 50 reads as
+    // fifty arrows (live 2026-09-15: a bow appraised 98/100 from it).
+    pattern: String.raw`^(?!.*chance to fire).*fires? (an|\d+) Additional (Arrow|Projectile)s?`,
     // Chase mod on bows/quivers for the most-played builds (Lightning Arrow
     // Deadeye et al.) — written without digits at its base tier.
     weight: 9,
@@ -362,6 +433,196 @@ export const MOD_FAMILIES: ModFamily[] = [
     pattern: String.raw`\d+% increased Rarity of Items found`,
     weight: 7,
     tiers: { t1: 35, t2: 25, t3: 15 },
+  },
+  // ---- Gear-form lines the trade2 catalogue prints (2026-09-14) -----------
+  // Wordings verified against artifacts/tab-admin/trade-stats.json; the
+  // thresholds are curated estimates until the learned-tier store covers
+  // them (docs/features/build-demand.md lists them as unverified).
+  {
+    id: "ele-attack-pct",
+    label: "Increased elemental damage with attacks",
+    pattern: String.raw`\d+% increased Elemental Damage with Attacks`,
+    weight: 6,
+    // The advanced copy labels 87-100 as tier 1 (fixture: Ghoul Thirst bow).
+    tiers: { t1: 87, t2: 65, t3: 45 },
+    statText: "#% increased Elemental Damage with Attacks",
+  },
+  {
+    id: "crit-chance-flat",
+    label: "Critical hit chance (weapon, flat)",
+    // Martial weapons print "+3.5% to Critical Hit Chance"; jewels and
+    // passives print the "increased" form (crit-chance below).
+    pattern: String.raw`\+?\d+(?:\.\d+)?% to Critical Hit Chance`,
+    weight: 6,
+    tiers: { t1: 4, t2: 3, t3: 2 },
+    statText: "#% to Critical Hit Chance",
+  },
+  {
+    id: "crit-damage-flat",
+    label: "Critical damage bonus (flat)",
+    pattern: String.raw`\+?\d+% to Critical Damage Bonus`,
+    weight: 6,
+    tiers: { t1: 35, t2: 25, t3: 15 },
+    statText: "#% to Critical Damage Bonus",
+  },
+  {
+    id: "life-leech",
+    label: "Physical life leech",
+    pattern: String.raw`Leech(?:es)? [\d.]+% of Physical (?:Attack )?Damage as Life`,
+    weight: 4,
+    // "of the Lamprey" (tier 2) rolls 8-8.9 on the advanced copy fixture.
+    tiers: { t1: 9, t2: 7, t3: 5 },
+    statText: ["Leech #% of Physical Attack Damage as Life", "Leeches #% of Physical Damage as Life"],
+  },
+  {
+    id: "minion-damage",
+    label: "Minion damage",
+    pattern: String.raw`Minions deal \d+% increased Damage`,
+    weight: 5,
+    tiers: { t1: 40, t2: 28, t3: 18 },
+    statText: "Minions deal #% increased Damage",
+  },
+  {
+    id: "minion-life",
+    label: "Minion maximum life",
+    pattern: String.raw`Minions have \d+% increased maximum Life`,
+    weight: 5,
+    tiers: { t1: 40, t2: 28, t3: 18 },
+    statText: "Minions have #% increased maximum Life",
+  },
+  {
+    id: "ignite-magnitude",
+    label: "Ignite magnitude",
+    pattern: String.raw`\d+% increased Ignite Magnitude`,
+    weight: 6,
+    tiers: { t1: 30, t2: 20, t3: 12 },
+    statText: "#% increased Ignite Magnitude",
+  },
+  {
+    id: "ailment-magnitude",
+    label: "Ailment magnitude",
+    pattern: String.raw`\d+% increased Magnitude of Ailments you inflict`,
+    weight: 6,
+    tiers: { t1: 25, t2: 18, t3: 10 },
+    statText: "#% increased Magnitude of Ailments you inflict",
+  },
+  {
+    id: "ailment-faster",
+    label: "Damaging ailments deal damage faster",
+    pattern: String.raw`Damaging Ailments deal damage \d+% faster`,
+    weight: 6,
+    tiers: { t1: 15, t2: 10, t3: 6 },
+    statText: "Damaging Ailments deal damage #% faster",
+  },
+  {
+    id: "mana-on-kill",
+    label: "Mana on kill",
+    pattern: String.raw`Gain \d+ Mana per enemy killed`,
+    weight: 3,
+    // "of Devouring" (tier 2) rolls 28-35 on the advanced copy fixture.
+    tiers: { t1: 40, t2: 28, t3: 15 },
+    statText: "Gain # Mana per enemy killed",
+  },
+  {
+    id: "mana-pct",
+    label: "Increased maximum mana",
+    pattern: String.raw`\d+% increased maximum Mana`,
+    weight: 5,
+    tiers: { t1: 20, t2: 14, t3: 8 },
+    statText: "#% increased maximum Mana",
+  },
+  {
+    id: "spirit-pct",
+    label: "Increased spirit",
+    pattern: String.raw`\d+% increased Spirit`,
+    weight: 6,
+    tiers: { t1: 12, t2: 8, t3: 5 },
+    statText: "#% increased Spirit",
+  },
+  {
+    id: "spell-crit",
+    label: "Critical hit chance for spells",
+    pattern: String.raw`\d+% increased Critical Hit Chance for Spells`,
+    weight: 5,
+    tiers: { t1: 60, t2: 40, t3: 25 },
+    statText: "#% increased Critical Hit Chance for Spells",
+  },
+  {
+    id: "skill-duration",
+    label: "Skill effect duration",
+    pattern: String.raw`\d+% increased Skill Effect Duration`,
+    weight: 4,
+    tiers: { t1: 25, t2: 18, t3: 10 },
+    statText: "#% increased Skill Effect Duration",
+  },
+  {
+    id: "es-recharge-start",
+    label: "Faster energy shield recharge start",
+    pattern: String.raw`\d+% faster start of Energy Shield Recharge`,
+    weight: 5,
+    tiers: { t1: 30, t2: 20, t3: 12 },
+    statText: "#% faster start of Energy Shield Recharge",
+  },
+  {
+    id: "es-recharge-rate",
+    label: "Energy shield recharge rate",
+    pattern: String.raw`\d+% increased Energy Shield Recharge Rate`,
+    weight: 4,
+    tiers: { t1: 30, t2: 20, t3: 12 },
+    statText: "#% increased Energy Shield Recharge Rate",
+  },
+  {
+    id: "cooldown-recovery",
+    label: "Cooldown recovery rate",
+    pattern: String.raw`\d+% increased Cooldown Recovery Rate`,
+    weight: 4,
+    tiers: { t1: 20, t2: 14, t3: 8 },
+    statText: "#% increased Cooldown Recovery Rate",
+  },
+  {
+    id: "mana-cost-efficiency",
+    label: "Mana cost efficiency",
+    pattern: String.raw`\d+% increased Mana Cost Efficiency`,
+    weight: 4,
+    tiers: { t1: 30, t2: 20, t3: 12 },
+    statText: "#% increased Mana Cost Efficiency",
+  },
+  {
+    id: "mana-leech",
+    label: "Physical mana leech",
+    pattern: String.raw`Leech(?:es)? [\d.]+% of Physical (?:Attack )?Damage as Mana`,
+    weight: 3,
+    tiers: { t1: 6, t2: 4, t3: 2 },
+    statText: ["Leech #% of Physical Attack Damage as Mana", "Leeches #% of Physical Damage as Mana"],
+  },
+  {
+    id: "armour-elemental",
+    label: "Armour applies to elemental damage",
+    pattern: String.raw`\d+% of Armour also applies to Elemental Damage`,
+    weight: 6,
+    tiers: { t1: 40, t2: 28, t3: 15 },
+    statText: "#% of Armour also applies to Elemental Damage",
+  },
+  {
+    id: "global-phys-pct",
+    label: "Global physical damage",
+    pattern: String.raw`\d+% increased Global Physical Damage`,
+    weight: 5,
+    tiers: { t1: 25, t2: 18, t3: 10 },
+    statText: "#% increased Global Physical Damage",
+  },
+  {
+    id: "extra-damage",
+    label: "Damage as extra element",
+    pattern: String.raw`Gain \d+% of Damage as Extra (?:Fire|Cold|Lightning|Chaos) Damage`,
+    weight: 7,
+    tiers: { t1: 15, t2: 10, t3: 6 },
+    statText: [
+      "Gain #% of Damage as Extra Fire Damage",
+      "Gain #% of Damage as Extra Cold Damage",
+      "Gain #% of Damage as Extra Lightning Damage",
+      "Gain #% of Damage as Extra Chaos Damage",
+    ],
   },
   {
     id: "all-attributes",

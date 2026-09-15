@@ -7,6 +7,7 @@ const defaultRules = {
   craft: "craft",
   dump: "dump",
   bulk: "bulk",
+  review: "review",
 } as const;
 
 export function scenario(partial: Partial<AutomationScenario> & Pick<AutomationScenario, "id" | "name">): AutomationScenario {

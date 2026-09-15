@@ -117,7 +117,9 @@ describe("inspectItemText on an advanced description", () => {
       learnedTiers: true,
       observations: 23,
       statCatalogue: true,
-      catalogueEntries: 77,
+      // fixtures/trade/stats-subset.json: 77 entries + 29 added on 2026-09-14
+      // for the build-demand families (docs/features/build-demand.md).
+      catalogueEntries: 106,
       tierDirection: "desc",
     });
     expect(built.appraisal?.evidence).toBe("mods");

@@ -131,6 +131,8 @@ describe("normalized item gear-target matcher", () => {
       profile.gearTargets[0]!.id,
     ]);
     expect(result.desirability.category).toBe("keep");
-    expect(result.desirability.reasons).toContain("matches 1 active build target");
+    expect(result.desirability.reasons).toContain(
+      "Your build: matches 1 active build target (personal, not general demand)",
+    );
   });
 });

@@ -13,7 +13,9 @@ export type RecommendationCategory =
   | "vendor"
   | "craft"
   | "dump"
-  | "bulk";
+  | "bulk"
+  /** Retained for a human or market decision (uncertain evidence). */
+  | "review";
 
 export type ConfidenceBucket = "high" | "medium" | "low" | "none";
 

@@ -1,0 +1,25 @@
+Item Class: Bows
+Rarity: Rare
+Ghoul Thirst
+Gemini Bow
+--------
+Physical Damage: 39-72
+Cold Damage: 55-102 (cold)
+Critical Hit Chance: 5.00%
+Attacks per Second: 1.15
+--------
+Requires: Level 78, 163 (unmet) Dex
+--------
+Item Level: 81
+--------
+{ Implicit Modifier — Attack }
++50% Surpassing chance to fire an additional Arrow
+--------
+{ Prefix Modifier "Devastating" (Tier: 1) — Damage, Elemental, Fire, Cold, Lightning }
+95(87-100)% increased Elemental Damage with Attacks
+{ Prefix Modifier "Entombing" (Tier: 2) — Damage, Elemental, Cold, Attack }
+Adds 55(55-69) to 102(83-106) Cold Damage
+{ Suffix Modifier "of Nourishment" (Tier: 1) — Life, Attack }
+Grants 5 Life per Enemy Hit
+{ Suffix Modifier "of Devouring" (Tier: 2) — Mana }
+Gain 35(28-35) Mana per enemy killed
