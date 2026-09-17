@@ -1,0 +1,27 @@
+export type BagTriageStage = "gamble" | "cleanup" | "workflow" | "capture" | "identify" | "drop" | "reconcile";
+export interface BagTriageStatus {
+  running: boolean;
+  phase: "idle" | "countdown" | "running" | "stopping" | "complete" | "error";
+  message: string;
+  stage?: BagTriageStage;
+  journal?: string;
+  sessions: Array<{ id: string; label: string }>;
+  readiness?: string[];
+  gambleReadiness?: string[];
+  cleanupHotkey?: string;
+  cleanupHotkeyError?: string;
+  purchased?: number;
+  sold?: number;
+  retained?: number;
+  physicalItems?: number;
+  unreadCells?: number;
+  verifiedIdentifications?: number;
+  verifiedDrops?: number;
+}
+export interface BagTriageBridge {
+  status(): Promise<BagTriageStatus>;
+  select(journal: string): Promise<BagTriageStatus>;
+  start(stage: BagTriageStage): Promise<BagTriageStatus>;
+  stop(): Promise<BagTriageStatus>;
+  onStatus(callback: (status: BagTriageStatus) => void): () => void;
+}

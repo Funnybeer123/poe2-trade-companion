@@ -1,3 +1,4 @@
+import type { BagTriageStage, BagTriageStatus } from "../shared/bagTriage.js";
 import { contextBridge, ipcRenderer } from "electron";
 import type {
   ImportBuildTargetsRequest,
@@ -42,6 +43,17 @@ contextBridge.exposeInMainWorld("poe2", {
   windows: () => ipcRenderer.invoke("poe:windows"),
   killLatched: () => ipcRenderer.invoke("qa:kill-latched"),
   rearm: () => ipcRenderer.invoke("qa:rearm"),
+  bagTriage: {
+    status: () => ipcRenderer.invoke("bag-triage:status"),
+    select: (journal: string) => ipcRenderer.invoke("bag-triage:select", journal),
+    start: (stage: BagTriageStage) => ipcRenderer.invoke("bag-triage:start", stage),
+    stop: () => ipcRenderer.invoke("bag-triage:stop"),
+    onStatus: (callback: (status: BagTriageStatus) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, status: BagTriageStatus) => callback(status);
+      ipcRenderer.on("bag-triage:status-changed", listener);
+      return () => ipcRenderer.removeListener("bag-triage:status-changed", listener);
+    },
+  },
   hotkeys: {
     get: () => ipcRenderer.invoke("hotkeys:get"),
     save: (bindings: Record<string, number | null>) => ipcRenderer.invoke("hotkeys:save", bindings),

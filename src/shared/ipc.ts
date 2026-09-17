@@ -680,6 +680,7 @@ export interface Poe2Bridge {
   intelligence: ItemIntelligenceBridge;
   scanner: ScannerBridge;
   stashSort: Record<string, (...args: never[]) => unknown>;
+  bagTriage?: import("./bagTriage.js").BagTriageBridge;
   stashTabs: StashTabsBridge;
   shop: Record<string, (...args: never[]) => unknown>;
   priceFeed: Record<string, (...args: never[]) => unknown>;

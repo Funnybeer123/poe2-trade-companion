@@ -67,6 +67,7 @@ export interface SourceTab {
 
 /** Phase-1 result of a tab visit: the single index every decision runs off. */
 export interface TabIndex {
+  coverage?: { totalCells: number; copiedCells: number; excludedCells: GridCell[] };
   /** Occupied cells the occupancy scan planned to sweep (0 = empty tab). */
   occupiedCount: number;
   modelItems: IdentifiedItem[];

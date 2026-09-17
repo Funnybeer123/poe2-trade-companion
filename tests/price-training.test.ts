@@ -11,7 +11,7 @@ import {
   type PriceLessonInput,
 } from "../src/core/priceTraining.js";
 
-const source = readFileSync(path.join(process.cwd(), "fixtures/items/chilling-sapphire-training.txt"), "utf8");
+const source = readFileSync(path.join(process.cwd(), "fixtures/items/chilling-sapphire-training.txt"), "utf8").replace(/\r\n/g, "\n");
 const now = new Date("2026-09-14T23:00:00.000Z");
 const league = "Test League";
 const baseInput: PriceLessonInput = {

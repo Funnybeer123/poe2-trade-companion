@@ -40,6 +40,7 @@ describe("preload API exposure", () => {
     expect(Object.keys(bridge).sort()).toEqual(
       [
         "assistive",
+        "bagTriage",
         "calibration",
         "evaluateText",
         "features",

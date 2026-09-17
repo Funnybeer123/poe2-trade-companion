@@ -71,3 +71,10 @@ export const CLASS_SIZE_DEFAULTS: readonly ItemClassSizeDefault[] = [
 export function sizeKey(text: string): string {
   return text.trim().toLowerCase().replace(/\s+/g, " ");
 }
+
+export function knownPhysicalItemSize(itemClass: string | undefined, baseType?: string): { w: number; h: number } | undefined {
+  const key = sizeKey(itemClass ?? "");
+  if (key === "shields" && sizeKey(baseType ?? "") === "vaal tower shield") return { w: 2, h: 4 };
+  const size = CLASS_SIZE_DEFAULTS.find(entry => sizeKey(entry.itemClass) === key);
+  return size ? { w: size.w, h: size.h } : undefined;
+}

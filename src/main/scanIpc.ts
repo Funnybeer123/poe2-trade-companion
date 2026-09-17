@@ -65,14 +65,16 @@ function summarize(result: ScanRunResult): ScannerRunSummary {
 export function registerScanIpc(
   ipc: ScanIpcRegistrar,
   service: ScannerRuntimeService,
+  beforeStart?: () => void,
 ): () => void {
   for (const channel of SCANNER_INVOKE_CHANNELS) {
     ipc.removeHandler(channel);
   }
   ipc.handle("scanner:status", () => service.status);
-  ipc.handle("scanner:start", async (_event, value) =>
-    summarize(await service.start(validateStartRequest(value))),
-  );
+  ipc.handle("scanner:start", async (_event, value) => {
+    beforeStart?.();
+    return summarize(await service.start(validateStartRequest(value)));
+  });
   ipc.handle("scanner:stop", () => service.stop("operator-stop"));
   return () => {
     for (const channel of SCANNER_INVOKE_CHANNELS) {

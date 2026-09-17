@@ -1,3 +1,4 @@
+import { bagTriageSmoke } from "./bag-triage-smoke.js";
 import { expect, test } from "@playwright/test";
 import {
   navigatePrimary,
@@ -191,3 +192,5 @@ test("item intelligence evaluates, searches, imports, and persists locally", asy
     await expect(page.getByText("legacy-jsonl", { exact: true }).first()).toBeVisible();
   });
 });
+
+test("bag triage worker and ring cleanup", async ({}, testInfo) => { await bagTriageSmoke("public-companion", testInfo); });

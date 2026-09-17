@@ -10,7 +10,7 @@
   },
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build",
+    "build": "vue-tsc --noEmit -p tsconfig.app.json && vite build && node scripts/build-stash-worker.mjs",
     "build:public": "cross-env POE2_BUILD_MODE=public-companion npm run build",
     "build:qa": "cross-env POE2_BUILD_MODE=authorized-qa npm run build",
     "lint": "eslint . --max-warnings=0",
@@ -97,7 +97,8 @@
     "shop:buckets:live": "npx --yes tsx scripts/shop-buckets.ts --live --step",
     "shop:tab": "npx --yes tsx scripts/shop-list-bag.ts",
     "shop:ladder": "npx --yes tsx scripts/shop-ladder.ts",
-    "shop:ladder:live": "npx --yes tsx scripts/shop-ladder.ts --live --step"
+    "shop:ladder:live": "npx --yes tsx scripts/shop-ladder.ts --live --step",
+    "bag:triage": "npx --yes tsx scripts/bag-triage.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.11.1",

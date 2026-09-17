@@ -17,6 +17,15 @@ const decision = {
 };
 
 describe("audited input batches", () => {
+  it.each(["ctrl", "alt"] as const)("preserves %s on guarded individual vendor clicks", async modifier => {
+    const send = vi.fn(async (payload: Record<string, unknown>) => payload.op === "rect"
+      ? { ok: true, process: "PathOfExile.exe", hwnd: "ring-window", foregroundIsPoe: true }
+      : { ok: true });
+    const sink = new WinHostInputSink({ send }, { allowedProcesses: ["PathOfExile.exe"] });
+    await sink.emit({ kind: "click", x: 100, y: 200, modifier });
+    expect(send).toHaveBeenLastCalledWith(expect.objectContaining({ op: "click", x: 100, y: 200, modifier,
+      expectedHwnd: "ring-window", requireForeground: true }));
+  });
   afterEach(() => vi.useRealTimers());
 
   it("checks and emits a Ctrl-held batch once", async () => {

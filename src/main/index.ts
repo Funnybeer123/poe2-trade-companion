@@ -1,3 +1,6 @@
+import { BagTriageService } from "./bagTriageService.js";
+import { prepareBagCountdownWindow } from "./bagCountdownWindow.js";
+let bagTriageService: BagTriageService | undefined;
 import {
   app,
   BrowserWindow,
@@ -98,6 +101,7 @@ const buildMode = resolveBuildMode(
   typeof __POE2_BUILD_MODE__ === "undefined" ? process.env.POE2_BUILD_MODE : __POE2_BUILD_MODE__,
 );
 const killSwitch = new KillSwitch();
+function assertBagIdle() { if (bagTriageService?.status.running) throw new Error("Stop the bag workflow before starting another game action."); }
 
 let mainWindow: BrowserWindow | undefined;
 let assistiveService: AssistiveRunService | undefined;
@@ -707,7 +711,7 @@ app.whenReady().then(async () => {
       );
     },
   });
-  registerScanIpc(ipcMain, scannerService);
+  registerScanIpc(ipcMain, scannerService, assertBagIdle);
   voiceConfig = loadVoiceTransferConfig(memoryRoot);
   dryRunOverlay = new DryRunOverlayWindow();
   const baselineDir = path.join(memoryRoot, "perception-templates");
@@ -738,14 +742,33 @@ app.whenReady().then(async () => {
   stashTabAdminService = new StashTabAdminService({
     root: process.cwd(),
     emit: (event) => mainWindow?.webContents.send("stash-tabs:event", event),
-    canRun: () => !killSwitch.isLatched(),
+    canRun: () => !killSwitch.isLatched() && !bagTriageService?.status.running,
   });
+  bagTriageService = new BagTriageService({
+    root: app.getAppPath(), dataRoot: app.isPackaged ? memoryRoot : process.cwd(), templateDir: baselineDir,
+    perceptionFile: process.env.POE2_BAG_PERCEPTION_FILE, clientLog: process.env.POE2_CLIENT_LOG,
+    ...(app.isPackaged ? { workerFile: path.join(app.getAppPath().replace(/app\.asar$/, "app.asar.unpacked"), "dist-electron", "map-triage.cjs") } : {}),
+    emit: status => {
+      prepareBagCountdownWindow(mainWindow, status.phase);
+      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("bag-triage:status-changed", status);
+    },
+    blocked: () => killSwitch.isLatched() ? "Rearm the emergency stop before starting a bag stage."
+      : assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running
+        ? "Stop the current game action before starting a bag stage." : undefined,
+  });
+  ipcMain.handle("bag-triage:status", () => bagTriageService!.refresh());
+  ipcMain.handle("bag-triage:select", (_event, journal: string) => bagTriageService!.select(journal));
+  ipcMain.handle("bag-triage:start", (_event, stage) => bagTriageService!.start(stage));
+  ipcMain.handle("bag-triage:stop", () => bagTriageService!.stop());
+  bagTriageService.setCleanupHotkey(globalShortcut.register("CommandOrControl+Alt+V", () => {
+    bagTriageService?.startCleanupFromHotkey();
+  }));
   voiceService = new VoiceTransferService({
     mode: buildMode,
     recognizer: new WindowsSpeechRecognizer(),
     config: () => voiceConfig,
     assistiveStatus: () => assistiveService!.status,
-    startTransfer: (request) => assistiveService!.start(request),
+    startTransfer: (request) => { assertBagIdle(); return assistiveService!.start(request); },
     stopTransfer: (reason) => assistiveService!.stop(reason),
     onState: (state) => {
       try {
@@ -761,6 +784,8 @@ app.whenReady().then(async () => {
     },
   });
   globalShortcut.register("CommandOrControl+Shift+Escape", () => {
+    killSwitch.trip();
+    bagTriageService?.stop("Emergency stop");
     void voiceService?.cancel("emergency-stop");
     assistiveService?.stop("emergency-stop");
     stashSortService?.stop("emergency-stop");
@@ -820,7 +845,7 @@ app.whenReady().then(async () => {
     mode: buildMode,
     qaOptIn: true,
   }));
-  ipcMain.handle("assistive:start", (_event, request: AssistiveRunRequest) => assistiveService?.start(request));
+  ipcMain.handle("assistive:start", (_event, request: AssistiveRunRequest) => { assertBagIdle(); return assistiveService?.start(request); });
   ipcMain.handle("assistive:stop", () => {
     void voiceService?.cancel("operator-stop");
     assistiveService?.stop("operator-stop");
@@ -879,7 +904,7 @@ app.whenReady().then(async () => {
   );
   ipcMain.handle("stash-sort:status", () => stashSortService?.status);
   ipcMain.handle("stash-sort:start", (_event, request: SortStashRequest) =>
-    stashSortService?.start(request),
+    { assertBagIdle(); return stashSortService?.start(request); },
   );
   ipcMain.handle("stash-sort:stop", () => {
     stashSortService?.stop("operator-stop");
@@ -912,7 +937,7 @@ app.whenReady().then(async () => {
     }),
   );
   ipcMain.handle("stash-tabs:run-script", (_event, kind: string) =>
-    stashTabAdminService?.runScript(kind as never),
+    { assertBagIdle(); return stashTabAdminService?.runScript(kind as never); },
   );
   ipcMain.handle("stash-tabs:stop-script", () => stashTabAdminService?.stopScript());
   ipcMain.handle("stash-tabs:finds", () => {
@@ -1096,6 +1121,7 @@ app.whenReady().then(async () => {
 });
 
 app.on("window-all-closed", () => {
+  bagTriageService?.stop("App closed");
   void voiceService?.cancel("app-closed");
   assistiveService?.stop("app-closed");
   stashSortService?.stop("app-closed");

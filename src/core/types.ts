@@ -87,6 +87,11 @@ export interface ItemSection {
 }
 
 export interface ItemMod {
+  annotation?: string;
+  affixGroup?: number;
+  affixKind?: "prefix" | "suffix";
+  observedTier?: number;
+  ranges?: Array<{ min: number; max: number }>;
   text: string;
   value?: number;
   value2?: number;
@@ -271,6 +276,7 @@ export interface PerceptionFrame {
 export type InputKind = "key" | "click" | "move" | "type" | "wait" | "drag" | "focus";
 
 export interface InputAction {
+  modifier?: "ctrl" | "alt";
   kind: InputKind;
   key?: string;
   x?: number;

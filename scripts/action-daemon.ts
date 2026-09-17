@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 /**
  * Numpad-hotkey game action daemon. Blocks on the host op `waitkey` (only
  * fires while PoE is the foreground window) and dispatches one action at a
@@ -20,7 +21,6 @@ import { spawn } from "node:child_process";
 import { startWinHost } from "../src/adapters/winHost.js";
 import { DrainKit } from "../src/adapters/drainKit.js";
 import { FlaskGuardRunner } from "../src/adapters/flaskGuardRunner.js";
-import { defaultNameplateCacheFile, findNameplate } from "../src/adapters/nameplateFinder.js";
 import { loadProfile } from "../src/core/calibrationStore.js";
 import { loadHotkeyBindings } from "../src/core/hotkeyBindings.js";
 import { actionForKey, HOTKEY_ACTIONS } from "../src/shared/hotkeyActions.js";
@@ -82,7 +82,7 @@ function bindingSummary(): string {
   return parts.join(" ") || "(no actions bound)";
 }
 
-function spawnScript(args: string[], label: string): Promise<number> {
+function spawnScript(args: string[], label: string, environment?: NodeJS.ProcessEnv): Promise<number> {
   return new Promise((resolve, reject) => {
     // The local tsx starts the script in ~0.1 s; the npx fallback spent ~1.2 s
     // resolving the package on every keypress. See src/core/tsxLauncher.ts.
@@ -91,6 +91,7 @@ function spawnScript(args: string[], label: string): Promise<number> {
       cwd: root,
       stdio: ["ignore", "pipe", "pipe"],
       shell: launch.shell,
+      ...(environment ? { env: { ...process.env, ...environment } } : {}),
     });
     const relay = (stream: NodeJS.ReadableStream, phase: string) => {
       stream.on("data", (chunk: Buffer) => {
@@ -173,60 +174,17 @@ async function actionVendorCycle(): Promise<void> {
   log({ action: "vendor-cycle", phase: "result", message: `vendor-cycle --run exited ${code}` });
 }
 
-// Nameplate hunting goes through the cached finder: a small OCR band around
-// where ZELINA stood last time, full-screen (3840x2160) only on a miss —
-// mid-size crops (1800x1000, 1920x1080) hit a Windows.Media.Ocr dead zone
-// and come back empty. ZELINA also sits at x~1177, left of the drain kit's
-// x>=1200 world region, which is why the full pass is whole-screen.
-const nameplateCacheFile = defaultNameplateCacheFile(root);
-
-/**
- * Num4: locate ZELINA via OCR (hideout-only refusal if not found) and
- * ctrl-click to open her vendor window. The vendor window's sell-pane and
- * confirm-button layout is UNKNOWN — this stops after capturing a screenshot
- * rather than guessing coordinates in the user's live game. A follow-up
- * session must inspect the capture and wire the exact clicks (see
- * docs/HANDOFF-hotkey-actions.md, TODO item 1, Num4 Vendor).
- */
+/** Existing vendor action now cleans rejected rings at Ange without buying. */
 async function actionVendor(): Promise<void> {
-  const bag = await kit.verifiedBag();
-  if (bag.count === 0) {
-    log({ action: "vendor", phase: "result", message: "Bag is empty; nothing to sell" });
-    return;
-  }
-  await host.send({ op: "focus" });
-  await sleep(300);
-  const plate = await findNameplate(host, /^zelina$/i, {
-    cacheKey: "zelina",
-    cacheFile: nameplateCacheFile,
-    log: (message) => log({ action: "vendor", phase: "ocr", message }),
-  });
-  if (!plate) {
-    log({ action: "vendor", phase: "error", message: "ZELINA nameplate not found (hideout-only refusal)" });
-    return;
-  }
-  const clicked = await host.send({ op: "ctrlclick", x: plate.x, y: plate.y });
-  if (!clicked.ok) {
-    log({ action: "vendor", phase: "error", message: `ctrlclick on ZELINA failed: ${clicked.error}` });
-    return;
-  }
-  await sleep(2500);
-  const shotPath = path.join(artifactDir, `vendor-window-${Date.now()}.bmp`);
-  const captured = await host.send({ op: "capture", path: shotPath });
-  if (!captured.ok) {
-    log({ action: "vendor", phase: "error", message: `vendor-window capture failed: ${captured.error}` });
-    return;
-  }
-  log({
-    action: "vendor",
-    phase: "blocked",
-    message:
-      `Opened ZELINA's vendor window and saved a capture to ${shotPath}. ` +
-      "Its sell-pane and confirm-button layout is not yet mapped, so this action stops here " +
-      "rather than guess clicks. Inspect the capture, then wire the exact coordinates into actionVendor().",
-  });
+  const desktopRoot = process.platform === "win32" && process.env.APPDATA ? path.join(process.env.APPDATA, "poe2-trade-companion") : root;
+  const dataRoot = path.resolve(process.env.POE2_BAG_DATA_ROOT ?? process.env.POE2_STASH_DATA_ROOT ?? desktopRoot);
+  const journal = path.join(dataRoot, "artifacts", "map-triage", "rings-cleanup-" + Date.now() + "-" + randomUUID() + ".jsonl");
+  const code = await spawnScript(["scripts/ring-gamble.ts", "--rescan", "--run", "--journal=" + journal,
+    "--calibration=" + path.join(dataRoot, "perception-templates", "calibration.json"),
+    "--perception=" + path.join(dataRoot, "artifacts", "map-triage", "live-perception.json")], "vendor",
+    { POE2_BAG_DATA_ROOT: dataRoot });
+  log({ action: "vendor", phase: "result", message: "Ring cleanup exited " + code });
 }
-
 let busy = false;
 let lastActionAt = 0;
 let shuttingDown = false;

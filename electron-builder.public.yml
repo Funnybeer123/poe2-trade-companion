@@ -9,6 +9,13 @@ files:
   - src/data/market/category-labels.json
   - src/data/market/exchange-currencies.json
   - src/data/market/weight-templates.json
+  - scripts/win-bag-host.ps1
+  - scripts/win-input-host.ps1
+asarUnpack:
+  - dist-electron/map-triage.cjs
+  - dist-electron/ring-gamble.cjs
+  - scripts/win-bag-host.ps1
+  - scripts/win-input-host.ps1
 extraMetadata:
   poe2BuildMode: public-companion
 win:

@@ -9,7 +9,7 @@ import type {
   ParsedItem,
 } from "./types.js";
 
-const METADATA_PREFIXES = ["Requires Level", "Level:", "Corrupted", "Unidentified"];
+const METADATA_PREFIXES = ["Requires Level", "Level:", "Corrupted", "Unidentified", "Mirrored", "Split", "Sanctified", "Unmodifiable", "Cannot be modified"];
 
 const WAYSTONE_COLON_PREFIXES = [
   "Waystone Tier:",
@@ -136,16 +136,20 @@ function kindFromAnnotation(line: string): ItemModKind | undefined {
   if (annotation.includes("crafted")) return "crafted";
   if (annotation.includes("enchant")) return "enchant";
   if (annotation.includes("implicit")) return "implicit";
-  if (/\b(?:prefix|suffix|explicit)\b/.test(annotation)) return "explicit";
+  if (/\b(?:prefix|suffix|explicit|unique)\b/.test(annotation)) return "explicit";
   return "unknown";
 }
 
-function normalizeModLine(line: string): {
+function normalizeModLine(line: string, advancedUnique = false): {
   text: string;
   tags: string[];
   taggedKind?: ItemModKind;
 } {
-  let next = line.trim();
+  // Advanced copies include the possible tier range after the actual roll:
+  // +23(20-30) or 0.6(0.4-0.6)%. Keep the roll for matching/scoring and
+  // preserve the untouched source separately in ItemMod.rawText.
+  let next = line.trim().replace(/(?<=\d)\([+-]?[\d,]+(?:\.\d+)?\s*[-–]\s*[+-]?[\d,]+(?:\.\d+)?\)/g, "");
+  if (advancedUnique) next = next.replace(/ — Unscalable Value$/, "");
   const tags: string[] = [];
   let taggedKind: ItemModKind | undefined;
   while (true) {
@@ -195,8 +199,9 @@ function parseModLine(
   block: number,
   order: number,
   contextualKind?: ItemModKind,
+  advancedUnique = false,
 ): ItemMod {
-  const { text, tags, taggedKind } = normalizeModLine(source.text);
+  const { text, tags, taggedKind } = normalizeModLine(source.text, advancedUnique);
   const rolls = extractNumericRolls(text);
   const kind = taggedKind ?? contextualKind ?? "explicit";
   const values = rolls.map((roll) => roll.value);
@@ -233,20 +238,38 @@ function splitBlocks(itemText: string): { normalized: string; blocks: SourceBloc
   return { normalized, blocks };
 }
 
-function extractModsFromBlocks(blocks: SourceBlock[], itemClass: string): ItemMod[] {
+function extractModsFromBlocks(blocks: SourceBlock[], itemClass: string, rarity: string): ItemMod[] {
   const mods: ItemMod[] = [];
+  // Advanced unique copies explicitly delimit their effects. Flavour poems in
+  // later, unannotated blocks remain source text rather than becoming modifiers.
+  const advancedUnique = /^unique$/i.test(rarity) && blocks.some(block => block.lines.some(source => /^\{\s*Unique Modifier\b/i.test(source.text)));
   for (const block of blocks) {
     // Block zero contains Item Class/Rarity/name/base in both supported formats.
     if (block.block === 0) continue;
     let contextualKind: ItemModKind | undefined;
+    let annotation: SourceLine | undefined;
     for (const source of block.lines) {
       const annotationKind = kindFromAnnotation(source.text);
       if (annotationKind) {
         contextualKind = annotationKind;
+        annotation = source;
         continue;
       }
-      if (!isAffixLine(source.text, itemClass)) continue;
-      mods.push(parseModLine(source, block.block, mods.length, contextualKind));
+      if (advancedUnique) {
+        if (!contextualKind || contextualKind === "unknown") continue;
+      } else if (!isAffixLine(source.text, itemClass)) continue;
+      const mod = parseModLine(source, block.block, mods.length, contextualKind, advancedUnique);
+      if (annotation) {
+        mod.annotation = annotation.raw;
+        mod.affixGroup = annotation.line;
+        const kind = annotation.text.match(/\b(Prefix|Suffix) Modifier/i)?.[1]?.toLowerCase();
+        if (kind === "prefix" || kind === "suffix") mod.affixKind = kind;
+        const tier = annotation.text.match(/\(Tier:\s*(\d+)\)/i)?.[1];
+        if (tier) mod.observedTier = Number(tier);
+      }
+      mod.ranges = [...source.text.matchAll(/(?<=\d)\(([+-]?[\d.]+)\s*[-–]\s*([+-]?[\d.]+)\)/g)]
+        .map(match => ({ min: Number(match[1]), max: Number(match[2]) }));
+      mods.push(mod);
     }
   }
   return mods;
@@ -256,7 +279,7 @@ export function extractItemMods(itemText: string): ItemMod[] {
   const { blocks } = splitBlocks(itemText);
   const allLines = blocks.flatMap((block) => block.lines.map((line) => line.text));
   const itemClass = valueAfter(allLines, "Item Class:") ?? "Unknown";
-  return extractModsFromBlocks(blocks, itemClass);
+  return extractModsFromBlocks(blocks, itemClass, valueAfter(allLines, "Rarity:") ?? "Normal");
 }
 
 function parseProperty(source: SourceLine, block: number, order: number): ItemProperty | undefined {
@@ -352,7 +375,17 @@ export function parseItemText(rawText: string): ParsedItem {
     propertiesByBlock.set(block.block, parsed);
   }
 
-  const mods = extractModsFromBlocks(blocks, itemClass);
+  const mods = extractModsFromBlocks(blocks, itemClass, rarity);
+  if (rarity === "Magic" && header.length === 1 && baseType) {
+    // Advanced affix names delimit a magic item's decorated name. Never guess
+    // a base by removing arbitrary words from an unannotated tooltip.
+    for (const mod of mods) {
+      const affixName = mod.annotation?.match(/Modifier\s+"([^"]+)"/)?.[1];
+      if (!affixName) continue;
+      if (mod.affixKind === "prefix" && baseType.startsWith(affixName + " ")) baseType = baseType.slice(affixName.length + 1);
+      if (mod.affixKind === "suffix" && baseType.endsWith(" " + affixName)) baseType = baseType.slice(0, -affixName.length - 1);
+    }
+  }
   const sections: ItemSection[] = blocks.map((block) => {
     const blockProperties = propertiesByBlock.get(block.block) ?? [];
     const blockMods = mods.filter((mod) => mod.block === block.block);

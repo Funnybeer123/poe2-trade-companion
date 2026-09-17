@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { RouterLink, useRoute } from "vue-router";
+import BagTriageTool from "../components/tools/BagTriageTool.vue";
 import CalibrationPanel from "../CalibrationPanel.vue";
 import SortStashPanel from "../SortStashPanel.vue";
 import StashTabAdminPanel from "../components/StashTabAdminPanel.vue";
@@ -19,6 +20,7 @@ import PriceTrainingTool from "../features/priceTraining/PriceTrainingTool.vue";
 const route = useRoute();
 
 const tools = [
+  { id: "bag-triage", label: "Bag cleanup & rings", detail: "Scan, gamble & vendor" },
   { id: "calibration", label: "Calibration", detail: "Screen regions" },
   { id: "transfers", label: "Transfers", detail: "Audited stash movement" },
   { id: "sort-stash", label: "Sort stash", detail: "Preview & execute" },
@@ -64,6 +66,7 @@ const selectedTool = computed<ToolId>(() => {
 
     <div class="tool-content">
       <CalibrationPanel v-if="selectedTool === 'calibration'" />
+      <BagTriageTool v-else-if="selectedTool === 'bag-triage'" />
       <TransferPanel v-else-if="selectedTool === 'transfers'" />
       <SortStashPanel v-else-if="selectedTool === 'sort-stash'" />
       <StashTabAdminPanel v-else-if="selectedTool === 'stash-tabs'" />

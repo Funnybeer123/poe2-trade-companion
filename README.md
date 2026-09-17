@@ -275,3 +275,5 @@ npm run dev
 - Full local quality gate: `npm run test:full`
 
 See `plans/IMPLEMENTATION_PLAN.md`.
+
+Ring gambling and cleanup are available under **Tools → Bag cleanup & rings**. **Ctrl+Alt+V** rescans existing rings at Ange and vendors rejects. See [ring workflow](docs/RING_GAMBLING.md) and [retention rules](docs/RING_QUALITY_POLICY.md).

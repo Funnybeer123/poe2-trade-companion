@@ -38,8 +38,8 @@ export const HOTKEY_ACTIONS: readonly HotkeyActionInfo[] = [
   },
   {
     id: "vendor",
-    label: "Vendor",
-    detail: "Quick-sell the bag to ZELINA (window opens; the sell click is not wired yet).",
+    label: "Clean up rings",
+    detail: "Scan existing rings at Ange and vendor rejects using the ring quality rules; other items stay in the bag. Desktop hotkey: Ctrl+Alt+V.",
     context: "hideout",
     defaultKey: null,
   },
