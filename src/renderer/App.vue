@@ -2,6 +2,7 @@
 import { onMounted, watch } from "vue";
 import { RouterLink, RouterView, useRoute, useRouter } from "vue-router";
 import GameActionRail from "./components/GameActionRail.vue";
+import CombatIndicator from "./components/CombatIndicator.vue";
 import { useGameActions } from "./composables/useGameActions";
 import { useIntelligenceStore } from "./composables/useIntelligenceStore";
 import { useRuntimeState } from "./composables/useRuntimeState";
@@ -40,6 +41,9 @@ onMounted(() => {
 watch(intelligence.externalEvaluationVersion, () => {
   void router.push("/items");
 });
+watch(gameActions.dryRun, (enabled) => {
+  void window.poe2?.combat?.setGlobalDryRun(enabled).catch(() => window.poe2?.combat?.stop());
+}, { immediate: true });
 </script>
 
 <template>
@@ -115,6 +119,7 @@ watch(intelligence.externalEvaluationVersion, () => {
         </div>
 
         <div class="safety-cluster" aria-label="Runtime safety status">
+          <CombatIndicator />
           <label
             class="dry-run-switch"
             title="One switch for every game action: on means plan, overlay, and trace only — no input is ever sent."

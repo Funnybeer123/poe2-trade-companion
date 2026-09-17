@@ -42,6 +42,7 @@ describe("preload API exposure", () => {
         "assistive",
         "bagTriage",
         "calibration",
+        "combat",
         "evaluateText",
         "features",
         "fromClipboard",

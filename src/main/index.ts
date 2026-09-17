@@ -18,6 +18,10 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, statSync, writeFil
 import { fileURLToPath } from "node:url";
 import { WindowsSpeechRecognizer } from "../adapters/windowsSpeechRecognizer.js";
 import { KillSwitch } from "../core/killSwitch.js";
+import { startEmergencyStopMonitor } from "../adapters/emergencyStopMonitor.js";
+import { defaultCombatConfig } from "../core/combatAssist.js";
+import { CombatAssistService, combatStorage } from "./combatAssistService.js";
+import { chatHostBusyReason } from "./chatCommandService.js";
 import { memoizeAsync } from "../core/memoizeAsync.js";
 import { looksLikePoeItemText, parseItemText } from "../core/parseItem.js";
 import { enrichItemSize, itemSizeDatabasePath, loadItemSizeDatabase } from "../core/itemSizeStore.js";
@@ -101,7 +105,10 @@ const buildMode = resolveBuildMode(
   typeof __POE2_BUILD_MODE__ === "undefined" ? process.env.POE2_BUILD_MODE : __POE2_BUILD_MODE__,
 );
 const killSwitch = new KillSwitch();
-function assertBagIdle() { if (bagTriageService?.status.running) throw new Error("Stop the bag workflow before starting another game action."); }
+function assertBagIdle() {
+  if (bagTriageService?.status.running) throw new Error("Stop the bag workflow before starting another game action.");
+  if (combatService?.status.running) throw new Error("Pause combat assistance before starting another game action.");
+}
 
 let mainWindow: BrowserWindow | undefined;
 let assistiveService: AssistiveRunService | undefined;
@@ -120,6 +127,9 @@ let scannerService: ScannerRuntimeService | undefined;
 let marketTrendsService: MarketTrendsService | undefined;
 let watchlistService: WatchlistService | undefined;
 let featureRuntime: FeatureRuntime | undefined;
+let combatService: CombatAssistService | undefined;
+let combatGlobalDryRun = true;
+let emergencyStopMonitor: ReturnType<typeof startEmergencyStopMonitor> | undefined;
 
 function quotesFile(): string {
   const candidates = [
@@ -742,7 +752,7 @@ app.whenReady().then(async () => {
   stashTabAdminService = new StashTabAdminService({
     root: process.cwd(),
     emit: (event) => mainWindow?.webContents.send("stash-tabs:event", event),
-    canRun: () => !killSwitch.isLatched() && !bagTriageService?.status.running,
+    canRun: () => !killSwitch.isLatched() && !bagTriageService?.status.running && !combatService?.status.running,
   });
   bagTriageService = new BagTriageService({
     root: app.getAppPath(), dataRoot: app.isPackaged ? memoryRoot : process.cwd(), templateDir: baselineDir,
@@ -753,7 +763,7 @@ app.whenReady().then(async () => {
       if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send("bag-triage:status-changed", status);
     },
     blocked: () => killSwitch.isLatched() ? "Rearm the emergency stop before starting a bag stage."
-      : assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running
+      : assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || combatService?.status.running
         ? "Stop the current game action before starting a bag stage." : undefined,
   });
   ipcMain.handle("bag-triage:status", () => bagTriageService!.refresh());
@@ -783,15 +793,56 @@ app.whenReady().then(async () => {
       }
     },
   });
-  globalShortcut.register("CommandOrControl+Shift+Escape", () => {
+  const stopAllInput = () => {
     killSwitch.trip();
     bagTriageService?.stop("Emergency stop");
+    stashTabAdminService?.stopScript();
+    combatService?.stop("Emergency stop — rearm in the app");
     void voiceService?.cancel("emergency-stop");
     assistiveService?.stop("emergency-stop");
     stashSortService?.stop("emergency-stop");
     scannerService?.stop("emergency-stop");
     mainWindow?.webContents.send("qa:killed");
+  };
+  const emergencyStopRegistered = globalShortcut.register("CommandOrControl+Shift+Escape", stopAllInput);
+  globalShortcut.register("CommandOrControl+Shift+F12", stopAllInput);
+  if (!emergencyStopRegistered) {
+    try { emergencyStopMonitor = startEmergencyStopMonitor(stopAllInput, stopAllInput); }
+    catch { /* Combat stays disarmed until a working stop mechanism exists. */ }
+  }
+  const combatFiles = combatStorage(path.join(memoryRoot, "combat"));
+  let combatConfig = defaultCombatConfig();
+  let combatLoadError = "";
+  try { combatConfig = combatFiles.load(); }
+  catch (error) { combatLoadError = `Combat settings could not be loaded: ${String(error)}`; }
+  let combatHotkeyRegistered = false;
+  combatService = new CombatAssistService({
+    killSwitch, mode: buildMode, config: combatConfig,
+    save: combatFiles.save, audit: combatFiles.audit,
+    blocked: () => {
+      if ((!emergencyStopRegistered && !emergencyStopMonitor?.ready) || !combatHotkeyRegistered) return "Combat hotkeys are starting or unavailable. Wait a moment, or close conflicting apps and restart the companion.";
+      if (combatGlobalDryRun && !combatService?.status.config.dryRun) return "Global Dry-run is on. Use Preview only or turn off global Dry-run for live combat.";
+      const chatBusy = chatHostBusyReason(featureRuntime?.ctx.get("chatCommands"));
+      if (chatBusy) return chatBusy;
+      if (assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || bagTriageService?.status.running) return "Paused while another game action is running";
+      return undefined;
+    },
   });
+  if (combatLoadError) combatService.stop(combatLoadError);
+  combatHotkeyRegistered = globalShortcut.register("F8", () => {
+    if (combatService?.status.running) combatService.stop("Paused with F8");
+    else void combatService?.start().catch((error) => combatService?.stop(String(error)));
+  });
+  ipcMain.handle("combat:status", () => combatService!.status);
+  ipcMain.handle("combat:global-dry-run", (_event, enabled: unknown) => {
+    if (typeof enabled !== "boolean") throw new Error("Invalid dry-run setting");
+    combatGlobalDryRun = enabled;
+    if (enabled && !combatService!.status.config.dryRun) combatService!.stop("Global Dry-run enabled");
+  });
+  ipcMain.handle("combat:configure", (_event, config: unknown) => combatService!.configure(config));
+  ipcMain.handle("combat:start", () => combatService!.start());
+  ipcMain.handle("combat:stop", () => combatService!.stop());
+  ipcMain.handle("combat:preview", () => combatService!.preview());
   globalShortcut.register("CommandOrControl+D", () => {
     lastClipboard = "";
     void evaluateClipboard(true);
@@ -1122,6 +1173,9 @@ app.whenReady().then(async () => {
 
 app.on("window-all-closed", () => {
   bagTriageService?.stop("App closed");
+  stashTabAdminService?.stopScript();
+  combatService?.stop("App closed");
+  emergencyStopMonitor?.close();
   void voiceService?.cancel("app-closed");
   assistiveService?.stop("app-closed");
   stashSortService?.stop("app-closed");
@@ -1139,4 +1193,10 @@ app.on("window-all-closed", () => {
   localPersistence = undefined;
   globalShortcut.unregisterAll();
   app.quit();
+});
+app.on("before-quit", () => {
+  bagTriageService?.stop("App exiting");
+  stashTabAdminService?.stopScript();
+  combatService?.stop("App exiting");
+  emergencyStopMonitor?.close();
 });

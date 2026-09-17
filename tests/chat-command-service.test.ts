@@ -3,11 +3,15 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WinReply } from "../src/adapters/winHost.js";
+import { defaultCombatConfig } from "../src/core/combatAssist.js";
+import { KillSwitch } from "../src/core/killSwitch.js";
+import { CombatAssistService } from "../src/main/combatAssistService.js";
 import {
   COPY_HOVERED_POLL_MS,
   COPY_HOVERED_TIMEOUT_MS,
   ChatCommandServiceImpl,
   chatTraceFile,
+  chatHostBusyReason,
   type ChatCommandServiceOptions,
   type ChatHost,
   type ChatTraceEntry,
@@ -266,6 +270,37 @@ describe("ChatCommandService.send", () => {
     expect((await service.send(request)).ok).toBe(true);
     expect(state.probeCalls).toBe(2);
     expect(host.hosts).toHaveLength(1);
+  });
+
+  it("blocks combat while the chat host is warm and permits arming after its idle close", async () => {
+    vi.useFakeTimers();
+    const { service, state, host } = makeService();
+    const config = defaultCombatConfig();
+    config.unleash.enabled = config.verisium.enabled = config.sigilSequence.enabled = true;
+    const combatHost = {
+      send: vi.fn(async (): Promise<WinReply> => ({ ok: false, error: "Focus Path of Exile 2 to continue" })),
+      close: vi.fn(async () => {}),
+    };
+    combatHost.send.mockResolvedValueOnce({ ok: true }).mockResolvedValueOnce({ ok: true });
+    const createHost = vi.fn(() => combatHost);
+    const combat = new CombatAssistService({
+      config, killSwitch: new KillSwitch(), mode: "public-companion", audit: () => {}, createHost,
+      blocked: () => chatHostBusyReason(service),
+    });
+    try {
+      expect((await service.send(request)).ok).toBe(true);
+      await expect(combat.start()).rejects.toThrow("chat input host to go idle");
+      expect(createHost).not.toHaveBeenCalled();
+      await vi.advanceTimersByTimeAsync(state.settings.idleCloseMs - 1);
+      await expect(combat.start()).rejects.toThrow("chat input host to go idle");
+      await vi.advanceTimersByTimeAsync(1);
+      expect(host.hosts[0].closed).toBe(true);
+      await expect(combat.start()).resolves.toMatchObject({ running: true });
+      expect(createHost).toHaveBeenCalledOnce();
+    } finally {
+      combat.stop();
+      await service.dispose();
+    }
   });
 
   it("maps host window answers to not-foreground / process-not-allowed and keeps the host for next time", async () => {

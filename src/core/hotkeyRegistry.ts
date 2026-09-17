@@ -135,6 +135,8 @@ export function acceleratorIdentity(raw: string): string | undefined {
  */
 export const RESERVED_ACCELERATORS: ReadonlyArray<{ accelerator: string; label: string }> = [
   { accelerator: "CommandOrControl+Shift+Escape", label: "Emergency stop" },
+  { accelerator: "CommandOrControl+Shift+F12", label: "Emergency stop (backup)" },
+  { accelerator: "F8", label: "Flasks & Unleash start/pause" },
   { accelerator: "CommandOrControl+D", label: "Price check (clipboard)" },
   { accelerator: "CommandOrControl+C", label: "Copy (item identification)" },
   { accelerator: "CommandOrControl+V", label: "Paste" },

@@ -76,6 +76,11 @@ export interface ChatCommandService {
   resolvePlaceholders(template: string, context: PlaceholderContext): string;
 }
 
+/** A warm chat host can still accept input until its bounded idle timer closes it. */
+export function chatHostBusyReason(service: Pick<ChatCommandService, "status"> | undefined): string | undefined {
+  return service?.status().hostRunning ? "Wait for the chat input host to go idle before arming combat." : undefined;
+}
+
 export interface ChatCommandServiceOptions {
   /** Electron userData; the trace lands in `<userDataDir>/assistive-artifacts/`. */
   userDataDir: string;
@@ -156,7 +161,7 @@ export async function defaultOtherHostRunning(): Promise<boolean> {
     const { stdout } = await execFileAsync("powershell.exe", [
       "-NoProfile",
       "-Command",
-      "@(Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.CommandLine -like '*win-input-host.ps1*' }).Count",
+      "@(Get-CimInstance Win32_Process -Filter \"Name='powershell.exe'\" | Where-Object { $_.CommandLine -like '*win-input-host.ps1*' -or $_.CommandLine -like '*win-combat-host.ps1*' }).Count",
     ]);
     const count = Number.parseInt(stdout.trim(), 10);
     return Number.isFinite(count) && count > 0;

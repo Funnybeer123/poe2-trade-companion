@@ -1,4 +1,5 @@
 import { bagTriageSmoke } from "./bag-triage-smoke.js";
+import { combatSmoke } from "./combat-smoke.js";
 import { expect, test } from "@playwright/test";
 import {
   navigatePrimary,
@@ -21,6 +22,10 @@ const RARE_RING = [
   "+100 to maximum Life",
   "+35% to Cold Resistance",
 ].join("\n");
+
+test("manual Sigil macro controls persist without live input", async ({}, testInfo) => {
+  await combatSmoke("public-companion", testInfo);
+});
 
 /** Every primary workspace, in rail order, with its page heading and route. */
 const WORKSPACES = [

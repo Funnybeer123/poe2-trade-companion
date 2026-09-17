@@ -1,3 +1,4 @@
+import type { CombatBridge } from "../core/combatAssist.js";
 import type {
   BuildProfile,
   CreateBuildProfileInput,
@@ -664,6 +665,7 @@ export interface MarketBridge {
 }
 
 export interface Poe2Bridge {
+  combat?: CombatBridge;
   mode: () => Promise<RuntimeMode>;
   fromClipboard: () => Promise<ItemEvaluation | null>;
   evaluateText: (text: string) => Promise<ItemEvaluation>;

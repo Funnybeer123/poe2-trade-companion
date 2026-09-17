@@ -43,6 +43,14 @@ contextBridge.exposeInMainWorld("poe2", {
   windows: () => ipcRenderer.invoke("poe:windows"),
   killLatched: () => ipcRenderer.invoke("qa:kill-latched"),
   rearm: () => ipcRenderer.invoke("qa:rearm"),
+  combat: {
+    setGlobalDryRun: (enabled: boolean) => ipcRenderer.invoke("combat:global-dry-run", enabled),
+    status: () => ipcRenderer.invoke("combat:status"),
+    configure: (config: import("../core/combatAssist.js").CombatConfig) => ipcRenderer.invoke("combat:configure", config),
+    start: () => ipcRenderer.invoke("combat:start"),
+    stop: () => ipcRenderer.invoke("combat:stop"),
+    preview: () => ipcRenderer.invoke("combat:preview"),
+  },
   bagTriage: {
     status: () => ipcRenderer.invoke("bag-triage:status"),
     select: (journal: string) => ipcRenderer.invoke("bag-triage:select", journal),

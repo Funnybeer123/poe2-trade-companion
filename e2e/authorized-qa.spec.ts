@@ -1,8 +1,13 @@
 import { expect, test } from "@playwright/test";
+import { combatSmoke } from "./combat-smoke.js";
 import {
   navigatePrimary,
   withPackagedElectron,
 } from "./electron-smoke.js";
+
+test("manual Sigil macro controls persist without live input", async ({}, testInfo) => {
+  await combatSmoke("authorized-qa", testInfo);
+});
 
 /**
  * The QA artifact is the same companion built with POE2_BUILD_MODE=authorized-qa
