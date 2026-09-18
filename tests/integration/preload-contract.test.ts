@@ -50,6 +50,7 @@ describe("preload API exposure", () => {
         "bagTriage",
         "calibration",
         "combat",
+        "deck",
         "evaluateText",
         "fromClipboard",
         "generateFilter",

@@ -34,6 +34,19 @@ const subscribe = (<C extends IpcEventChannel>(
 }) as IpcSubscriber;
 
 contextBridge.exposeInMainWorld("poe2", {
+  deck: {
+    preferences: (value: import("../shared/deckActions.js").DeckPreferences) => ipcRenderer.invoke("deck:preferences", value),
+    onDryRun: (callback: (enabled: boolean) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, enabled: boolean) => callback(enabled);
+      ipcRenderer.on("deck:dry-run", listener);
+      return () => ipcRenderer.removeListener("deck:dry-run", listener);
+    },
+    onNavigate: (callback: (route: string) => void) => {
+      const listener = (_event: Electron.IpcRendererEvent, route: string) => callback(route);
+      ipcRenderer.on("deck:navigate", listener);
+      return () => ipcRenderer.removeListener("deck:navigate", listener);
+    },
+  },
   bagTriage: {
     status: () => ipcRenderer.invoke("bag-triage:status"),
     select: (journal: string) => ipcRenderer.invoke("bag-triage:select", journal),

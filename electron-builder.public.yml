@@ -1,6 +1,8 @@
 appId: com.poe2.tradecompanion.public
 productName: PoE2 Trade Companion
 asarUnpack:
+  - dist-electron/*.cjs
+  - dist-electron/*.mjs
   - scripts/win-bag-host.ps1
   - dist-electron/map-triage.cjs
   - dist-electron/ring-gamble.cjs

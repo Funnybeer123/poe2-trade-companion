@@ -103,11 +103,19 @@ let priceHelperService: PriceHelperService | undefined;
 let scannerService: ScannerRuntimeService | undefined;
 let combatService: CombatAssistService | undefined;
 let combatGlobalDryRun = true;
+import { DEFAULT_POE_PROCESS_ALLOWLIST } from "../core/capabilities.js";
+let deckServer: import("./deckServer.js").DeckServer | undefined;
+let deckRuntime: import("./deckRuntime.js").DeckRuntime | undefined;
+let deckPreferences: import("../shared/deckActions.js").DeckPreferences = { dryRun: true, allowlist: [...DEFAULT_POE_PROCESS_ALLOWLIST], transferActionsPerMinute: 240, sortActionsPerMinute: 600 };
 let emergencyStopMonitor: ReturnType<typeof startEmergencyStopMonitor> | undefined;
 
-function assertBagIdle(): void {
+function voiceActive(): boolean { return ["listening", "recognized", "transferring"].includes(voiceService?.status.phase ?? ""); }
+function assertBagIdle(fromVoice = false): void {
   if (backgroundSmoke) throw new Error("Game actions are disabled during background UI smoke checks.");
   if (bagTriageService?.status.running) throw new Error("Stop the current bag stage before starting another game action.");
+  if (killSwitch.isLatched()) throw new Error("Emergency stop is latched. Rearm first.");
+  if (!fromVoice && voiceActive()) throw new Error("Cancel the current voice transfer first.");
+  if (assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || combatService?.status.running) throw new Error("Stop the current game action before starting another.");
 }
 
 function quotesFile(): string {
@@ -228,7 +236,7 @@ function syncRuntimeScanSession(session: ScanSession): void {
 function exportTriageSnapshot(): void {
   if (!itemIntelligenceService) return;
   try {
-    const dir = path.join(process.cwd(), "artifacts", "tab-admin");
+    const dir = path.join(app.isPackaged ? app.getPath("userData") : process.cwd(), "artifacts", "tab-admin");
     mkdirSync(dir, { recursive: true });
     const config = itemIntelligenceService.getValueTierConfig();
     const snapshot = {
@@ -446,8 +454,7 @@ if (ownsInstance) void app.whenReady().then(() => {
             .find((profile) => profile.active),
     evaluateItemText: (text) => evaluateItemText(text, "scan", false),
     persistSession: syncRuntimeScanSession,
-    onEvent: (event) =>
-      sendRendererEvent(mainWindow, "scanner:event", event),
+    onEvent: (event) => { deckRuntime?.observe("scan", event); sendRendererEvent(mainWindow, "scanner:event", event); },
     onTrace: (trace) => {
       mkdirSync(artifactDir, { recursive: true });
       appendFileSync(
@@ -457,7 +464,7 @@ if (ownsInstance) void app.whenReady().then(() => {
       );
     },
   });
-  registerScanIpc(ipcMain, scannerService, assertBagIdle);
+  registerScanIpc(ipcMain, scannerService, () => assertBagIdle());
   voiceConfig = loadVoiceTransferConfig(memoryRoot);
   dryRunOverlay = new DryRunOverlayWindow();
   const baselineDir = path.join(memoryRoot, "perception-templates");
@@ -469,7 +476,7 @@ if (ownsInstance) void app.whenReady().then(() => {
     artifactDir,
     baselineDir,
     profile: readMergedProfile,
-    onEvent: (event) => sendRendererEvent(mainWindow, "assistive:event", event),
+    onEvent: (event) => { deckRuntime?.observe("transfer", event); sendRendererEvent(mainWindow, "assistive:event", event); },
     onDryRunOverlay: (plan) => {
       if (plan) dryRunOverlay?.show(plan);
       else dryRunOverlay?.hide();
@@ -483,10 +490,10 @@ if (ownsInstance) void app.whenReady().then(() => {
     baselineDir,
     profile: readMergedProfile,
     sizeDatabase: () => loadItemSizeDatabase(sizeDatabaseFile()),
-    onEvent: (event) => sendRendererEvent(mainWindow, "stash-sort:event", event),
+    onEvent: (event) => { deckRuntime?.observe("sort", event); sendRendererEvent(mainWindow, "stash-sort:event", event); },
   });
   stashTabAdminService = new StashTabAdminService({
-    root: process.cwd(),
+    root: app.isPackaged ? memoryRoot : process.cwd(),
     marketConfigDir: memoryRoot,
     templateDir: baselineDir,
     ...(app.isPackaged ? { valuationWorker: {
@@ -494,8 +501,8 @@ if (ownsInstance) void app.whenReady().then(() => {
       file: path.join(app.getAppPath().replace(/app\.asar$/, "app.asar.unpacked"), "dist-electron", "value-dump.cjs"),
       dataRoot: memoryRoot,
     } } : {}),
-    emit: (event) => sendRendererEvent(mainWindow, "stash-tabs:event", event),
-    canRun: () => !killSwitch.isLatched() && !bagTriageService?.status.running,
+    emit: (event) => { if (event.kind === "log" || event.kind === "error") deckRuntime?.observe("script", event); sendRendererEvent(mainWindow, "stash-tabs:event", event); },
+    canRun: () => !killSwitch.isLatched() && !voiceActive() && !bagTriageService?.status.running && !assistiveService?.status.running && !stashSortService?.status.running && !scannerService?.status.running && !combatService?.status.running,
     onScriptStopped: (_kind, reason) => stashValuationService?.markStopped(reason),
   });
   stashValuationService = new StashValuationService(app.isPackaged ? memoryRoot : process.cwd());
@@ -509,7 +516,7 @@ if (ownsInstance) void app.whenReady().then(() => {
     },
     blocked: () => backgroundSmoke ? "Game actions are disabled during background UI smoke checks."
       : killSwitch.isLatched() ? "Rearm the emergency stop before starting a bag stage."
-      : assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || combatService?.status.running
+      : voiceActive() || assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || combatService?.status.running
         ? "Stop the current game action before starting a bag stage." : undefined,
   });
   ipcMain.handle("bag-triage:status", () => bagTriageService!.refresh());
@@ -524,7 +531,8 @@ if (ownsInstance) void app.whenReady().then(() => {
     recognizer: new WindowsSpeechRecognizer(),
     config: () => voiceConfig,
     assistiveStatus: () => assistiveService!.status,
-    startTransfer: (request) => { assertBagIdle(); return assistiveService!.start(request); },
+    startTransfer: (request) => { assertBagIdle(true); return assistiveService!.start(request); },
+    blocked: () => { try { assertBagIdle(true); return undefined; } catch (error) { return String(error); } },
     stopTransfer: (reason) => assistiveService!.stop(reason),
     onState: (state) => {
       try {
@@ -569,7 +577,7 @@ if (ownsInstance) void app.whenReady().then(() => {
     blocked: () => {
       if ((!emergencyStopRegistered && !emergencyStopMonitor?.ready) || !combatHotkeyRegistered) return "Combat hotkeys are starting or unavailable. Wait a moment, or close conflicting apps and restart the companion.";
       if (combatGlobalDryRun && !combatService?.status.config.dryRun) return "Global Dry-run is on. Use Preview only or turn off global Dry-run for live combat.";
-      if (assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || bagTriageService?.status.running) return "Paused while another game action is running";
+      if (voiceActive() || assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || bagTriageService?.status.running) return "Paused while another game action is running";
       return undefined;
     },
   });
@@ -746,7 +754,7 @@ if (ownsInstance) void app.whenReady().then(() => {
   ipcMain.handle("stash-tabs:stop-script", () => stashTabAdminService?.stopScript());
   ipcMain.handle("stash-tabs:finds", () => {
     try {
-      const file = path.join(process.cwd(), "artifacts", "tab-admin", "finds.jsonl");
+      const file = path.join(app.isPackaged ? memoryRoot : process.cwd(), "artifacts", "tab-admin", "finds.jsonl");
       if (!existsSync(file)) return [];
       return parseFindRecords(readFileSync(file, "utf8")).reverse().slice(0, 100);
     } catch {
@@ -758,7 +766,7 @@ if (ownsInstance) void app.whenReady().then(() => {
   // shop.json (config), listings.jsonl (ledger), shop-scan/plan.json.
   ipcMain.handle("shop:overview", () => {
     try {
-      const dir = path.join(process.cwd(), "artifacts", "tab-admin");
+      const dir = path.join(app.isPackaged ? memoryRoot : process.cwd(), "artifacts", "tab-admin");
       const read = (name: string): string | undefined => {
         const file = path.join(dir, name);
         return existsSync(file) ? readFileSync(file, "utf8") : undefined;
@@ -786,7 +794,7 @@ if (ownsInstance) void app.whenReady().then(() => {
   });
   ipcMain.handle("shop:save-config", (_event, raw: unknown) => {
     const { config, issues } = parseShopConfig(raw);
-    const dir = path.join(process.cwd(), "artifacts", "tab-admin");
+    const dir = path.join(app.isPackaged ? memoryRoot : process.cwd(), "artifacts", "tab-admin");
     mkdirSync(dir, { recursive: true });
     writeFileSync(path.join(dir, "shop.json"), JSON.stringify(config, null, 2));
     return { config, issues };
@@ -833,6 +841,35 @@ if (ownsInstance) void app.whenReady().then(() => {
   createWindow();
   if (!backgroundSmoke) {
     priceHelperService = installPriceHelper(() => mainWindow, (identity, league, canRun) => priceFeedService!.fetchHelperReward(identity, league, canRun));
+    const stopWorkflows = () => {
+      bagTriageService?.stop(); stashTabAdminService?.stopScript(); combatService?.stop();
+      void voiceService?.cancel("operator-stop"); assistiveService?.stop("operator-stop"); stashSortService?.stop("operator-stop"); scannerService?.stop("operator-stop");
+    };
+    const setDryRun = (enabled: boolean) => {
+      deckPreferences = { ...deckPreferences, dryRun: enabled }; combatGlobalDryRun = enabled;
+      voiceConfig = { ...voiceConfig, dryRun: enabled };
+      if (enabled && !combatService!.status.config.dryRun) combatService!.stop("Global Dry-run enabled");
+      mainWindow?.webContents.send("deck:dry-run", enabled);
+    };
+    ipcMain.handle("deck:preferences", (event, value: unknown) => {
+      if (event.sender !== mainWindow?.webContents) throw new Error("Untrusted preferences sender");
+      const p = value as typeof deckPreferences;
+      if (!p || typeof p.dryRun !== "boolean" || !Array.isArray(p.allowlist) || !p.allowlist.length || p.allowlist.some(x => typeof x !== "string" || !x.trim()) || !Number.isInteger(p.transferActionsPerMinute) || p.transferActionsPerMinute < 1 || p.transferActionsPerMinute > 600 || !Number.isInteger(p.sortActionsPerMinute) || p.sortActionsPerMinute < 1 || p.sortActionsPerMinute > 1200) throw new Error("Invalid action preferences");
+      deckPreferences = structuredClone(p); combatGlobalDryRun = p.dryRun;
+      voiceConfig = { ...voiceConfig, dryRun: p.dryRun };
+    });
+    void Promise.all([import("./deckRuntime.js"), import("./deckServer.js")]).then(async ([{ DeckRuntime }, { DeckServer }]) => {
+      const runtime = deckRuntime = new DeckRuntime({ bag: bagTriageService!, transfer: assistiveService!, sort: stashSortService!, scripts: stashTabAdminService!, combat: combatService!, voice: voiceService!, helper: priceHelperService!, scanner: scannerService!, kill: killSwitch,
+        preferences: () => deckPreferences, dryRun: setDryRun, stop: stopWorkflows, emergencyStop: stopAllInput,
+        rearm: () => { killSwitch.rearm(); },
+        navigate: route => { activateMainWindow?.(); mainWindow?.webContents.send("deck:navigate", route); },
+        evaluate: () => { lastClipboard = ""; return evaluateClipboard(); }, refreshFeed: () => priceFeedService!.refresh(), reassess: () => stashValuationService!.reassess(),
+      });
+      deckServer = new DeckServer(runtime, (ack, action) => {
+        mkdirSync(artifactDir, { recursive: true }); appendFileSync(path.join(artifactDir, "stream-deck-actions.jsonl"), JSON.stringify({ at: new Date().toISOString(), action, ...ack }) + "\n");
+      });
+      await deckServer.listen(path.join(memoryRoot, "stream-deck"));
+    }).catch(error => { console.error("Stream Deck connection unavailable:", error); });
     setInterval(() => { void evaluateClipboard(); }, 750);
   }
 });
@@ -856,6 +893,7 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 app.on("before-quit", () => {
+  deckServer?.close();
   bagTriageService?.stop("App exiting");
   stashTabAdminService?.stopScript("App exiting");
   combatService?.stop("App exiting");

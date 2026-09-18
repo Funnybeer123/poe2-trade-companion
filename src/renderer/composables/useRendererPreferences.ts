@@ -48,9 +48,13 @@ function initialize(): void {
   } catch {
     // Preferences simply fall back to safe defaults.
   }
+  const publish = () => { void window.poe2?.deck?.preferences({ dryRun: defaultDryRun.value, allowlist: allowlistEntries(processAllowlist.value), transferActionsPerMinute: transferActionsPerMinute.value, sortActionsPerMinute: sortActionsPerMinute.value }).catch(() => {}); };
+  window.poe2?.deck?.onDryRun(enabled => { defaultDryRun.value = enabled; });
+  publish();
   watch(
     [defaultDryRun, processAllowlist, transferActionsPerMinute, sortActionsPerMinute],
     ([dryRun, allowlist, transferApm, sortApm]) => {
+      publish();
       try {
         globalThis.localStorage?.setItem(
           STORAGE_KEY,

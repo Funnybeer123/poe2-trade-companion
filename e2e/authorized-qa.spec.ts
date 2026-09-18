@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { deckSmoke } from "./deck-smoke.js";
+test("Stream Deck native bridge routes controls and dry-run without game input", async ({}, info) => { await deckSmoke("authorized-qa", info); });
 import { combatSmoke } from "./combat-smoke.js";
 import { dashboardSmoke } from "./dashboard-smoke.js";
 import { windowFocusSmoke } from "./window-focus-smoke.js";

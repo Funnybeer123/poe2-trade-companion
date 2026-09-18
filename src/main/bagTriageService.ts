@@ -115,11 +115,12 @@ export class BagTriageService {
     return this.publish({ journal: id, phase: "idle", message: "Saved bag selected.", physicalItems: session.report.rows.length,
       unreadCells: session.report.unreadCells.length, verifiedIdentifications: session.identifiedIds.length, verifiedDrops: session.droppedIds.length });
   }
-  start(stage: BagTriageStage): BagTriageStatus {
+  start(stage: BagTriageStage, options: { dryRun?: boolean } = {}): BagTriageStatus {
     if (!["gamble", "cleanup", "workflow", "capture", "identify", "drop", "reconcile"].includes(stage)) throw new Error("Unknown bag stage.");
     if (this.state.running) throw new Error("A bag stage is already running.");
     const blocked = this.options.blocked?.(); if (blocked) throw new Error(blocked);
-    const readiness = this.readiness(stage);
+    if (options.dryRun && stage !== "gamble" && stage !== "cleanup") throw new Error("Use bag replay for no-input verification of this stage.");
+    const readiness = options.dryRun ? [] : this.readiness(stage);
     if (readiness.length) throw new Error(readiness.join(" "));
     const freshJournal = stage === "capture" || stage === "workflow" || (stage === "gamble" || stage === "cleanup");
     if (!freshJournal) {
@@ -131,11 +132,11 @@ export class BagTriageService {
     this.stopFile = path.join(this.directory, `desktop-stop-${randomUUID()}`);
     this.publish({ running: true, phase: "countdown", stage, journal: id, message: (stage === "gamble" || stage === "cleanup") ? "Stand near Ange with panels closed. Starting in 3 seconds." : "Return to your map. Starting in 3 seconds.", purchased: undefined, sold: undefined, retained: undefined,
       ...(freshJournal ? { physicalItems: undefined, unreadCells: undefined, verifiedIdentifications: undefined, verifiedDrops: undefined } : {}) });
-    this.countdown = setTimeout(() => { this.countdown = undefined; this.launch(stage, id); }, this.options.countdownMs ?? 3000);
+    this.countdown = setTimeout(() => { this.countdown = undefined; this.launch(stage, id, options.dryRun === true); }, this.options.countdownMs ?? 3000);
     return this.status;
   }
-  private launch(stage: BagTriageStage, id: string) {
-    const blocked = this.options.blocked?.() ?? this.readiness(stage).join(" ");
+  private launch(stage: BagTriageStage, id: string, dryRun = false) {
+    const blocked = this.options.blocked?.() ?? (dryRun ? "" : this.readiness(stage).join(" "));
     if (blocked) { this.publish({ running: false, phase: "error", message: blocked }); return; }
     const journal = path.join(this.directory, id);
     const files = this.paths, entry = (stage === "gamble" || stage === "cleanup") ? path.join(path.dirname(files.entry), "ring-gamble.cjs") : files.entry;
@@ -143,8 +144,9 @@ export class BagTriageService {
     const args = [entry, ...(stage === "cleanup" ? ["--rescan"] : []),
       `--stage=${stage}`, `--journal=${journal}`, `--output=${journal}.assessment.json`,
       `--calibration=${files.calibration}`, `--perception=${files.perception}`, `--client-log=${files.clientLog}`,
-      ...(stage === "workflow" || (stage === "gamble" || stage === "cleanup") ? ["--run"] : stage === "identify" ? ["--run", "--max-identifications=1"] : stage === "drop" ? ["--run", "--max-drops=1"] : [])];
+      ...(dryRun ? [] : stage === "workflow" || (stage === "gamble" || stage === "cleanup") ? ["--run"] : stage === "identify" ? ["--run", "--max-identifications=1"] : stage === "drop" ? ["--run", "--max-drops=1"] : [])];
     this.publish({ phase: "running", message: stage === "cleanup" ? "Scanning existing rings and selling rejects at Ange…" : stage === "gamble" ? "Buying and evaluating one batch of rings at Ange…" : stage === "workflow" ? "Identifying your bag and dropping low-priority items…" : stage === "capture" ? "Reading your bag…" : stage === "identify" ? "Identifying one item…" : stage === "drop" ? "Checking one low-priority drop…" : "Checking the saved action…" });
+    if (dryRun) this.publish({ message: "Previewing the ring workflow; no game input is emitted." });
     let child: ReturnType<typeof spawn>;
     try {
       child = (this.options.spawn ?? spawn)(this.options.executable ?? process.execPath, args, {
@@ -181,7 +183,7 @@ export class BagTriageService {
       this.refreshSessions();
       const stopped = this.state.phase === "stopping";
       this.publish({ running: false, ...((stage === "gamble" || stage === "cleanup") ? { journal: undefined } : {}), phase: stopped ? "idle" : success ? "complete" : "error",
-        message: stopped ? "Bag stage stopped. Reconcile before continuing." : success ? (stage === "gamble" || stage === "cleanup") ? "Ring batch complete. Retained rings are in your bag." : "Bag stage complete." : errors.trim().split(/\r?\n/).at(-1)?.slice(0, 350) || "The bag stage could not finish." });
+        message: stopped ? "Bag stage stopped. Reconcile before continuing." : success ? dryRun ? "Ring preview complete. No game input emitted." : (stage === "gamble" || stage === "cleanup") ? "Ring batch complete. Retained rings are in your bag." : "Bag stage complete." : errors.trim().split(/\r?\n/).at(-1)?.slice(0, 350) || "The bag stage could not finish." });
     };
     child.once("exit", code => finish(code === 0)); child.once("error", () => finish(false));
   }

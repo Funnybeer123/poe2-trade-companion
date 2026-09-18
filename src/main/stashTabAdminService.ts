@@ -47,6 +47,10 @@ export interface StashTabAdminOptions {
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 const SCRIPT_ARGS: Record<StashTabScriptKind, string[]> = {
+  "sort-inventory": ["scripts/assistive-sort-tabs.ts", "--run"],
+  "sort-inventory-dry": ["scripts/assistive-sort-tabs.ts"],
+  "vendor-cycle": ["scripts/vendor-cycle.ts", "--run"],
+  "vendor-cycle-dry": ["scripts/vendor-cycle.ts", "--dry-run"],
   renumber: ["scripts/stash-tab-admin.ts", "--renumber"],
   "renumber-dry": ["scripts/stash-tab-admin.ts", "--renumber", "--dry-run"],
   "finish-gear": ["scripts/stash-tab-admin.ts", "--finish-gear", "--allow-priced"],
@@ -92,7 +96,9 @@ export class StashTabAdminService {
     if (!configured) return { started: false, reason: `unknown-script:${kind}` };
     const args = [...configured];
     const valuation = kind.startsWith("value-dump");
-    const worker = valuation ? this.options.valuationWorker : undefined;
+    const bundled = this.options.valuationWorker;
+    const worker = bundled ? { ...bundled, file: valuation ? bundled.file : path.join(path.dirname(bundled.file), path.basename(args[0], ".ts") + ".mjs") } : undefined;
+    if (worker && !existsSync(worker.file)) return { started: false, reason: "Packaged worker missing. Rebuild the app." };
     if (kind === "value-dump-resume" || kind === "value-dump-sort" || kind === "value-dump-capture-resume") {
       const relativeReport = path.join("artifacts", "tab-admin", "stash-valuation-report.json");
       const savedReport = path.join(worker?.dataRoot ?? this.options.root, relativeReport);
@@ -102,6 +108,7 @@ export class StashTabAdminService {
       args.push("--from-scan=" + (worker ? savedReport : relativeReport));
     }
     this.setPhase("applying");
+    this.state = { ...this.state, lastError: undefined };
     const child = spawn(worker?.executable ?? "npx", worker ? [worker.file, ...args.slice(1)] : ["--yes", "tsx", ...args], {
       cwd: worker?.dataRoot ?? this.options.root,
       shell: !worker,
@@ -112,9 +119,9 @@ export class StashTabAdminService {
       env: {
         ...process.env,
         ...(kind === "craft-gear" ? { POE2_CRAFT_LIVE: "1" } : {}),
-        ...(kind.startsWith("value-dump") && this.options.marketConfigDir
+        ...(this.options.marketConfigDir
           ? { POE2_MARKET_CONFIG_DIR: this.options.marketConfigDir } : {}),
-        ...(valuation && this.options.templateDir ? { POE2_TEMPLATE_DIR: this.options.templateDir } : {}),
+        ...(this.options.templateDir ? { POE2_TEMPLATE_DIR: this.options.templateDir } : {}),
         ...(worker ? { ELECTRON_RUN_AS_NODE: "1", POE2_STASH_DATA_ROOT: worker.dataRoot } : {}),
       },
     });

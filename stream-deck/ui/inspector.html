@@ -1,0 +1,7 @@
+<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src ws://127.0.0.1:*"><style>body{background:#252525;color:#eee;font:13px system-ui;padding:12px}code{color:#ead6a1}p{line-height:1.5}</style></head><body><strong>PoE2 Companion</strong><p id="command"></p><p id="status">Open the companion app for status.</p><p id="mode"></p><p>Drag any action from the PoE2 Companion category onto a key to reassign it. Workflow buttons execute the named action; “Open” buttons only open a tool.</p><script>
+window.connectElgatoStreamDeckSocket = (port, context, event) => {
+ const socket = new WebSocket('ws://127.0.0.1:' + port);
+ socket.onopen = () => socket.send(JSON.stringify({event,uuid:context}));
+ socket.onmessage = message => { const data = JSON.parse(message.data); if (data.event !== 'sendToPropertyInspector') return; const p=data.payload; document.getElementById('command').textContent=p.command; document.getElementById('status').textContent=p.detail; document.getElementById('mode').textContent=p.dryRun === null ? 'Disconnected' : p.dryRun ? 'Dry-run enabled' : 'Live execution enabled'; };
+};
+</script></body></html>

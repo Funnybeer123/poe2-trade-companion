@@ -7,6 +7,8 @@ export default tseslint.config(
   {
     ignores: [
       "node_modules/**",
+      "stream-deck/node_modules/**",
+      "stream-deck/com.poe2companion.deck.sdPlugin/**",
       ".vite/**",
       ".claude/worktrees/**",
       "dist/**",

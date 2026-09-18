@@ -27,3 +27,4 @@ artifacts/
 # Machine-local Claude Code state; launch.json is shared project config.
 .claude/*
 !.claude/launch.json
+stream-deck/com.poe2companion.deck.sdPlugin/

@@ -49,8 +49,8 @@ import {
 } from "../src/core/mapTriage.js";
 import type { OcrLine } from "../src/core/tabList.js";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const templateDir = path.join(root, "fixtures", "perception", "templates");
+const root = path.resolve(process.env.POE2_STASH_DATA_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
+const templateDir = process.env.POE2_TEMPLATE_DIR ?? path.join(root, "fixtures", "perception", "templates");
 const outDir = path.join(root, "artifacts", "vendor-cycle");
 
 const argv = process.argv.slice(2);

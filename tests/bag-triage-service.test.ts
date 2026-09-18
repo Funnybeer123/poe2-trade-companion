@@ -41,6 +41,13 @@ function setup(packaged = true) {
 }
 
 describe("desktop staged bag worker", () => {
+  it.each(["gamble", "cleanup"] as const)("uses the existing no-input preview for %s", async stage => {
+    const f = setup(); writeFileSync(path.join(f.root, "ring-gamble.cjs"), "// fake");
+    f.service.start(stage, { dryRun: true }); await vi.advanceTimersByTimeAsync(3000);
+    expect(f.started()[1]).not.toContain("--run");
+    expect(f.started()[1].includes("--rescan")).toBe(stage === "cleanup");
+    f.child.emit("exit", 0);
+  });
   it.each(["gamble", "cleanup"] as const)("launches the bundled ring worker for %s with native cancellation", async stage => {
     const f = setup();
     writeFileSync(path.join(f.root, "ring-gamble.cjs"), "// fake");

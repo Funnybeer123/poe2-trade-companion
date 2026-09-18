@@ -76,8 +76,8 @@ import { evaluateWithAppraisal } from "../src/core/appraisal.js";
 import { DEFAULT_MIN_DETOUR_CONFIDENCE } from "../src/core/sortTriage.js";
 import type { GearSorterTriageOptions } from "../src/adapters/gearSorter.js";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const templateDir = path.join(root, "fixtures", "perception", "templates");
+const root = path.resolve(process.env.POE2_STASH_DATA_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
+const templateDir = process.env.POE2_TEMPLATE_DIR ?? path.join(root, "fixtures", "perception", "templates");
 const outDir = path.join(root, "artifacts", "tab-admin");
 
 const argv = process.argv.slice(2);

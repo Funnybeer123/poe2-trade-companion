@@ -1,5 +1,7 @@
 /** Named child operations shared by the desktop bridge and launcher. */
 export type StashTabScriptKind =
+  | "vendor-cycle" | "vendor-cycle-dry"
+  | "sort-inventory" | "sort-inventory-dry"
   | "renumber" | "renumber-dry" | "finish-gear" | "sort-gear" | "sort-gear-dry"
   | "value-dump" | "value-dump-sort" | "value-dump-resume" | "value-dump-capture-resume"
   | "craft-gear" | "craft-gear-dry" | "shop-scan-dry" | "shop-scan"
@@ -459,6 +461,7 @@ export interface HotkeysBridge {
 }
 
 export interface Poe2Bridge {
+  deck?: import("./deckActions.js").DeckBridge;
   bagTriage?: import("./bagTriage.js").BagTriageBridge;
   priceHelper?: import("../core/priceHelper.js").PriceHelperBridge;
   combat?: import("../core/combatAssist.js").CombatBridge;

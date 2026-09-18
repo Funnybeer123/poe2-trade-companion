@@ -43,8 +43,8 @@ import { validateTransferInput } from "../src/core/transferInputGuard.js";
 import type { InputAction } from "../src/core/types.js";
 import { perceiveUi, type UiFacts } from "../src/core/uiPerception.js";
 
-const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
-const templateDir = path.join(root, "fixtures", "perception", "templates");
+const root = path.resolve(process.env.POE2_STASH_DATA_ROOT ?? path.resolve(path.dirname(fileURLToPath(import.meta.url)), ".."));
+const templateDir = process.env.POE2_TEMPLATE_DIR ?? path.join(root, "fixtures", "perception", "templates");
 const artifactDir = path.join(root, "artifacts", "assistive-cli");
 const live = process.argv.includes("--run");
 const probeOnly = process.argv.includes("--probe");

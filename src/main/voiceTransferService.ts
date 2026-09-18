@@ -26,6 +26,7 @@ interface VoiceTransferServiceOptions {
   startTransfer: (request: AssistiveRunRequest) => Promise<AssistiveRunResult>;
   stopTransfer: (reason: string) => void | Promise<void>;
   onState?: (state: VoiceTransferState) => void;
+  blocked?: () => string | undefined;
 }
 
 interface ActiveVoiceRun {
@@ -75,7 +76,10 @@ export class VoiceTransferService {
     const config = this.options.config();
     const status = this.options.assistiveStatus();
     let error: string | undefined;
-    if (!config.enabled) {
+    const blocked = this.options.blocked?.();
+    if (blocked) {
+      error = blocked;
+    } else if (!config.enabled) {
       error = "voice-transfer-disabled";
     } else if (status.running) {
       error = "assistive-run-already-running";
