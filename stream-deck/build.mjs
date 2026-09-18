@@ -57,7 +57,7 @@ const groups = [
 groups[2].push(...groups[0].splice(24), ...groups[1].splice(24));
 const profile = {}, mapping = [];
 const root = `${profileId}.sdProfile`;
-profile[`${root}/manifest.json`] = strToU8(JSON.stringify({ Device: { Model: '20GAT9902', UUID: '' }, Name: 'PoE2 Companion XL', Pages: { Current: pages[0], Default: pages[0], Pages: pages.slice(1) }, Version: '3.0' }));
+profile[`${root}/manifest.json`] = strToU8(JSON.stringify({ Device: { Model: '20GAT9902', UUID: '' }, Name: 'PoE2 Companion XL', Pages: { Current: pages[0], Default: pages[0], Pages: pages }, Version: '3.0' }));
 function key(entry) {
   return { ActionID: randomUUID(), LinkedTitle: true, Name: entry[1], Plugin: { Name: 'PoE2 Companion', UUID: 'com.poe2companion.deck', Version: '1.0.0.0' }, Resources: null, Settings: {}, State: 0,
     States: [{ Image: '', ShowTitle: true, Title: '', TitleAlignment: 'top', FontSize: 11, TitleColor: '#ffffff', OutlineThickness: 2 }], UUID: uuid(entry[0]) };
@@ -95,4 +95,3 @@ json(`${output}/profile-files.json`, Object.fromEntries(Object.entries(profile).
 const rows = mapping.map(([page,row,col,id,name,label,detail]) => `| ${page} | ${row},${col} | ${label} | ${id} | [SVG](../stream-deck/assets/svg/${id}-idle.svg) | ${detail} |`);
 writeFileSync('../docs/STREAM_DECK_MAPPING.md', `# Stream Deck XL mapping\n\nCoordinates are row,column (1-based). Pages: 1 Workflows; 2 Combat & tools; 3 Settings. Bottom-right is always Emergency stop. Bottom-left keys select the previous or next page. Every action can be dragged from PoE2 Companion in Stream Deck to reassign keys.\n\nAll buttons show idle, active (triangle), paused (bars), unavailable (barred circle), disconnected (cross) or error (!). Counts appear at the top when the service publishes them. The Property Inspector shows the exact reason. Configuration toggles show active when enabled; they stop combat just like desktop configuration.\n\n| Page | Key | Label | Command | Icon | Function |\n|---|---|---|---|---|---|\n${rows.join('\n')}\n`);
 console.log(`Built ${DECK_ACTIONS.length} native actions, ${DECK_ACTIONS.length*states.length} SVG sources, three XL pages, and contact sheets.`);
-

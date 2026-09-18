@@ -36,3 +36,9 @@ The standalone legacy action daemon remains outside the app's worker lifecycle a
 
 After the restart, the host connected the final plugin but reported orphan navigation links: sibling pages had been represented as cyclic child folders. Replaced these with Previous/Next page actions, reserved the entire last row, and added build assertions that every catalog action survives layout and every page retains Emergency stop. Repacked and validated the plugin and reran the SDK harness successfully. Installed the corrected profile with Stream Deck closed. User requested deferring launch and physical testing while playing League; corrected profile loading and selection remain to be verified.
 
+## September 18 follow-up
+
+The next startup confirmed plugin connection but still reported that the initial page was absent from the page list. Included all three pages in that list and rebuilt the package. The user canceled the subsequent profile import, so loading that final profile on the host remains unverified.
+
+Actual user keypresses now appear in the companion audit log: inventory and stash scans were rejected while emergency stop was latched; Rearm was acknowledged; inventory scan then completed under global dry-run. The no-input result was verified against scanner behavior. Helper actions and combat validation failures also reached the app. This establishes physical-button command delivery, not successful live game scanning or full on-device layout validation. The green acknowledgement alone does not distinguish a dry-run from a live scan.
+
