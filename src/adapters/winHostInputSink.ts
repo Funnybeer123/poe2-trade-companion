@@ -109,6 +109,7 @@ export class WinHostInputSink implements InputSink {
       op: action.button === "right" ? "rightclick" : "click",
       x: action.x,
       y: action.y,
+      ...(action.modifier ? { modifier: action.modifier } : {}),
     });
   }
 

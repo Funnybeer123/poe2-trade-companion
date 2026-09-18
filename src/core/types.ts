@@ -278,6 +278,7 @@ export interface InputAction {
   x2?: number;
   y2?: number;
   button?: "left" | "right";
+  modifier?: "ctrl" | "alt";
   text?: string;
   durationMs?: number;
 }

@@ -41,6 +41,51 @@ function setup(packaged = true) {
 }
 
 describe("desktop staged bag worker", () => {
+  it.each(["gamble", "cleanup"] as const)("launches the bundled ring worker for %s with native cancellation", async stage => {
+    const f = setup();
+    writeFileSync(path.join(f.root, "ring-gamble.cjs"), "// fake");
+    const calibrationFile = path.join(f.templateDir, "calibration.json");
+    const calibration = JSON.parse(readFileSync(calibrationFile, "utf8"));
+    calibration.ventorBagGrid = { x: 100, y: 200, w: 1200, h: 500, cols: 12, rows: 5 };
+    writeFileSync(calibrationFile, JSON.stringify(calibration));
+    rmSync(f.options.clientLog);
+    expect(f.service.refresh().gambleReadiness).toEqual([]);
+    if (stage === "cleanup") {
+      f.service.setCleanupHotkey(true);
+      f.service.startCleanupFromHotkey(); f.service.startCleanupFromHotkey();
+      expect(f.service.status.cleanupHotkey).toBe("Ctrl+Alt+V");
+    } else f.service.start(stage);
+    await vi.advanceTimersByTimeAsync(3000);
+    const [, args, options] = f.started();
+    expect(args[0]).toBe(path.join(f.root, "ring-gamble.cjs")); expect(args).toContain("--run");
+    expect(args.includes("--rescan")).toBe(stage === "cleanup");
+    expect(f.spawnMock).toHaveBeenCalledOnce();
+    expect(options.env.POE2_BAG_STOP_FILE).toContain("desktop-stop-");
+    f.child.stdout.write('{"purchased":4,"sold":2,"retained":2}\n'); f.child.emit("exit", 0);
+    expect(f.service.status).toMatchObject({ running: false, purchased: 4, sold: 2, retained: 2, journal: undefined });
+  });
+
+  it.each([false, true])("starts the full workflow with a fresh journal even when a saved bag is selected: %s", async selected => {
+    const f = setup();
+    if (selected) { f.save(); f.service.select("saved.jsonl"); }
+    const status = f.service.start("workflow");
+    expect(status).toMatchObject({ running: true, phase: "countdown", stage: "workflow" });
+    expect(status.journal).toMatch(/^bag-.*\.jsonl$/); expect(status.journal).not.toBe("saved.jsonl");
+    expect(status.physicalItems).toBeUndefined(); expect(status.verifiedDrops).toBeUndefined();
+    expect(f.spawnMock).not.toHaveBeenCalled();
+    expect(f.emit).toHaveBeenLastCalledWith(expect.objectContaining({ phase: "countdown", stage: "workflow" }));
+    await vi.advanceTimersByTimeAsync(3000);
+    const [, args, options] = f.started();
+    expect(args).toContain("--stage=workflow"); expect(args).toContain("--run");
+    expect(args).toContain("--journal=" + path.join(f.dataRoot, "artifacts", "map-triage", status.journal!));
+    expect(args.some(arg => arg.startsWith("--max-identifications=") || arg.startsWith("--max-drops="))).toBe(false);
+    expect(options.env.POE2_BAG_STOP_FILE).toContain("desktop-stop-");
+    expect(f.service.status.message).toBe("Identifying your bag and dropping low-priority items…");
+    f.child.stdout.write('{"physicalItems":20,"unreadCells":0,"verifiedIdentifications":8,"verifiedDrops":6}\n');
+    f.child.emit("exit", 0);
+    expect(f.service.status).toMatchObject({ running: false, phase: "complete", physicalItems: 20, verifiedIdentifications: 8, verifiedDrops: 6 });
+    expect(f.spawnMock).toHaveBeenCalledOnce();
+  });
   it("starts capture explicitly after a cancellable countdown, with selected data and calibration", async () => {
     const f = setup(); const status = f.service.start("capture");
     expect(status).toMatchObject({ running: true, phase: "countdown", stage: "capture" });
@@ -91,12 +136,12 @@ describe("desktop staged bag worker", () => {
     expect(f.service.status).toMatchObject({ running: false, phase: "error", message: "Emergency stop latched." });
     expect(f.spawnMock).not.toHaveBeenCalled();
   });
-  it("cancels countdown before any process starts", async () => {
-    const f = setup(); f.service.start("capture"); f.service.stop(); await vi.advanceTimersByTimeAsync(5000);
+  it.each(["capture", "workflow"] as const)("cancels %s countdown before any process starts", async stage => {
+    const f = setup(); f.service.start(stage); f.service.stop(); await vi.advanceTimersByTimeAsync(5000);
     expect(f.spawnMock).not.toHaveBeenCalled(); expect(f.service.status.running).toBe(false);
   });
-  it("signals owned cancellation and waits for native release acknowledgement before termination", async () => {
-    const f = setup(); f.service.start("capture"); await vi.advanceTimersByTimeAsync(3000);
+  it.each(["capture", "workflow"] as const)("signals %s cancellation and waits for native release acknowledgement before termination", async stage => {
+    const f = setup(); f.service.start(stage); await vi.advanceTimersByTimeAsync(3000);
     const latch = f.started()[2].env.POE2_BAG_STOP_FILE!;
     f.service.stop(); expect(readFileSync(latch, "utf8")).toBe("stop");
     await vi.advanceTimersByTimeAsync(2000); expect(f.child.kill).not.toHaveBeenCalled();

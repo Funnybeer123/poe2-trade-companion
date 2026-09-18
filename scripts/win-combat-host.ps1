@@ -8,12 +8,150 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.IO;
 using System.Runtime.InteropServices;
+using System.Threading;
 public struct CombatRect { public int Left, Top, Right, Bottom; }
 public struct CombatPoint { public int X, Y; }
 [StructLayout(LayoutKind.Sequential)] public struct CombatKey { public ushort Vk, Scan; public uint Flags, Time; public UIntPtr Extra; }
 [StructLayout(LayoutKind.Sequential)] public struct CombatMouse { public int X, Y; public uint Data, Flags, Time; public UIntPtr Extra; }
 [StructLayout(LayoutKind.Explicit)] public struct CombatUnion { [FieldOffset(0)] public CombatKey Key; [FieldOffset(0)] public CombatMouse Mouse; }
 [StructLayout(LayoutKind.Sequential)] public struct CombatInput { public uint Type; public CombatUnion Data; }
+public sealed class CombatTriggerEdge {
+  public long Id, At, AgeMs;
+  public string Hwnd;
+}
+public sealed class CombatTriggerSnapshot {
+  public CombatTriggerEdge Trigger;
+  public bool Down;
+}
+// Pure edge detector. Native events and sample requests use the same lock; there
+// is one pending edge, never a queue of casts to replay after a busy period.
+public sealed class CombatTriggerState {
+  readonly object gate = new object();
+  int key;
+  bool down;
+  long sequence;
+  CombatTriggerEdge pending;
+  public void Configure(int nextKey, bool alreadyHeld) {
+    lock (gate) { key = nextKey; down = nextKey != 0 && alreadyHeld; pending = null; }
+  }
+  public void Observe(int observedKey, bool pressed, bool injected, IntPtr window, long now) {
+    lock (gate) {
+      // Injected up events must not release a physically held key either.
+      if (key == 0 || observedKey != key || injected) return;
+      if (!pressed) { down = false; return; }
+      if (down) return; // Windows key-repeat is not a new physical press.
+      down = true;
+      pending = new CombatTriggerEdge { Id = ++sequence, Hwnd = window.ToInt64().ToString(), At = now };
+    }
+  }
+  public CombatTriggerSnapshot Consume(long now) {
+    lock (gate) {
+      CombatTriggerEdge edge = pending;
+      pending = null;
+      if (edge != null) edge.AgeMs = Math.Max(0, now - edge.At);
+      return new CombatTriggerSnapshot { Trigger = edge, Down = down };
+    }
+  }
+}
+// A low-level hook needs a continuously pumped message thread. It only observes
+// physical edges: R reaches the game unchanged, including while the macro is busy.
+public static class CombatTriggerMonitor {
+  [StructLayout(LayoutKind.Sequential)] struct KeyboardEvent { public uint Vk, Scan, Flags, Time; public UIntPtr Extra; }
+  [StructLayout(LayoutKind.Sequential)] struct Message { public IntPtr Window; public uint Id; public UIntPtr WParam; public IntPtr LParam; public uint Time; public CombatPoint Point; public uint Private; }
+  delegate IntPtr HookProc(int code, IntPtr message, IntPtr data);
+  [DllImport("user32.dll", SetLastError=true)] static extern IntPtr SetWindowsHookEx(int id, HookProc callback, IntPtr module, uint thread);
+  [DllImport("user32.dll", SetLastError=true)] static extern bool UnhookWindowsHookEx(IntPtr hook);
+  [DllImport("user32.dll")] static extern IntPtr CallNextHookEx(IntPtr hook, int code, IntPtr message, IntPtr data);
+  [DllImport("user32.dll", SetLastError=true)] static extern int GetMessage(out Message message, IntPtr window, uint min, uint max);
+  [DllImport("user32.dll")] static extern bool PeekMessage(out Message message, IntPtr window, uint min, uint max, uint flags);
+  [DllImport("user32.dll")] static extern bool TranslateMessage(ref Message message);
+  [DllImport("user32.dll")] static extern IntPtr DispatchMessage(ref Message message);
+  [DllImport("user32.dll", SetLastError=true)] static extern bool PostThreadMessage(uint thread, uint message, UIntPtr wParam, IntPtr lParam);
+  [DllImport("user32.dll")] static extern short GetAsyncKeyState(int key);
+  [DllImport("kernel32.dll")] static extern uint GetCurrentThreadId();
+  [DllImport("kernel32.dll", CharSet=CharSet.Auto)] static extern IntPtr GetModuleHandle(string name);
+  static readonly object lifecycle = new object();
+  static readonly CombatTriggerState state = new CombatTriggerState();
+  static readonly HookProc callback = OnKeyboard;
+  static Thread thread;
+  static ManualResetEvent initialized;
+  static volatile bool stopRequested;
+  static uint threadId;
+  static IntPtr hook;
+  static volatile Exception failure;
+  static IntPtr OnKeyboard(int code, IntPtr message, IntPtr data) {
+    try {
+      int kind = message.ToInt32();
+      if (code >= 0 && (kind == 0x100 || kind == 0x101 || kind == 0x104 || kind == 0x105)) {
+        KeyboardEvent input = (KeyboardEvent)Marshal.PtrToStructure(data, typeof(KeyboardEvent));
+        // Preserve the physical latch for modified presses, but make their edge
+        // ineligible even if all modifiers are released before the next sample.
+        IntPtr target = CombatWin.ModifiersDown() ? IntPtr.Zero : CombatWin.GetForegroundWindow();
+        state.Observe((int)input.Vk, kind == 0x100 || kind == 0x104, (input.Flags & 0x12) != 0,
+          target, CombatWin.Clock.ElapsedMilliseconds);
+      }
+    } catch (Exception error) { failure = error; state.Configure(0, false); }
+    return CallNextHookEx(IntPtr.Zero, code, message, data);
+  }
+  public static int TriggerCode(string key) {
+    if (String.IsNullOrEmpty(key)) return 0;
+    if (key.Length != 1 || !(key[0] >= 'A' && key[0] <= 'Z' || key[0] >= '0' && key[0] <= '9')) throw new Exception("Trigger must be a letter or digit");
+    return key[0];
+  }
+  public static void Configure(string key) {
+    int code = TriggerCode(key);
+    lock (lifecycle) {
+      Stop();
+      failure = null;
+      if (code == 0) return;
+      stopRequested = false;
+      ManualResetEvent ready = initialized = new ManualResetEvent(false);
+      thread = new Thread(() => {
+        try {
+          threadId = GetCurrentThreadId();
+          Message message;
+          PeekMessage(out message, IntPtr.Zero, 0, 0, 0); // Create the thread queue before signalling readiness.
+          hook = SetWindowsHookEx(13, callback, GetModuleHandle(null), 0);
+          if (hook == IntPtr.Zero) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Cannot listen for the physical trigger key");
+          if (!stopRequested) state.Configure(code, (GetAsyncKeyState(code) & 0x8000) != 0);
+          ready.Set();
+          int result = 0;
+          while (!stopRequested && (result = GetMessage(out message, IntPtr.Zero, 0, 0)) > 0) {
+            TranslateMessage(ref message);
+            DispatchMessage(ref message);
+          }
+          if (result < 0) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error(), "Trigger message loop failed");
+        } catch (Exception error) { failure = error; }
+        finally {
+          if (hook != IntPtr.Zero) { UnhookWindowsHookEx(hook); hook = IntPtr.Zero; }
+          state.Configure(0, false);
+          ready.Set();
+        }
+      });
+      thread.IsBackground = true;
+      thread.Name = "Combat physical trigger";
+      thread.Start();
+      if (!ready.WaitOne(3000)) { Stop(); throw new Exception("Trigger listener startup timed out"); }
+      if (failure != null) { Exception error = failure; Stop(); throw new Exception("Trigger listener failed", error); }
+    }
+  }
+  static void Stop() {
+    stopRequested = true;
+    state.Configure(0, false);
+    if (thread == null) return;
+    if (thread.IsAlive) {
+      PostThreadMessage(threadId, 0x12, UIntPtr.Zero, IntPtr.Zero); // WM_QUIT
+      if (!thread.Join(2000)) throw new Exception("Trigger listener did not stop");
+    }
+    thread = null; threadId = 0;
+    if (initialized != null) { initialized.Dispose(); initialized = null; }
+  }
+  public static CombatTriggerSnapshot Consume() {
+    if (failure != null) throw new Exception("Trigger listener failed", failure);
+    return state.Consume(CombatWin.Clock.ElapsedMilliseconds);
+  }
+  public static void Dispose() { lock (lifecycle) { Stop(); } }
+}
 public static class CombatWin {
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
   [DllImport("user32.dll")] static extern uint GetWindowThreadProcessId(IntPtr window, out uint pid);
@@ -60,7 +198,9 @@ public static class CombatWin {
     sampledAt = Clock.ElapsedMilliseconds; sampledWindow = window; sampledRect = bounds;
   }
   public static byte[][] SampleRegions(Rectangle bounds, int[] regions) {
-    if (regions.Length == 0 || regions.Length % 6 != 0 || regions.Length > 24) throw new Exception("Invalid HUD regions");
+    // Up to five regions: health, mana, the two skill icons and the anchor.
+    if (regions == null || regions.Length % 6 != 0 || regions.Length > 30) throw new Exception("Invalid HUD regions");
+    if (regions.Length == 0) return new byte[0][]; // Manual-trigger mode needs window guards, not a bitmap.
     Rectangle union = Rectangle.Empty;
     for (int i = 0; i < regions.Length; i += 6) {
       int x = regions[i], y = regions[i + 1], width = regions[i + 2], height = regions[i + 3];
@@ -150,16 +290,31 @@ public static class CombatWin {
 try { [void][CombatWin]::SetProcessDpiAwareness(2) } catch {}
 [Console]::InputEncoding = [System.Text.Encoding]::UTF8
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8
-while ($null -ne ($line = [Console]::ReadLine())) {
+try { while ($null -ne ($line = [Console]::ReadLine())) {
   if ($line -eq 'quit') { break }
+  $isSample = $false
+  $triggerSnapshot = $null
   try {
     $command = $line | ConvertFrom-Json
     if ($command.op -eq 'ping') {
+      $reply = @{ ok = $true }
+    } elseif ($command.op -eq 'configureTrigger') {
+      [CombatTriggerMonitor]::Configure([string]$command.key)
+      $reply = @{ ok = $true }
+    } elseif ($command.op -eq 'completeTriggerCycle') {
+      # Define cycle completion on the native listener: discard presses that
+      # arrived during the final action without releasing the physical latch.
+      $null = [CombatTriggerMonitor]::Consume()
       $reply = @{ ok = $true }
     } elseif ($command.op -eq 'tap') {
       [CombatWin]::Tap([string]$command.key, [string]$command.expectedHwnd)
       $reply = @{ ok = $true }
     } elseif ($command.op -eq 'preview' -or $command.op -eq 'sample') {
+      if ($command.op -eq 'sample') {
+        $isSample = $true
+        # Consume before every guard, so failed captures cannot defer a press.
+        $triggerSnapshot = [CombatTriggerMonitor]::Consume()
+      }
       $window = [CombatWin]::Foreground()
       $bounds = [CombatWin]::Bounds($window)
       if ($command.op -eq 'preview') {
@@ -173,7 +328,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         $samples = @{}
         $regionValues = New-Object 'System.Collections.Generic.List[int]'
         $regionNames = New-Object 'System.Collections.Generic.List[string]'
-        foreach ($name in @('health', 'mana', 'unleash', 'anchor')) {
+        foreach ($name in @('health', 'mana', 'unleash', 'verisium', 'anchor')) {
           $region = $command.regions.$name
           if ($null -eq $region) { continue }
           $cols = 16; $rows = 16
@@ -188,6 +343,13 @@ while ($null -ne ($line = [Console]::ReadLine())) {
       }
     } else { throw 'Unknown combat operation' }
   } catch { $reply = @{ ok = $false; error = $_.Exception.Message } }
+  if ($isSample) {
+    $reply.triggerDown = $null -ne $triggerSnapshot -and $triggerSnapshot.Down
+    if ($reply.ok -and $null -ne $triggerSnapshot.Trigger) {
+      $edge = $triggerSnapshot.Trigger
+      $reply.trigger = @{ id = $edge.Id; hwnd = $edge.Hwnd; ageMs = [Math]::Max(0, [CombatWin]::Clock.ElapsedMilliseconds - $edge.At) }
+    }
+  }
   [Console]::WriteLine(($reply | ConvertTo-Json -Compress -Depth 6))
   [Console]::Out.Flush()
-}
+} } finally { [CombatTriggerMonitor]::Dispose() }

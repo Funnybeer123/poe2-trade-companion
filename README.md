@@ -165,7 +165,7 @@ GGG's current developer reference marks Account Stashes, Guild Stashes, and Publ
 
 **Flasks & Unleash:** Tools & QA → Flasks & Unleash adds independent automatic
 health/mana flask toggles (below 25%; default bindings 1/Mouse Button 5) and visual cooldown-based
-Unleash casting (R). Calibrate the HUD once, verify in Preview, then Save & start.
+casting of Unleash (R) and Powered by Verisium (T). Calibrate the HUD once, verify in Preview, then Save & start.
 F8 pauses/resumes; Ctrl+Shift+Esc stops input, with Ctrl+Shift+F12 as a backup.
 See [combat setup and timing details](docs/COMBAT_ASSIST.md).
 

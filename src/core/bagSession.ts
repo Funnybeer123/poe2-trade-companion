@@ -28,6 +28,9 @@ export interface BagAction {
   id: string; kind: BagMutation; itemId: string;
   /** Actual input cell: Wisdom (0,0) for arm, equipment source otherwise. */
   cell: BagPosition; ground: { x: number; y: number };
+  /** Identification inside one Shift-held Wisdom chain: the chain's single verified
+   * arm precedes it, possibly through earlier chained identifications. */
+  chained?: true;
 }
 export interface BagReceipt {
   action: BagAction;
@@ -108,7 +111,9 @@ export function validateBagSession(value: unknown): asserts value is BagSession 
     if (!r.action.ground || r.action.ground.x !== r.before.ground.x || r.action.ground.y !== r.before.ground.y) throw new Error("Action ground differs from observed evidence.");
     const previous = s.receipts[i - 1];
     const needs = r.action.kind === "identify" ? "arm" : r.action.kind === "drop" ? "pickup" : undefined;
-    if (needs && (previous?.action.kind !== needs || previous.action.itemId !== r.action.itemId || previous.state !== "verified")) throw new Error("Missing prerequisite mutation receipt.");
+    if (r.action.chained !== undefined && (r.action.chained !== true || r.action.kind !== "identify")) throw new Error("Invalid chained mutation.");
+    const chainedOk = r.action.chained && previous?.state === "verified" && (previous.action.kind === "arm" || previous.action.kind === "identify" && previous.action.chained);
+    if (needs && !chainedOk && (previous?.action.kind !== needs || previous.action.itemId !== r.action.itemId || previous.state !== "verified")) throw new Error("Missing prerequisite mutation receipt.");
     if (r.after) {
       const expectedCursor = r.action.kind === "arm" ? "wisdom" : r.action.kind === "pickup" ? "item" : "empty";
       if (r.after.cursor.state !== expectedCursor) throw new Error("Verified mutation lacks its cursor receipt.");

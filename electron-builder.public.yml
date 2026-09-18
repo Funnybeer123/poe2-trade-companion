@@ -3,6 +3,7 @@ productName: PoE2 Trade Companion
 asarUnpack:
   - scripts/win-bag-host.ps1
   - dist-electron/map-triage.cjs
+  - dist-electron/ring-gamble.cjs
   - dist-electron/value-dump.cjs
   - scripts/win-price-helper.ps1
   - scripts/win-emergency-stop.ps1

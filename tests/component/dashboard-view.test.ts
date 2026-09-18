@@ -42,8 +42,8 @@ function button(text: string) {
 beforeEach(() => {
   vi.clearAllMocks();
   const config = defaultCombatConfig();
-  for (const name of ["health", "mana", "unleash"] as const) config[name].enabled = true;
-  for (const name of ["health", "mana", "unleash", "anchor"] as const) {
+  for (const name of ["health", "mana", "unleash", "verisium"] as const) config[name].enabled = true;
+  for (const name of ["health", "mana", "unleash", "verisium", "anchor"] as const) {
     config.regions[name] = { x: 10, y: 10, width: 10, height: 10, reference: [1], cooldown: [0] };
   }
   mocks.combat = {
@@ -78,9 +78,11 @@ describe("action dashboard", () => {
     expect(wrapper.get(".combat-quick-card.health kbd").text()).toBe("1");
     expect(wrapper.get(".combat-quick-card.mana kbd").text()).toBe("Mouse 5");
     expect(wrapper.get(".combat-quick-card.unleash kbd").text()).toBe("R");
+    expect(wrapper.get(".combat-quick-card.verisium kbd").text()).toBe("T");
+    expect(wrapper.get(".combat-quick-card.verisium h3").text()).toContain("Powered by Verisium");
     expect(wrapper.findAll('[role="switch"]').every((toggle) => toggle.attributes("aria-checked") === "true")).toBe(true);
     expect(wrapper.findAll(".combat-card-status").map((status) => status.text())).toEqual([
-      "Enabled · paused", "Enabled · paused", "Enabled · paused",
+      "Enabled · paused", "Enabled · paused", "Enabled · paused", "Enabled · paused",
     ]);
     expect(button("Start combat").attributes("disabled")).toBeUndefined();
     combat.state.value!.config.health.key = "3";
@@ -92,17 +94,37 @@ describe("action dashboard", () => {
 
   it("hides old resource and cooldown readings when the HUD is invalid", async () => {
     combat.state.value!.running = true;
-    combat.state.value!.reading = { valid: true, reason: "Watching HUD", health: 17, mana: 12, unleash: "cooldown" };
+    combat.state.value!.reading = { valid: true, reason: "Watching HUD", health: 17, mana: 12, unleash: "cooldown", verisium: "ready" };
     await render();
     expect(wrapper.text()).toContain("17% life");
     expect(wrapper.text()).toContain("12% mana");
-    expect(wrapper.text()).toContain("On cooldown");
+    expect(wrapper.get(".combat-quick-card.unleash .combat-card-status").text()).toBe("On cooldown");
+    expect(wrapper.get(".combat-quick-card.verisium .combat-card-status").text()).toBe("Ready to cast");
     combat.state.value!.reading.valid = false;
     await nextTick();
     expect(wrapper.text()).not.toContain("17% life");
     expect(wrapper.text()).not.toContain("12% mana");
     expect(wrapper.text()).not.toContain("On cooldown");
     expect(wrapper.findAll(".combat-card-status").every((status) => status.text() === "Waiting for game HUD")).toBe(true);
+  });
+
+  it("shows the manual macro as armed without asking for skill calibration", async () => {
+    combat.state.value!.config.sigilSequence.enabled = true;
+    combat.state.value!.config.health.enabled = combat.state.value!.config.mana.enabled = false;
+    combat.state.value!.config.regions = {};
+    await render();
+    expect(wrapper.get(".combat-quick-card.unleash .combat-card-status").text()).toBe("Macro enabled · paused");
+    expect(wrapper.text()).not.toContain("Needs calibration");
+    expect(button("Arm macro").attributes("disabled")).toBeUndefined();
+    expect(wrapper.get('.combat-quick-card.unleash [role="switch"]').attributes("disabled")).toBeDefined();
+    expect(wrapper.get('.combat-quick-card.verisium [role="switch"]').attributes("disabled")).toBeDefined();
+    combat.state.value!.running = true;
+    await nextTick();
+    expect(wrapper.get(".dashboard-badge").text()).toBe("Armed");
+    expect(wrapper.get(".combat-quick-card.unleash .combat-card-status").text()).toBe("Armed · press R");
+    expect(wrapper.get(".combat-quick-card.verisium .combat-card-status").text()).toBe("Part of manual macro");
+    expect(wrapper.text()).toContain("Press R → X → T · one cycle");
+    expect(wrapper.text()).not.toContain("Cast as soon as it is ready");
   });
 
   it("keeps stash and combat starts disabled while a workflow is starting or running", async () => {
@@ -127,6 +149,8 @@ describe("action dashboard", () => {
     expect(mocks.sortStash).toHaveBeenCalledOnce();
     await wrapper.get('.combat-quick-card.health [role="switch"]').trigger("click");
     expect(mocks.toggleModule).toHaveBeenCalledWith("health");
+    await wrapper.get('.combat-quick-card.verisium [role="switch"]').trigger("click");
+    expect(mocks.toggleModule).toHaveBeenCalledWith("verisium");
     await button("Start combat").trigger("click");
     expect(mocks.startCombat).toHaveBeenCalledOnce();
     for (const card of wrapper.findAll(".dashboard-workflow-card")) await card.get("button").trigger("click");

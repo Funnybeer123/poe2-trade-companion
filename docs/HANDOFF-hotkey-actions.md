@@ -170,11 +170,13 @@ items in the bag and repeat the Num4 capture to wire the sell + confirm clicks.
 ## Num6 — Identify (in-map) — added 2026-08-31, LIVE-VERIFIED same day
 
 > Historical section. On 2026-09-14 the legacy map runner was replaced with
-> shared assessment and durable staged replay. Num6 now requests capture,
-> and the worker refuses live input pending map/cursor perception and native
-> cancellation validation. The commands, defaults and timing claims below
-> describe the old implementation; use [BAG_TRIAGE_VALIDATION.md](BAG_TRIAGE_VALIDATION.md)
-> and the current user guide for present status.
+> shared assessment and durable receipts. The original Num6 **Identify & drop**
+> entry now runs capture → identify → assess → drop through that integration;
+> individual test stages remain available separately. Live capture passed on
+> 2026-09-14, but cursor verification still blocked the identification test.
+> Compaction remains disabled during validation. The commands, defaults and
+> timing claims below describe the old implementation; see
+> [BAG_LIVE_TEST_READINESS.md](BAG_LIVE_TEST_READINESS.md) for current evidence.
 
 `scripts/map-triage.ts` (core logic in `src/core/mapTriage.ts`,
 tests in `tests/map-triage.test.ts`): inside a map, with the Scroll of

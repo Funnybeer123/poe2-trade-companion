@@ -15,6 +15,7 @@
  */
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { randomUUID } from "node:crypto";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { startWinHost } from "../src/adapters/winHost.js";
@@ -24,7 +25,8 @@ import { loadHotkeyBindings } from "../src/core/hotkeyBindings.js";
 import { actionForKey, HOTKEY_ACTIONS } from "../src/shared/hotkeyActions.js";
 import { DEFAULT_POE_PROCESS_ALLOWLIST, resolveBuildMode } from "../src/core/capabilities.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
-import type { OcrLine } from "../src/core/tabList.js";
+import { resolveScriptLaunch, type ScriptLaunchOptions } from "../src/core/scriptLauncher.js";
+
 import { AssistiveRunService } from "../src/main/assistiveRunService.js";
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
@@ -33,7 +35,7 @@ const artifactDir = path.join(root, "artifacts");
 mkdirSync(artifactDir, { recursive: true });
 const logFile = path.join(artifactDir, "action-daemon.log");
 
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
 
 function log(entry: { action: string; phase: string; message?: string }): void {
   const line = JSON.stringify({ at: new Date().toISOString(), ...entry });
@@ -80,11 +82,17 @@ function bindingSummary(): string {
   return parts.join(" ") || "(no actions bound)";
 }
 
-function spawnScript(args: string[], label: string): Promise<number> {
+function spawnScript(args: string[], label: string, environment?: NodeJS.ProcessEnv, launchOptions?: ScriptLaunchOptions): Promise<number> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.platform === "win32" ? "npx.cmd" : "npx", ["--yes", "tsx", ...args], {
+    // `npx.cmd` cannot be spawned without a shell on current Node (EINVAL), and resolving
+    // tsx through npx costs over a second per keypress. See src/core/scriptLauncher.ts.
+    const launch = resolveScriptLaunch(root, args, launchOptions);
+    log({ action: label, phase: "launch", message: launch.source });
+    const child = spawn(launch.command, launch.args, {
       cwd: root,
+      shell: launch.shell,
       stdio: ["ignore", "pipe", "pipe"],
+      ...(environment ? { env: { ...process.env, ...environment } } : {}),
     });
     const relay = (stream: NodeJS.ReadableStream, phase: string) => {
       stream.on("data", (chunk: Buffer) => {
@@ -146,12 +154,16 @@ async function actionFill(): Promise<void> {
 }
 
 /**
- * Num6 captures a new physical bag; mutation stages are explicit in Bag triage.
+ * Num6 captures once, identifies equipment, then drops only verified low-priority items.
  */
 async function actionIdentify(): Promise<void> {
-  const journal = path.join(artifactDir, "map-triage", `bag-${Date.now()}.jsonl`);
-  const code = await spawnScript(["scripts/map-triage.ts", "--stage=capture", "--journal=" + journal], "identify");
-  log({ action: "identify", phase: "result", message: `staged map-triage capture exited ${code}; live mutations require a saved verified session` });
+  const desktopRoot = process.platform === "win32" && process.env.APPDATA ? path.join(process.env.APPDATA, "poe2-trade-companion") : root;
+  const dataRoot = path.resolve(process.env.POE2_BAG_DATA_ROOT ?? process.env.POE2_STASH_DATA_ROOT ?? desktopRoot);
+  const journal = path.join(dataRoot, "artifacts", "map-triage", `bag-${Date.now()}-${randomUUID()}.jsonl`);
+  // The desktop button and Num6 run the same prebuilt worker whenever it is current.
+  const code = await spawnScript(["scripts/map-triage.ts", "--stage=workflow", "--run", "--journal=" + journal], "identify", { POE2_BAG_DATA_ROOT: dataRoot },
+    { bundle: "dist-electron/map-triage.cjs", bundleSources: ["scripts/map-triage.ts", "scripts/win-bag-host.ps1", "src/core", "src/adapters", "src/main"] });
+  log({ action: "identify", phase: "result", message: `verified identify-and-drop workflow exited ${code}; journal: ${journal}` });
 }
 
 /**
@@ -164,66 +176,18 @@ async function actionVendorCycle(): Promise<void> {
   log({ action: "vendor-cycle", phase: "result", message: `vendor-cycle --run exited ${code}` });
 }
 
-// Windows.Media.Ocr returns zero lines for mid-size crops (1800x1000 and
-// 1920x1080 both come back empty) while the full 3840x2160 grab works, so
-// nameplate hunting must scan the whole screen. ZELINA also sits at x~1177,
-// left of the drain kit's x>=1200 world region.
-const FULL_SCREEN_OCR = { left: 0, top: 0, width: 3840, height: 2160 };
-
-async function findNameplate(
-  pattern: RegExp,
-  region = FULL_SCREEN_OCR,
-): Promise<{ x: number; y: number } | undefined> {
-  const reply = await host.send({ op: "ocr", ...region });
-  const lines = (Array.isArray(reply.lines) ? reply.lines : []) as OcrLine[];
-  const plate = lines.find((line) => pattern.test(line.text.trim()));
-  if (!plate) return undefined;
-  return { x: Math.round(plate.x + plate.w / 2), y: Math.round(plate.y + plate.h / 2 + 70) };
-}
-
-/**
- * Num4: locate ZELINA via OCR (hideout-only refusal if not found) and
- * ctrl-click to open her vendor window. The vendor window's sell-pane and
- * confirm-button layout is UNKNOWN — this stops after capturing a screenshot
- * rather than guessing coordinates in the user's live game. A follow-up
- * session must inspect the capture and wire the exact clicks (see
- * docs/HANDOFF-hotkey-actions.md, TODO item 1, Num4 Vendor).
- */
+/** Existing vendor action now cleans rejected rings at Ange without buying. */
 async function actionVendor(): Promise<void> {
-  const bag = await kit.verifiedBag();
-  if (bag.count === 0) {
-    log({ action: "vendor", phase: "result", message: "Bag is empty; nothing to sell" });
-    return;
-  }
-  await host.send({ op: "focus" });
-  await sleep(300);
-  const plate = await findNameplate(/^zelina$/i);
-  if (!plate) {
-    log({ action: "vendor", phase: "error", message: "ZELINA nameplate not found (hideout-only refusal)" });
-    return;
-  }
-  const clicked = await host.send({ op: "ctrlclick", x: plate.x, y: plate.y });
-  if (!clicked.ok) {
-    log({ action: "vendor", phase: "error", message: `ctrlclick on ZELINA failed: ${clicked.error}` });
-    return;
-  }
-  await sleep(2500);
-  const shotPath = path.join(artifactDir, `vendor-window-${Date.now()}.bmp`);
-  const captured = await host.send({ op: "capture", path: shotPath });
-  if (!captured.ok) {
-    log({ action: "vendor", phase: "error", message: `vendor-window capture failed: ${captured.error}` });
-    return;
-  }
-  log({
-    action: "vendor",
-    phase: "blocked",
-    message:
-      `Opened ZELINA's vendor window and saved a capture to ${shotPath}. ` +
-      "Its sell-pane and confirm-button layout is not yet mapped, so this action stops here " +
-      "rather than guess clicks. Inspect the capture, then wire the exact coordinates into actionVendor().",
-  });
+  const desktopRoot = process.platform === "win32" && process.env.APPDATA ? path.join(process.env.APPDATA, "poe2-trade-companion") : root;
+  const dataRoot = path.resolve(process.env.POE2_BAG_DATA_ROOT ?? process.env.POE2_STASH_DATA_ROOT ?? desktopRoot);
+  const journal = path.join(dataRoot, "artifacts", "map-triage", "rings-cleanup-" + Date.now() + "-" + randomUUID() + ".jsonl");
+  const code = await spawnScript(["scripts/ring-gamble.ts", "--rescan", "--run", "--journal=" + journal,
+    "--calibration=" + path.join(dataRoot, "perception-templates", "calibration.json"),
+    "--perception=" + path.join(dataRoot, "artifacts", "map-triage", "live-perception.json")], "vendor",
+    { POE2_BAG_DATA_ROOT: dataRoot }, { bundle: "dist-electron/ring-gamble.cjs",
+      bundleSources: ["scripts/ring-gamble.ts", "src/core", "src/adapters"] });
+  log({ action: "vendor", phase: "result", message: "Ring cleanup exited " + code });
 }
-
 let busy = false;
 let lastActionAt = 0;
 let shuttingDown = false;

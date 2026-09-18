@@ -23,7 +23,7 @@ export interface BagTriageServiceOptions {
 
 /** The desktop and terminal invoke the same bounded, journaled bag worker. */
 export class BagTriageService {
-  private state: BagTriageStatus = { running: false, phase: "idle", message: "Capture your bag to begin.", sessions: [] };
+  private state: BagTriageStatus = { running: false, phase: "idle", message: "Ready to identify and drop low-priority items.", sessions: [] };
   private child?: ReturnType<typeof spawn>;
   private countdown?: ReturnType<typeof setTimeout>;
   private stopPoll?: ReturnType<typeof setInterval>;
@@ -43,7 +43,7 @@ export class BagTriageService {
   }
 
   get status(): BagTriageStatus { return structuredClone(this.state); }
-  refresh(): BagTriageStatus { this.refreshSessions(); this.state.readiness = this.readiness(); return this.status; }
+  refresh(): BagTriageStatus { this.refreshSessions(); this.state.readiness = this.readiness(); this.state.gambleReadiness = this.readiness("gamble"); return this.status; }
   private get paths() {
     return {
       entry: this.options.workerFile ? path.resolve(this.options.root, this.options.workerFile) : path.join(this.options.root, "dist-electron", "map-triage.cjs"),
@@ -52,22 +52,32 @@ export class BagTriageService {
       clientLog: this.options.clientLog ? path.resolve(this.options.dataRoot, this.options.clientLog) : "C:/Program Files (x86)/Steam/steamapps/common/Path of Exile 2/logs/Client.txt",
     };
   }
-  private readiness(): string[] {
+  private readiness(stage?: BagTriageStage): string[] {
     const files = this.paths, issues: string[] = [];
     const available = (file: string) => { try { return statSync(file).isFile(); } catch { return false; } };
-    if (!available(files.entry)) issues.push(this.workerMissingMessage());
+    if (!available((stage === "gamble" || stage === "cleanup") ? path.join(path.dirname(files.entry), "ring-gamble.cjs") : files.entry)) issues.push(this.workerMissingMessage());
     if (!available(files.calibration)) issues.push("Inventory calibration is missing. Open Calibration and mark the bag grid.");
     if (!available(files.perception)) issues.push("Bag cursor and inventory references are missing.");
-    if (!available(files.clientLog)) issues.push("The Path of Exile 2 client log was not found at the configured location.");
+    if ((stage !== "gamble" && stage !== "cleanup") && !available(files.clientLog)) issues.push("The Path of Exile 2 client log was not found at the configured location.");
     if (available(files.calibration) && available(files.perception)) {
       try {
         const calibration = JSON.parse(readFileSync(files.calibration, "utf8")) as CalibrationProfile;
         readBagLivePerception(files.perception, calibration);
+        if ((stage === "gamble" || stage === "cleanup") && !calibration.ventorBagGrid) issues.push("Calibrate the Vendor grid in Calibration before gambling rings.");
       } catch (error) { issues.push(error instanceof Error && error.message.startsWith("Live bag") ? error.message : "Bag calibration could not be validated. Recalibrate the inventory and cursor references."); }
     }
     return issues;
   }
   private publish(update: Partial<BagTriageStatus>) { this.state = { ...this.state, ...update }; this.options.emit?.(this.status); return this.status; }
+  setCleanupHotkey(registered: boolean) {
+    return this.publish({ cleanupHotkey: registered ? "Ctrl+Alt+V" : undefined,
+      cleanupHotkeyError: registered ? undefined : "Ctrl+Alt+V is unavailable; use the cleanup button or close the conflicting app." });
+  }
+  startCleanupFromHotkey() {
+    if (this.state.running) return this.status;
+    try { return this.start("cleanup"); }
+    catch (error) { return this.publish({ phase: "error", message: error instanceof Error ? error.message : String(error) }); }
+  }
   private workerMissingMessage(): string {
     return this.options.workerFile ? "The installed bag worker is missing. Rebuild or reinstall the desktop app."
       : "Build the bag worker with npm run build, then refresh setup.";
@@ -80,7 +90,7 @@ export class BagTriageService {
         if (entry.isSymbolicLink()) continue;
         const file = path.join(directory, entry.name);
         if (entry.isDirectory() && depth < 2 && !entry.name.endsWith(".evidence")) walk(file, depth + 1);
-        else if (entry.isFile() && entry.name.endsWith(".jsonl") && !entry.name.includes("trace")) {
+        else if (entry.isFile() && entry.name.endsWith(".jsonl") && !entry.name.includes("trace") && !entry.name.startsWith("rings-")) {
           found.push({ id: path.relative(this.directory, file), label: path.relative(this.directory, file).replace(/\.jsonl$/, ""), time: statSync(file).mtimeMs });
         }
       }
@@ -106,33 +116,35 @@ export class BagTriageService {
       unreadCells: session.report.unreadCells.length, verifiedIdentifications: session.identifiedIds.length, verifiedDrops: session.droppedIds.length });
   }
   start(stage: BagTriageStage): BagTriageStatus {
-    if (!["capture", "identify", "drop", "reconcile"].includes(stage)) throw new Error("Unknown bag stage.");
+    if (!["gamble", "cleanup", "workflow", "capture", "identify", "drop", "reconcile"].includes(stage)) throw new Error("Unknown bag stage.");
     if (this.state.running) throw new Error("A bag stage is already running.");
     const blocked = this.options.blocked?.(); if (blocked) throw new Error(blocked);
-    this.state.readiness = this.readiness();
-    if (this.state.readiness.length) throw new Error(this.state.readiness.join(" "));
-    if (stage !== "capture") {
+    const readiness = this.readiness(stage);
+    if (readiness.length) throw new Error(readiness.join(" "));
+    const freshJournal = stage === "capture" || stage === "workflow" || (stage === "gamble" || stage === "cleanup");
+    if (!freshJournal) {
       if (!this.state.journal) throw new Error("Capture or select your bag first.");
       this.select(this.state.journal);
     }
     mkdirSync(this.directory, { recursive: true });
-    const id = stage === "capture" ? `bag-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}.jsonl` : this.state.journal!;
+    const id = freshJournal ? `${(stage === "gamble" || stage === "cleanup") ? "rings" : "bag"}-${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}.jsonl` : this.state.journal!;
     this.stopFile = path.join(this.directory, `desktop-stop-${randomUUID()}`);
-    this.publish({ running: true, phase: "countdown", stage, journal: id, message: "Return to your map. Starting in 3 seconds." });
+    this.publish({ running: true, phase: "countdown", stage, journal: id, message: (stage === "gamble" || stage === "cleanup") ? "Stand near Ange with panels closed. Starting in 3 seconds." : "Return to your map. Starting in 3 seconds.", purchased: undefined, sold: undefined, retained: undefined,
+      ...(freshJournal ? { physicalItems: undefined, unreadCells: undefined, verifiedIdentifications: undefined, verifiedDrops: undefined } : {}) });
     this.countdown = setTimeout(() => { this.countdown = undefined; this.launch(stage, id); }, this.options.countdownMs ?? 3000);
     return this.status;
   }
   private launch(stage: BagTriageStage, id: string) {
-    const blocked = this.options.blocked?.() ?? this.readiness().join(" ");
+    const blocked = this.options.blocked?.() ?? this.readiness(stage).join(" ");
     if (blocked) { this.publish({ running: false, phase: "error", message: blocked }); return; }
     const journal = path.join(this.directory, id);
-    const files = this.paths, entry = files.entry;
+    const files = this.paths, entry = (stage === "gamble" || stage === "cleanup") ? path.join(path.dirname(files.entry), "ring-gamble.cjs") : files.entry;
     if (!existsSync(entry)) { this.publish({ running: false, phase: "error", message: this.workerMissingMessage() }); return; }
-    const args = [entry,
+    const args = [entry, ...(stage === "cleanup" ? ["--rescan"] : []),
       `--stage=${stage}`, `--journal=${journal}`, `--output=${journal}.assessment.json`,
       `--calibration=${files.calibration}`, `--perception=${files.perception}`, `--client-log=${files.clientLog}`,
-      ...(stage === "identify" ? ["--run", "--max-identifications=1"] : stage === "drop" ? ["--run", "--max-drops=1"] : [])];
-    this.publish({ phase: "running", message: stage === "capture" ? "Reading your bag…" : stage === "identify" ? "Identifying one item…" : stage === "drop" ? "Checking one low-priority drop…" : "Checking the saved action…" });
+      ...(stage === "workflow" || (stage === "gamble" || stage === "cleanup") ? ["--run"] : stage === "identify" ? ["--run", "--max-identifications=1"] : stage === "drop" ? ["--run", "--max-drops=1"] : [])];
+    this.publish({ phase: "running", message: stage === "cleanup" ? "Scanning existing rings and selling rejects at Ange…" : stage === "gamble" ? "Buying and evaluating one batch of rings at Ange…" : stage === "workflow" ? "Identifying your bag and dropping low-priority items…" : stage === "capture" ? "Reading your bag…" : stage === "identify" ? "Identifying one item…" : stage === "drop" ? "Checking one low-priority drop…" : "Checking the saved action…" });
     let child: ReturnType<typeof spawn>;
     try {
       child = (this.options.spawn ?? spawn)(this.options.executable ?? process.execPath, args, {
@@ -148,7 +160,7 @@ export class BagTriageService {
     const parse = (line: string) => {
       try {
         const value = JSON.parse(line) as Record<string, unknown>, counts: Partial<BagTriageStatus> = {};
-        for (const key of ["physicalItems", "unreadCells", "verifiedIdentifications", "verifiedDrops"] as const) {
+        for (const key of ["physicalItems", "unreadCells", "verifiedIdentifications", "verifiedDrops", "purchased", "sold", "retained"] as const) {
           if (Number.isSafeInteger(value[key]) && Number(value[key]) >= 0) counts[key] = Number(value[key]);
         }
         if (Object.keys(counts).length) this.publish(counts);
@@ -164,12 +176,12 @@ export class BagTriageService {
       if (this.child !== child) return;
       this.child = undefined; if (this.stopPoll) clearInterval(this.stopPoll); this.stopPoll = undefined;
       if (output.trim()) parse(output);
-      try { if (existsSync(journal)) writeFileSync(this.selectionFile, JSON.stringify({ journal: id })); } catch { /* The journal itself remains intact. */ }
+      try { if ((stage !== "gamble" && stage !== "cleanup") && existsSync(journal)) writeFileSync(this.selectionFile, JSON.stringify({ journal: id })); } catch { /* The journal itself remains intact. */ }
       for (const file of [this.stopFile, this.stopFile && this.stopFile + ".ack"]) { try { if (file && existsSync(file)) unlinkSync(file); } catch { /* Preserve an undeletable stop marker. */ } }
       this.refreshSessions();
       const stopped = this.state.phase === "stopping";
-      this.publish({ running: false, phase: stopped ? "idle" : success ? "complete" : "error",
-        message: stopped ? "Bag stage stopped. Reconcile before continuing." : success ? "Bag stage complete." : errors.trim().split(/\r?\n/).at(-1)?.slice(0, 350) || "The bag stage could not finish." });
+      this.publish({ running: false, ...((stage === "gamble" || stage === "cleanup") ? { journal: undefined } : {}), phase: stopped ? "idle" : success ? "complete" : "error",
+        message: stopped ? "Bag stage stopped. Reconcile before continuing." : success ? (stage === "gamble" || stage === "cleanup") ? "Ring batch complete. Retained rings are in your bag." : "Bag stage complete." : errors.trim().split(/\r?\n/).at(-1)?.slice(0, 350) || "The bag stage could not finish." });
     };
     child.once("exit", code => finish(code === 0)); child.once("error", () => finish(false));
   }

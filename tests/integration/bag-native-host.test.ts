@@ -31,7 +31,7 @@ if ($parseErrors.Count -gt 0) { throw ($parseErrors | Out-String) }
     expect(outcome.nativeInput).toBe(false);
     expect(outcome.tests).toEqual([
       "chord-release-on-stop", "chord-release-on-insert-stop", "chord-release-on-ctrl-shift-esc", "chord-release-on-external-stop", "chord-release-on-pause", "chord-release-on-parent",
-      "chord-release-on-focus", "chord-release-on-throw", "left-release-on-stop", "right-release-on-stop",
+      "chord-release-on-focus", "chord-release-on-throw", "left-release-on-stop", "right-release-on-stop", "modified-click-release", "shift-chain-release-and-count", "read-item-sequence-bound", "elapsed-scheduler-waits",
       "focus-required", "pause-edge-and-no-input", "stop-latched", "user-modifiers-and-buttons-reject-input", "explicit-focus-guarded", "explicit-focus-deferred-and-bounded", "cursor-rgba-lossless", "cursor-frame-binding", "copy-position-bound-before-c", "exact-process-allowlist",
     ]);
   }, 25_000);

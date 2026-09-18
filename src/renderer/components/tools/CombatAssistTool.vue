@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from "vue";
-import { COMBAT_BINDINGS, HUD_NAMES, type CombatStatus, type HudRegionName } from "../../../core/combatAssist.js";
-import { useCombatDraft, type CalibrationTab } from "../../composables/useCombatDraft.js";
+import { computed, onMounted, onUnmounted, ref, watch } from "vue";
+import { COMBAT_BINDINGS, HUD_NAMES, isSkillModule, SKILL_LABELS, SKILL_MODULES, type CombatStatus, type HudRegionName, type SkillModule } from "../../../core/combatAssist.js";
+import { cooldownTab, tabSkill, useCombatDraft, type CalibrationTab } from "../../composables/useCombatDraft.js";
 
 const api = window.poe2?.combat;
 const session = useCombatDraft(api);
@@ -14,16 +14,34 @@ const imageElement = ref<HTMLImageElement>();
 let poll: ReturnType<typeof setTimeout> | undefined;
 let disposed = false;
 const dirty = computed(() => JSON.stringify(draft.value) !== JSON.stringify(status.value?.config));
-const labels: Record<HudRegionName, string> = { health: "Health", mana: "Mana", unleash: "Unleash ready", anchor: "Fixed HUD ornament" };
+const skillLabels = computed(() => ({ ...SKILL_LABELS, unleash: draft.value.sigilSequence.enabled ? "Sigil of Power" : "Unleash" }));
+const calibrationNames = computed(() => HUD_NAMES.filter((name) => !draft.value.sigilSequence.enabled || !isSkillModule(name)));
+watch(() => draft.value.sigilSequence.enabled, (enabled) => {
+  if (enabled) { activeTab.value = "hud"; if (isSkillModule(selection.value)) selection.value = "health"; }
+}, { immediate: true });
+const labels = computed<Record<HudRegionName, string>>(() => ({ health: "Health", mana: "Mana", unleash: `${skillLabels.value.unleash} ready`, verisium: "Powered by Verisium ready", anchor: "Fixed HUD ornament" }));
+function toggleSequence(event: Event) {
+  draft.value.sigilSequence.enabled = (event.target as HTMLInputElement).checked;
+  draft.value.unleash.enabled = draft.value.verisium.enabled = draft.value.sigilSequence.enabled;
+}
 const hint = computed(() => ({
   health: "At full health, select a narrow vertical strip through the red liquid, from its top to its bottom. Avoid the frame, reflections and text.",
   mana: "At full mana, select a narrow vertical strip through the blue liquid, from its top to its bottom. Avoid the frame, reflections and text.",
-  unleash: "With Unleash ready, select the inside of its purple R skill-bar icon. Exclude the border and key label.",
+  unleash: `With ${skillLabels.value.unleash} ready, select the inside of its R skill-bar icon. Exclude the border and key label.`,
+  verisium: "With Powered by Verisium ready, select the inside of its T skill-bar icon. Exclude the border and key label.",
   anchor: "Select a small, distinctive fixed HUD ornament near the globes. Avoid black space, animated effects and numbers. This detects a hidden or covered HUD.",
 }[selection.value]));
 const screenshotMatchesHud = computed(() => preview.value?.width === draft.value.width && preview.value?.height === draft.value.height);
+/** The skill a cooldown tab records; on the HUD tab, the skill being selected (Unleash otherwise). */
+const activeSkill = computed(() => tabSkill(activeTab.value));
+const cropSkill = computed<SkillModule>(() => activeSkill.value ?? (isSkillModule(selection.value) ? selection.value : "unleash"));
+const overlayNames = computed<readonly HudRegionName[]>(() => activeSkill.value ? [activeSkill.value] : calibrationNames.value);
+function tabLabel(tab: CalibrationTab): string {
+  const skill = tabSkill(tab);
+  return skill ? `${skillLabels.value[skill]} cooldown` : "HUD / ready";
+}
 const iconCropStyle = computed(() => {
-  const shot = preview.value, region = draft.value.regions.unleash;
+  const shot = preview.value, region = draft.value.regions[cropSkill.value];
   if (!shot || !region || !screenshotMatchesHud.value) return undefined;
   return {
     backgroundImage: `url("${shot.image}")`,
@@ -34,8 +52,11 @@ const iconCropStyle = computed(() => {
 function referencePixels(rgb: number[] | undefined) {
   return rgb ? Array.from({ length: rgb.length / 3 }, (_, i) => ({ x: i % 16, y: Math.floor(i / 16), fill: `rgb(${rgb[i * 3]},${rgb[i * 3 + 1]},${rgb[i * 3 + 2]})` })) : [];
 }
-const readyPixels = computed(() => referencePixels(draft.value.regions.unleash?.reference));
-const cooldownPixels = computed(() => referencePixels(draft.value.regions.unleash?.cooldown));
+const skillPixels = computed(() => (draft.value.sigilSequence.enabled ? [] : SKILL_MODULES).map((name) => ({
+  name, label: skillLabels.value[name], key: draft.value[name].key,
+  ready: referencePixels(draft.value.regions[name]?.reference),
+  cooldown: referencePixels(draft.value.regions[name]?.cooldown),
+})));
 function selectTab(tab: CalibrationTab) { activeTab.value = tab; corner.value = undefined; }
 
 async function act(fn: () => Promise<void>, clearError = true) {
@@ -97,7 +118,7 @@ async function capture() {
 }
 function sampleRegion(region: { x: number; y: number; width: number; height: number }, name: HudRegionName, source: CalibrationTab): number[] {
   const shot = screenshots.value[source];
-  if (!shot || activeTab.value !== source) throw new Error(`Capture the ${source === "hud" ? "HUD / ready" : "Unleash cooldown"} screenshot first.`);
+  if (!shot || activeTab.value !== source) throw new Error(`Capture the ${tabLabel(source)} screenshot first.`);
   if (shot.width !== draft.value.width || shot.height !== draft.value.height) throw new Error("Screenshot size differs from the calibrated HUD. Restore the same game resolution and capture again.");
   const img = imageElement.value;
   if (!img?.complete || !img.naturalWidth || img.getAttribute("src") !== shot.image) throw new Error("Screenshot still loading.");
@@ -133,9 +154,11 @@ function pick(event: MouseEvent) {
   catch (e) { error.value = String(e); }
 }
 function recordCooldown() {
-  const region = draft.value.regions.unleash;
-  if (!region) { error.value = "Select the ready icon first."; return; }
-  try { region.cooldown = sampleRegion(region, "unleash", "cooldown"); error.value = ""; }
+  const skill = activeSkill.value;
+  if (!skill) return;
+  const region = draft.value.regions[skill];
+  if (!region) { error.value = `Select the ${skillLabels.value[skill]} ready icon first.`; return; }
+  try { region.cooldown = sampleRegion(region, skill, activeTab.value); error.value = ""; }
   catch (e) { error.value = String(e); }
 }
 </script>
@@ -144,14 +167,15 @@ function recordCooldown() {
   <section class="card tool-panel combat-tool" aria-labelledby="combat-title">
     <header>
       <h2 id="combat-title">Flasks &amp; Unleash</h2>
-      <p>Use a flask below 25%. Cast R when the Unleash icon becomes ready.</p>
-      <p class="muted">F8 pauses or resumes saved settings. Ctrl+Shift+Esc stops all input (backup: Ctrl+Shift+F12). Pause before opening chat or menus.</p>
+      <p v-if="draft.sigilSequence.enabled">Press {{ draft.unleash.key }} in the game for one Sigil → weapon swap → Verisium cycle. The macro waits for your next press before doing anything again.</p>
+      <p v-else>Use a flask below 25%. Cast {{ skillLabels.unleash }} ({{ draft.unleash.key }}) and Powered by Verisium ({{ draft.verisium.key }}) when their icons become ready.</p>
+      <p class="muted">F8 {{ draft.sigilSequence.enabled ? 'arms or pauses the saved macro' : 'pauses or resumes saved settings' }}. Ctrl+Shift+Esc stops all input (backup: Ctrl+Shift+F12). Pause before opening chat or menus.</p>
     </header>
     <p v-if="!api" role="status">Open the desktop app to use HUD capture and combat controls.</p>
     <div class="combat-status" role="status" aria-live="polite">
-      <strong>{{ status?.running ? (status.config.dryRun ? 'Preview running' : 'Running') : 'Stopped' }}</strong>
+      <strong>{{ status?.running ? (status.config.sigilSequence.enabled ? (status.config.dryRun ? 'Preview armed' : 'Armed') : status.config.dryRun ? 'Preview running' : 'Running') : 'Stopped' }}</strong>
       <span>{{ status?.reason }}</span>
-      <span v-if="status?.reading?.valid">Health {{ status.reading.health ?? '—' }}% · Mana {{ status.reading.mana ?? '—' }}% · Unleash {{ status.reading.unleash ?? '—' }}</span>
+      <span v-if="status?.reading?.valid">Health {{ status.reading.health ?? '—' }}% · Mana {{ status.reading.mana ?? '—' }}%<template v-if="!status.config.sigilSequence.enabled"> · {{ skillLabels.unleash }} {{ status.reading.unleash ?? '—' }} · Verisium {{ status.reading.verisium ?? '—' }}</template></span>
       <span v-if="status?.cycleMs !== undefined" class="muted">Last cycle {{ status.cycleMs }} ms · {{ status.actions }} actions{{ status.config.dryRun ? ' previewed' : '' }}</span>
     </div>
     <p v-if="error" class="combat-error" role="alert">{{ error }}</p>
@@ -164,11 +188,12 @@ function recordCooldown() {
           <label>Below (%) <input v-model.number="draft[name].threshold" type="number" min="1" max="99" :aria-label="`${name} threshold`"></label>
           <label>Retry after (ms) <input v-model.number="draft[name].retryMs" type="number" min="250" max="30000" :aria-label="`${name} retry interval`"></label>
         </div>
-        <div class="combat-module">
-          <label><input v-model="draft.unleash.enabled" type="checkbox"> Auto Unleash</label>
-          <label>Key / button <select v-model="draft.unleash.key" aria-label="Unleash key"><option v-for="binding in COMBAT_BINDINGS" :key="binding.value" :value="binding.value">{{ binding.label }}</option></select></label>
-          <label>Minimum gap (ms) <input v-model.number="draft.unleash.retryMs" type="number" min="100" max="30000"></label>
-          <p class="muted">Casts when ready. If another action interrupts the cast, retries automatically while the icon remains ready.</p>
+        <div v-for="name in SKILL_MODULES" :key="name" class="combat-module">
+          <label><input v-model="draft[name].enabled" type="checkbox" :disabled="draft.sigilSequence.enabled"> {{ draft.sigilSequence.enabled ? 'Macro: ' : 'Auto ' }}{{ skillLabels[name] }}</label>
+          <label>{{ draft.sigilSequence.enabled && name === 'unleash' ? 'Trigger key' : 'Key / button' }} <select v-model="draft[name].key" :aria-label="`${skillLabels[name]} key`"><option v-for="binding in COMBAT_BINDINGS.filter((binding) => !draft.sigilSequence.enabled || name !== 'unleash' || binding.value !== 'MOUSE5')" :key="binding.value" :value="binding.value">{{ binding.label }}</option></select></label>
+          <label v-if="!draft.sigilSequence.enabled">Minimum gap (ms) <input v-model.number="draft[name].retryMs" type="number" min="100" max="30000" :aria-label="`${skillLabels[name]} minimum gap`"></label>
+          <p v-if="draft.sigilSequence.enabled" class="muted">{{ name === 'unleash' ? 'Your physical keypress casts Sigil and triggers one macro cycle.' : 'Tapped once after the weapon swap in your macro cycle.' }}</p>
+          <p v-else class="muted">Casts when ready. If another action interrupts the cast, retries automatically while the icon remains ready.</p>
         </div>
       </div>
       <div class="combat-controls">
@@ -176,57 +201,70 @@ function recordCooldown() {
         <label><input v-model="draft.dryRun" type="checkbox"> Preview only — no keypresses</label>
       </div>
     </fieldset>
+    <fieldset :disabled="!api || busy" class="sigil-sequence">
+      <legend>Sigil of Power → weapon swap → Powered by Verisium</legend>
+      <label><input type="checkbox" :checked="draft.sigilSequence.enabled" @change="toggleSequence"> Manual Sigil macro</label>
+      <p>Press {{ draft.unleash.key }} → wait {{ draft.sigilSequence.castMs }} ms → tap {{ draft.sigilSequence.swapKey }} → wait {{ draft.sigilSequence.swapMs }} ms → tap {{ draft.verisium.key }}. Your {{ draft.unleash.key }} press reaches the game normally and must automatically select Sigil's weapon set.</p>
+      <div class="combat-controls">
+        <label>Weapon swap key <select v-model="draft.sigilSequence.swapKey" aria-label="Weapon swap key"><option v-for="binding in COMBAT_BINDINGS" :key="binding.value" :value="binding.value">{{ binding.label }}</option></select></label>
+        <label>Sigil cast delay (ms) <input v-model.number="draft.sigilSequence.castMs" aria-label="Sigil cast delay" type="number" min="0" max="5000" step="10"></label>
+        <label>Weapon swap delay (ms) <input v-model.number="draft.sigilSequence.swapMs" aria-label="Weapon swap delay" type="number" min="0" max="5000" step="10"></label>
+      </div>
+      <p class="muted">One cycle per press. Holding the trigger or pressing it during a cycle does not queue more cycles. There are no automatic repeats or cooldown retries. Use the trigger when both skills are available; the macro does not check their icons.</p>
+      <p class="muted">F8 arms / pauses. Skill calibration is not required. Start with 600 ms cast / 100 ms swap and adjust for your character's animations. Pause or lost game focus cancels pending steps; check your weapon set before the next press.</p>
+    </fieldset>
     <div class="combat-controls">
       <button :disabled="!api || busy" @click="save(false)">Save settings</button>
-      <button :disabled="!api || busy" @click="save(true)">Save &amp; start</button>
+      <button :disabled="!api || busy" @click="save(true)">{{ draft.sigilSequence.enabled ? 'Save & arm' : 'Save & start' }}</button>
       <button :disabled="!api" @click="stop">Stop</button>
       <button v-if="status?.reason.includes('rearm')" :disabled="busy" @click="rearm">Rearm emergency stop</button>
       <span v-if="dirty && status" class="muted">Unsaved changes. Save applies toggles and pauses the loop.</span>
     </div>
-    <details open>
-      <summary>HUD calibration</summary>
+    <details :open="!draft.sigilSequence.enabled">
+      <summary>{{ draft.sigilSequence.enabled ? 'Optional flask HUD calibration' : 'HUD calibration' }}</summary>
+      <p v-if="draft.sigilSequence.enabled">The manual macro needs no HUD calibration. Only calibrate the globe and fixed HUD ornament for each auto flask you enable.</p>
       <p>Use windowed or borderless mode. Fill both globes, close panels, then capture. Switch to the game during the countdown and return here afterward.</p>
       <p class="muted">Globe percentages are visual estimates. Verify them in Preview before enabling keypresses. Recalibrate after changing resolution, HUD scale, skill or display colour settings.</p>
       <p class="muted">Drafts and screenshots stay available while you navigate this app. Save settings to keep the recorded detector references after restarting.</p>
-      <ul class="combat-calibrations"><li v-for="name in HUD_NAMES" :key="name">{{ labels[name] }}: {{ draft.regions[name] ? 'Recorded' : 'Needed' }}<span v-if="name === 'unleash'"> · Cooldown: {{ draft.regions.unleash?.cooldown ? 'Recorded' : 'Needed' }}</span></li></ul>
-      <div class="recorded-icons" aria-label="Recorded Unleash detector data">
+      <ul class="combat-calibrations"><li v-for="name in calibrationNames" :key="name">{{ labels[name] }}: {{ draft.regions[name] ? 'Recorded' : 'Needed' }}<span v-if="isSkillModule(name)"> · Cooldown: {{ draft.regions[name]?.cooldown ? 'Recorded' : 'Needed' }}</span></li></ul>
+      <div v-for="skill in skillPixels" :key="skill.name" class="recorded-icons" :aria-label="`Recorded ${skill.label} detector data`">
         <figure class="icon-sample">
-          <svg v-if="readyPixels.length" class="recorded-icon" viewBox="0 0 16 16" role="img" aria-label="Recorded ready reference, 16 by 16 RGB samples" shape-rendering="crispEdges"><rect v-for="(pixel, index) in readyPixels" :key="index" :x="pixel.x" :y="pixel.y" width="1" height="1" :fill="pixel.fill" /></svg>
-          <p v-else>No ready reference recorded.</p>
-          <figcaption>Recorded ready reference · 16 × 16 RGB samples</figcaption>
+          <svg v-if="skill.ready.length" class="recorded-icon" viewBox="0 0 16 16" role="img" :aria-label="`Recorded ready reference · ${skill.label}, 16 by 16 RGB samples`" shape-rendering="crispEdges"><rect v-for="(pixel, index) in skill.ready" :key="index" :x="pixel.x" :y="pixel.y" width="1" height="1" :fill="pixel.fill" /></svg>
+          <p v-else>No {{ skill.label }} ready reference recorded.</p>
+          <figcaption>{{ skill.label }} · recorded ready reference · 16 × 16 RGB samples</figcaption>
         </figure>
         <figure class="icon-sample">
-          <svg v-if="cooldownPixels.length" class="recorded-icon" viewBox="0 0 16 16" role="img" aria-label="Recorded cooldown reference, 16 by 16 RGB samples" shape-rendering="crispEdges"><rect v-for="(pixel, index) in cooldownPixels" :key="index" :x="pixel.x" :y="pixel.y" width="1" height="1" :fill="pixel.fill" /></svg>
-          <p v-else>No cooldown reference recorded.</p>
-          <figcaption>Recorded cooldown reference · 16 × 16 RGB samples</figcaption>
+          <svg v-if="skill.cooldown.length" class="recorded-icon" viewBox="0 0 16 16" role="img" :aria-label="`Recorded cooldown reference · ${skill.label}, 16 by 16 RGB samples`" shape-rendering="crispEdges"><rect v-for="(pixel, index) in skill.cooldown" :key="index" :x="pixel.x" :y="pixel.y" width="1" height="1" :fill="pixel.fill" /></svg>
+          <p v-else>No {{ skill.label }} cooldown reference recorded.</p>
+          <figcaption>{{ skill.label }} · recorded cooldown reference · 16 × 16 RGB samples</figcaption>
         </figure>
       </div>
       <div class="calibration-tabs" role="tablist" aria-label="Calibration screenshots">
         <button id="combat-hud-tab" role="tab" :aria-selected="activeTab === 'hud'" aria-controls="combat-hud-panel" :disabled="busy" @click="selectTab('hud')">HUD / ready</button>
-        <button id="combat-cooldown-tab" role="tab" :aria-selected="activeTab === 'cooldown'" aria-controls="combat-cooldown-panel" :disabled="busy" @click="selectTab('cooldown')">Unleash cooldown</button>
+        <template v-if="!draft.sigilSequence.enabled"><button v-for="name in SKILL_MODULES" :id="`combat-${cooldownTab(name)}-tab`" :key="name" role="tab" :aria-selected="activeTab === cooldownTab(name)" :aria-controls="`combat-${cooldownTab(name)}-panel`" :disabled="busy" @click="selectTab(cooldownTab(name))">{{ skillLabels[name] }} cooldown</button></template>
       </div>
-      <div :id="activeTab === 'hud' ? 'combat-hud-panel' : 'combat-cooldown-panel'" role="tabpanel" :aria-labelledby="activeTab === 'hud' ? 'combat-hud-tab' : 'combat-cooldown-tab'">
+      <div :id="`combat-${activeTab}-panel`" role="tabpanel" :aria-labelledby="`combat-${activeTab}-tab`">
         <div class="combat-controls">
           <button :disabled="!api || busy" @click="capture">{{ countdown ? `Switch to game — ${countdown}…` : activeTab === 'hud' ? 'Capture HUD / ready in 3 seconds' : 'Capture cooldown in 3 seconds' }}</button>
-          <label v-if="activeTab === 'hud'">Region <select v-model="selection" @change="corner = undefined"><option v-for="name in HUD_NAMES" :key="name" :value="name">{{ labels[name] }}</option></select></label>
+          <label v-if="activeTab === 'hud'">Region <select v-model="selection" @change="corner = undefined"><option v-for="name in calibrationNames" :key="name" :value="name">{{ labels[name] }}</option></select></label>
           <button v-else :disabled="!preview || busy || !screenshotMatchesHud" @click="recordCooldown">Record cooldown from screenshot</button>
         </div>
         <template v-if="activeTab === 'hud'">
           <p>{{ hint }}</p>
           <p>{{ corner ? 'Now click the opposite corner.' : 'Click two opposite corners on the screenshot to select the region.' }}</p>
         </template>
-        <p v-else>Capture a separate screenshot just after you cast R. Record cooldown samples the saved Unleash icon region from this screenshot. Your HUD / ready screenshot stays available on its tab.</p>
+        <p v-else>Capture a separate screenshot just after you cast {{ skillLabels[activeSkill!] }} ({{ draft[activeSkill!].key === 'MOUSE5' ? 'Mouse Button 5' : draft[activeSkill!].key }}). Record cooldown samples the saved {{ skillLabels[activeSkill!] }} icon region from this screenshot. Your HUD / ready screenshot stays available on its tab.</p>
         <p v-if="preview" class="capture-time">{{ activeTab === 'hud' ? 'HUD / ready' : 'Cooldown' }} captured <time :datetime="preview.capturedAt">{{ new Date(preview.capturedAt).toLocaleTimeString() }}</time> · {{ preview.width }} × {{ preview.height }}</p>
         <p v-else>No screenshot captured on this tab yet.</p>
         <p v-if="preview && !screenshotMatchesHud" class="combat-error">Screenshot size differs from the calibrated HUD. Restore the same game resolution and capture again before recording.</p>
         <figure v-if="iconCropStyle" class="icon-sample">
-          <div class="icon-crop" :style="iconCropStyle" role="img" :aria-label="`${activeTab === 'hud' ? 'HUD / ready' : 'Cooldown'} screenshot Unleash icon crop`"></div>
+          <div class="icon-crop" :style="iconCropStyle" role="img" :aria-label="`${activeTab === 'hud' ? 'HUD / ready' : 'Cooldown'} screenshot ${skillLabels[cropSkill]} icon crop`"></div>
           <figcaption>Current screenshot crop — recorded detector data is shown above.</figcaption>
         </figure>
-        <div v-if="preview" class="hud-preview" :class="{ 'cooldown-preview': activeTab === 'cooldown' }">
-          <img :key="activeTab" ref="imageElement" :src="preview.image" :alt="activeTab === 'hud' ? 'Captured game HUD: click two corners to calibrate the selected region' : 'Captured Unleash cooldown screenshot'" @click="pick">
-          <template v-for="name in (activeTab === 'hud' ? HUD_NAMES : ['unleash'] as const)" :key="name">
-            <div v-if="draft.regions[name] && screenshotMatchesHud" class="hud-region" :style="{ left: `${draft.regions[name]!.x / preview.width * 100}%`, top: `${draft.regions[name]!.y / preview.height * 100}%`, width: `${draft.regions[name]!.width / preview.width * 100}%`, height: `${draft.regions[name]!.height / preview.height * 100}%` }"><span>{{ activeTab === 'cooldown' ? 'Unleash cooldown' : labels[name] }}</span></div>
+        <div v-if="preview" class="hud-preview" :class="{ 'cooldown-preview': activeTab !== 'hud' }">
+          <img :key="activeTab" ref="imageElement" :src="preview.image" :alt="activeTab === 'hud' ? 'Captured game HUD: click two corners to calibrate the selected region' : `Captured ${tabLabel(activeTab)} screenshot`" @click="pick">
+          <template v-for="name in overlayNames" :key="name">
+            <div v-if="draft.regions[name] && screenshotMatchesHud" class="hud-region" :style="{ left: `${draft.regions[name]!.x / preview.width * 100}%`, top: `${draft.regions[name]!.y / preview.height * 100}%`, width: `${draft.regions[name]!.width / preview.width * 100}%`, height: `${draft.regions[name]!.height / preview.height * 100}%` }"><span>{{ activeTab === 'hud' ? labels[name] : tabLabel(activeTab) }}</span></div>
           </template>
         </div>
       </div>

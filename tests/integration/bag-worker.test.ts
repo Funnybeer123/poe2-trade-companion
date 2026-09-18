@@ -4,9 +4,11 @@ import os from "node:os";
 import path from "node:path";
 import { build } from "esbuild";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { batch } from "../support/batchFixtures.js";
+import { batch, strongText, text } from "../support/batchFixtures.js";
 import { weakText, scene, unid, wisdom } from "../support/bagFixtures.js";
 import { readBagJournal } from "../../src/main/bagSessionStore.js";
+import type { BagAction } from "../../src/core/bagSession.js";
+import type { BagReplayStep } from "../../src/adapters/bagReplay.js";
 const dir = mkdtempSync(path.join(os.tmpdir(), "poe2-bag-worker-"));
 const worker = path.join(dir, "map-triage.cjs"), guard = path.join(dir, "guard.cjs");
 beforeAll(async () => {
@@ -18,9 +20,87 @@ beforeAll(async () => {
     "require('node:net').connect=deny;require('node:net').Socket.prototype.connect=deny;");
 });
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
-const run = (args: string[]) => execFileSync(process.execPath, ["--require", guard, worker, ...args], {
-  cwd: dir, windowsHide: true, encoding: "utf8", timeout: 20000, env: { ...process.env, POE2_BAG_DATA_ROOT: dir }, stdio: "pipe" });
+const run = (args: string[], environment?: NodeJS.ProcessEnv) => execFileSync(process.execPath, ["--require", guard, worker, ...args], {
+  cwd: dir, windowsHide: true, encoding: "utf8", timeout: 20000, env: { ...process.env, POE2_BAG_DATA_ROOT: dir, ...environment }, stdio: "pipe" });
 describe("the standalone bag CLI uses the staged runner without native adapters", () => {
+  it("runs capture, all identifications, and all approved drops on one replay while preserving Keep and Review items", () => {
+    const id = "whole-workflow", journal = path.join(dir, id + ".jsonl"), replay = path.join(dir, id + ".json");
+    const reviewText = text([], { name: "Unrated Ring" });
+    let items = [{ text: wisdom(3), row: 0, col: 0 }, { text: unid(), row: 0, col: 1 }, { text: unid(), row: 0, col: 2 },
+      { text: strongText(), row: 0, col: 3 }, { text: reviewText, row: 0, col: 4 }];
+    const steps: BagReplayStep[] = [{ kind: "observe", scene: scene(items) }];
+    let actionNumber = 0;
+    const mutation = (kind: BagAction["kind"], col: number) => {
+      const action: BagAction = { id: `${id}:action:${actionNumber++}`, kind, itemId: `${id}:Inventory:0,${col}`,
+        cell: { row: 0, col: kind === "arm" ? 0 : col }, ground: { x: 400, y: 300 } };
+      steps.push({ kind: "mutate", action }); return action;
+    };
+    for (const col of [1, 2]) {
+      steps.push({ kind: "observe", scene: scene(items) }); mutation("arm", col);
+      const armed = scene(items); armed.cursor = { state: "wisdom", evidence: "synthetic:armed" };
+      steps.push({ kind: "observe", scene: armed }); mutation("identify", col);
+      items[0]!.text = wisdom(3 - col); items[col]!.text = weakText();
+      steps.push({ kind: "observe", scene: scene(items) });
+    }
+    for (const col of [1, 2]) {
+      steps.push({ kind: "observe", scene: scene(items) }); mutation("pickup", col);
+      items = items.filter(item => item.col !== col);
+      const held = scene(items); held.cursor = { state: "item", rawText: weakText(), evidence: "synthetic:held" };
+      steps.push({ kind: "observe", scene: held });
+      const action = mutation("drop", col), dropped = scene(items);
+      dropped.groundReceipt = { actionId: action.id, rawText: weakText(), evidence: "synthetic:new-label" };
+      steps.push({ kind: "observe", scene: dropped });
+    }
+    writeFileSync(replay, JSON.stringify(steps));
+    const output = run(["--stage=workflow", "--replay=" + replay, "--journal=" + journal]);
+    expect(output).toContain('"verifiedIdentifications":2'); expect(output).toContain('"verifiedDrops":2');
+    expect(output).toContain('"nativeInputs":0'); expect(output).toContain('"simulatedActions":8');
+    const snapshots = readBagJournal(journal), saved = snapshots.at(-1)!.session;
+    expect(snapshots.filter(entry => entry.session.receipts.length === 0)).toHaveLength(1);
+    expect(saved.receipts.map(receipt => receipt.action.kind)).toEqual(["arm", "identify", "arm", "identify", "pickup", "drop", "pickup", "drop"]);
+    expect(saved.original.rows).toHaveLength(5);
+    expect(saved.scene.cells.filter(cell => cell.state === "item").map(cell => cell.rawText)).toEqual([wisdom(1), strongText(), reviewText]);
+    expect(saved.droppedIds).not.toContain(id + ":Inventory:0,4");
+  });
+  it("creates distinct workflow journals when none is supplied, including workflows with nothing to mutate", () => {
+    const replay = path.join(dir, "empty-workflow.json");
+    writeFileSync(replay, JSON.stringify([{ kind: "observe", scene: scene([]) }]));
+    const journals = [0, 1].map(() => {
+      const result = run(["--stage=workflow", "--replay=" + replay]);
+      const last = JSON.parse(result.trim().split(/\r?\n/).at(-1)!) as { journal: string; simulatedActions: number };
+      expect(last.simulatedActions).toBe(0); expect(readBagJournal(last.journal)).toHaveLength(1); return last.journal;
+    });
+    expect(journals[0]).not.toBe(journals[1]);
+  });
+  it.runIf(process.platform === "win32")("uses the same Windows desktop data directory unless explicitly overridden", () => {
+    const replay = path.join(dir, "desktop-root-workflow.json"), roaming = path.join(dir, "fake-roaming");
+    writeFileSync(replay, JSON.stringify([{ kind: "observe", scene: scene([]) }]));
+    for (const override of [undefined, path.join(dir, "explicit-data-root")]) {
+      const output = run(["--stage=workflow", "--replay=" + replay], { APPDATA: roaming, POE2_BAG_DATA_ROOT: override, POE2_STASH_DATA_ROOT: undefined });
+      const result = JSON.parse(output.trim().split(/\r?\n/).at(-1)!) as { journal: string };
+      expect(path.dirname(result.journal)).toBe(path.join(override ?? path.join(roaming, "poe2-trade-companion"), "artifacts", "map-triage"));
+      expect(readBagJournal(result.journal)).toHaveLength(1);
+    }
+  });
+  it("keeps a failed workflow receipt pending and refuses to restart that journal before host or replay input", () => {
+    const id = "workflow-pending", journal = path.join(dir, id + ".jsonl"), replay = path.join(dir, id + ".json");
+    const before = scene([{ text: wisdom(3), row: 0, col: 0 }, { text: unid(), row: 0, col: 1 }]);
+    const action: BagAction = { id: id + ":action:0", kind: "arm", itemId: id + ":Inventory:0,1", cell: { row: 0, col: 0 }, ground: { x: 400, y: 300 } };
+    writeFileSync(replay, JSON.stringify([{ kind: "observe", scene: before }, { kind: "observe", scene: before },
+      { kind: "mutate", action, error: "synthetic:interrupted-arm" }]));
+    expect(() => run(["--stage=workflow", "--replay=" + replay, "--journal=" + journal])).toThrow("synthetic:interrupted-arm");
+    const original = readFileSync(journal, "utf8"), saved = readBagJournal(journal).at(-1)!.session;
+    expect(saved.receipts.at(-1)?.state).toBe("pending"); expect(saved.identifiedIds).toEqual([]); expect(saved.droppedIds).toEqual([]);
+    for (const args of [["--stage=workflow", "--replay=" + replay], ["--run"]]) {
+      try { run([...args, "--journal=" + journal]); throw new Error("expected refusal"); }
+      catch (error) {
+        const result = error as { stderr?: string; status?: number };
+        expect(result.status).toBe(1); expect(String(result.stderr)).toContain("existing or pending session cannot restart");
+        expect(String(result.stderr)).not.toContain("OFFLINE_GUARD");
+      }
+    }
+    expect(readFileSync(journal, "utf8")).toBe(original);
+  });
   it("reassesses saved batches with zero network/child input and unchanged originals", () => {
     const file = path.join(dir, "saved.json"), raw = JSON.stringify(batch([weakText()])); writeFileSync(file, raw);
     const out = run(["--from-scan=" + file]);

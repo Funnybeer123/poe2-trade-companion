@@ -89,8 +89,8 @@ export function startWinHost(options: WinHostOptions = {}) {
     clearTimeout(request.timer);
     try {
       request.resolve(JSON.parse(line) as WinReply);
-    } catch {
-      request.resolve({ ok: false, error: "parse", raw: line });
+    } catch (error) {
+      request.resolve({ ok: false, error: "parse:" + (error instanceof Error ? error.message : String(error)), raw: line });
     }
   });
   child.on("error", (error) => failAll(error));

@@ -1,4 +1,4 @@
-export type BagTriageStage = "capture" | "identify" | "drop" | "reconcile";
+export type BagTriageStage = "gamble" | "cleanup" | "workflow" | "capture" | "identify" | "drop" | "reconcile";
 export interface BagTriageStatus {
   running: boolean;
   phase: "idle" | "countdown" | "running" | "stopping" | "complete" | "error";
@@ -7,6 +7,12 @@ export interface BagTriageStatus {
   journal?: string;
   sessions: Array<{ id: string; label: string }>;
   readiness?: string[];
+  gambleReadiness?: string[];
+  cleanupHotkey?: string;
+  cleanupHotkeyError?: string;
+  purchased?: number;
+  sold?: number;
+  retained?: number;
   physicalItems?: number;
   unreadCells?: number;
   verifiedIdentifications?: number;

@@ -1,5 +1,9 @@
 param([int]$ParentProcessId = 0, [string]$StopFile = '', [switch]$SelfTest, [switch]$OfflineOcr)
 $ErrorActionPreference = 'Stop'
+# JSON transport must preserve OCR Unicode; the console code page can map bullets
+# to literal control bytes, producing invalid JSON on the Node side.
+[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding($false)
+[Console]::InputEncoding = New-Object System.Text.UTF8Encoding($false)
 Add-Type -AssemblyName System.Drawing
 Add-Type -AssemblyName System.Windows.Forms
 
@@ -48,6 +52,8 @@ public static class BagNative {
   [DllImport("gdi32.dll")] public static extern int GetObject(IntPtr obj, int size, out BagBitmap bitmap);
   [DllImport("user32.dll")] public static extern short GetAsyncKeyState(int key);
   [DllImport("user32.dll")] public static extern bool SetCursorPos(int x, int y);
+  [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
+  public static readonly Func<uint> ClipboardSequenceReader = GetClipboardSequenceNumber;
   [DllImport("user32.dll")] public static extern void keybd_event(byte key, byte scan, uint flags, UIntPtr extra);
   [DllImport("user32.dll")] public static extern void mouse_event(uint flags, uint x, uint y, uint data, UIntPtr extra);
   [DllImport("shcore.dll")] public static extern int SetProcessDpiAwareness(int level);
@@ -258,7 +264,13 @@ public sealed class BagInterlock : IDisposable {
   }
   public void Wait(long target, int milliseconds) {
     if (milliseconds < 0 || milliseconds > 250) throw new InvalidOperationException("native-wait-out-of-range");
-    for (int waited = 0; waited < milliseconds; waited += 5) { Guard(target); delay(Math.Min(5, milliseconds - waited)); }
+    Stopwatch clock = Stopwatch.StartNew();
+    for (int waited = 0; waited < milliseconds;) {
+      Guard(target); int slice = Math.Min(5, milliseconds - waited); delay(slice);
+      // Windows may round a 5 ms sleep up to a scheduler tick. Count actual
+      // elapsed time rather than multiplying that oversleep across every slice.
+      waited = Math.Max(waited + slice, (int)clock.ElapsedMilliseconds);
+    }
     Guard(target);
   }
   public void Move(long target, int x, int y) { lock (gate) { Guard(target); moveEvent(x, y); } }
@@ -283,23 +295,99 @@ public sealed class BagInterlock : IDisposable {
           heldKeys.Add(key); keyEvent(key, true);
         }
       }
-      for (int waited = 0; waited < 20; waited += 5) {
+      Stopwatch clock = Stopwatch.StartNew();
+      for (int waited = 0; waited < 20;) {
         Wait(target, 5);
         lock (gate) RequireCopyPosition(expectedX, expectedY);
+        waited = Math.Max(waited + 5, (int)clock.ElapsedMilliseconds);
       }
     } finally { lock (gate) ReleaseUnderLock(); }
   }
-  public void Click(long target, bool right) {
+  public void Click(long target, bool right) { Click(target, right, 0); }
+  public void Click(long target, bool right, int modifier) {
+    if (modifier != 0 && modifier != 17 && modifier != 18) throw new InvalidOperationException("invalid-click-modifier");
     try {
       lock (gate) {
         Guard(target);
         if (keyDown(0x10) || keyDown(0x11) || keyDown(0x12)) throw new InvalidOperationException("modifier-already-held");
         if (keyDown(right ? 2 : 1)) throw new InvalidOperationException("button-already-held");
+        if (modifier != 0) { heldKeys.Add(modifier); keyEvent(modifier, true); }
+      }
+      // Let the game observe the modifier before mouse-down, and keep it held
+      // until after mouse-up. Releasing it first turns Ctrl-click into pickup.
+      if (modifier != 0) Wait(target, 40);
+      lock (gate) {
+        Guard(target);
         if (right) rightHeld = true; else leftHeld = true;
         buttonEvent(right, true);
       }
-      Wait(target, 20);
+      Wait(target, 30);
+      lock (gate) {
+        if (right && rightHeld) { buttonEvent(true, false); rightHeld = false; }
+        if (!right && leftHeld) { buttonEvent(false, false); leftHeld = false; }
+      }
+      if (modifier != 0) Wait(target, 30);
     } finally { lock (gate) ReleaseUnderLock(); }
+  }
+  /* Fast bag workflow. Both helpers keep the per-event guard: every move, key and
+   * button edge re-checks stop, pause, focus, process and user-held input, and the
+   * owned Shift/buttons are released on every exit path, including a native stop. */
+  public volatile int ChainCompleted;
+  public int ReadWaitedMs;
+  public void ClickChain(long target, int[] xs, int[] ys, bool right, bool shift, int settleMs, int gapMs) {
+    ClickChain(target, xs, ys, right, shift ? 16 : 0, settleMs, gapMs);
+  }
+  public void ClickChain(long target, int[] xs, int[] ys, bool right, int modifier, int settleMs, int gapMs) {
+    if (modifier != 0 && modifier != 16 && modifier != 17) throw new InvalidOperationException("invalid-chain-modifier");
+    if (xs == null || ys == null || xs.Length != ys.Length || xs.Length < 1 || xs.Length > 60) throw new InvalidOperationException("invalid-click-chain");
+    if (settleMs < 0 || settleMs > 250 || gapMs < 0 || gapMs > 250) throw new InvalidOperationException("click-chain-timing-out-of-range");
+    ChainCompleted = 0;
+    try {
+      lock (gate) {
+        Guard(target);
+        if (keyDown(0x10) || keyDown(0x11) || keyDown(0x12)) throw new InvalidOperationException("modifier-already-held");
+        if (keyDown(1) || keyDown(2)) throw new InvalidOperationException("button-already-held");
+        if (modifier != 0) { heldKeys.Add(modifier); keyEvent(modifier, true); }
+      }
+      if (modifier != 0) Wait(target, 30);
+      for (int i = 0; i < xs.Length; i++) {
+        lock (gate) { Guard(target); moveEvent(xs[i], ys[i]); }
+        Wait(target, settleMs);
+        lock (gate) {
+          Guard(target); RequireCopyPosition(xs[i], ys[i]);
+          if (modifier != 0 && !heldKeys.Contains(modifier)) throw new InvalidOperationException("owned-modifier-lost");
+          if (right) rightHeld = true; else leftHeld = true;
+          buttonEvent(right, true);
+        }
+        Wait(target, 20);
+        lock (gate) {
+          if (right && rightHeld) { buttonEvent(true, false); rightHeld = false; }
+          if (!right && leftHeld) { buttonEvent(false, false); leftHeld = false; }
+        }
+        ChainCompleted = i + 1;
+        Wait(target, gapMs);
+      }
+    } finally { lock (gate) ReleaseUnderLock(); }
+  }
+  /* One hover + copy chord bound to its pointer position. Returns true only when the
+   * clipboard sequence advanced after the chord; an unchanged sequence is "no copy",
+   * which a caller must treat as unread unless separate pixel evidence proves empty. */
+  public bool ReadItem(long target, int x, int y, int hoverMs, int timeoutMs, int[] keys, Func<uint> clipboardSequence) {
+    if (hoverMs < 0 || hoverMs > 250 || timeoutMs < 10 || timeoutMs > 500) throw new InvalidOperationException("read-item-timing-out-of-range");
+    if (clipboardSequence == null) throw new InvalidOperationException("clipboard-sequence-unavailable");
+    ReadWaitedMs = 0;
+    lock (gate) { Guard(target); moveEvent(x, y); }
+    Wait(target, hoverMs);
+    uint before = clipboardSequence();
+    Hotkey(target, keys, x, y);
+    Stopwatch clock = Stopwatch.StartNew();
+    for (int waited = 0; waited <= timeoutMs;) {
+      if (clipboardSequence() != before) { ReadWaitedMs = waited; return true; }
+      Guard(target); delay(5);
+      waited = Math.Max(waited + 5, (int)clock.ElapsedMilliseconds);
+    }
+    ReadWaitedMs = timeoutMs;
+    return false;
   }
   public void Dispose() {
     Stop("host-closed"); disposed = true;
@@ -332,6 +420,68 @@ public sealed class BagInterlock : IDisposable {
       if (events.Count != 2 || !events[0] || events[1]) throw new Exception("selftest-button-release");
       test.Dispose(); passed.Add(right ? "right-release-on-stop" : "left-release-on-stop");
     }
+    foreach (int modifier in new int[] { 17, 18 }) {
+      foreach (string fault in new string[] { "none", "stop", "focus", "throw" }) {
+        bool interrupted = false; List<string> events = new List<string>();
+        BagInterlock modified = new BagInterlock(delegate { return true; }, delegate(long h) { return h == 123 && !(interrupted && fault == "focus"); },
+          delegate(int k) { return interrupted && fault == "stop" && k == 0x60; },
+          delegate(int k, bool d) { events.Add("key:" + k + ":" + d); }, delegate(bool r, bool d) { events.Add("click:" + d); },
+          delegate(int x, int y) { }, delegate(int ms) { interrupted = true; if (fault == "throw") throw new InvalidOperationException("injected"); });
+        bool failed = false;
+        try { modified.Click(123, false, modifier); } catch (InvalidOperationException) { failed = true; }
+        if (failed != (fault != "none") || events.Count != (fault == "none" ? 4 : 2) || events[0] != "key:" + modifier + ":True" ||
+          !events.Contains("key:" + modifier + ":False") || (fault == "none" && (events[1] != "click:True" || events[2] != "click:False"))) throw new Exception("selftest-modified-click-" + fault);
+        modified.Dispose();
+      }
+    }
+    passed.Add("modified-click-release");
+    foreach (int chainModifier in new int[] { 16, 17 }) {
+    foreach (string fault in new string[] { "none", "stop", "focus", "drift" }) {
+      int waits = 0; bool interrupted = false; BagPoint at = new BagPoint(); List<string> events = new List<string>();
+      BagInterlock chain = new BagInterlock(delegate { return true; }, delegate(long h) { return h == 123 && !(interrupted && fault == "focus"); },
+        delegate(int k) { return interrupted && fault == "stop" && k == 0x60; },
+        delegate(int k, bool d) { events.Add("key:" + k + ":" + d); }, delegate(bool r, bool d) { events.Add("click:" + r + ":" + d); },
+        delegate(int x, int y) { at.X = x; at.Y = y; events.Add("move:" + x + "," + y); if (fault == "drift" && x == 30) at.X += 5; },
+        delegate(int ms) { waits++; if (waits == 12) interrupted = true; });
+      chain.pointerPosition = delegate { return at; };
+      bool failed = false;
+      try { chain.ClickChain(123, new int[] { 10, 30, 50 }, new int[] { 20, 40, 60 }, false, chainModifier, 10, 10); } catch (InvalidOperationException) { failed = true; }
+      int downs = events.FindAll(delegate(string e) { return e == "click:False:True"; }).Count, ups = events.FindAll(delegate(string e) { return e == "click:False:False"; }).Count;
+      if (failed != (fault != "none") || events[0] != "key:" + chainModifier + ":True" || !events.Contains("key:" + chainModifier + ":False") || downs != ups ||
+        events.FindAll(delegate(string e) { return e == "key:" + chainModifier + ":True"; }).Count != 1 || (fault == "none" && (downs != 3 || chain.ChainCompleted != 3)) ||
+        (fault != "none" && chain.ChainCompleted >= 3) || events[events.Count - 1].EndsWith(":True")) throw new Exception("selftest-click-chain-" + fault);
+      chain.Dispose();
+    }
+    }
+    passed.Add("shift-chain-release-and-count");
+    foreach (string mode in new string[] { "copied", "silent", "stop" }) {
+      uint sequence = 7; int ticks = 0; BagPoint at = new BagPoint(); List<string> events = new List<string>();
+      BagInterlock reader = new BagInterlock(delegate { return true; }, delegate(long h) { return h == 123; },
+        delegate(int k) { return mode == "stop" && ticks > 3 && k == 0x60; },
+        delegate(int k, bool d) { events.Add(k + ":" + d); if (mode == "copied" && k == 67 && d) sequence++; },
+        delegate(bool r, bool d) { throw new Exception("read-emitted-click"); }, delegate(int x, int y) { at.X = x; at.Y = y; }, delegate(int ms) { ticks++; });
+      reader.pointerPosition = delegate { return at; };
+      bool copied = false, failed = false;
+      try { copied = reader.ReadItem(123, 100, 200, 20, 40, new int[] { 17, 18, 67 }, delegate { return sequence; }); } catch (InvalidOperationException) { failed = true; }
+      if (copied != (mode == "copied") || failed != (mode == "stop") || events.FindAll(delegate(string e) { return e.EndsWith(":True"); }).Count !=
+        events.FindAll(delegate(string e) { return e.EndsWith(":False"); }).Count) throw new Exception("selftest-read-item-" + mode);
+      reader.Dispose();
+    }
+    passed.Add("read-item-sequence-bound");
+    int schedulerSleeps = 0;
+    BagInterlock scheduler = new BagInterlock(delegate { return true; }, delegate(long h) { return true; }, delegate(int k) { return false; },
+      delegate(int k, bool d) { }, delegate(bool r, bool d) { }, delegate(int x, int y) { },
+      delegate(int ms) { schedulerSleeps++; Thread.Sleep(25); });
+    scheduler.Wait(123, 20);
+    if (schedulerSleeps != 1) throw new Exception("selftest-scheduler-oversleep-multiplied");
+    scheduler.pointerPosition = delegate { return new BagPoint { X = 100, Y = 200 }; };
+    schedulerSleeps = 0;
+    scheduler.Hotkey(123, new int[] { 17, 18, 67 }, 100, 200);
+    if (schedulerSleeps != 1) throw new Exception("selftest-chord-oversleep-multiplied");
+    schedulerSleeps = 0;
+    if (scheduler.ReadItem(123, 100, 200, 0, 20, new int[] { 17, 18, 67 }, delegate { return 1u; }) || schedulerSleeps != 2)
+      throw new Exception("selftest-read-timeout-oversleep-multiplied");
+    scheduler.Dispose(); passed.Add("elapsed-scheduler-waits");
     int emitted = 0; bool pauseHeld = false;
     BagInterlock guarded = new BagInterlock(delegate { return true; }, delegate(long h) { return h == 123; }, delegate(int k) { return pauseHeld && k == 0x65; },
       delegate(int k, bool d) { emitted++; }, delegate(bool r, bool d) { emitted++; }, delegate(int x, int y) { emitted++; }, delegate(int ms) { });
@@ -587,7 +737,10 @@ function Invoke-BagOcr($command) {
       $bitmap.Dispose(); $bitmap = $padded
     }
     if (($bitmap.Width * $scale) -gt [Windows.Media.Ocr.OcrEngine]::MaxImageDimension -or ($bitmap.Height * $scale) -gt [Windows.Media.Ocr.OcrEngine]::MaxImageDimension) { throw 'ocr-image-too-large' }
-    $scaled = New-Object System.Drawing.Bitmap ($bitmap.Width * $scale), ($bitmap.Height * $scale)
+    # Large UI words stay legible at half size; whole-frame safety OCR is ~3x faster there.
+    $downscale = if ($command.downscale) { [int]$command.downscale } else { 1 }
+    if ($downscale -lt 1 -or $downscale -gt 3 -or ($downscale -gt 1 -and ($scale -ne 1 -or $command.neutralContext))) { throw 'ocr-downscale-invalid' }
+    $scaled = New-Object System.Drawing.Bitmap ([int][Math]::Max(1, $bitmap.Width * $scale / $downscale)), ([int][Math]::Max(1, $bitmap.Height * $scale / $downscale))
     $scaledGraphics = [System.Drawing.Graphics]::FromImage($scaled)
     $scaledGraphics.InterpolationMode = [System.Drawing.Drawing2D.InterpolationMode]::HighQualityBicubic
     $scaledGraphics.DrawImage($bitmap, 0, 0, $scaled.Width, $scaled.Height)
@@ -605,7 +758,7 @@ function Invoke-BagOcr($command) {
       $words = @($line.Words | Where-Object {
         -not $command.neutralContext -or ($_.BoundingRect.X -ge ($padX * $scale) -and $_.BoundingRect.Y -ge ($padY * $scale) -and
           ($_.BoundingRect.X + $_.BoundingRect.Width) -le (($padX + $w) * $scale) -and ($_.BoundingRect.Y + $_.BoundingRect.Height) -le (($padY + $h) * $scale))
-      } | ForEach-Object { @{ text = [string]$_.Text; x = $x + [int]($_.BoundingRect.X / $scale) - $padX; y = $y + [int]($_.BoundingRect.Y / $scale) - $padY; w = [int]($_.BoundingRect.Width / $scale); h = [int]($_.BoundingRect.Height / $scale) } })
+      } | ForEach-Object { @{ text = [string]$_.Text; x = $x + [int]($_.BoundingRect.X * $downscale / $scale) - $padX; y = $y + [int]($_.BoundingRect.Y * $downscale / $scale) - $padY; w = [int]($_.BoundingRect.Width * $downscale / $scale); h = [int]($_.BoundingRect.Height * $downscale / $scale) } })
       if ($words.Count -eq 0) { continue }
       $minX = ($words | ForEach-Object { $_.x } | Measure-Object -Minimum).Minimum
       $minY = ($words | ForEach-Object { $_.y } | Measure-Object -Minimum).Minimum
@@ -695,7 +848,93 @@ try {
           }
           $cursor = [BagNative]::Cursor('')
           if (-not [BagNative]::InsideTarget($script:BagHwnd, $cursor.x, $cursor.y)) { throw 'cursor-outside-client' }
-          $script:BagGuard.Click($script:BagHwnd, ($command.op -eq 'rightclick'))
+          $modifier = 0
+          if ($command.modifier) {
+            if ($command.modifier -eq 'ctrl') { $modifier = 17 }
+            elseif ($command.modifier -eq 'alt') { $modifier = 18 }
+            else { throw 'invalid-click-modifier' }
+          }
+          $script:BagGuard.Click($script:BagHwnd, ($command.op -eq 'rightclick'), $modifier)
+        }
+        'readitem' {
+          # One hover + advanced-copy chord; the reply carries the text only when the
+          # clipboard sequence advanced after this chord at this pointer position.
+          Assert-BagMutation $command
+          if ($null -eq $command.x -or $null -eq $command.y -or -not [BagNative]::InsideTarget($script:BagHwnd, [int]$command.x, [int]$command.y)) { throw 'coordinates-outside-client' }
+          $hover = if ($null -ne $command.hoverMs) { [int]$command.hoverMs } else { 120 }
+          $timeout = if ($null -ne $command.timeoutMs) { [int]$command.timeoutMs } else { 150 }
+          $watch = [System.Diagnostics.Stopwatch]::StartNew()
+          $copied = $script:BagGuard.ReadItem($script:BagHwnd, [int]$command.x, [int]$command.y, $hover, $timeout, [int[]]@(17, 18, 67), [BagNative]::ClipboardSequenceReader)
+          $text = ''
+          if ($copied) {
+            for ($attempt = 0; $attempt -lt 6 -and -not $text; $attempt++) {
+              try { $text = [string][System.Windows.Forms.Clipboard]::GetText() } catch { $text = '' }
+              if (-not $text) { [System.Threading.Thread]::Sleep(5) }
+            }
+          }
+          $result = @{ copied = [bool]$copied; text = $text; waitedMs = $script:BagGuard.ReadWaitedMs; elapsedMs = $watch.ElapsedMilliseconds }
+        }
+        'clickchain' {
+          Assert-BagMutation $command
+          $points = @($command.points)
+          if ($points.Count -lt 1 -or $points.Count -gt 60) { throw 'invalid-click-chain' }
+          $xs = New-Object 'int[]' $points.Count; $ys = New-Object 'int[]' $points.Count
+          for ($i = 0; $i -lt $points.Count; $i++) {
+            if ($null -eq $points[$i].x -or $null -eq $points[$i].y -or -not [BagNative]::InsideTarget($script:BagHwnd, [int]$points[$i].x, [int]$points[$i].y)) { throw 'coordinates-outside-client' }
+            $xs[$i] = [int]$points[$i].x; $ys[$i] = [int]$points[$i].y
+          }
+          $settle = if ($null -ne $command.settleMs) { [int]$command.settleMs } else { 40 }
+          $gap = if ($null -ne $command.gapMs) { [int]$command.gapMs } else { 60 }
+          if ($command.ctrl -and $command.shift) { throw 'invalid-chain-modifiers' }
+          $chainModifier = if ($command.ctrl) { 17 } elseif ($command.shift) { 16 } else { 0 }
+          try { $script:BagGuard.ClickChain($script:BagHwnd, $xs, $ys, [bool]$command.right, [int]$chainModifier, $settle, $gap) }
+          catch {
+            $failure = if ($_.Exception.InnerException) { [string]$_.Exception.InnerException.Message } else { [string]$_.Exception.Message }
+            # A chain that already emitted clicks is partial input; the count is the accounting boundary.
+            if ($script:BagGuard.ChainCompleted -gt 0) { throw ('partial-input:' + $script:BagGuard.ChainCompleted + ':' + $failure) }
+            throw $failure
+          }
+          $result = @{ count = $script:BagGuard.ChainCompleted }
+        }
+        'regions' {
+          # Small client-space rectangles from ONE screen copy. Used between fast bag
+          # actions where a whole 4K frame is unnecessary; each rectangle is saved
+          # as evidence and hashed exactly like a full capture.
+          $r = Get-BagRect
+          if (-not $r.foreground) { throw 'capture-requires-foreground' }
+          if (-not $command.path -or -not [System.IO.Path]::IsPathRooted([string]$command.path)) { throw 'absolute-capture-path-required' }
+          $rects = @($command.rects)
+          if ($rects.Count -lt 1 -or $rects.Count -gt 8) { throw 'invalid-capture-regions' }
+          $minX = [int]::MaxValue; $minY = [int]::MaxValue; $maxX = 0; $maxY = 0
+          foreach ($rect in $rects) {
+            foreach ($value in @($rect.x, $rect.y, $rect.w, $rect.h)) { if ($null -eq $value -or $value -is [string]) { throw 'invalid-capture-regions' } }
+            if ([int]$rect.x -lt 0 -or [int]$rect.y -lt 0 -or [int]$rect.w -lt 1 -or [int]$rect.h -lt 1 -or ([int]$rect.x + [int]$rect.w) -gt $r.width -or ([int]$rect.y + [int]$rect.h) -gt $r.height) { throw 'capture-region-outside-client' }
+            $minX = [Math]::Min($minX, [int]$rect.x); $minY = [Math]::Min($minY, [int]$rect.y)
+            $maxX = [Math]::Max($maxX, [int]$rect.x + [int]$rect.w); $maxY = [Math]::Max($maxY, [int]$rect.y + [int]$rect.h)
+          }
+          $base = [System.IO.Path]::GetFullPath([string]$command.path)
+          $bitmap = New-Object System.Drawing.Bitmap ($maxX - $minX), ($maxY - $minY), ([System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+          $graphics = [System.Drawing.Graphics]::FromImage($bitmap)
+          $pointerBefore = [BagNative]::Pointer()
+          $capturedAt = [DateTime]::UtcNow.ToString('o')
+          $files = @()
+          try {
+            $graphics.CopyFromScreen(($r.left + $minX), ($r.top + $minY), 0, 0, $bitmap.Size)
+            $pointerAfter = [BagNative]::Pointer()
+            [BagNative]::RequireSamePointer($pointerBefore, $pointerAfter)
+            for ($i = 0; $i -lt $rects.Count; $i++) {
+              $rect = $rects[$i]
+              $crop = $bitmap.Clone((New-Object System.Drawing.Rectangle ([int]$rect.x - $minX), ([int]$rect.y - $minY), ([int]$rect.w), ([int]$rect.h)), [System.Drawing.Imaging.PixelFormat]::Format24bppRgb)
+              try { $file = "$base.$i.bmp"; $crop.Save($file, [System.Drawing.Imaging.ImageFormat]::Bmp) } finally { $crop.Dispose() }
+              $files += @{ path = $file; x = [int]$rect.x; y = [int]$rect.y; w = [int]$rect.w; h = [int]$rect.h; sha256 = [BagNative]::Hash([System.IO.File]::ReadAllBytes($file)) }
+            }
+          } finally { $graphics.Dispose(); $bitmap.Dispose() }
+          $result = $r
+          $result.capturedAt = $capturedAt
+          $result.files = $files
+          if ($command.cursorArt) { $result.cursor = Get-BagCursor '' $pointerAfter }
+          else { $result.cursor = @{ x = $pointerAfter.x; y = $pointerAfter.y; clientX = $pointerAfter.x - $r.left; clientY = $pointerAfter.y - $r.top; visible = $pointerAfter.visible; handle = [string]$pointerAfter.handle } }
+          if ([BagNative]::GetForegroundWindow().ToInt64() -ne $script:BagHwnd) { throw 'focus-lost-during-capture' }
         }
         'selftest' { $result = @{ tests = @([BagInterlock]::SelfTest()); nativeInput = $false } }
         default { throw 'unsupported-bag-operation' }

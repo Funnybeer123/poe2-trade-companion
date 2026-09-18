@@ -13,7 +13,10 @@ export async function bagTriageSmoke(mode: SmokeBuildMode, testInfo: TestInfo) {
     await page.getByRole("navigation", { name: "Tools and QA sections" }).getByRole("link", { name: /^Bag triage\b/ }).click();
     const panel = page.locator(".bag-triage-tool");
     await expect(panel.getByRole("heading", { name: "Bag triage", exact: true })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Gamble rings · buy & sort", exact: true })).toBeDisabled();
     await expect(panel.getByRole("list", { name: "Bag setup needed" })).toBeVisible();
+    await expect(panel.getByRole("button", { name: "Identify & drop", exact: true })).toBeDisabled();
+    await panel.locator("summary").filter({ hasText: "Diagnostic controls" }).click();
     for (const name of ["Capture bag", "Identify one", "Drop one low-priority item", "Reconcile"]) {
       await expect(panel.getByRole("button", { name, exact: true })).toBeDisabled();
     }
@@ -26,6 +29,9 @@ export async function bagTriageSmoke(mode: SmokeBuildMode, testInfo: TestInfo) {
     const runtime = await application.evaluate(({ app }) => ({ executable: process.execPath, path: app.getAppPath() }));
     const worker = path.join(runtime.path.replace(/app\.asar$/, "app.asar.unpacked"), "dist-electron", "map-triage.cjs");
     expect(existsSync(worker)).toBe(true);
+    const ringWorker = path.join(path.dirname(worker), "ring-gamble.cjs");
+    expect(existsSync(ringWorker)).toBe(true);
+    expect(execFileSync(runtime.executable, [ringWorker], { encoding: "utf8", windowsHide: true, env: { ...process.env, ELECTRON_RUN_AS_NODE: "1" } })).toContain("No game input emitted");
     expect(existsSync(path.join(runtime.path.replace(/app\.asar$/, "app.asar.unpacked"), "scripts", "win-bag-host.ps1"))).toBe(true);
     const guard = path.join(root, "no-input.cjs");
     writeFileSync(guard, "const deny=()=>{process.exitCode=99;throw Error('OFFLINE_GUARD')};globalThis.fetch=deny;" +

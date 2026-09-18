@@ -49,7 +49,6 @@
     "actions:daemon": "npx --yes tsx scripts/action-daemon.ts",
     "map:triage": "npx --yes tsx scripts/map-triage.ts",
     "map:triage:run": "npx --yes tsx scripts/map-triage.ts --run",
-    "map:calibrate": "npx --yes tsx scripts/map-triage.ts --calibrate-moves",
     "vendor:cycle": "npx --yes tsx scripts/vendor-cycle.ts",
     "vendor:cycle:run": "npx --yes tsx scripts/vendor-cycle.ts --run",
     "rebuild:native:host": "npm rebuild better-sqlite3",

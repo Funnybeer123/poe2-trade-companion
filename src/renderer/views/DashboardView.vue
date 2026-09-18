@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { RouterLink } from "vue-router";
-import { defaultCombatConfig, type CombatModule } from "../../core/combatAssist.js";
+import { defaultCombatConfig, isSkillModule, type CombatModule } from "../../core/combatAssist.js";
 import ActionIcon from "../components/ActionIcon.vue";
 import { useCombatControls } from "../composables/useCombatControls";
 import { useDashboardActions } from "../composables/useDashboardActions";
@@ -26,12 +26,13 @@ const combatStartReason = computed(() => {
   if (!runtime.targetDetected.value && runtime.isNative.value) return "Open Path of Exile 2 to start combat.";
   return readiness.value;
 });
-const combatMode = computed(() => state.value?.running ? (state.value.config.dryRun ? "Previewing" : "Running") : "Paused");
-const modules: { id: CombatModule; title: string; subtitle: string }[] = [
+const combatMode = computed(() => state.value?.running ? (config.value.sigilSequence.enabled ? (config.value.dryRun ? "Preview armed" : "Armed") : state.value.config.dryRun ? "Previewing" : "Running") : "Paused");
+const modules = computed<{ id: CombatModule; title: string; subtitle: string }[]>(() => [
   { id: "health", title: "Health flask", subtitle: "Recover life automatically" },
   { id: "mana", title: "Mana flask", subtitle: "Keep your mana topped up" },
-  { id: "unleash", title: "Unleash", subtitle: "Cast as soon as it is ready" },
-];
+  { id: "unleash", title: config.value.sigilSequence.enabled ? "Sigil of Power" : "Unleash", subtitle: config.value.sigilSequence.enabled ? `Press ${config.value.unleash.key} → ${config.value.sigilSequence.swapKey} → ${config.value.verisium.key} · one cycle` : "Cast as soon as it is ready" },
+  { id: "verisium", title: "Powered by Verisium", subtitle: config.value.sigilSequence.enabled ? "Tapped once after your macro's weapon swap" : "Cast as soon as it is ready" },
+]);
 const workflows = [
   { id: "gear-sort", icon: "sort", title: "Sort gear", description: "Route items to their tabs using your value tiers.", to: "/sort", setup: "Tiers & routing" },
   { id: "craft", icon: "craft", title: "Craft gear", description: "Run your configured crafting workflow.", to: "/sort", setup: "Crafting setup" },
@@ -43,10 +44,17 @@ function keyLabel(key: string): string { return key === "MOUSE5" ? "Mouse 5" : k
 function moduleStatus(name: CombatModule): string {
   if (!state.value) return combatLoading.value ? "Loading…" : "Desktop app required";
   if (!config.value[name].enabled) return "Off";
-  if (!config.value.regions[name] || !config.value.regions.anchor || (name === "unleash" && !config.value.regions.unleash?.cooldown)) return "Needs calibration";
+  if (config.value.sigilSequence.enabled && isSkillModule(name)) {
+    if (!state.value.running) return "Macro enabled · paused";
+    return name === "unleash" ? `Armed · press ${config.value.unleash.key}` : "Part of manual macro";
+  }
+  if (!config.value.regions[name] || !config.value.regions.anchor || (isSkillModule(name) && !config.value.regions[name]?.cooldown)) return "Needs calibration";
   if (!state.value.running) return "Enabled · paused";
   if (!state.value.reading?.valid) return "Waiting for game HUD";
-  if (name === "unleash") return state.value.reading.unleash === "cooldown" ? "On cooldown" : state.value.reading.unleash === "ready" ? "Ready to cast" : "Reading skill…";
+  if (isSkillModule(name)) {
+    const skill = state.value.reading[name];
+    return skill === "cooldown" ? "On cooldown" : skill === "ready" ? "Ready to cast" : "Reading skill…";
+  }
   const value = state.value.reading[name];
   return value === undefined ? "Reading HUD…" : `${value}% ${name === "health" ? "life" : "mana"}`;
 }
@@ -57,14 +65,14 @@ function moduleStatus(name: CombatModule): string {
     <section class="dashboard-combat" aria-labelledby="combat-quick-title">
       <header class="dashboard-section-heading combat-heading">
         <div>
-          <div class="dashboard-kicker">AUTOMATIC</div>
+          <div class="dashboard-kicker">{{ config.sigilSequence.enabled ? 'ON DEMAND MACRO' : 'AUTOMATIC' }}</div>
           <h2 id="combat-quick-title">Combat assist <span class="dashboard-badge" :class="{ active: state?.running }"><i />{{ combatMode }}</span></h2>
-          <p>Your flasks and cooldown, handled.</p>
+          <p>{{ config.sigilSequence.enabled ? `Press ${config.unleash.key} for one macro cycle. F8 arms or pauses.` : 'Your flasks and cooldowns, handled.' }}</p>
         </div>
         <div class="dashboard-combat-actions">
           <RouterLink class="dashboard-text-link" to="/tools/combat"><ActionIcon name="settings" :size="16" />Calibrate & configure</RouterLink>
           <button class="dashboard-button" :class="state?.running ? 'secondary' : 'accent'" :disabled="combatPending || combatLoading || !combat.available || (!state?.running && Boolean(combatStartReason))" :title="state?.running ? 'Pause all combat features' : combatStartReason" @click="state?.running ? combat.stop() : combat.start()">
-            <ActionIcon :name="state?.running ? 'pause' : 'play'" :size="16" />{{ combatPending ? 'Updating…' : state?.running ? 'Pause combat' : 'Start combat' }}
+            <ActionIcon :name="state?.running ? 'pause' : 'play'" :size="16" />{{ combatPending ? 'Updating…' : state?.running ? 'Pause combat' : config.sigilSequence.enabled ? 'Arm macro' : 'Start combat' }}
           </button>
         </div>
       </header>
@@ -73,10 +81,10 @@ function moduleStatus(name: CombatModule): string {
         <article v-for="module in modules" :key="module.id" class="combat-quick-card" :class="module.id" :aria-labelledby="`quick-${module.id}`">
           <div class="combat-card-top">
             <span class="dashboard-icon combat-icon"><ActionIcon :name="module.id" :size="22" /></span>
-            <button class="dashboard-toggle" type="button" role="switch" :aria-label="`Enable ${module.title}`" :aria-checked="config[module.id].enabled" :disabled="!combat.available || combatLoading || combatPending || otherActionActive" @click="combat.toggleModule(module.id)"><span /></button>
+            <button class="dashboard-toggle" type="button" role="switch" :aria-label="`Enable ${module.title}`" :aria-checked="config[module.id].enabled" :disabled="!combat.available || combatLoading || combatPending || otherActionActive || (config.sigilSequence.enabled && isSkillModule(module.id))" :title="config.sigilSequence.enabled && isSkillModule(module.id) ? 'Controlled by Manual Sigil macro in combat settings' : undefined" @click="combat.toggleModule(module.id)"><span /></button>
           </div>
           <h3 :id="`quick-${module.id}`">{{ module.title }} <kbd>{{ keyLabel(config[module.id].key) }}</kbd></h3>
-          <p>{{ module.id === 'unleash' ? module.subtitle : `Use below ${config[module.id].threshold}% ${module.id === 'health' ? 'life' : 'mana'}` }}</p>
+          <p>{{ isSkillModule(module.id) ? module.subtitle : `Use below ${config[module.id].threshold}% ${module.id === 'health' ? 'life' : 'mana'}` }}</p>
           <div class="combat-card-status" :class="{ enabled: config[module.id].enabled }"><i />{{ moduleStatus(module.id) }}</div>
         </article>
       </div>
@@ -87,7 +95,7 @@ function moduleStatus(name: CombatModule): string {
         <span v-else-if="!state?.running && combatStartReason">{{ combatStartReason }}</span>
         <span v-else-if="state?.running">{{ state.reason }}<span v-if="state.cycleMs !== undefined"> · {{ Math.round(state.cycleMs) }} ms last check</span></span>
         <span v-else>{{ state?.reason && state.reason !== 'Stopped' ? state.reason : 'Enable the features you want, then start combat.' }}</span>
-        <span class="dashboard-shortcut"><kbd>F8</kbd> Pause / resume</span>
+        <span class="dashboard-shortcut"><kbd>F8</kbd> {{ config.sigilSequence.enabled ? 'Arm / pause' : 'Pause / resume' }}</span>
       </div>
     </section>
 
@@ -169,10 +177,11 @@ function moduleStatus(name: CombatModule): string {
 .dashboard-text-link:hover, .dashboard-text-button:hover:not(:disabled) { color: #e4ebdf; }
 .dashboard-text-button { border: 0; background: transparent; padding: 4px 0; cursor: pointer; }
 .dashboard-text-button.danger, .dashboard-error { color: #f0a69e; }
-.combat-quick-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; }
+.combat-quick-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }
 .combat-quick-card { --module-color: #e59996; --module-bg: #e599960e; padding: 18px 20px 15px; border: 1px solid #353137; border-radius: 11px; background: linear-gradient(125deg, var(--module-bg), transparent 85%), #181b20; }
 .combat-quick-card.mana { --module-color: #88b6eb; --module-bg: #88b6eb0e; border-color: #2c3541; }
 .combat-quick-card.unleash { --module-color: #c1a8ea; --module-bg: #c1a8ea0e; border-color: #35303f; }
+.combat-quick-card.verisium { --module-color: #86d3e6; --module-bg: #86d3e60e; border-color: #2c3d43; }
 .combat-card-top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 17px; }
 .dashboard-icon { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; border: 1px solid #393e45; border-radius: 9px; color: #bfc4cc; background: #252930; }
 .combat-icon { color: var(--module-color); border-color: color-mix(in srgb, var(--module-color) 24%, transparent); background: color-mix(in srgb, var(--module-color) 8%, transparent); }
@@ -220,7 +229,7 @@ function moduleStatus(name: CombatModule): string {
 .utility-settings { display: flex; padding: 5px; }
 @media (max-width: 1350px) {
   .dashboard-workflow-grid, .dashboard-utilities { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .stash-quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .stash-quick-grid, .combat-quick-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .dashboard-workflow-card { display: grid; grid-template-columns: 36px 1fr; column-gap: 14px; padding: 18px; }
   .dashboard-workflow-card .dashboard-icon { grid-row: span 2; }
   .dashboard-workflow-card h3 { margin: 0 0 6px; }

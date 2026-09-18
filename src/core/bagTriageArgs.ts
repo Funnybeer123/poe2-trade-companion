@@ -1,5 +1,5 @@
 export interface BagTriageArgs {
-  stage: "assess" | "capture" | "identify" | "drop" | "reconcile";
+  stage: "assess" | "capture" | "workflow" | "identify" | "drop" | "reconcile";
   fromScan?: string;
   replay?: string;
   journal?: string;
@@ -22,20 +22,20 @@ export function parseBagTriageArgs(argv: string[]): BagTriageArgs {
       if (values.has(key!)) throw new Error("Duplicate argument: " + key); values.set(key!, value);
     } else throw new Error("Unknown/incomplete argument: " + arg + ". No live adapter started.");
   }
-  const stage = values.get("--stage") ?? (values.has("--from-scan") ? "assess" : "capture");
-  if (!["assess", "capture", "identify", "drop", "reconcile"].includes(stage)) throw new Error("Invalid bag stage.");
-  const numeric = values.get("--max-drops") ?? "1";
+  const stage = values.get("--stage") ?? (values.has("--from-scan") ? "assess" : flags.has("--run") ? "workflow" : "capture");
+  if (!["assess", "capture", "workflow", "identify", "drop", "reconcile"].includes(stage)) throw new Error("Invalid bag stage.");
+  const numeric = values.get("--max-drops") ?? (stage === "workflow" ? "59" : "1");
   if (!/^\d+$/.test(numeric) || Number(numeric) > 59) throw new Error("max-drops must be an integer from 0 to 59.");
-  if (values.has("--max-drops") && stage !== "drop") throw new Error("max-drops applies only to the drop stage.");
-  const maxIdentifications = values.get("--max-identifications") ?? "1";
+  if (values.has("--max-drops") && !["drop", "workflow"].includes(stage)) throw new Error("max-drops applies only to the drop stage or workflow.");
+  const maxIdentifications = values.get("--max-identifications") ?? (stage === "workflow" ? "59" : "1");
   if (!/^\d+$/.test(maxIdentifications) || Number(maxIdentifications) < 1 || Number(maxIdentifications) > 59) throw new Error("max-identifications must be an integer from 1 to 59.");
-  if (values.has("--max-identifications") && stage !== "identify") throw new Error("max-identifications applies only to the identify stage.");
+  if (values.has("--max-identifications") && !["identify", "workflow"].includes(stage)) throw new Error("max-identifications applies only to the identify stage or workflow.");
   if ((stage === "assess" || values.has("--replay")) && ["--calibration", "--perception", "--client-log"].some(k => values.has(k))) throw new Error("Live calibration/log arguments do not apply to offline assessment/replay.");
   if (values.has("--replay") && flags.has("--run")) throw new Error("Replay cannot enable live input.");
   if (stage === "assess" && (!values.has("--from-scan") || values.has("--replay") || flags.has("--run") || values.has("--journal"))) throw new Error("Offline assessment requires only --from-scan and optional --output.");
   if (stage !== "assess" && values.has("--from-scan")) throw new Error("A stash report is not a resumable physical bag session.");
   if (["identify", "drop", "reconcile"].includes(stage) && !values.has("--journal")) throw new Error("This stage requires --journal=FILE.");
-  if (["identify", "drop"].includes(stage) && !values.has("--replay") && !flags.has("--run")) throw new Error("Live mutation requires --run.");
+  if (["identify", "drop", "workflow"].includes(stage) && !values.has("--replay") && !flags.has("--run")) throw new Error("Live mutation requires --run.");
   if (stage === "reconcile" && flags.has("--run")) throw new Error("Reconciliation is read-only.");
   return { stage: stage as BagTriageArgs["stage"], fromScan: values.get("--from-scan"), replay: values.get("--replay"),
     journal: values.get("--journal"), output: values.get("--output"), run: flags.has("--run"), maxDrops: Number(numeric),

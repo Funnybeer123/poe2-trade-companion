@@ -117,7 +117,49 @@ describe("dashboard combat controls", () => {
     await controls.toggleModule("unleash", false);
     expect(fixture.api.start).not.toHaveBeenCalled();
     expect(controls.state.value?.running).toBe(false);
-    expect(controls.readiness.value).toContain("Enable a flask or Unleash");
+    expect(controls.readiness.value).toContain("Enable a flask or a skill");
+  });
+
+  it("keeps a running loop alive when Powered by Verisium is the only module left on", async () => {
+    const fixture = setup(true);
+    fixture.saved.config.health.enabled = fixture.saved.config.mana.enabled = false;
+    fixture.saved.config.verisium.enabled = true;
+    const { controls } = harness();
+    await flushPromises();
+    await controls.toggleModule("unleash", false);
+    expect(fixture.api.start).toHaveBeenCalledOnce();
+    expect(controls.state.value?.running).toBe(true);
+    expect(controls.state.value?.config.verisium.enabled).toBe(true);
+    await controls.toggleModule("verisium", false);
+    expect(fixture.api.start).toHaveBeenCalledOnce();
+    expect(controls.state.value?.running).toBe(false);
+    expect(controls.readiness.value).toContain("Enable a flask or a skill");
+  });
+
+  it("disables both manual macro participants without falling back to automatic casts", async () => {
+    const fixture = setup(true);
+    fixture.saved.config.health.enabled = fixture.saved.config.mana.enabled = false;
+    fixture.saved.config.unleash.enabled = fixture.saved.config.verisium.enabled = fixture.saved.config.sigilSequence.enabled = true;
+    const { controls } = harness();
+    await flushPromises();
+    await controls.toggleModule("unleash", false);
+    expect(fixture.api.start).not.toHaveBeenCalled();
+    expect(controls.state.value?.config.sigilSequence.enabled).toBe(false);
+    expect(controls.state.value?.config.unleash.enabled).toBe(false);
+    expect(controls.state.value?.config.verisium.enabled).toBe(false);
+  });
+
+  it("can arm a manual macro with no skill or HUD calibration when flasks are off", async () => {
+    const fixture = setup();
+    fixture.saved.config.health.enabled = fixture.saved.config.mana.enabled = false;
+    fixture.saved.config.unleash.enabled = fixture.saved.config.verisium.enabled = fixture.saved.config.sigilSequence.enabled = true;
+    fixture.saved.config.regions = {};
+    const { controls } = harness();
+    await flushPromises();
+    expect(controls.readiness.value).toBe("");
+    await controls.start();
+    expect(fixture.api.start).toHaveBeenCalledOnce();
+    expect(controls.state.value?.running).toBe(true);
   });
 
   it("starts only a calibrated saved configuration, then stops explicitly", async () => {

@@ -261,7 +261,7 @@ Path of Exile 2 is the foreground window and runs one game action at a time:
 | Num2 | **Sort** — run the class-routed stash sorter |
 | Num3 | **Fill** — stash → bag |
 | Num4 | **Vendor** — quick-sell the bag to ZELINA (opening her window is wired; the sell click is not yet, see `docs/HANDOFF-hotkey-actions.md`) |
-| Num6 | **Identify (map)** — staged bag worker; live capture/input currently refuses until map/cursor perception is validated. Offline assessment and replay are available; see below |
+| Num6 | **Identify & drop (map)** — capture the bag, identify eligible gear, assess it, and drop positively classified low-priority items; useful and uncertain items stay |
 | Num7 | **Vendor cycle (map)** — legacy vendor workflow using its existing appraisal policy; this is separate from the new shared bag assessment |
 
 Num5/0/8/9 never launch actions — they stay the in-run control keys
@@ -281,12 +281,22 @@ positive shared Low-priority evidence can enter a drop plan; scores and
 missing prices never become disposal authority. Scope is every physical
 item in the captured inventory, including equipment already identified.
 
-**Live bag testing is not ready.** Num6 currently dispatches `--stage=capture`,
-which refuses before starting a native host. The old bulk identify/drop and
-compaction runner has been replaced. `--careful`, `--keep-unknown`,
-`--calibrate-moves` and the old timing/ground flags are rejected. Do not use
-`map:triage:run` or `map:calibrate` as readiness checks. No live stage was run
-for this delivery; existing August results are historical.
+Num6 and `npm run map:triage:run` start the integrated capture → identify →
+assess → drop workflow. **Tools → Bag triage → Identify & drop** provides the
+same one-action workflow in the desktop app. Individual test stages are under
+**Diagnostic controls**. Compaction remains disabled during validation;
+legacy timing-move calibration flags are not supported by this worker.
+
+Since 2026-09-17 the one-action workflow reads each physical item once,
+identifies with one Shift-held Wisdom chain whose scroll count must balance, and
+verifies every drop individually; see [BAG_FAST_WORKFLOW.md](BAG_FAST_WORKFLOW.md).
+
+**Live validation is incomplete:** the September 14 capture passed with 30 items
+and zero unread cells, and that run's identification stopped at cursor
+verification. The cause is fixed and replayed against the saved frames, but no
+identification or drop has been confirmed in the live game yet. See
+[BAG_LIVE_TEST_READINESS.md](BAG_LIVE_TEST_READINESS.md) for current test
+status; do not treat earlier August results as current proof.
 
 For an existing batch, run the genuinely offline operation:
 
@@ -299,8 +309,8 @@ requests. Stash coordinates remain historical, never executable bag locations.
 Run `npm run map:triage -- --help` for the strict replay interface. The
 packaged standalone worker is `dist-electron/map-triage.cjs`, run by Electron
 in Node mode with `POE2_BAG_DATA_ROOT` pointing to isolated writable data.
-The app's Hotkeys panel displays the same availability warning; there is
-not yet a packaged live bag action button.
+The normal workflow uses the same shared assessment and desktop data as the
+packaged bag action; diagnostics preserve independently resumable stages.
 
 Synthetic stages save append-only, flushed, hash-chained journals, including
 original captures and per-item pending/verified receipts. Reconciliation is
@@ -355,6 +365,7 @@ No account telemetry is sent by default. Do not commit this folder, cookies, or 
 ## Flasks & Unleash
 
 The new combat controls are under **Tools & QA → Flasks & Unleash**. Defaults are
-health flask **1** below **25%**, mana flask **Mouse Button 5** below **25%**, and Unleash **R**
-when its calibrated skill-bar icon becomes ready. Each is independently toggled.
+health flask **1** below **25%**, mana flask **Mouse Button 5** below **25%**, Unleash **R**
+and Powered by Verisium **T**, each cast when its calibrated skill-bar icon becomes
+ready. Each is independently toggled, on the Dashboard or in the tool.
 Follow the [HUD calibration and control guide](COMBAT_ASSIST.md) before starting.

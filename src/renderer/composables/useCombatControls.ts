@@ -1,5 +1,5 @@
 import { computed, onMounted, onUnmounted, ref } from "vue";
-import { requireCombatCalibration, type CombatBridge, type CombatModule, type CombatStatus } from "../../core/combatAssist.js";
+import { COMBAT_MODULES, requireCombatCalibration, type CombatBridge, type CombatModule, type CombatStatus } from "../../core/combatAssist.js";
 
 /** Quick controls always edit the saved configuration, never a calibration draft. */
 export function useCombatControls() {
@@ -71,8 +71,11 @@ export function useCombatControls() {
       if (nextEnabled === latest.config[name].enabled) return;
       const config = structuredClone(latest.config);
       config[name].enabled = nextEnabled;
+      if (!nextEnabled && config.sigilSequence.enabled && (name === "unleash" || name === "verisium")) {
+        config.sigilSequence.enabled = config.unleash.enabled = config.verisium.enabled = false;
+      }
       publish(await bridge.configure(config));
-      if (latest.running && [config.health, config.mana, config.unleash].some((module) => module.enabled)) {
+      if (latest.running && COMBAT_MODULES.some((module) => config[module].enabled)) {
         publish(await bridge.start());
       }
     });

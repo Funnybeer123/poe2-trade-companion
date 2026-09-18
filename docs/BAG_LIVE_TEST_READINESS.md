@@ -2,6 +2,15 @@
 
 Updated 2026-09-14. Implementation checkout: `Documents/Codex/poe2-trade-companion`.
 
+**2026-09-17 update:** the normal one-action workflow (Num6, the desktop **Identify &
+drop** button, `--stage=workflow --run`) no longer uses the per-action staged adapter
+described below. It runs the fast path in [BAG_FAST_WORKFLOW.md](BAG_FAST_WORKFLOW.md):
+one read per physical item, one Shift-held Wisdom chain with exact scroll accounting,
+serially verified drops, region captures and a small flushed action log. The staged
+stages remain as diagnostics, and their armed-cursor guards were corrected against the
+saved September 14 frames. **No live run has happened since September 14**; the live
+acceptance plan is in that document.
+
 ## Current operating instruction
 
 The user is playing while the app is repaired **offline**. Do not activate the
@@ -10,23 +19,26 @@ says they are ready to resume testing. Mocked process tests, deterministic
 replays, saved-image analysis and isolated packaged-app smoke tests remain
 available offline.
 
-**Live identification and ground drops have not been proven.** Earlier live
-attempts stopped during readiness/capture checks. New adapter code and offline
+**Live capture has passed; identification and ground drops have not been proven.**
+The one-item identification attempt issued an arm action and stopped on cursor
+verification, leaving a pending receipt. Do not repeat it blindly. New code and offline
 tests are not a completed live acceptance run. The older
 `BAG_TRIAGE_VALIDATION.md` records the earlier offline-only baseline; this file
 describes the current integration and the acceptance work still required.
 
 ## Desktop controls and runtime
 
-Open **Tools → Bag triage** (`/tools/bag-triage`). The panel offers separate
-Capture bag, Identify one, Drop one low-priority item, Reconcile and Stop
-actions. Capture creates a new timestamped journal. Other stages use the
-selected live journal; replay journals cannot authorize live actions. Starting
-one stage never chains into identification or dropping.
+The original **Tools → Hotkeys → Identify & drop (Num6)** action is retained.
+It starts the complete capture → identify → assess → drop workflow with one
+adapter and a fresh journal. `npm run map:triage:run` uses the same workflow.
+Open **Tools → Bag triage** (`/tools/bag-triage`) for the equivalent primary
+**Identify & drop** button. Test stages and saved-session selection are under
+collapsed **Diagnostic controls**. They are not required steps in normal use.
 
 Each stage has a cancellable three-second countdown. Capture and reconciliation
 may move the pointer and copy item text; they do not identify or discard items.
-Identification and drop buttons each impose a hard one-item limit. Compaction
+The diagnostic identification and drop buttons each impose a hard one-item limit.
+The normal workflow handles all eligible bag items, bounded at 59 per phase. Compaction
 remains disabled. Ordinary capture and assessment make no market requests.
 
 The panel shows actual missing worker, inventory calibration, cursor/inventory
@@ -40,8 +52,9 @@ does not require `tsx` or bootstrap packages on button clicks; if the bundle is
 missing, run `npm run build` and refresh setup. Packaged builds resolve the
 worker inside `app.asar.unpacked`.
 
-The worker receives the same valuation data root used by the app: the checkout
-in development, or the app's user-data folder when packaged. Inventory
+The packaged worker, standalone Windows CLI, and Num6 use the desktop data
+folder (`%APPDATA%/poe2-trade-companion`), unless explicitly overridden.
+The development desktop uses its supplied valuation data root. Inventory
 calibration comes from the app's `perception-templates/calibration.json`.
 Cursor/inventory references default to
 `artifacts/map-triage/live-perception.json` inside that data root.
@@ -61,13 +74,13 @@ settings and embedded knowledge use the shared valuation service.
   incomplete log lines invalidate prior context. This does not prove life,
   focus, inventory visibility or safe ground by itself.
 - Cursor payload recognition compares the paired, journaled source item with
-  observations at two separated world positions. It uses source pixels and
+  observations at two separated positions outside the bag. It uses source pixels and
   cursor movement, including lossless native cursor RGBA/alpha evidence.
   Empty-cursor proof also checks both positions. An intended action or a
   per-item hash entry is not sufficient to infer a held item. Unknown or
   contradictory evidence stops the stage.
 - HUD OCR reads the **saved frame** used for cursor/inventory evidence.
-  Thresholded life-text OCR is a second view of that same image. Native capture
+  Cropped Life-label/value OCR is a second view of that same image. Native capture
   timestamps are retained; OCR completion cannot make an old frame fresh.
   This addresses cursor/HUD verification gaps exposed during the earlier
   stopped capture work. End-to-end live confirmation is still pending.

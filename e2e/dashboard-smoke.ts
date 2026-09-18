@@ -7,8 +7,10 @@ export async function dashboardSmoke(mode: SmokeBuildMode, testInfo: TestInfo) {
     await expect(page).toHaveURL(/#\/dashboard$/);
     await expect(page.getByRole("heading", { name: "Dashboard", exact: true })).toBeVisible();
     const dashboard = page.locator(".action-dashboard");
-    await expect(dashboard.getByRole("switch")).toHaveCount(3);
+    await expect(dashboard.getByRole("switch")).toHaveCount(4);
     await expect(dashboard.locator(".combat-quick-card.mana kbd")).toHaveText("Mouse 5");
+    await expect(dashboard.locator(".combat-quick-card.verisium kbd")).toHaveText("T");
+    await expect(dashboard.getByRole("switch", { name: "Enable Powered by Verisium", exact: true })).toHaveAttribute("aria-checked", "false");
     await expect(dashboard.getByRole("button", { name: "Start combat", exact: true })).toBeDisabled();
     await expect(dashboard.locator(".stash-quick-action")).toHaveCount(4);
     await expect(dashboard.locator(".dashboard-workflow-card")).toHaveCount(4);

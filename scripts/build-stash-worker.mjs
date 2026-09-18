@@ -25,3 +25,11 @@ await build({
   banner: { js: 'const __bagWorkerModuleUrl = require("node:url").pathToFileURL(__filename).href;' },
   logLevel: "info",
 });
+
+await build({
+  entryPoints: ["scripts/ring-gamble.ts"], outfile: "dist-electron/ring-gamble.cjs",
+  bundle: true, platform: "node", target: "node22", format: "cjs",
+  define: { "import.meta.url": "__ringWorkerModuleUrl" },
+  banner: { js: 'const __ringWorkerModuleUrl = require("node:url").pathToFileURL(__filename).href;' },
+  logLevel: "info",
+});

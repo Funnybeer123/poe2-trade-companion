@@ -516,6 +516,9 @@ if (ownsInstance) void app.whenReady().then(() => {
   ipcMain.handle("bag-triage:select", (_event, journal: string) => bagTriageService!.select(journal));
   ipcMain.handle("bag-triage:start", (_event, stage) => bagTriageService!.start(stage));
   ipcMain.handle("bag-triage:stop", () => bagTriageService!.stop());
+  if (!backgroundSmoke) bagTriageService.setCleanupHotkey(globalShortcut.register("CommandOrControl+Alt+V", () => {
+    bagTriageService?.startCleanupFromHotkey();
+  }));
   voiceService = new VoiceTransferService({
     mode: buildMode,
     recognizer: new WindowsSpeechRecognizer(),

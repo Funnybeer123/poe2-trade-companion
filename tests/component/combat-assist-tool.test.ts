@@ -32,10 +32,39 @@ describe("combat controls", () => {
       health: expect.objectContaining({ enabled: true, key: "Q", threshold: 25 }),
       mana: expect.objectContaining({ enabled: false, key: "MOUSE5" }),
       unleash: expect.objectContaining({ enabled: true, key: "R" }),
+      verisium: expect.objectContaining({ enabled: false, key: "T" }),
     }));
+    expect(wrapper.get('select[aria-label="Powered by Verisium key"]').element).toHaveProperty("value", "T");
     expect(start).toHaveBeenCalledOnce();
     await wrapper.findAll("button").find((b) => b.text() === "Stop")!.trigger("click"); await flushPromises();
     expect(stop).toHaveBeenCalledOnce(); wrapper.unmount();
+  });
+  it("saves the manual Sigil macro, enables its skills and preserves timings across navigation", async () => {
+    let state: CombatStatus = { config: defaultCombatConfig(), running: false, reason: "Stopped", actions: 0 };
+    const configure = vi.fn(async (config: CombatConfig) => state = { ...state, config });
+    window.poe2 = { combat: { status: async () => structuredClone(state), configure } } as unknown as NonNullable<typeof window.poe2>;
+    let wrapper = mount(CombatAssistTool); await flushPromises();
+    await wrapper.get('.sigil-sequence input[type="checkbox"]').setValue(true);
+    await wrapper.get('input[aria-label="Sigil cast delay"]').setValue(320);
+    wrapper.unmount(); wrapper = mount(CombatAssistTool); await flushPromises();
+    expect(wrapper.get('input[aria-label="Sigil cast delay"]').element).toHaveProperty("value", "320");
+    await wrapper.findAll("button").find((b) => b.text() === "Save settings")!.trigger("click"); await flushPromises();
+    expect(state.config.sigilSequence).toEqual({ enabled: true, swapKey: "X", castMs: 320, swapMs: 100 });
+    expect(state.config.unleash.enabled && state.config.verisium.enabled).toBe(true);
+    expect(wrapper.text()).toContain("One cycle per press");
+    expect(wrapper.text()).toContain("Your R press reaches the game normally");
+    expect(wrapper.text()).toContain("Skill calibration is not required");
+    expect(wrapper.text()).not.toContain("Casts when ready");
+    expect(wrapper.find('#combat-cooldown-tab').exists()).toBe(false);
+    expect(wrapper.find('input[aria-label="Sigil of Power minimum gap"]').exists()).toBe(false);
+    expect(wrapper.findAll("button").some((button) => button.text() === "Save & arm")).toBe(true);
+    expect(wrapper.get("details").attributes("open")).toBeUndefined();
+    await wrapper.get('.sigil-sequence input[type="checkbox"]').setValue(false);
+    await wrapper.findAll("button").find((b) => b.text() === "Save settings")!.trigger("click"); await flushPromises();
+    expect(state.config.sigilSequence.enabled).toBe(false);
+    expect(state.config.unleash.enabled || state.config.verisium.enabled).toBe(false);
+    expect(wrapper.text()).toContain("Casts when ready");
+    wrapper.unmount();
   });
   it("shows actionable calibration failures instead of appearing to start", async () => {
     const state: CombatStatus = { config: defaultCombatConfig(), running: false, reason: "Stopped", actions: 0 };
@@ -142,10 +171,38 @@ describe("separate calibration screenshots and session drafts", () => {
     await capture(wrapper, "Capture cooldown in 3 seconds");
     expect(wrapper.text()).toContain("Screenshot size differs from the calibrated HUD");
     expect(wrapper.findAll("button").find((b) => b.text() === "Record cooldown from screenshot")!.attributes()).toHaveProperty("disabled");
-    expect(wrapper.find('svg[aria-label^="Recorded cooldown reference"]').exists()).toBe(false);
+    expect(wrapper.find('svg[aria-label^="Recorded cooldown reference · Unleash"]').exists()).toBe(false);
+    expect(wrapper.get('svg[aria-label^="Recorded cooldown reference · Powered by Verisium"] rect').attributes("fill")).toBe("rgb(20,45,55)");
     expect(wrapper.get('svg[aria-label^="Recorded ready reference"] rect').attributes("fill")).toBe("rgb(180,70,220)");
     await button(wrapper, "Save settings");
     expect(api.configure).toHaveBeenCalledWith(config);
+    wrapper.unmount();
+  });
+  it("records a Powered by Verisium cooldown from its own screenshot tab", async () => {
+    vi.useFakeTimers();
+    const config = calibratedCombat(); delete config.regions.verisium!.cooldown;
+    const api = bridge(config);
+    api.preview.mockResolvedValue({ image: "data:image/png;base64,verisium-shot", width: 2560, height: 1440 });
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockImplementation(() => ({
+      drawImage: () => {},
+      getImageData: (_x: number, _y: number, width: number, height: number) => ({ data: new Uint8ClampedArray(Array.from({ length: width * height }, () => [7, 8, 9, 255]).flat()) }),
+    }) as unknown as CanvasRenderingContext2D);
+    const wrapper = mount(CombatAssistTool); await flushPromises();
+    await button(wrapper, "Powered by Verisium cooldown");
+    expect(wrapper.get("#combat-cooldown-verisium-tab").attributes("aria-selected")).toBe("true");
+    expect(wrapper.text()).toContain("just after you cast Powered by Verisium (T)");
+    await capture(wrapper, "Capture cooldown in 3 seconds");
+    loadedScreenshot(wrapper);
+    await button(wrapper, "Record cooldown from screenshot");
+    expect(wrapper.get('svg[aria-label^="Recorded cooldown reference · Powered by Verisium"] rect').attributes("fill")).toBe("rgb(7,8,9)");
+    expect(wrapper.get('svg[aria-label^="Recorded cooldown reference · Unleash"] rect').attributes("fill")).toBe("rgb(40,15,50)");
+    await button(wrapper, "Save settings");
+    expect(api.configure).toHaveBeenCalledWith(expect.objectContaining({
+      regions: expect.objectContaining({
+        unleash: expect.objectContaining({ cooldown: color(40, 15, 50) }),
+        verisium: expect.objectContaining({ cooldown: color(7, 8, 9) }),
+      }),
+    }));
     wrapper.unmount();
   });
   it("retains failed-save draft values and their error after leaving and returning", async () => {
@@ -165,11 +222,13 @@ describe("separate calibration screenshots and session drafts", () => {
     const api = bridge();
     let wrapper = mount(CombatAssistTool); await flushPromises();
     await wrapper.get('input[aria-label="health threshold"]').setValue(29);
+    await wrapper.get('select[aria-label="Powered by Verisium key"]').setValue("Y");
     const session = useCombatDraft(api);
     const screenshot = { image: "data:image/png;base64,pending-shot", width: 2560, height: 1440, capturedAt: "2026-09-09T12:00:00.000Z" };
     session.screenshots.value.cooldown = screenshot;
     session.activeTab.value = "cooldown";
     session.draft.value.regions.unleash!.cooldown = color(12, 23, 34);
+    session.draft.value.regions.verisium!.cooldown = color(1, 2, 3);
     wrapper.unmount();
     const externallySaved = calibratedCombat();
     externallySaved.health.enabled = false;
@@ -181,9 +240,11 @@ describe("separate calibration screenshots and session drafts", () => {
     expect(wrapper.findAll('input[type="checkbox"]')[0].element).toHaveProperty("checked", false);
     expect(wrapper.get('input[aria-label="health threshold"]').element).toHaveProperty("value", "29");
     expect(wrapper.get('select[aria-label="mana flask key"]').element).toHaveProperty("value", "Q");
+    expect(wrapper.get('select[aria-label="Powered by Verisium key"]').element).toHaveProperty("value", "Y");
     expect(wrapper.get(".hud-preview img").attributes("src")).toBe(screenshot.image);
     expect(session.draft.value.regions.anchor?.x).toBe(2300);
     expect(session.draft.value.regions.unleash?.cooldown).toEqual(color(12, 23, 34));
+    expect(session.draft.value.regions.verisium?.cooldown).toEqual(color(1, 2, 3));
     // An external save after entry must also be respected by the next save.
     externallySaved.mana.enabled = false;
     await api.configure(externallySaved);
@@ -192,9 +253,11 @@ describe("separate calibration screenshots and session drafts", () => {
     expect(api.configure).toHaveBeenCalledWith(expect.objectContaining({
       health: expect.objectContaining({ enabled: false, threshold: 29 }),
       mana: expect.objectContaining({ enabled: false, key: "Q" }),
+      verisium: expect.objectContaining({ key: "Y" }),
       regions: expect.objectContaining({
         anchor: expect.objectContaining({ x: 2300 }),
         unleash: expect.objectContaining({ cooldown: color(12, 23, 34) }),
+        verisium: expect.objectContaining({ cooldown: color(1, 2, 3) }),
       }),
     }));
     wrapper.unmount();

@@ -1,0 +1,26 @@
+[
+  {
+    "text": "Item Class: Rings\nRarity: Rare\nGlyph Loop\nGold Ring\n--------\nRequires: Level 48\n--------\nItem Level: 79\n--------\n{ Implicit Modifier }\n13(6-15)% increased Rarity of Items found\n--------\n{ Prefix Modifier \"Chalybeous\" (Tier: 4) — Mana }\n+109(105-124) to maximum Mana\n{ Prefix Modifier \"Hoarder's\" (Tier: 1) }\n17(16-19)% increased Rarity of Items found\n{ Suffix Modifier \"of the Narwhal\" (Tier: 6) — Elemental, Cold, Resistance }\n+20(16-20)% to Cold Resistance\n{ Suffix Modifier \"of Expertise\" (Tier: 3) — Caster, Speed }\n18(16-18)% increased Cast Speed",
+    "action": "craft"
+  },
+  {
+    "text": "Item Class: Rings\nRarity: Magic\nCobalt Pearl Ring of the Starfish\n--------\nRequires: Level 32\n--------\nItem Level: 79\n--------\n{ Implicit Modifier — Caster, Speed }\n9(7-10)% increased Cast Speed\n--------\n{ Prefix Modifier \"Cobalt\" (Tier: 11) — Mana }\n+16(15-24) to maximum Mana\n{ Suffix Modifier \"of the Starfish\" (Tier: 4) — Life }\n5(4.1-6) Life Regeneration per second",
+    "action": "review"
+  },
+  {
+    "text": "Item Class: Rings\nRarity: Magic\nRuby Ring of the Whelpling\n--------\nRequires: Level 8\n--------\nItem Level: 78\n--------\n{ Implicit Modifier — Elemental, Fire, Resistance }\n+30(20-30)% to Fire Resistance\n--------\n{ Suffix Modifier \"of the Whelpling\" (Tier: 8) — Elemental, Fire, Resistance }\n+7(6-10)% to Fire Resistance",
+    "action": "vendor"
+  },
+  {
+    "text": "Item Class: Rings\nRarity: Magic\nTopaz Ring of Bliss\n--------\nRequires: Level 33\n--------\nItem Level: 79\n--------\n{ Implicit Modifier — Elemental, Lightning, Resistance }\n+29(20-30)% to Lightning Resistance\n--------\n{ Suffix Modifier \"of Bliss\" (Tier: 3) — Mana }\n47(40-49)% increased Mana Regeneration Rate",
+    "action": "review"
+  },
+  {
+    "text": "Item Class: Rings\nRarity: Magic\nIncinerating Topaz Ring of the Ice\n--------\nRequires: Level 56\n--------\nItem Level: 78\n--------\n{ Implicit Modifier — Elemental, Lightning, Resistance }\n+26(20-30)% to Lightning Resistance\n--------\n{ Prefix Modifier \"Incinerating\" (Tier: 3) — Damage, Elemental, Fire, Attack }\nAdds 19(13-19) to 30(27-32) Fire damage to Attacks\n{ Suffix Modifier \"of the Ice\" (Tier: 2) — Elemental, Cold, Resistance }\n+40(36-40)% to Cold Resistance",
+    "action": "craft"
+  },
+  {
+    "text": "Item Class: Rings\nRarity: Magic\nArcing Topaz Ring of the Maelstrom\n--------\nRequires: Level 48\n--------\nItem Level: 78\n--------\n{ Implicit Modifier — Elemental, Lightning, Resistance }\n+24(20-30)% to Lightning Resistance\n--------\n{ Prefix Modifier \"Arcing\" (Tier: 4) — Damage, Elemental, Lightning, Attack }\nAdds 2(1-2) to 38(33-40) Lightning damage to Attacks\n{ Suffix Modifier \"of the Maelstrom\" (Tier: 3) — Elemental, Lightning, Resistance }\n+32(31-35)% to Lightning Resistance",
+    "action": "craft"
+  }
+]

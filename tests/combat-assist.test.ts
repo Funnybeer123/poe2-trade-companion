@@ -1,6 +1,8 @@
+import { readFileSync } from "node:fs";
+import path from "node:path";
 import { describe, expect, it } from "vitest";
 import { calibratedCombat, color, combatFrame, fill } from "./combatFixtures.js";
-import { CombatPlanner, defaultCombatConfig, estimateGlobe, parseCombatConfig, readCombatFrame, requireCombatCalibration } from "../src/core/combatAssist.js";
+import { CombatPlanner, defaultCombatConfig, estimateGlobe, parseCombatConfig, readCombatFrame, requireCombatCalibration, type CombatConfig } from "../src/core/combatAssist.js";
 
 describe("combat HUD perception and configuration", () => {
   it("defaults to 25%, bindings 1/Mouse5/R, 16 ms, and opt-in modules", () => {
@@ -8,7 +10,37 @@ describe("combat HUD perception and configuration", () => {
     expect(config.health).toMatchObject({ threshold: 25, key: "1", enabled: false });
     expect(config.mana).toMatchObject({ threshold: 25, key: "MOUSE5", enabled: false });
     expect(config.unleash).toMatchObject({ key: "R", enabled: false });
+    expect(config.verisium).toMatchObject({ key: "T", enabled: false, retryMs: 350 });
     expect(config.pollMs).toBe(16);
+  });
+  it("loads a settings file written before Powered by Verisium existed, keeping that skill off", () => {
+    const legacy = calibratedCombat() as Partial<CombatConfig>;
+    delete legacy.verisium;
+    delete legacy.regions!.verisium;
+    const parsed = parseCombatConfig(legacy);
+    expect(parsed.verisium).toEqual({ enabled: false, key: "T", retryMs: 350 });
+    expect(parsed.regions.verisium).toBeUndefined();
+    expect(() => requireCombatCalibration(parsed)).not.toThrow();
+    // A saved skill block that is present must still be valid.
+    expect(() => parseCombatConfig({ ...calibratedCombat(), verisium: { enabled: "yes" } })).toThrow(/verisium toggle/);
+  });
+  it("keeps the two skills on different keys and needs both calibrations for an enabled skill", () => {
+    const c = calibratedCombat();
+    c.verisium.enabled = true;
+    expect(parseCombatConfig(c).verisium.key).toBe("T");
+    c.verisium.key = "R";
+    expect(() => parseCombatConfig(c)).toThrow(/different keys/);
+    c.verisium.key = "T";
+    c.unleash.enabled = false;
+    expect(() => parseCombatConfig(c)).not.toThrow();
+    expect(() => requireCombatCalibration(c)).not.toThrow();
+    delete c.regions.verisium!.cooldown;
+    expect(() => requireCombatCalibration(c)).toThrow(/Powered by Verisium both ready and on cooldown/);
+    delete c.regions.verisium;
+    expect(() => requireCombatCalibration(c)).toThrow(/Calibrate Powered by Verisium first/);
+    c.verisium.enabled = false;
+    c.health.enabled = c.mana.enabled = false;
+    expect(() => requireCombatCalibration(c)).toThrow(/Enable a flask or a skill/);
   });
   it("accepts Mouse Button 5, preserves old keyboard settings and rejects duplicate mouse bindings", () => {
     const c = calibratedCombat();
@@ -20,6 +52,16 @@ describe("combat HUD perception and configuration", () => {
     expect(() => parseCombatConfig(c)).toThrow(/different keys/);
     c.health.key = "1"; c.mana.key = "MOUSE6";
     expect(() => parseCombatConfig(c)).toThrow(/Choose/);
+  });
+  it("reads a full life globe through the highlight and buff-tint bands drawn over it (live sample)", () => {
+    const sample = JSON.parse(readFileSync(path.resolve("fixtures/combat/health-globe-effect-bands.json"), "utf8")) as { actual: number[]; reference: number[] };
+    expect(estimateGlobe(sample.actual, sample.reference)).toBe(100);
+    // The same bands over a half-full globe still read the true surface.
+    const half = sample.actual.map((v, i) => i < 50 * 15 ? 5 : v);
+    expect(estimateGlobe(half, sample.reference)).toBe(50);
+    // A band that reaches the top is a surface, not an overlay.
+    const top = sample.actual.map((v, i) => i < 14 * 15 ? 5 : v);
+    expect(estimateGlobe(top, sample.reference)).toBe(86);
   });
   it("reads globe surfaces at threshold boundaries, including empty mana", () => {
     const full = calibratedCombat().regions.mana!.reference;
@@ -36,6 +78,16 @@ describe("combat HUD perception and configuration", () => {
     expect(readCombatFrame(c, { ...f, process: "NotPathOfExileSteam" }, 0).valid).toBe(false);
     f.samples.anchor = color(0, 0, 0);
     expect(readCombatFrame(c, f, 0).valid).toBe(false);
+  });
+  it("reads each skill icon on its own", () => {
+    const c = calibratedCombat(), f = combatFrame(c);
+    expect(readCombatFrame(c, f, 0)).toMatchObject({ unleash: "ready", verisium: "ready" });
+    f.samples.verisium = c.regions.verisium!.cooldown;
+    expect(readCombatFrame(c, f, 0)).toMatchObject({ unleash: "ready", verisium: "cooldown" });
+    f.samples.unleash = color(150, 200, 30);
+    expect(readCombatFrame(c, f, 0)).toMatchObject({ unleash: "unknown", verisium: "cooldown" });
+    delete c.regions.verisium;
+    expect(readCombatFrame(c, f, 0).verisium).toBeUndefined();
   });
   it("recognizes ready/cooldown and refuses ambiguous skill appearances", () => {
     const c = calibratedCombat(), f = combatFrame(c);
@@ -76,6 +128,27 @@ describe("combat replay decisions", () => {
     expect(p.decisions(c, reading, 0)).toEqual([]);
     const decisions = p.decisions(c, { ...reading, health: 24, mana: 0, unleash: "ready" }, 0);
     expect(decisions.map((d) => d.decision.intended[0].key)).toEqual(["1", "MOUSE5", "R"]);
+  });
+  it("casts both skills in one frame, in priority order, and tracks their cooldowns independently", () => {
+    const p = new CombatPlanner(), c = calibratedCombat();
+    c.verisium.enabled = true;
+    const both = { valid: true, reason: "fixture", health: 24, mana: 100, unleash: "ready" as const, verisium: "ready" as const };
+    expect(p.decisions(c, both, 0).map((d) => d.decision.intended[0].key)).toEqual(["1", "R", "T"]);
+    p.committed("unleash", 0);
+    p.committed("verisium", 0);
+    // Verisium confirms its cooldown and relights while Unleash is still lit without confirmation:
+    // Verisium casts at once, Unleash waits for its 750 ms unconfirmed-retry window.
+    const verisiumCooling = { ...both, health: 100, verisium: "cooldown" as const };
+    expect(p.decisions(c, verisiumCooling, 16)).toEqual([]);
+    expect(p.decisions(c, verisiumCooling, 32)).toEqual([]);
+    const relit = p.decisions(c, { ...both, health: 100 }, 400);
+    expect(relit.map((d) => d.name)).toEqual(["verisium"]);
+    expect(relit[0].decision.reason).toBe("Powered by Verisium icon ready");
+    p.committed("verisium", 400);
+    expect(p.decisions(c, { ...both, health: 100 }, 750).map((d) => d.name)).toEqual(["unleash"]);
+    p.committed("unleash", 750);
+    c.verisium.enabled = false;
+    expect(p.decisions(c, { ...both, health: 100, verisium: "ready" }, 5000).map((d) => d.name)).toEqual([]);
   });
   it("limits flask retries while low, even across threshold flicker", () => {
     const p = new CombatPlanner(), c = calibratedCombat();

@@ -3,6 +3,7 @@ import type { ClientBox, GridMark } from "./calibrationProfile.js";
 import { bagCellPixels, emptyBagPixels, sameBagPixels } from "./bagPixels.js";
 import { exactText, validCell, wisdomCount, type BagPosition } from "./bagAssessment.js";
 import { looksLikePoeItemText } from "./parseItem.js";
+import { bagArtMask, bagFootprintLook, bagProbeDelta, emptyBagCell, type BagView } from "./bagFastVision.js";
 
 export interface CursorVisionFrame {
   image: BgrImage;
@@ -40,6 +41,8 @@ const inImage = (image: BgrImage, box: ClientBox) => [box.x, box.y, box.w, box.h
   box.x >= 0 && box.y >= 0 && box.w > 0 && box.h > 0 && box.x + box.w <= image.width && box.y + box.h <= image.height;
 const overlaps = (a: ClientBox, b: ClientBox) => a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h;
 const centered = (pointer: { x: number; y: number }, w: number, h: number): ClientBox => ({ x: Math.floor(pointer.x - w / 2), y: Math.floor(pointer.y - h / 2), w, h });
+const wholeView = (image: BgrImage, pointer: { x: number; y: number }, evidence: string): BagView =>
+  ({ at: "", evidence, pointer, parts: [{ x: 0, y: 0, w: image.width, h: image.height, image }] });
 const unknown = (reason: string, evidence: string[] = []): CursorVisionProof => ({ state: "unknown", reason, evidence,
   scores: { features: 0, first: 0, second: 0, motion: 0 } });
 
@@ -111,10 +114,37 @@ function frameMatches(frame: CursorVisionFrame, box: ClientBox, features: Featur
   return [...screen, ...matchFeatures(cursor.image, cursor.alpha, center, box, features, "native")];
 }
 
+/** Mean colour of the source art (pixels far from the cell's own background) and of the
+ * pixels a payload changed. Live, the downsampled armed scroll stayed within 13 per channel
+ * of its inventory art; grossly different art is not the verified source. */
+function sourceArtColour(source: BagCursorSource, box: ClientBox, skipCount: boolean): number[] | undefined {
+  const all: Array<readonly [number, number, number]> = [];
+  for (let y = 5; y < box.h - 5; y++) for (let x = 5; x < box.w - 5; x++) {
+    if (skipCount && x <= box.w * .5 && y <= box.h * .38) continue;
+    all.push(pixel(source.image, box.x + x, box.y + y));
+  }
+  if (!all.length) return;
+  const median = [0, 1, 2].map(c => all.map(p => p[c]!).sort((a, b) => a - b)[all.length >> 1]!);
+  const art = all.filter(p => Math.max(...p.map((v, c) => Math.abs(v - median[c]!))) > 40);
+  return art.length >= 24 ? [0, 1, 2].map(c => art.reduce((sum, p) => sum + p[c]!, 0) / art.length) : undefined;
+}
+function changedColour(frame: BgrImage, other: BgrImage, region: ClientBox): number[] | undefined {
+  const sum = [0, 0, 0]; let count = 0;
+  for (let y = region.y; y < region.y + region.h; y++) for (let x = region.x; x < region.x + region.w; x++) {
+    const a = pixel(frame, x, y), b = pixel(other, x, y);
+    if (Math.max(Math.abs(a[0] - b[0]), Math.abs(a[1] - b[1]), Math.abs(a[2] - b[2])) <= 6) continue;
+    sum[0]! += a[0]; sum[1]! += a[1]; sum[2]! += a[2]; count++;
+  }
+  return count ? sum.map(v => v / count) : undefined;
+}
+
 /** Generic evidence for a specific physical item. A caller still checks map,
  * focus, modal state, the durable action receipt and shared disposal policy.
  * Never infer this result from an intended action or an OS cursor hash. */
-export function proveBagCursorPayload(input: { source: BagCursorSource; frames: readonly [CursorVisionFrame, CursorVisionFrame]; now: string }): CursorVisionProof {
+export function proveBagCursorPayload(input: { source: BagCursorSource; frames: readonly [CursorVisionFrame, CursorVisionFrame]; now: string;
+  /** Known physical footprints. With them, identity is judged on item art, because armed
+   * Wisdom and a held item legitimately pulse and re-tint cell backgrounds (live 2026-09-14). */
+  items?: readonly BagPosition[][] }): CursorVisionProof {
   const { source, frames, now } = input, box = sourceBox(source);
   const evidence = [source.evidence, ...frames.map(frame => frame.evidence)];
   if (!box || !validPair(frames, now) || !source.evidence || !looksLikePoeItemText(source.rawText) ||
@@ -123,13 +153,28 @@ export function proveBagCursorPayload(input: { source: BagCursorSource; frames: 
   if (regions.some(region => !inImage(source.image, region) || overlaps(region, source.grid)) || overlaps(regions[0]!, regions[1]!)) return unknown("Cursor probes must be separate world regions outside inventory.", evidence);
   let departed = true, unchanged = true;
   const target = new Set(source.cells.map(cell => `${cell.row},${cell.col}`));
+  const before = wholeView(source.image, { x: 0, y: 0 }, source.evidence), views = frames.map(frame => wholeView(frame.image, frame.pointer, frame.evidence));
+  const byArt = new Set<string>();
+  for (const cells of input.items ?? []) {
+    if (cells.some(cell => target.has(`${cell.row},${cell.col}`))) continue;
+    const mask = bagArtMask(before, source.grid, cells);
+    if (views.some(view => bagFootprintLook(view, source.grid, mask) !== "same")) return unknown("An unrelated bag item changed during cursor observation.", evidence);
+    for (const cell of cells) byArt.add(`${cell.row},${cell.col}`);
+  }
   for (let row = 0; row < 5; row++) for (let col = 0; col < 12; col++) {
-    const before = bagCellPixels(source.image, source.grid, { row, col });
+    if (byArt.has(`${row},${col}`)) continue;
+    const pixels = bagCellPixels(source.image, source.grid, { row, col });
     for (const frame of frames) {
-      const after = bagCellPixels(frame.image, source.grid, { row, col }), same = sameBagPixels(before, after);
+      const after = bagCellPixels(frame.image, source.grid, { row, col }), same = sameBagPixels(pixels, after);
       if (target.has(`${row},${col}`)) { unchanged &&= same; departed &&= !same && emptyBagPixels(after); }
       else if (!same) return unknown("An unrelated bag cell changed during cursor observation.", evidence);
     }
+  }
+  if (input.items && !departed && !unchanged) {
+    // The used stack turns olive and an emptied source is re-tinted; judge the art and the full-resolution emptiness instead.
+    const mask = bagArtMask(before, source.grid, source.cells, { excludeCount: true });
+    unchanged = !mask.weak && views.every(view => bagFootprintLook(view, source.grid, mask) === "same");
+    departed = !emptyBagCell(before, source.grid, source.cells[0]!) && views.every(view => source.cells.every(cell => emptyBagCell(view, source.grid, cell)));
   }
   const state = departed ? "item" : unchanged && wisdomCount(source.rawText) ? "wisdom" : "unknown";
   if (state === "unknown") return unknown("The source neither departed completely nor remained a verified Wisdom stack.", evidence);
@@ -145,7 +190,26 @@ export function proveBagCursorPayload(input: { source: BagCursorSource; frames: 
     return !frames.some((frame, i) => matchFeatures(frames[1 - i]!.image, undefined, frame.pointer, box, features, "screen")
       .some(match => match.scale === a.scale && match.dx === a.dx && match.dy === a.dy));
   });
-  if (!pair) return { ...unknown("The same source sprite was not independently observed following both pointer positions.", evidence), scores: { features: features.length, first: first[0]?.score ?? 0, second: second[0]?.score ?? 0, motion: 0 } };
+  if (!pair) {
+    // The game renders cursor payloads in software, downsampled and blended, so a template
+    // match can fail on a genuine payload. Over static probe artwork, one compact object that
+    // is present only under the pointer in EACH frame, with the same size and offset, is a
+    // payload following the pointer; the verified source state above says which one.
+    const deltas = [bagProbeDelta(views[1]!, views[0]!, regions[0]!), bagProbeDelta(views[0]!, views[1]!, regions[1]!)];
+    const near = deltas.every((delta, i) => delta.changed >= 120 && !!delta.box && frames[i]!.pointer.x >= delta.box.x - 24 && frames[i]!.pointer.x <= delta.box.x + delta.box.w + 24 &&
+      frames[i]!.pointer.y >= delta.box.y - 24 && frames[i]!.pointer.y <= delta.box.y + delta.box.h + 24);
+    const [a, b] = deltas.map(delta => delta.box);
+    const wanted = sourceArtColour(source, box, state === "wisdom");
+    const coloured = !!wanted && frames.every((frame, i) => {
+      const seen = changedColour(frame.image, frames[1 - i]!.image, regions[i]!);
+      return !!seen && seen.every((value, channel) => Math.abs(value - wanted[channel]!) <= 32);
+    });
+    const follows = !!input.items && coloured && near && !!a && !!b && Math.abs(a.w - b.w) <= Math.max(4, a.w * .15) && Math.abs(a.h - b.h) <= Math.max(4, a.h * .15) &&
+      Math.abs((a.x - frames[0].pointer.x) - (b.x - frames[1].pointer.x)) <= 6 && Math.abs((a.y - frames[0].pointer.y) - (b.y - frames[1].pointer.y)) <= 6;
+    if (!follows) return { ...unknown("The same source sprite was not independently observed following both pointer positions.", evidence), scores: { features: features.length, first: first[0]?.score ?? 0, second: second[0]?.score ?? 0, motion: 0 } };
+    return { state, rawText: source.rawText, reason: "Exact paired source text, physical source state, and one compact software payload present only under the pointer in both frames.", evidence,
+      scores: { features: features.length, first: first[0]?.score ?? 0, second: second[0]?.score ?? 0, motion: 1 } };
+  }
   return { state, rawText: source.rawText, reason: "Exact paired source text, physical source state, and matching art following two pointer positions.", evidence,
     scores: { features: features.length, first: pair[0].score, second: pair[1].score, motion: 1 } };
 }

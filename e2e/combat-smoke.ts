@@ -35,7 +35,7 @@ export async function combatSmoke(mode: SmokeBuildMode, testInfo: TestInfo) {
     await panel.getByRole("button", { name: "Save & start", exact: true }).click();
     await expect(panel.getByRole("alert")).toContainText("Calibrate a fixed HUD ornament");
     expect((await page.evaluate(() => window.poe2!.combat!.status())).running).toBe(false);
-    // Exercise the actual packaged helper, without capturing or emitting input.
+    // Exercise listener startup/cleanup in the packaged helper, without capturing or emitting input.
     const appPath = await application.evaluate(({ app }) => app.getAppPath());
     const script = path.join(appPath.replace(/app\.asar$/, "app.asar.unpacked"), "scripts", "win-combat-host.ps1");
     const nativeReady = await new Promise<string>((resolve, reject) => {
@@ -46,9 +46,20 @@ export async function combatSmoke(mode: SmokeBuildMode, testInfo: TestInfo) {
         child.stderr.on("data", (data) => { errors += String(data); });
         child.on("error", (e) => { clearTimeout(timer); reject(e); });
         child.on("exit", (code) => { clearTimeout(timer); if (code === 0) resolve(output); else reject(new Error(errors)); });
-        child.stdin.end('{"op":"ping"}\nquit\n');
+        child.stdin.end('{"op":"ping"}\n{"op":"configureTrigger","key":"R"}\n{"op":"completeTriggerCycle"}\nquit\n');
     });
-    expect(nativeReady.trim()).toBe('{"ok":true}');
+    expect(nativeReady.trim().split(/\r?\n/).map((line) => JSON.parse(line))).toEqual([{ ok: true }, { ok: true }, { ok: true }]);
+    await panel.getByLabel("Manual Sigil macro", { exact: true }).check();
+    await expect(panel.getByLabel("Sigil of Power key", { exact: true })).toHaveValue("R");
+    await expect(panel.getByLabel("Weapon swap key", { exact: true })).toHaveValue("X");
+    await expect(panel.getByLabel("Powered by Verisium key", { exact: true })).toHaveValue("T");
+    await expect(panel.getByRole("button", { name: "Save & arm", exact: true })).toBeVisible();
+    await expect(panel.getByText("One cycle per press.", { exact: false })).toBeVisible();
+    await expect(panel.getByRole("tab", { name: "Sigil of Power cooldown", exact: true })).toHaveCount(0);
+    await panel.getByLabel("Sigil cast delay", { exact: true }).fill("320");
+    await panel.getByRole("button", { name: "Save settings", exact: true }).click();
+    await expect.poll(() => page.evaluate(() => window.poe2!.combat!.status().then((s) => s.config.sigilSequence))).toEqual({ enabled: true, swapKey: "X", castMs: 320, swapMs: 100 });
+    expect((await page.evaluate(() => window.poe2!.combat!.status())).running).toBe(false);
     await saveCombatScreenshot(page, testInfo);
   });
 }

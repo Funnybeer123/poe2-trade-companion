@@ -1,7 +1,16 @@
 import { ref } from "vue";
-import { defaultCombatConfig, HUD_NAMES, type CombatBridge, type CombatConfig, type CombatPreview, type HudRegionName } from "../../core/combatAssist.js";
+import { defaultCombatConfig, HUD_NAMES, type CombatBridge, type CombatConfig, type CombatPreview, type HudRegionName, type SkillModule } from "../../core/combatAssist.js";
 
-export type CalibrationTab = "hud" | "cooldown";
+/** "hud" holds the ready/HUD screenshot; each skill has its own cooldown screenshot tab. */
+export type CalibrationTab = "hud" | "cooldown" | "cooldown-verisium";
+/** The cooldown tab for a skill (Unleash keeps the original "cooldown" id). */
+export function cooldownTab(skill: SkillModule): CalibrationTab {
+  return skill === "unleash" ? "cooldown" : "cooldown-verisium";
+}
+/** The skill a cooldown tab belongs to; undefined for the HUD tab. */
+export function tabSkill(tab: CalibrationTab): SkillModule | undefined {
+  return tab === "cooldown" ? "unleash" : tab === "cooldown-verisium" ? "verisium" : undefined;
+}
 interface CalibrationScreenshot extends CombatPreview { capturedAt: string }
 
 function createDraft() {
@@ -31,6 +40,8 @@ function createDraft() {
     merged.health = moduleSettings(local.health, baseline.health, saved.health);
     merged.mana = moduleSettings(local.mana, baseline.mana, saved.mana);
     merged.unleash = moduleSettings(local.unleash, baseline.unleash, saved.unleash);
+    merged.verisium = moduleSettings(local.verisium, baseline.verisium, saved.verisium);
+    merged.sigilSequence = moduleSettings(local.sigilSequence, baseline.sigilSequence, saved.sigilSequence);
     if (local.pollMs !== baseline.pollMs) merged.pollMs = local.pollMs;
     if (local.dryRun !== baseline.dryRun) merged.dryRun = local.dryRun;
     if (!equal(size(local), size(baseline))) {

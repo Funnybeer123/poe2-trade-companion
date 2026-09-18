@@ -303,6 +303,17 @@ describe("per-item identification, dropping and restart receipts", () => {
 });
 
 describe("strict offline/live argument boundary", () => {
+  it("preserves --run as the whole-bag workflow while explicit stages stay bounded", () => {
+    expect(parseBagTriageArgs(["--run"])).toMatchObject({ stage: "workflow", maxIdentifications: 59, maxDrops: 59, run: true });
+    expect(parseBagTriageArgs([])).toMatchObject({ stage: "capture", maxIdentifications: 1, maxDrops: 1 });
+    expect(parseBagTriageArgs(["--stage=workflow", "--run", "--max-identifications=2", "--max-drops=0"]))
+      .toMatchObject({ stage: "workflow", maxIdentifications: 2, maxDrops: 0 });
+    expect(parseBagTriageArgs(["--stage=workflow", "--replay=fixture"]))
+      .toMatchObject({ stage: "workflow", maxIdentifications: 59, maxDrops: 59, run: false });
+    expect(() => parseBagTriageArgs(["--stage=workflow"])).toThrow("requires --run");
+    expect(() => parseBagTriageArgs(["--stage=workflow", "--run", "--replay=fixture"])).toThrow("Replay cannot");
+    expect(parseBagTriageArgs(["--stage=capture", "--run"]).stage).toBe("capture");
+  });
   it.each(["--max-drops=NaN", "--max-drops=-1", "--max-drops=1.5", "--max-drops=60", "--typo", "--calibrate-moves", "--careful", "--keep-unknown", "--drop-x=100"])("rejects %s before adapters", arg => {
     expect(() => parseBagTriageArgs(["--stage=drop", "--journal=fixture", "--run", arg])).toThrow();
   });

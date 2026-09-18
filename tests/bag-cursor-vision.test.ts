@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import { existsSync, readFileSync } from "node:fs";
+import path from "node:path";
+import { readBmpBgr } from "../src/adapters/bmp.js";
+import { readBagJournal } from "../src/main/bagSessionStore.js";
 import type { BgrImage } from "../src/core/cellOccupancy.js";
 import { proveBagCursorEmpty, proveBagCursorPayload, type BagCursorSource, type CursorVisionFrame } from "../src/core/bagCursorVision.js";
 import { weakText, wisdom } from "./support/bagFixtures.js";
@@ -147,5 +151,30 @@ describe("positive empty cursor evidence", () => {
     if (fault === "overlap") frames[1].pointer.x = 210;
     if (fault === "partial-region") frames[0].pointer.y = 20;
     expect(proveBagCursorEmpty({ frames, knownEmptyCursorHashes: [EMPTY_HASH], payloadSize: { width: 96, height: 160 }, now: AT }).state).toBe("unknown");
+  });
+});
+
+// Private live evidence (never committed): the 2026-09-14 pair that stopped the first real
+// identification. It must now prove armed Wisdom, and still fail without known footprints.
+const liveRoot = path.join(process.env.APPDATA ?? "", "poe2-trade-companion", "artifacts", "map-triage");
+const liveFrame = (n: number) => path.join(liveRoot, "live-authorized-20260914-08.jsonl.evidence", `frame-09cb463b-e217-4ad5-a6e3-341a6847f3f4-0000${n}.bmp`);
+describe.skipIf(![3, 4, 5].every(n => existsSync(liveFrame(n))))("replay of the real armed-Wisdom observation", { timeout: 60000 }, () => {
+  it("accepts the software-rendered scroll over pulsing tints and keeps the old rejection without footprints", () => {
+    const session = readBagJournal(path.join(liveRoot, "live-authorized-20260914-08.jsonl")).at(-1)!.session, receipt = session.receipts[0]!;
+    const cell = receipt.before.cells.find(c => c.row === 0 && c.col === 0)!;
+    const frames = [4, 5].map(n => {
+      const meta = JSON.parse(readFileSync(liveFrame(n) + ".json", "utf8")) as { at: string; cursor: { clientX: number; clientY: number; sha256: string } };
+      return { image: readBmpBgr(liveFrame(n)), pointer: { x: meta.cursor.clientX, y: meta.cursor.clientY }, at: meta.at, evidence: liveFrame(n), cursorHash: meta.cursor.sha256 };
+    }) as [CursorVisionFrame, CursorVisionFrame];
+    const source: BagCursorSource = { image: readBmpBgr(liveFrame(3)), grid: { x: 2530, y: 1173, w: 1289, h: 541, cols: 12, rows: 5 }, cells: [{ row: 0, col: 0 }],
+      rawText: cell.rawText!, confirmation: cell.confirmation!, evidence: liveFrame(3) + ":paired-source" };
+    const proof = proveBagCursorPayload({ source, frames, now: frames[1].at, items: session.report.rows.map(row => row.cells!) });
+    expect(proof.reason).toContain("software payload");
+    expect(proof.state).toBe("wisdom");
+    expect(proveBagCursorPayload({ source, frames, now: frames[1].at }).state).toBe("unknown");
+    // The same frames can never pass as a picked-up item: the stack never left its cell.
+    const amulet = session.report.rows.find(row => row.row === 0 && row.col === 2)!;
+    expect(proveBagCursorPayload({ source: { ...source, cells: amulet.cells!, rawText: amulet.rawText, confirmation: amulet.rawText }, frames, now: frames[1].at,
+      items: session.report.rows.map(row => row.cells!) }).state).toBe("unknown");
   });
 });

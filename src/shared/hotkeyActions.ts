@@ -38,16 +38,16 @@ export const HOTKEY_ACTIONS: readonly HotkeyActionInfo[] = [
   },
   {
     id: "vendor",
-    label: "Vendor",
-    detail: "Quick-sell the bag to ZELINA (window opens; the sell click is not wired yet).",
+    label: "Clean up rings",
+    detail: "Scan existing rings at Ange and sell only rejects in one batch. Keeps useful T1/T2 rolls and supported synergies; buys nothing. Desktop shortcut: Ctrl+Alt+V.",
     context: "hideout",
     defaultKey: null,
   },
   {
     id: "identify",
-    label: "Bag preview",
+    label: "Identify & drop",
     detail:
-      "Capture and assess the full bag. Use Bag triage for separate Identify one and Drop one stages with verified receipts. Num0 stops; Num5 pauses. Compaction is disabled.",
+      "With Scrolls of Wisdom in the top-left bag slot, identify equipment and drop only verified low-priority items. Keep, Craft, Review, and unknown items stay. Num0 stops; Num5 pauses.",
     context: "map",
     defaultKey: 6,
   },

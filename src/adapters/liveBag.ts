@@ -3,6 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } fr
 import path from "node:path";
 import { bagCellPixels, emptyBagPixels, sameBagPixels, visibleLife, visibleLifeInHud, obstructingBagUi } from "../core/bagPixels.js";
 import { proveBagCursorEmpty, proveBagCursorPayload, type BagCursorSource, type CursorVisionFrame } from "../core/bagCursorVision.js";
+import { bagArtMask, bagFootprintLook, type BagView } from "../core/bagFastVision.js";
 import { cellKey, exactText, type BagCellObservation, type BagPosition } from "../core/bagAssessment.js";
 import type { BagAction, BagObservationRequest, BagScene, BagSession } from "../core/bagSession.js";
 import { type CalibrationProfile, type ChromeMark, type ClientBox, matchChrome } from "../core/calibrationProfile.js";
@@ -189,6 +190,23 @@ export function openLiveBag(options: LiveBagOptions) {
     return { image: readBmpBgr(receipt.before.evidence), grid, cells: sourceCells, rawText: source.rawText,
       confirmation: source.confirmation, evidence: receipt.before.evidence + ":paired-source" };
   }
+  /** Physical footprints still in the bag. With an armed or held cursor the game pulses and
+   * re-tints cell backgrounds, so identity between frames is judged on item art per footprint. */
+  function footprints(): Array<{ cells: BagPosition[]; excludeCount: boolean }> {
+    return (current?.report.rows ?? []).filter(row => !current!.droppedIds.includes(row.id) && row.cells?.length && !(row.row === 0 && row.col === 0 && row.quantity === 0))
+      .map(row => ({ cells: row.cells!, excludeCount: row.row === 0 && row.col === 0 }));
+  }
+  const whole = (frame: Frame): BagView => ({ at: frame.at, evidence: frame.file, pointer: { x: Number(frame.cursor.clientX), y: Number(frame.cursor.clientY) },
+    parts: [{ x: 0, y: 0, w: frame.image.width, h: frame.image.height, image: frame.image }] });
+  /** Cell keys whose footprint shows the same art (or the same emptiness) in both frames. */
+  function steadyByArt(before: Frame, after: Frame): Set<string> {
+    const steady = new Set<string>(), a = whole(before), b = whole(after);
+    for (const item of footprints()) {
+      const mask = bagArtMask(a, grid, item.cells, { excludeCount: item.excludeCount }), was = bagFootprintLook(a, grid, mask), now = bagFootprintLook(b, grid, mask);
+      if (was === now && now !== "changed") for (const cell of item.cells) steady.add(cellKey(cell));
+    }
+    return steady;
+  }
   async function park(point = probes[0]) {
     const state = await checkpoint();
     await input({ kind: "move", x: Number(state.left) + point.x, y: Number(state.top) + point.y }, "Park pointer at verified observation position for unobstructed bag evidence");
@@ -204,14 +222,17 @@ export function openLiveBag(options: LiveBagOptions) {
         throw new Error("Cursor moved outside its requested probe position; no further bag input.");
     }
     const source = cursorSource();
-    let proof = source ? proveBagCursorPayload({ source, frames, now }) : undefined;
-    if (!proof || proof.state === "unknown") proof = proveBagCursorEmpty({ frames, knownEmptyCursorHashes: perception.emptyCursorHashes, payloadSize, now });
+    const payload = source ? proveBagCursorPayload({ source, frames, now, items: footprints().map(item => item.cells) }) : undefined;
+    const empty = !payload || payload.state === "unknown" ? proveBagCursorEmpty({ frames, knownEmptyCursorHashes: perception.emptyCursorHashes, payloadSize, now }) : undefined;
+    const proof = empty ?? payload!;
     const evidence = b.file + ".cursor-proof.json";
-    writeFileSync(evidence, JSON.stringify(proof, null, 2));
+    // Keep the payload rejection beside the empty-cursor fallback; the first reason is the one to debug.
+    writeFileSync(evidence, JSON.stringify({ ...proof, payload, empty }, null, 2));
     b.proof = { state: proof.state, rawText: proof.rawText, evidence };
     if (proof.state === "unknown") throw new Error("Cursor payload could not be verified at both probe positions; evidence: " + evidence);
+    const steady = proof.state === "empty" ? new Set<string>() : steadyByArt(a, b);
     for (let row = 0; row < 5; row++) for (let col = 0; col < 12; col++) {
-      if (!sameBagPixels(bagCellPixels(a.image, grid, { row, col }), bagCellPixels(b.image, grid, { row, col }))) throw new Error("Bag changed between cursor probe frames.");
+      if (!steady.has(cellKey({ row, col })) && !sameBagPixels(bagCellPixels(a.image, grid, { row, col }), bagCellPixels(b.image, grid, { row, col }))) throw new Error("Bag changed between cursor probe frames.");
     }
     return b;
   }
@@ -308,9 +329,10 @@ export function openLiveBag(options: LiveBagOptions) {
     }
     const target = new Set((request?.cells ?? []).map(cellKey));
     if (pendingAction?.kind === "identify") target.add("0,0");
+    const steady = afterHeld && baseline ? steadyByArt(baseline, initial) : new Set<string>();
     for (let i = 0; i < cells.length; i++) {
       const cell = cells[i]!;
-      const unchanged = baseline && sameBagPixels(bagCellPixels(baseline.image, grid, cell), bagCellPixels(initial.image, grid, cell));
+      const unchanged = baseline && (steady.has(cellKey(cell)) || sameBagPixels(bagCellPixels(baseline.image, grid, cell), bagCellPixels(initial.image, grid, cell)));
       if (afterHeld) {
         if (!unchanged) {
           if (cursor.state !== "item" || !target.has(cellKey(cell)) || !emptyBagPixels(bagCellPixels(initial.image, grid, cell))) throw new Error("Unexpected bag change with an armed/held cursor.");

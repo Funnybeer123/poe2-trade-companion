@@ -18,6 +18,19 @@ describe("combat service lifecycle and input interlocks", () => {
     const service = new CombatAssistService({ config, killSwitch, mode: "public-companion", audit, createHost, now: () => Date.now() });
     return { config, frame, host, killSwitch, audit, service, createHost };
   }
+  function macroHarness(dryRun = false) {
+    const h = harness(dryRun);
+    h.config.health.enabled = h.config.mana.enabled = false;
+    h.config.verisium.enabled = h.config.sigilSequence.enabled = true;
+    h.service.configure(h.config);
+    return h;
+  }
+  function physicalR(h: ReturnType<typeof harness>, id = 1, ageMs = 0, hwnd = h.frame.hwnd) {
+    h.frame.trigger = { id, ageMs, hwnd };
+  }
+  function nativeKeys(h: ReturnType<typeof harness>) {
+    return h.host.send.mock.calls.filter(([p]) => p.op === "tap").map(([p]) => p.key);
+  }
   it.each([
     "Focus Path of Exile 2 to continue",
     'Exception calling "Foreground" with "0" argument(s): "Focus Path of Exile 2 to continue"',
@@ -103,6 +116,164 @@ describe("combat service lifecycle and input interlocks", () => {
     expect(h.host.close).toHaveBeenCalledOnce();
     expect(h.service.status.reason).toBe("Stopped");
   });
+  it("arms the native trigger without casting automatically, even when the skill icons stay ready", async () => {
+    const h = macroHarness();
+    await h.service.start(); await vi.advanceTimersByTimeAsync(20_000);
+    expect(h.host.send.mock.calls.slice(0, 3).map(([p]) => p.op)).toEqual(["ping", "configureTrigger", "sample"]);
+    expect(h.host.send).toHaveBeenCalledWith({ op: "configureTrigger", key: "R" });
+    expect(nativeKeys(h)).toEqual([]);
+    expect(h.audit).not.toHaveBeenCalled();
+    expect(h.service.status).toMatchObject({ running: true, reason: "Armed — press R for one cycle", actions: 0 });
+    h.service.stop();
+  });
+  it.each([false, true])("follows one physical R with X and T, never another R, with preview=%s", async (dryRun) => {
+    const h = macroHarness(dryRun);
+    physicalR(h);
+    await h.service.start(); await vi.advanceTimersByTimeAsync(0);
+    expect(nativeKeys(h)).toEqual([]);
+    await vi.advanceTimersByTimeAsync(720);
+    const keys = h.audit.mock.calls.flat(2).filter((t) => t.decisionRule.startsWith("sigil-sequence")).map((t) => t.input.key);
+    expect(keys).toEqual(["X", "T"]);
+    expect(nativeKeys(h)).toEqual(dryRun ? [] : ["X", "T"]);
+    await vi.advanceTimersByTimeAsync(20_000);
+    expect(h.service.status.actions).toBe(2);
+    h.service.stop();
+  });
+  it("runs without saved HUD calibration and samples only the foreground target", async () => {
+    const h = macroHarness();
+    h.config.regions = {};
+    h.config.width = h.config.height = 0;
+    h.service.configure(h.config);
+    h.frame.samples = {};
+    physicalR(h);
+    await h.service.start(); await vi.advanceTimersByTimeAsync(720);
+    expect(h.host.send).toHaveBeenCalledWith({ op: "sample", regions: {} });
+    expect(nativeKeys(h)).toEqual(["X", "T"]);
+    h.service.stop();
+  });
+  it.each([0, 200])("completes the manual macro when optional flask HUD becomes unreadable after %i ms", async (unreadableAt) => {
+    const h = macroHarness();
+    h.config.mana.enabled = true;
+    h.service.configure(h.config);
+    physicalR(h);
+    if (unreadableAt === 0) h.frame.samples = {};
+    await h.service.start(); await vi.advanceTimersByTimeAsync(unreadableAt);
+    h.frame.samples = {};
+    await vi.advanceTimersByTimeAsync(800);
+    expect(nativeKeys(h)).toEqual(["X", "T"]);
+    expect(h.audit.mock.calls.flat(2).every((t) => t.decisionRule.startsWith("sigil-sequence"))).toBe(true);
+    expect(h.service.status.running).toBe(true);
+    h.service.stop();
+  });
+  it("waits the configured delays and for physical R release before swapping", async () => {
+    const h = macroHarness();
+    physicalR(h); h.frame.triggerDown = true;
+    await h.service.start(); await vi.advanceTimersByTimeAsync(900);
+    expect(nativeKeys(h)).toEqual([]);
+    h.frame.triggerDown = false;
+    await vi.advanceTimersByTimeAsync(16);
+    expect(nativeKeys(h)).toEqual(["X"]);
+    await vi.advanceTimersByTimeAsync(80);
+    expect(nativeKeys(h)).toEqual(["X"]);
+    await vi.advanceTimersByTimeAsync(32);
+    expect(nativeKeys(h)).toEqual(["X", "T"]);
+    h.service.stop();
+  });
+  it("discards presses received while busy, then allows only a new press after completion", async () => {
+    const h = macroHarness(); physicalR(h);
+    await h.service.start(); await vi.advanceTimersByTimeAsync(200);
+    physicalR(h, 2);
+    await vi.advanceTimersByTimeAsync(800);
+    expect(nativeKeys(h)).toEqual(["X", "T"]);
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(nativeKeys(h)).toEqual(["X", "T"]);
+    physicalR(h, 3);
+    await vi.advanceTimersByTimeAsync(750);
+    expect(nativeKeys(h)).toEqual(["X", "T", "X", "T"]);
+    h.service.stop();
+  });
+  it("drains a physical press arriving during the final T request instead of queuing another cycle", async () => {
+    const h = macroHarness(); physicalR(h);
+    let latePress = false;
+    h.host.send.mockImplementation(async (p) => {
+      if (p.op === "sample") {
+        const reply = { ok: true, ...h.frame };
+        delete h.frame.trigger; // Native sampling consumes one pending physical edge.
+        return reply;
+      }
+      if (p.op === "tap" && p.key === "T" && !latePress) {
+        latePress = true;
+        physicalR(h, 2); // Arrives after the final sample, while T is still in flight.
+      }
+      if (p.op === "completeTriggerCycle") delete h.frame.trigger;
+      return { ok: true };
+    });
+    await h.service.start(); await vi.advanceTimersByTimeAsync(720);
+    expect(latePress).toBe(true);
+    expect(h.host.send).toHaveBeenCalledWith({ op: "completeTriggerCycle" });
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(nativeKeys(h)).toEqual(["X", "T"]);
+    physicalR(h, 3);
+    await vi.advanceTimersByTimeAsync(750);
+    expect(nativeKeys(h)).toEqual(["X", "T", "X", "T"]);
+    h.service.stop();
+  });
+  it.each([
+    { id: 1, ageMs: 251, hwnd: "1234" },
+    { id: 1, ageMs: -1, hwnd: "1234" },
+    { id: 1, ageMs: Number.NaN, hwnd: "1234" },
+    { id: 1, ageMs: 0, hwnd: "other-game-window" },
+    { id: 0, ageMs: 0, hwnd: "1234" },
+    { id: 1.5, ageMs: 0, hwnd: "1234" },
+  ])("rejects an invalid physical trigger: %j", async (trigger) => {
+    const h = macroHarness(); h.frame.trigger = trigger;
+    await h.service.start(); await vi.advanceTimersByTimeAsync(1500);
+    expect(nativeKeys(h)).toEqual([]);
+    expect(h.service.status.running).toBe(true);
+    h.service.stop();
+  });
+  it("discards a trigger from invalid foreground evidence without replaying it after recovery", async () => {
+    const h = macroHarness(); physicalR(h); h.frame.process = "notepad";
+    await h.service.start(); await vi.advanceTimersByTimeAsync(100);
+    h.frame.process = "PathOfExileSteam";
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(nativeKeys(h)).toEqual([]);
+    physicalR(h, 2);
+    await vi.advanceTimersByTimeAsync(750);
+    expect(nativeKeys(h)).toEqual(["X", "T"]);
+    h.service.stop();
+  });
+  it.each(["stop", "focus", "kill", "window", "invalid-reading"])("cancels the pending swap on %s", async (cause) => {
+    const h = macroHarness(); physicalR(h);
+    await h.service.start(); await vi.advanceTimersByTimeAsync(0);
+    if (cause === "stop") h.service.stop();
+    if (cause === "kill") h.killSwitch.trip();
+    if (cause === "focus") h.host.send.mockResolvedValue({ ok: false, error: "Game is not foreground" });
+    if (cause === "window") h.frame.hwnd = "5678";
+    if (cause === "invalid-reading") h.frame.process = "notepad";
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(nativeKeys(h)).toEqual([]);
+    expect(h.service.status.running).toBe(false);
+  });
+  it.each(["stop", "focus", "kill"])("cancels the pending Verisium cast after a swap on %s", async (cause) => {
+    const h = macroHarness(); physicalR(h);
+    await h.service.start(); await vi.advanceTimersByTimeAsync(608);
+    expect(nativeKeys(h)).toEqual(["X"]);
+    if (cause === "stop") h.service.stop();
+    if (cause === "kill") h.killSwitch.trip();
+    if (cause === "focus") h.host.send.mockResolvedValue({ ok: false, error: "Game is not foreground" });
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(nativeKeys(h)).toEqual(["X"]);
+    expect(h.service.status.running).toBe(false);
+  });
+  it("stops if the native trigger cannot be configured and never samples or taps", async () => {
+    const h = macroHarness();
+    h.host.send.mockImplementation(async (p) => p.op === "configureTrigger" ? { ok: false, error: "Keyboard hook unavailable" } : { ok: true });
+    await h.service.start(); await vi.advanceTimersByTimeAsync(1000);
+    expect(h.host.send.mock.calls.map(([p]) => p.op)).toEqual(["ping", "configureTrigger"]);
+    expect(h.service.status).toMatchObject({ running: false, reason: "Keyboard hook unavailable" });
+    expect(h.host.close).toHaveBeenCalledOnce();
+  });
   it("sends immediate low-health and R decisions through audited input", async () => {
     const h = harness();
     await h.service.start(); await vi.advanceTimersByTimeAsync(0);
@@ -110,11 +281,102 @@ describe("combat service lifecycle and input interlocks", () => {
     expect(h.audit.mock.calls.flat(2)).toEqual(expect.arrayContaining([expect.objectContaining({ module: "combat", result: "emitted" })]));
     h.service.stop();
   });
+  it("taps T for Powered by Verisium after R when both skills are enabled and ready", async () => {
+    const h = harness();
+    h.config.verisium.enabled = true;
+    h.service.configure(h.config);
+    await h.service.start(); await vi.advanceTimersByTimeAsync(0);
+    expect(h.host.send.mock.calls.filter(([p]) => p.op === "tap").map(([p]) => p.key)).toEqual(["1", "R", "T"]);
+    expect(h.audit.mock.calls.flat(2)).toContainEqual(expect.objectContaining({ decisionRule: "combat-verisium", input: { kind: "key", key: "T" }, result: "emitted" }));
+    expect(h.service.status.reading).toMatchObject({ unleash: "ready", verisium: "ready" });
+    h.service.stop();
+  });
+  it("skips a second-skill press that aged past the capture window instead of stopping combat", async () => {
+    const h = harness();
+    h.config.verisium.enabled = true;
+    h.service.configure(h.config);
+    let taps = 0;
+    h.host.send.mockImplementation(async (p) => {
+      if (p.op === "sample") return { ok: true, ...h.frame, capturedAt: undefined };
+      if (p.op === "tap") {
+        taps++;
+        // The first tap of the frame (health) is slow: by the time R and T come, the frame is 125 ms old.
+        if (taps === 1) vi.setSystemTime(Date.now() + 125);
+      }
+      return { ok: true };
+    });
+    await h.service.start(); await vi.advanceTimersByTimeAsync(0);
+    // Over budget after the slow tap: the remaining skills wait for the next frame; nothing fails, nothing stops.
+    const first = (h.audit.mock.calls.flat(2) as Array<{ decisionRule: string; result: string }>).map((t) => [t.decisionRule, t.result]);
+    expect(first).toEqual([["combat-health", "emitted"]]);
+    expect(h.service.status.running).toBe(true);
+    h.audit.mockClear();
+    await vi.advanceTimersByTimeAsync(20);
+    const next = (h.audit.mock.calls.flat(2) as Array<{ decisionRule: string; result: string }>).map((t) => [t.decisionRule, t.result]);
+    expect(next).toEqual(expect.arrayContaining([["combat-unleash", "emitted"], ["combat-verisium", "emitted"]]));
+    expect(h.service.status.running).toBe(true);
+    h.service.stop();
+  });
+  it("treats the worker's stale-capture refusal as a skipped press, not a stop", async () => {
+    const h = harness();
+    h.config.verisium.enabled = true;
+    h.service.configure(h.config);
+    let refused = false;
+    h.host.send.mockImplementation(async (p) => {
+      if (p.op === "sample") return { ok: true, ...h.frame };
+      if (p.op === "tap" && p.key === "R" && !refused) { refused = true; return { ok: false, error: "Stale capture or window moved" }; }
+      return { ok: true };
+    });
+    await h.service.start(); await vi.advanceTimersByTimeAsync(0);
+    const first = (h.audit.mock.calls.flat(2) as Array<{ decisionRule: string; result: string; reason: string }>);
+    expect(first.map((t) => [t.decisionRule, t.result])).toEqual([["combat-health", "emitted"], ["combat-unleash", "failed"]]);
+    expect(first[1]!.reason).toContain("Stale capture");
+    expect(h.service.status.running).toBe(true);
+    h.audit.mockClear();
+    await vi.advanceTimersByTimeAsync(20);
+    expect((h.audit.mock.calls.flat(2) as Array<{ decisionRule: string; result: string }>).map((t) => [t.decisionRule, t.result]))
+      .toEqual(expect.arrayContaining([["combat-unleash", "emitted"], ["combat-verisium", "emitted"]]));
+    // Any other worker failure still stops the loop.
+    h.host.send.mockImplementation(async (p) => p.op === "sample" ? { ok: true, ...h.frame } : p.op === "tap" ? { ok: false, error: "Windows rejected combat input" } : { ok: true });
+    await vi.advanceTimersByTimeAsync(1_000); // the next retry press fails for a non-stale reason
+    expect(h.service.status.running).toBe(false);
+    expect(h.service.status.reason).toContain("Windows rejected");
+  });
   it("dry-runs decisions without any native tap", async () => {
     const h = harness(true);
     await h.service.start(); await vi.advanceTimersByTimeAsync(100);
     expect(h.host.send.mock.calls.some(([p]) => p.op === "tap")).toBe(false);
     expect(h.service.status.actions).toBe(2);
+    h.service.stop();
+  });
+  it("retries a refused swap without stopping or casting Verisium before the swap succeeds", async () => {
+    const h = macroHarness(); physicalR(h);
+    let held = true;
+    h.host.send.mockImplementation(async (p) => {
+      if (p.op === "sample") return { ok: true, ...h.frame };
+      if (p.op === "tap" && held) return { ok: false, error: 'Exception calling "Tap": "Modifier or action binding held"' };
+      return { ok: true };
+    });
+    await h.service.start(); await vi.advanceTimersByTimeAsync(750);
+    expect(h.service.status.running).toBe(true);
+    expect(h.service.status.actions).toBe(0);
+    expect(nativeKeys(h)).toEqual(["X"]);
+    held = false;
+    await vi.advanceTimersByTimeAsync(350);
+    expect(h.service.status.actions).toBe(2);
+    expect(h.audit.mock.calls.flat(2).filter((t) => t.result === "emitted").map((t) => t.input.key)).toEqual(["X", "T"]);
+    h.service.stop();
+  });
+  it("waits for a held modifier during an active sequence and resumes from a fresh sample", async () => {
+    const h = macroHarness(); physicalR(h);
+    await h.service.start(); await vi.advanceTimersByTimeAsync(0);
+    h.host.send.mockImplementation(async (p) => p.op === "sample" ? { ok: false, error: "Release modifier keys to resume" } : { ok: true });
+    await vi.advanceTimersByTimeAsync(200);
+    expect(h.service.status.running).toBe(true);
+    expect(h.service.status.actions).toBe(0);
+    h.host.send.mockImplementation(async (p) => p.op === "sample" ? { ok: true, ...h.frame } : { ok: true });
+    await vi.advanceTimersByTimeAsync(600);
+    expect(nativeKeys(h)).toEqual(["X", "T"]);
     h.service.stop();
   });
   it("routes low mana to Mouse5 through the same audited and guarded input path", async () => {
