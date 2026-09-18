@@ -31,3 +31,8 @@ Windows denied termination of the running elevated Stream Deck process. Quit Str
 Test Home, Settings, Dry on, Emergency stop and Rearm; verify page navigation and the fixed stop keys. Confirm disconnected icons when closing the app, reconnect on launch, and the ring preview without input. Physical keypresses, display updates on the actual LCDs, profile navigation on-device, and live purchase/sale/drop/craft workflows have not been verified. Potentially destructive tests used fixtures, replay or no-input previews. No game actions were deliberately executed against the live client.
 
 The standalone legacy action daemon remains outside the app's worker lifecycle and retains its native stop controls. See `STREAM_DECK.md` for workflow-specific preview and pause semantics.
+
+## Local setup follow-up
+
+After the restart, the host connected the final plugin but reported orphan navigation links: sibling pages had been represented as cyclic child folders. Replaced these with Previous/Next page actions, reserved the entire last row, and added build assertions that every catalog action survives layout and every page retains Emergency stop. Repacked and validated the plugin and reran the SDK harness successfully. Installed the corrected profile with Stream Deck closed. User requested deferring launch and physical testing while playing League; corrected profile loading and selection remain to be verified.
+

@@ -1,6 +1,6 @@
 # Stream Deck XL mapping
 
-Coordinates are row,column (1-based). Pages: 1 Workflows; 2 Combat & tools; 3 Settings. Bottom-right is always Emergency stop. Bottom-left navigation selects the named page. Every action can be dragged from PoE2 Companion in Stream Deck to reassign keys.
+Coordinates are row,column (1-based). Pages: 1 Workflows; 2 Combat & tools; 3 Settings. Bottom-right is always Emergency stop. Bottom-left keys select the previous or next page. Every action can be dragged from PoE2 Companion in Stream Deck to reassign keys.
 
 All buttons show idle, active (triangle), paused (bars), unavailable (barred circle), disconnected (cross) or error (!). Counts appear at the top when the service publishes them. The Property Inspector shows the exact reason. Configuration toggles show active when enabled; they stop combat just like desktop configuration.
 
@@ -30,7 +30,6 @@ All buttons show idle, active (triangle), paused (bars), unavailable (barred cir
 | 1 | 3,6 | RECHECK | bag.reconcile | [SVG](../stream-deck/assets/svg/bag.reconcile-idle.svg) | Reconcile the saved bag action. |
 | 1 | 3,7 | VALUE | script.value-dump | [SVG](../stream-deck/assets/svg/script.value-dump-idle.svg) | Capture and value stash items. |
 | 1 | 3,8 | VALUE NEXT | script.value-dump-resume | [SVG](../stream-deck/assets/svg/script.value-dump-resume-idle.svg) | Resume pending prices from the saved report. |
-| 1 | 4,1 | SCAN NEXT | script.value-dump-capture-resume | [SVG](../stream-deck/assets/svg/script.value-dump-capture-resume-idle.svg) | Resume the saved stash capture. |
 | 1 | 4,4 | DRY ON | safety.dry-on | [SVG](../stream-deck/assets/svg/safety.dry-on-idle.svg) | Enable shared dry-run preference. |
 | 1 | 4,5 | LIVE | safety.dry-off | [SVG](../stream-deck/assets/svg/safety.dry-off-idle.svg) | Explicitly enable live execution; starts no workflow. |
 | 1 | 4,6 | REARM | safety.rearm | [SVG](../stream-deck/assets/svg/safety.rearm-idle.svg) | Explicitly rearm the stopped app; starts no workflow. |
@@ -60,7 +59,6 @@ All buttons show idle, active (triangle), paused (bars), unavailable (barred cir
 | 2 | 3,6 | 12 SCAN | scan.stash-normal | [SVG](../stream-deck/assets/svg/scan.stash-normal-idle.svg) | Run the normal stash scanner. |
 | 2 | 3,7 | 24 SCAN | scan.stash-quad | [SVG](../stream-deck/assets/svg/scan.stash-quad-idle.svg) | Run the quad stash scanner. |
 | 2 | 3,8 | REASSESS | valuation.reassess | [SVG](../stream-deck/assets/svg/valuation.reassess-idle.svg) | Re-evaluate the saved report without moving items. |
-| 2 | 4,1 | MARKET | feed.refresh | [SVG](../stream-deck/assets/svg/feed.refresh-idle.svg) | Refresh the app price feed. |
 | 2 | 4,4 | DRY ON | safety.dry-on | [SVG](../stream-deck/assets/svg/safety.dry-on-idle.svg) | Enable shared dry-run preference. |
 | 2 | 4,5 | LIVE | safety.dry-off | [SVG](../stream-deck/assets/svg/safety.dry-off-idle.svg) | Explicitly enable live execution; starts no workflow. |
 | 2 | 4,6 | REARM | safety.rearm | [SVG](../stream-deck/assets/svg/safety.rearm-idle.svg) | Explicitly rearm the stopped app; starts no workflow. |
@@ -82,10 +80,12 @@ All buttons show idle, active (triangle), paused (bars), unavailable (barred cir
 | 3 | 2,6 | REPLAY | open.diagnostics | [SVG](../stream-deck/assets/svg/open.diagnostics-idle.svg) | Open replay and diagnostics. |
 | 3 | 2,7 | HOTKEYS | open.hotkeys | [SVG](../stream-deck/assets/svg/open.hotkeys-idle.svg) | Open hotkey assignment settings. |
 | 3 | 2,8 | SORT CFG | open.sort-stash | [SVG](../stream-deck/assets/svg/open.sort-stash-idle.svg) | Open stash sort preview and plan tools. |
-| 3 | 3,1 | VALUE SORT | script.value-dump-sort | [SVG](../stream-deck/assets/svg/script.value-dump-sort-idle.svg) | Move using the existing valuation report. |
-| 3 | 3,2 | NUMBER | script.renumber | [SVG](../stream-deck/assets/svg/script.renumber-idle.svg) | Existing tab renumber operation. |
-| 3 | 3,3 | GEAR TABS | script.finish-gear | [SVG](../stream-deck/assets/svg/script.finish-gear-idle.svg) | Existing gear-tab finishing operation. |
-| 3 | 3,4 | HIDE | overlay.hide | [SVG](../stream-deck/assets/svg/overlay.hide-idle.svg) | Dismiss the current preview overlay. |
+| 3 | 3,1 | SCAN NEXT | script.value-dump-capture-resume | [SVG](../stream-deck/assets/svg/script.value-dump-capture-resume-idle.svg) | Resume the saved stash capture. |
+| 3 | 3,2 | VALUE SORT | script.value-dump-sort | [SVG](../stream-deck/assets/svg/script.value-dump-sort-idle.svg) | Move using the existing valuation report. |
+| 3 | 3,3 | NUMBER | script.renumber | [SVG](../stream-deck/assets/svg/script.renumber-idle.svg) | Existing tab renumber operation. |
+| 3 | 3,4 | GEAR TABS | script.finish-gear | [SVG](../stream-deck/assets/svg/script.finish-gear-idle.svg) | Existing gear-tab finishing operation. |
+| 3 | 3,5 | MARKET | feed.refresh | [SVG](../stream-deck/assets/svg/feed.refresh-idle.svg) | Refresh the app price feed. |
+| 3 | 3,6 | HIDE | overlay.hide | [SVG](../stream-deck/assets/svg/overlay.hide-idle.svg) | Dismiss the current preview overlay. |
 | 3 | 4,4 | DRY ON | safety.dry-on | [SVG](../stream-deck/assets/svg/safety.dry-on-idle.svg) | Enable shared dry-run preference. |
 | 3 | 4,5 | LIVE | safety.dry-off | [SVG](../stream-deck/assets/svg/safety.dry-off-idle.svg) | Explicitly enable live execution; starts no workflow. |
 | 3 | 4,6 | REARM | safety.rearm | [SVG](../stream-deck/assets/svg/safety.rearm-idle.svg) | Explicitly rearm the stopped app; starts no workflow. |

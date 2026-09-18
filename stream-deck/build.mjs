@@ -54,7 +54,7 @@ const groups = [
   DECK_ACTIONS.filter(([id]) => /^(combat|voice|helper|item|scan|feed|valuation|overlay)\./.test(id)),
   DECK_ACTIONS.filter(([id]) => id.startsWith('open.')),
 ];
-groups[2].push(...groups[0].splice(25), ...groups[1].splice(25));
+groups[2].push(...groups[0].splice(24), ...groups[1].splice(24));
 const profile = {}, mapping = [];
 const root = `${profileId}.sdProfile`;
 profile[`${root}/manifest.json`] = strToU8(JSON.stringify({ Device: { Model: '20GAT9902', UUID: '' }, Name: 'PoE2 Companion XL', Pages: { Current: pages[0], Default: pages[0], Pages: pages.slice(1) }, Version: '3.0' }));
@@ -65,20 +65,34 @@ function key(entry) {
 for (const [page, entries] of groups.entries()) {
   const actions = {};
   const controls = ['safety.dry-on', 'safety.dry-off', 'safety.rearm', 'workflow.stop', 'safety.estop'].map(id => DECK_ACTIONS.find(a => a[0] === id));
-  if (entries.length > 25) throw new Error('Too many page actions');
+  if (entries.length > 24) throw new Error('Too many page actions');
   for (const [i, entry] of entries.entries()) { actions[`${i%8},${Math.floor(i/8)}`] = key(entry); mapping.push([page+1, Math.floor(i/8)+1, i%8+1, ...entry]); }
   for (const [i, entry] of controls.entries()) { actions[`${i+3},3`] = key(entry); mapping.push([page+1,4,i+4,...entry]); }
-  // Folder navigation uses the same supported built-in format as the existing profile.
-  for (const [i, target] of pages.entries()) if (i !== page) {
-    actions[`${i},3`] = { ActionID: randomUUID(), Name: ['Workflows','Combat & tools','Settings'][i], Plugin: { Name: 'Navigation', UUID: 'com.elgato.streamdeck.profile.openchild', Version: '1.0' }, Settings: { ProfileUUID: target }, State: 0,
-      States: [{ ShowTitle: true, Title: ['WORKFLOWS','COMBAT\n& TOOLS','SETTINGS'][i], TitleAlignment: 'middle', FontSize: 11, TitleColor: '#ffffff' }], UUID: 'com.elgato.streamdeck.profile.openchild' };
+  // Pages are siblings, not child folders: cyclic folder references are discarded by Stream Deck.
+  for (const [i, direction] of ['previous', 'next'].entries()) {
+    const navigation = `com.elgato.streamdeck.page.${direction}`;
+    actions[`${i},3`] = { ActionID: randomUUID(), Name: direction === 'previous' ? 'Previous Page' : 'Next Page', Plugin: { Name: 'Navigation', UUID: navigation, Version: '1.0' }, Settings: {}, State: 0,
+      States: [{ ShowTitle: true, Title: direction === 'previous' ? 'PREVIOUS' : 'NEXT', TitleAlignment: 'bottom', FontSize: 11, TitleColor: '#ffffff' }], UUID: navigation };
   }
   profile[`${root}/Profiles/${pages[page].toUpperCase()}/manifest.json`] = strToU8(JSON.stringify({ Controllers: [{ Actions: actions, Type: 'Keypad' }], Icon: '', Name: ['Workflows','Combat & tools','Settings'][page] }));
 }
+const assigned = new Set();
+for (const [file, bytes] of Object.entries(profile)) {
+  if (!file.includes('/Profiles/')) continue;
+  const actions = JSON.parse(new TextDecoder().decode(bytes)).Controllers[0].Actions;
+  for (const [coordinate, entry] of Object.entries(actions)) {
+    if (entry.UUID.startsWith('com.poe2companion.deck.')) assigned.add(entry.UUID);
+    if (entry.UUID === 'com.elgato.streamdeck.profile.openchild') throw new Error('Top-level pages cannot be linked as child folders');
+    if (Number(coordinate.split(',')[1]) > 3) throw new Error('Action outside XL grid');
+  }
+  if (actions['7,3']?.UUID !== uuid('safety.estop')) throw new Error('Emergency stop missing');
+}
+for (const [id] of DECK_ACTIONS) if (!assigned.has(uuid(id))) throw new Error(`Profile lost action: ${id}`);
 const archive = zipSync(profile);
 writeFileSync(`${plugin}/profiles/PoE2 Companion XL.streamDeckProfile`, archive);
 writeFileSync(`${output}/PoE2 Companion XL.streamDeckProfile`, archive);
 json(`${output}/profile-files.json`, Object.fromEntries(Object.entries(profile).map(([key,value]) => [key, JSON.parse(new TextDecoder().decode(value))])));
 const rows = mapping.map(([page,row,col,id,name,label,detail]) => `| ${page} | ${row},${col} | ${label} | ${id} | [SVG](../stream-deck/assets/svg/${id}-idle.svg) | ${detail} |`);
-writeFileSync('../docs/STREAM_DECK_MAPPING.md', `# Stream Deck XL mapping\n\nCoordinates are row,column (1-based). Pages: 1 Workflows; 2 Combat & tools; 3 Settings. Bottom-right is always Emergency stop. Bottom-left navigation selects the named page. Every action can be dragged from PoE2 Companion in Stream Deck to reassign keys.\n\nAll buttons show idle, active (triangle), paused (bars), unavailable (barred circle), disconnected (cross) or error (!). Counts appear at the top when the service publishes them. The Property Inspector shows the exact reason. Configuration toggles show active when enabled; they stop combat just like desktop configuration.\n\n| Page | Key | Label | Command | Icon | Function |\n|---|---|---|---|---|---|\n${rows.join('\n')}\n`);
+writeFileSync('../docs/STREAM_DECK_MAPPING.md', `# Stream Deck XL mapping\n\nCoordinates are row,column (1-based). Pages: 1 Workflows; 2 Combat & tools; 3 Settings. Bottom-right is always Emergency stop. Bottom-left keys select the previous or next page. Every action can be dragged from PoE2 Companion in Stream Deck to reassign keys.\n\nAll buttons show idle, active (triangle), paused (bars), unavailable (barred circle), disconnected (cross) or error (!). Counts appear at the top when the service publishes them. The Property Inspector shows the exact reason. Configuration toggles show active when enabled; they stop combat just like desktop configuration.\n\n| Page | Key | Label | Command | Icon | Function |\n|---|---|---|---|---|---|\n${rows.join('\n')}\n`);
 console.log(`Built ${DECK_ACTIONS.length} native actions, ${DECK_ACTIONS.length*states.length} SVG sources, three XL pages, and contact sheets.`);
+

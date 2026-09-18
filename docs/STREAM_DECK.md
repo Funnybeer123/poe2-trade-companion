@@ -17,7 +17,7 @@ To rebuild: run `npm ci` in `stream-deck`, then `npm run typecheck`, `npm run bu
 
 Detected USB VID `0FD9`, PID `008F`, corroborated by the saved profile model `20GAT9902`: **Stream Deck XL 2022**, 8 columns × 4 rows, 96×96 key images, no dials. Installed software: **7.5.1.22901**. The existing profile was **Default Profile**. No device serial is included in the distributable profile.
 
-The dedicated profile has three named pages: Workflows, Combat & tools, and Settings. The last row contains page navigation and fixed controls: Dry on, Live, Rearm, Stop, Emergency stop. Some less frequent workflow tools are on Settings because the first page is full. [Complete mapping](STREAM_DECK_MAPPING.md) lists every assigned action and location. Drag actions from the **PoE2 Companion** category to change assignments using Stream Deck itself. Every action is independently reusable; multi-actions are disabled to prevent accidental workflow chains.
+The dedicated profile has three named pages: Workflows, Combat & tools, and Settings. The last row contains Previous/Next page navigation and fixed controls: Dry on, Live, Rearm, Stop, Emergency stop. Some less frequent workflow tools are on Settings because the first page is full. [Complete mapping](STREAM_DECK_MAPPING.md) lists every assigned action and location. Drag actions from the **PoE2 Companion** category to change assignments using Stream Deck itself. Every action is independently reusable; multi-actions are disabled to prevent accidental workflow chains.
 
 ## Behavior and boundaries
 
@@ -46,3 +46,4 @@ The plugin polls current service state every 750 ms and turns disconnected withi
 See [test results](STREAM_DECK_TESTS.md). Physical keypress verification is still required after restarting the elevated Stream Deck and closing older companion instances. Begin with Home, Open Settings, Dry on, Emergency stop and Rearm. Confirm the bottom-right stop key on each page, then run the ring preview. Only after verifying calibration and the saved settings should you explicitly select Live for game workflows.
 
 Official references consulted September 17, 2026: [SDK distribution](https://docs.elgato.com/streamdeck/sdk/introduction/distribution/), [manifest and image formats](https://docs.elgato.com/streamdeck/sdk/references/manifest/), [runtime versions](https://docs.elgato.com/streamdeck/sdk/introduction/plugin-environment/), [XL hardware](https://docs.elgato.com/streamdeck/hid/stream-deck-xl/). The plugin uses official `@elgato/streamdeck` 2.1.2, Node 24, minimum Stream Deck 7.1 and the official CLI packager/validator.
+
