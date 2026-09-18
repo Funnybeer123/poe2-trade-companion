@@ -43,6 +43,14 @@ describe("preload API exposure", () => {
     expect(electron.invoke).toHaveBeenLastCalledWith("combat:stop");
     await bridge.combat!.setGlobalDryRun(true);
     expect(electron.invoke).toHaveBeenLastCalledWith("combat:global-dry-run", true);
+    await bridge.follower!.status();
+    expect(electron.invoke).toHaveBeenLastCalledWith("follower:status");
+    await bridge.follower!.start("test-key");
+    expect(electron.invoke).toHaveBeenLastCalledWith("follower:start", "test-key");
+    await bridge.follower!.stop();
+    expect(electron.invoke).toHaveBeenLastCalledWith("follower:stop");
+    await bridge.follower!.demo();
+    expect(electron.invoke).toHaveBeenLastCalledWith("follower:demo");
     electron.invoke.mockClear();
     expect(Object.keys(bridge).sort()).toEqual(
       [
@@ -53,6 +61,7 @@ describe("preload API exposure", () => {
         "deck",
         "evaluateText",
         "fromClipboard",
+        "follower",
         "generateFilter",
         "hotkeys",
         "intelligence",

@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { followerSmoke } from "./follower-smoke.js";
+test("follower setup persists and previews routes without game input", async ({}, info) => { await followerSmoke("authorized-qa", info); });
 import { deckSmoke } from "./deck-smoke.js";
 test("Stream Deck native bridge routes controls and dry-run without game input", async ({}, info) => { await deckSmoke("authorized-qa", info); });
 import { combatSmoke } from "./combat-smoke.js";

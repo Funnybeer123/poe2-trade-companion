@@ -70,6 +70,14 @@ contextBridge.exposeInMainWorld("poe2", {
     start: () => ipcRenderer.invoke("price-helper:start"),
     stop: () => ipcRenderer.invoke("price-helper:stop"),
   },
+  follower: {
+    status: () => ipcRenderer.invoke("follower:status"),
+    configure: (config: import("../core/follower.js").FollowerConfig) => ipcRenderer.invoke("follower:configure", config),
+    generateKey: () => ipcRenderer.invoke("follower:generate-key"),
+    start: (key: string) => ipcRenderer.invoke("follower:start", key),
+    stop: () => ipcRenderer.invoke("follower:stop"),
+    demo: () => ipcRenderer.invoke("follower:demo"),
+  },
   combat: {
     setGlobalDryRun: (enabled: boolean) => ipcRenderer.invoke("combat:global-dry-run", enabled),
     status: () => ipcRenderer.invoke("combat:status"),

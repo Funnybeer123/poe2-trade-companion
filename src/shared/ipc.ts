@@ -462,6 +462,7 @@ export interface HotkeysBridge {
 }
 
 export interface Poe2Bridge {
+  follower?: import("./follower.js").FollowerBridge;
   deck?: import("./deckActions.js").DeckBridge;
   bagTriage?: import("./bagTriage.js").BagTriageBridge;
   priceHelper?: import("../core/priceHelper.js").PriceHelperBridge;

@@ -1,4 +1,6 @@
 import { expect, test } from "@playwright/test";
+import { followerSmoke } from "./follower-smoke.js";
+test("follower setup persists and previews routes without game input", async ({}, info) => { await followerSmoke("public-companion", info); });
 import { combatSmoke } from "./combat-smoke.js";
 import { dashboardSmoke } from "./dashboard-smoke.js";
 import { windowFocusSmoke } from "./window-focus-smoke.js";

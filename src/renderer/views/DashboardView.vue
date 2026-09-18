@@ -99,6 +99,11 @@ function moduleStatus(name: CombatModule): string {
       </div>
     </section>
 
+    <section class="card" style="padding: 20px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
+      <div><h2 style="margin: 0 0 6px; font-size: 18px;">Follow &amp; Loot <span class="dashboard-badge">Preview</span></h2><p style="margin: 0; color: #a6b3c5; font-size: 13px;">Set up your second PC and preview following, loot detours, and map recovery.</p></div>
+      <RouterLink class="dashboard-text-link" to="/tools/follower">Open follower setup →</RouterLink>
+    </section>
+
     <section class="dashboard-stash" aria-labelledby="stash-quick-title">
       <header class="dashboard-section-heading">
         <div><div class="dashboard-kicker">ON DEMAND</div><h2 id="stash-quick-title">Stash actions</h2></div>

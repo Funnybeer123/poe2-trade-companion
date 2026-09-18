@@ -63,6 +63,8 @@ import {
 } from "./scanSessionStore.js";
 import { ScannerRuntimeService } from "./scanRuntimeService.js";
 import { CombatAssistService, combatStorage } from "./combatAssistService.js";
+import { installFollower } from "./followerIntegration.js";
+import type { FollowerService } from "./followerService.js";
 import { defaultCombatConfig } from "../core/combatAssist.js";
 import { startEmergencyStopMonitor } from "../adapters/emergencyStopMonitor.js";
 import { sendRendererEvent } from "./rendererEvents.js";
@@ -103,6 +105,7 @@ let priceHelperService: PriceHelperService | undefined;
 let scannerService: ScannerRuntimeService | undefined;
 let combatService: CombatAssistService | undefined;
 let combatGlobalDryRun = true;
+let followerService: FollowerService | undefined;
 import { DEFAULT_POE_PROCESS_ALLOWLIST } from "../core/capabilities.js";
 let deckServer: import("./deckServer.js").DeckServer | undefined;
 let deckRuntime: import("./deckRuntime.js").DeckRuntime | undefined;
@@ -550,7 +553,9 @@ if (ownsInstance) void app.whenReady().then(() => {
       }
     },
   });
+  followerService = installFollower(() => mainWindow, () => backgroundSmoke ? "Peer connections are disabled during background UI smoke checks." : killSwitch.isLatched() ? "Emergency stop is latched. Rearm before connecting." : undefined);
   const stopAllInput = () => {
+    followerService?.stop("Emergency stop — rearm before connecting.");
     killSwitch.trip();
     bagTriageService?.stop("Emergency stop");
     stashTabAdminService?.stopScript("Emergency stop");
@@ -845,7 +850,7 @@ if (ownsInstance) void app.whenReady().then(() => {
   if (!backgroundSmoke) {
     priceHelperService = installPriceHelper(() => mainWindow, (identity, league, canRun) => priceFeedService!.fetchHelperReward(identity, league, canRun));
     const stopWorkflows = () => {
-      bagTriageService?.stop(); stashTabAdminService?.stopScript(); combatService?.stop();
+      bagTriageService?.stop(); stashTabAdminService?.stopScript(); combatService?.stop(); followerService?.stop();
       void voiceService?.cancel("operator-stop"); assistiveService?.stop("operator-stop"); stashSortService?.stop("operator-stop"); scannerService?.stop("operator-stop");
     };
     const setDryRun = (enabled: boolean) => {
@@ -878,6 +883,7 @@ if (ownsInstance) void app.whenReady().then(() => {
 });
 
 app.on("window-all-closed", () => {
+  followerService?.stop("App closed");
   bagTriageService?.stop("App closed");
   stashTabAdminService?.stopScript("App closed");
   emergencyStopMonitor?.close();
@@ -896,6 +902,7 @@ app.on("window-all-closed", () => {
   app.quit();
 });
 app.on("before-quit", () => {
+  followerService?.stop("App exiting");
   deckServer?.close();
   bagTriageService?.stop("App exiting");
   stashTabAdminService?.stopScript("App exiting");

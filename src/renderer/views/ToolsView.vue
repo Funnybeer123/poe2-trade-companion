@@ -8,6 +8,7 @@ import TransferPanel from "../TransferPanel.vue";
 import FilterSettingsTool from "../components/tools/FilterSettingsTool.vue";
 import HotkeyActionsTool from "../components/tools/HotkeyActionsTool.vue";
 import QaReplayTool from "../components/tools/QaReplayTool.vue";
+import FollowerTool from "../components/tools/FollowerTool.vue";
 import CombatAssistTool from "../components/tools/CombatAssistTool.vue";
 import PriceHelperTool from "../components/tools/PriceHelperTool.vue";
 import BagTriageTool from "../components/tools/BagTriageTool.vue";
@@ -15,6 +16,7 @@ import BagTriageTool from "../components/tools/BagTriageTool.vue";
 const route = useRoute();
 
 const tools = [
+  { id: "follower", label: "Follow & Loot", detail: "Two-PC connection & route preview" },
   { id: "price-helper", label: "Price helper", detail: "Live prices & Island Rumours" },
   { id: "combat", label: "Flasks & Unleash", detail: "Health, mana & cooldowns" },
   { id: "bag-triage", label: "Bag triage", detail: "Capture, identify & triage" },
@@ -56,6 +58,7 @@ const selectedTool = computed<ToolId>(() => {
 
     <div class="tool-content">
       <PriceHelperTool v-if="selectedTool === 'price-helper'" />
+      <FollowerTool v-else-if="selectedTool === 'follower'" />
       <CombatAssistTool v-else-if="selectedTool === 'combat'" />
       <BagTriageTool v-else-if="selectedTool === 'bag-triage'" />
       <CalibrationPanel v-else-if="selectedTool === 'calibration'" />
