@@ -138,7 +138,7 @@ export async function sortSavedBatch(saved: StashValuationReport, sorter: DumpVa
         if (bag.items.length || bag.unread.length) throw new Error("Inventory is no longer empty.");
         // Persist uncertainty before emitting input: interruption cannot erase the possibility of a withdrawal.
         row.status = "failed"; row.actualDestination = "inventory (unconfirmed)"; save();
-        const withdrawn = await sorter.withdrawItemsSerial([item], row.sourceTab);
+        const { withdrawn } = await sorter.withdrawItemsSerial([item], row.sourceTab);
         bag = await sorter.identifyBagItems({ exhaustive: true });
         if (withdrawn.length > 1 || bag.unread.length || bag.items.length !== 1 ||
           identity(bag.items[0]!.text) !== identity(item.text) || quantity(bag.items[0]!.text) !== quantity(item.text) ||

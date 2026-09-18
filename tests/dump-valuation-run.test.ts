@@ -20,7 +20,7 @@ function fixture(options: { inventory?: boolean; unrelated?: boolean; receipt?: 
     copyAt: vi.fn(async (x, y) => [...stash, ...bag].find(item => item.cells.some(cell => cell.x === x && cell.y === y))?.text ?? ""),
     withdrawItemsSerial: vi.fn(async (items: readonly IdentifiedItem[]) => {
       stash = []; bag = items.map(item => ({ ...item, cells: item.cells.map(cell => ({ ...cell, y: 1500 })) }));
-      return options.masked ? [] : [...items];
+      return { withdrawn: options.masked ? [] : [...items], bagFull: !!options.masked };
     }),
     depositBagCells: vi.fn(async (points: readonly GridCell[]) => {
       if (options.depositFails) return 1;

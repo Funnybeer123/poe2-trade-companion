@@ -74,6 +74,9 @@ const SCRIPT_ARGS: Record<StashTabScriptKind, string[]> = {
   // Price-bucket tabs: the one-key flow (also Num4 in the action daemon).
   "shop-buckets-dry": ["scripts/shop-buckets.ts"],
   "shop-buckets": ["scripts/shop-buckets.ts", "--live"],
+  // Merchant listings: keep Chaos/Divine only, delist every other currency.
+  "shop-currency-sweep-dry": ["scripts/shop.ts", "--currency-sweep", "--current", "--max-actions=144"],
+  "shop-currency-sweep": ["scripts/shop.ts", "--currency-sweep", "--current", "--live", "--max-actions=144"],
 };
 
 export class StashTabAdminService {

@@ -3,8 +3,9 @@
  * (docs/HANDOFF-shop-listings.md).
  *
  *   npx tsx scripts/shop.ts [--record] [--live] [--list] [--step]
- *                           [--no-comps] [--comps-limit=N] [--max-actions=N]
- *                           [--shop-tab=NAME] [--report] [--from-scan=FILE]
+ *                           [--currency-sweep] [--no-comps] [--comps-limit=N]
+ *                           [--max-actions=N] [--shop-tab=NAME] [--current]
+ *                           [--report] [--from-scan=FILE]
  *
  * DEFAULT (no flags): DRY-RUN — scan the shop tab (Ctrl+C ground truth,
  * read-only), diff it against the listings ledger (sold/hand-listed/
@@ -22,6 +23,12 @@
  *              (validation workflow step 3).
  *   --list     phase 2: appraise the bag, gate by confidence + comps, and
  *              (with --live) deposit + price the winners in the shop tab.
+ *   --currency-sweep  keep Chaos Orb / Divine Orb listings except exact
+ *              1 Chaos; delist every other readable currency, unpriced items,
+ *              and 1 Chaos listings. Unreadable asking prices are held. With
+ *              --live, ctrl-clicks those items back into the bag. --current
+ *              is implied: the Merchant tab already on screen is the one swept.
+ *   --current  do not click the merchant strip; use the tab already showing.
  *   --report   offline: print the ledger's current state and realized-sales
  *              stats. No game needed.
  *   --from-scan=FILE  offline: reconcile a saved shop-scan.json against the
@@ -45,6 +52,7 @@ import { ShopKeeper, type ShopAction } from "../src/adapters/shopKeeper.js";
 import { PriceFeedService } from "../src/main/priceFeedService.js";
 import { evaluateWithAppraisal } from "../src/core/appraisal.js";
 import {
+  buildCurrencySweepPlan,
   defaultShopConfig,
   deriveShopState,
   parseShopConfig,
@@ -77,10 +85,12 @@ const value = (name: string) => argv.find((a) => a.startsWith(`${name}=`))?.slic
 const live = flag("--live");
 const record = flag("--record") || live;
 const list = flag("--list");
+const currencySweep = flag("--currency-sweep");
+const current = flag("--current") || currencySweep;
 const stepMode = flag("--step");
 const report = flag("--report");
 const fromScan = value("--from-scan");
-const noComps = flag("--no-comps");
+const noComps = flag("--no-comps") || currencySweep;
 const compsLimit = Number(value("--comps-limit") ?? 20);
 const dryRun = !live;
 
@@ -182,6 +192,21 @@ if (report) {
 if (fromScan) {
   const snapshot = JSON.parse(readFileSync(fromScan, "utf8")) as { snapshot?: ShopSnapshot };
   const scan = snapshot.snapshot ?? (snapshot as unknown as ShopSnapshot);
+  if (currencySweep) {
+    const plan = buildCurrencySweepPlan(scan, { maxActions: config.maxActionsPerRun });
+    console.log(`offline currency sweep of ${fromScan}:`);
+    for (const line of plan.report) console.log(`  · ${line}`);
+    for (const action of plan.delist) {
+      const from = action.from ? `${action.from.amount} ${action.from.currency}` : "unpriced";
+      console.log(`  DELIST         ${action.name} [${action.badges.join(",") || "-"}] ${from}`);
+      for (const reason of action.reasons) console.log(`      · ${reason}`);
+    }
+    for (const hold of plan.holds) {
+      console.log(`  HOLD           ${hold.name} [${hold.badges.join(",") || "-"}]`);
+      for (const reason of hold.reasons) console.log(`      · ${reason}`);
+    }
+    process.exit(0);
+  }
   const ledgerFile = path.join(outDir, "listings.jsonl");
   const events = existsSync(ledgerFile) ? parseListingEvents(readFileSync(ledgerFile, "utf8")) : [];
   const result = reconcileShopScan({ state: deriveShopState(events), snapshot: scan, priceTable });
@@ -222,7 +247,15 @@ sweepOrphanHosts();
 
 const host = startWinHost({ requestTimeoutMs: 45_000 });
 const controlHost = startWinHost({ requestTimeoutMs: 10_000 });
-const harness = new SortHarness(host, controlHost, { outDir, stepMode, dryRun });
+const harness = new SortHarness(host, controlHost, {
+  outDir,
+  stepMode,
+  dryRun,
+  // Currency sweep / shop apply: game-fast dwells, not human review pace.
+  fast: true,
+  paceFloor: 0.5,
+  initialPace: 1.0,
+});
 const kit = new StashTabKit(host);
 const sorter = new GearSorter(host, harness, kit, {
   root,
@@ -230,6 +263,7 @@ const sorter = new GearSorter(host, harness, kit, {
   dryRun,
   debug: false,
   maxChestClicks: 2,
+  turbo: true,
 });
 
 // Comps ride the SAME etiquette as the app: PriceFeedService serializes
@@ -248,6 +282,7 @@ const keeper = new ShopKeeper(host, harness, kit, sorter, {
   config,
   dryRun,
   stepMode,
+  ...(current ? { assumeCurrentTab: true } : {}),
   priceTable,
   ...(feed
     ? {
@@ -271,7 +306,7 @@ try {
   await host.send({ op: "focus" });
   harness.startKeyListener();
   console.log(
-    `shop ${dryRun ? "DRY-RUN" : "LIVE"}${stepMode ? " STEP" : ""}${record ? " RECORD" : ""}${list ? " +LIST(bag)" : ""} ` +
+    `shop ${dryRun ? "DRY-RUN" : "LIVE"}${stepMode ? " STEP" : ""}${record ? " RECORD" : ""}${list ? " +LIST(bag)" : ""}${currencySweep ? " CURRENCY-SWEEP" : ""}${current ? " CURRENT-TAB" : ""} ` +
       `tab="${config.shopTab}" return="${config.returnTab}" max-actions=${config.maxActionsPerRun} — ` +
       "numpad: 8 good · 9 wrong · 5 pause · 0 stop",
   );
@@ -284,7 +319,9 @@ try {
     JSON.stringify({ snapshot, freeCells }, null, 2),
   );
 
-  const plan = await keeper.plan(snapshot, state, { compsLimit });
+  const plan = currencySweep
+    ? keeper.planCurrencySweep(snapshot)
+    : await keeper.plan(snapshot, state, { compsLimit });
   writeFileSync(path.join(outDir, "shop-plan.json"), JSON.stringify(plan, null, 2));
   console.log(
     `\nplan: ${plan.actions.length} action(s), ${plan.holds.length} hold(s)` +
@@ -304,7 +341,7 @@ try {
     console.log("\ndry-run: nothing executed — rerun with --live to apply (add --step for the first dialog)");
   }
 
-  if (list) {
+  if (list && !currencySweep) {
     console.log("\nphase 2 — bag listings:");
     const bagPlan = await keeper.planBagListings(freeCells, state, { compsLimit });
     for (const line of bagPlan.report) console.log(`  · ${line}`);

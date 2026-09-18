@@ -351,6 +351,37 @@ export function claimNeedsReverify(
 }
 
 /**
+ * After a successful Ctrl+C at the top-left of an item, the remaining cells
+ * of a known class footprint can be claimed without another hover — but only
+ * when every cell is still in the occupancy plan and not already covered.
+ * Returns undefined when the size is unknown or the footprint does not fit.
+ */
+export function knownFootprintClaims(
+  origin: { row: number; col: number },
+  size: { w: number; h: number } | undefined,
+  plannedKeys: ReadonlySet<string>,
+  alreadyCovered: ReadonlySet<string>,
+): Array<{ row: number; col: number }> | undefined {
+  if (!size || size.w < 1 || size.h < 1) return undefined;
+  if (size.w === 1 && size.h === 1) return [{ row: origin.row, col: origin.col }];
+  const cells: Array<{ row: number; col: number }> = [];
+  for (let r = 0; r < size.h; r += 1) {
+    for (let c = 0; c < size.w; c += 1) {
+      const row = origin.row + r;
+      const col = origin.col + c;
+      const key = `${row},${col}`;
+      if (r === 0 && c === 0) {
+        cells.push({ row, col });
+        continue;
+      }
+      if (!plannedKeys.has(key) || alreadyCovered.has(key)) return undefined;
+      cells.push({ row, col });
+    }
+  }
+  return cells;
+}
+
+/**
  * Empty-cell keys judged against the TAB'S OWN background: the baseline is
  * the 25th-percentile cell mean (flat colored backgrounds land there), and a
  * cell is empty when it sits near that baseline and is FLAT — low variance

@@ -80,6 +80,7 @@ import {
   groupIdentifiedCells,
   guildDestForItem,
   isTTabLabel,
+  knownFootprintClaims,
   packTripByDest,
   phantomSignatureMatches,
   stashRegionSane,
@@ -90,8 +91,10 @@ import {
   type IdentifiedItem,
   type ListVisibility,
 } from "../core/gearSort.js";
+import { knownPhysicalItemSize } from "../core/itemSizeCatalog.js";
+import { parseItemText } from "../core/parseItem.js";
 import type { TriageRouting } from "../core/bagTriage.js";
-import { STASH_SCAN } from "../core/copyTiming.js";
+import { SHOP_DELIST, STASH_SCAN } from "../core/copyTiming.js";
 import { recordOccupancyLabel } from "../core/occupancyLabels.js";
 import {
   DEFAULT_MIN_DETOUR_CONFIDENCE,
@@ -2356,6 +2359,9 @@ export class GearSorter {
    *   its class's minimum footprint (claimNeedsReverify) — any disagreement
    *   re-hovers the skipped cells. Class-footprint assumptions alone never
    *   skip anything: that exact shortcut once hid rings beside helmets.
+   * - After a successful Ctrl+C, a known class footprint (Body Armours 2x3,
+   *   Helmets 2x2, …) claims the remaining planned cells without another
+   *   hover — so a multi-cell item is not re-copied on every square.
    * - A silent cell gets ONE informed offset probe (the brightest block in
    *   the cell) instead of the old four blind hovers.
    */
@@ -2371,17 +2377,49 @@ export class GearSorter {
        * lost it and re-ground the same glare cells, 2026-09-01). */
       onSilent?: (cell: GridCell) => void;
       onProgress?: CaptureProgress;
+      /**
+       * After each successful Ctrl+C, claim the known class footprint and
+       * skip those cells (shop / dense gear tabs). Off keeps the older
+       * row-batched sweep for callers that prefer throughput on 1x1 clutter.
+       */
+      footprintSkip?: boolean;
     } = {},
   ): Promise<{ items: IdentifiedItem[]; unread: GridCell[]; reads: Array<{ cell: GridCell; text: string }> }> {
-    const { phantomScope, looksEmpty, probePoint, sameSpriteAsLeft, onSilent } = options;
+    const { phantomScope, looksEmpty, probePoint, sameSpriteAsLeft, onSilent, footprintSkip } = options;
     const reads: Array<{ cell: GridCell; text: string }> = [];
     const unread: GridCell[] = [];
+    const plannedByKey = new Map(cells.map((cell) => [`${cell.row},${cell.col}`, cell] as const));
+    const plannedKeys = new Set(plannedByKey.keys());
+    const covered = new Set<string>();
     const gotText = (cell: GridCell, text: string): boolean => {
       if (text && /Item Class:/i.test(text)) {
         reads.push({ cell, text });
         return true;
       }
       return false;
+    };
+    const claimFootprintFrom = (origin: GridCell, text: string): void => {
+      if (!footprintSkip) {
+        covered.add(`${origin.row},${origin.col}`);
+        return;
+      }
+      const parsed = parseItemText(text);
+      const size =
+        parsed.itemClass === "Relics"
+          ? undefined
+          : knownPhysicalItemSize(parsed.itemClass, parsed.baseType);
+      const claims = knownFootprintClaims(origin, size, plannedKeys, covered);
+      if (!claims) {
+        covered.add(`${origin.row},${origin.col}`);
+        return;
+      }
+      for (const claim of claims) {
+        const key = `${claim.row},${claim.col}`;
+        covered.add(key);
+        if (claim.row === origin.row && claim.col === origin.col) continue;
+        const planned = plannedByKey.get(key);
+        if (planned) reads.push({ cell: planned, text });
+      }
     };
     const byRow = new Map<number, GridCell[]>();
     for (const cell of cells) {
@@ -2402,12 +2440,13 @@ export class GearSorter {
       const reply = await this.host.send({
         op: "copysweep",
         points: target.map((cell) => ({ x: cell.x, y: cell.y })),
-        // 100ms turbo hover (99.8% read-rate pedigree, 419/420 live). A
-        // 90ms retest on 2026-09-01 was inconclusive: the 23 unread cells
-        // it hit were unreadable at 100ms too (a persistent silent cluster
-        // in Dump, not a speed effect). Keeping 100ms as the proven
-        // setting; a future 90ms retest needs a FULL tab, not the residue.
-        hoverMs: this.options.turbo ? 100 : 130,
+        // Shop / turbo: inventory-class hover (25–35ms). Slower 100/130ms
+        // paths remain for ordinary gear sorts where glare is common.
+        hoverMs: footprintSkip
+          ? STASH_SCAN.shop.hoverMs
+          : this.options.turbo
+            ? STASH_SCAN.inventory.hoverMs
+            : 130,
         sentinel,
       });
       const texts = Array.isArray(reply.texts) ? (reply.texts as string[]) : undefined;
@@ -2426,7 +2465,10 @@ export class GearSorter {
       return failed;
     };
     for (const row of [...byRow.keys()].sort((a, b) => a - b)) {
-      const rowCells = byRow.get(row)!.sort((a, b) => a.col - b.col);
+      const rowCells = byRow
+        .get(row)!
+        .filter((cell) => !covered.has(`${cell.row},${cell.col}`))
+        .sort((a, b) => a.col - b.col);
       // Split the row into hovered cells and continuation claims. A claim
       // needs its immediate left neighbour IN THE PLAN and the pixel edge to
       // say the sprite flows across; the claimed text comes from the nearest
@@ -2434,8 +2476,9 @@ export class GearSorter {
       const hover: GridCell[] = [];
       const chains = new Map<string, GridCell>(); // claimed key -> chain root cell
       for (const cell of rowCells) {
+        if (covered.has(`${cell.row},${cell.col}`)) continue;
         const left = rowCells.find((other) => other.col === cell.col - 1);
-        if (left && sameSpriteAsLeft?.(cell)) {
+        if (left && sameSpriteAsLeft?.(cell) && !covered.has(`${left.row},${left.col}`)) {
           const leftKey = `${left.row},${left.col}`;
           const root = chains.get(leftKey) ?? left;
           chains.set(`${cell.row},${cell.col}`, root);
@@ -2444,22 +2487,46 @@ export class GearSorter {
         }
         hover.push(cell);
       }
+      // Row-batched copy. With footprintSkip, a successful origin claims its
+      // known class footprint so later cells in this row and below are skipped
+      // (2xN body armour is one Ctrl+C, not six). Currency tabs are almost all
+      // 1x1 — one host IPC per row is the speed win.
       const failed = await sweepRow(hover, "identifying items");
+      for (const cell of hover) {
+        const text = reads.find(
+          (entry) => entry.cell.row === cell.row && entry.cell.col === cell.col,
+        )?.text;
+        if (text) {
+          if (footprintSkip) claimFootprintFrom(cell, text);
+          else covered.add(`${cell.row},${cell.col}`);
+        } else if (footprintSkip) {
+          covered.add(`${cell.row},${cell.col}`);
+        }
+      }
       const failedKeys = new Set(failed.map((cell) => `${cell.row},${cell.col}`));
       const textByKey = new Map(reads.map((entry) => [`${entry.cell.row},${entry.cell.col}`, entry.text]));
       const orphaned: GridCell[] = [];
       for (const [key, root] of chains) {
+        if (covered.has(key) && textByKey.has(key)) continue;
         const cell = claimed.get(key)!;
         const rootText = textByKey.get(`${root.row},${root.col}`);
         if (rootText && !failedKeys.has(`${root.row},${root.col}`)) {
           reads.push({ cell, text: rootText });
+          covered.add(key);
         } else {
           // The chain's read failed — the claim has no text to inherit.
           claimed.delete(key);
           orphaned.push(cell);
         }
       }
-      noText.push(...failed, ...(await sweepRow(orphaned, "identifying items (claim fallback)")));
+      const orphanFailed = await sweepRow(orphaned, "identifying items (claim fallback)");
+      for (const cell of orphaned) {
+        const text = reads.find(
+          (entry) => entry.cell.row === cell.row && entry.cell.col === cell.col,
+        )?.text;
+        if (text) claimFootprintFrom(cell, text);
+      }
+      noText.push(...failed, ...orphanFailed);
       if (options.onProgress) {
         const readKeys = new Set(reads.map(entry => entry.cell.row + "," + entry.cell.col));
         options.onProgress({ items: groupIdentifiedCells(reads), unread: cells.filter(cell => !readKeys.has(cell.row + "," + cell.col)) });
@@ -2500,6 +2567,7 @@ export class GearSorter {
     // cell replaces the old four blind offsets; without pixel data the blind
     // pattern remains the fallback.
     for (const cell of noText) {
+      if (covered.has(`${cell.row},${cell.col}`)) continue;
       if (looksEmpty?.(cell)) continue; // flat empty cell on a colored background
       await this.harness.checkpoint("identifying items (offset retry)");
       let found = false;
@@ -2513,11 +2581,11 @@ export class GearSorter {
           // retry rounds ("stuck on the Dump tab").
           continue;
         }
-        // 140ms probe hover: the default inventory hover is 35ms, which is
-        // too short for a reluctant tooltip — top-of-Dump jewels stayed
-        // silent through the whole sweep (2026-09-01, user found them).
-        found = gotText(cell, await this.copyItemAt(informed.x, informed.y, 140));
-        if (!found) {
+        // Shop footprint path: short probe only. Gear dumps keep 140ms + blind
+        // cross — jewels at Dump top needed that (2026-09-01).
+        const probeMs = footprintSkip ? STASH_SCAN.shop.hoverMs : 140;
+        found = gotText(cell, await this.copyItemAt(informed.x, informed.y, probeMs));
+        if (!found && !footprintSkip) {
           // Blind-cross fallback: small art (jewels!) can sit where even
           // the brightest-block probe misses the hover hitbox. Only cells
           // with something bright to aim at pay these four hovers, so the
@@ -2529,7 +2597,7 @@ export class GearSorter {
             }
           }
         }
-      } else {
+      } else if (!footprintSkip) {
         for (const [dx, dy] of [[14, 0], [-14, 0], [0, 14], [0, -14]] as const) {
           if (gotText(cell, await this.copyItemAt(cell.x + dx, cell.y + dy, 140))) {
             found = true;
@@ -2537,7 +2605,13 @@ export class GearSorter {
           }
         }
       }
-      if (found) continue;
+      if (found) {
+        const text = reads.find(
+          (entry) => entry.cell.row === cell.row && entry.cell.col === cell.col,
+        )?.text;
+        if (text) claimFootprintFrom(cell, text);
+        continue;
+      }
       onSilent?.(cell);
       const key = phantomScope ? this.phantomKey(phantomScope, cell) : `bag:${cell.row},${cell.col}`;
       const misses = (this.emptyCopyCounts.get(key) ?? 0) + 1;
@@ -3327,7 +3401,12 @@ export class GearSorter {
    * have navigated to the tab. Returns undefined when no geometry source
    * exists (the stash-region-insane guard has fired by then).
    */
-  private async indexTab(source: SourceTab, key: string, exhaustive = false, onProgress?: CaptureProgress): Promise<TabIndex | undefined> {
+  private async indexTab(
+    source: SourceTab,
+    key: string,
+    exhaustive = false,
+    onProgress?: CaptureProgress,
+  ): Promise<TabIndex | undefined> {
     let raw: RawFrame = await this.captureRaw();
     // The scan ALWAYS covers the full grid — trusting pixel occupancy to
     // pick cells let foreigners hide in cells it under-read. Cheap pixel
@@ -3507,6 +3586,9 @@ export class GearSorter {
         brightestCellPoint(raw.gray, raw.client, region, cols, rows, cell),
       ...(exhaustive ? {} : { sameSpriteAsLeft: (cell: GridCell) =>
         cellEdgeContinuity(raw.gray, raw.client, region, cols, rows, cell.row, cell.col) }),
+      // Merchant (and any shop-flagged) tabs: after one Ctrl+C, skip the
+      // known class footprint so a 2x3 body is not copied six times.
+      ...(!exhaustive && source.shop ? { footprintSkip: true } : {}),
       // Persist each phantom the MOMENT it proves silent — a Numpad 0
       // mid-sweep must never throw the probing away (it did, twice).
       onSilent: (cell: GridCell) => {
@@ -3524,7 +3606,7 @@ export class GearSorter {
         this.savePhantomStore();
       },
     };
-    await this.step(`${key}: sweeping ${occupied.length}/${cols * rows} cells (${exhaustive ? "every grid cell copied" : "black space skipped"})`);
+    await this.step(`${key}: sweeping ${occupied.length}/${cols * rows} cells (${exhaustive ? "every grid cell copied" : source.shop ? "footprint-aware" : "black space skipped"})`);
     const swept = await this.identifyCells(occupied, sweepOptions);
     const tabReads = new Map<string, { cell: GridCell; text: string }>();
     for (const read of swept.reads) tabReads.set(`${read.cell.row},${read.cell.col}`, read);
@@ -3636,43 +3718,27 @@ export class GearSorter {
   }
 
   /**
-   * Verified-serial withdraw for the shop flow (delists): ONE ctrl-click at
-   * a time, the next only after the bag pixel-verifiably grew. Listings are
-   * few and every one matters to the ledger — the serial commit check is the
-   * point, not speed. Returns the items that actually left the tab.
+   * Shop delist withdraw: one overlay, then ctrl-burst every origin as fast as
+   * the host allows (~30ms/click). No per-item bag/source verify — scanning
+   * again later is cheaper than serial commit polls. Returns every clicked
+   * item as withdrawn (optimistic); bagFull is always false in burst mode.
    */
   async withdrawItemsSerial(
     items: readonly IdentifiedItem[],
     label: string,
-  ): Promise<IdentifiedItem[]> {
-    const withdrawn: IdentifiedItem[] = [];
-    for (const item of items) {
-      const before = await this.bagCount();
-      const sent = await this.harness.burst([item.cells[0]!], {
-        found: items.flatMap((entry) => entry.cells),
-        cellW: 56,
-        cellH: 56,
-        label: `shop withdraw ${withdrawn.length + 1}/${items.length} (${label})`,
-      });
-      if (sent === 0) return withdrawn; // rejected or dry-run
-      let committed = false;
-      const deadline = Date.now() + 3_000;
-      while (Date.now() < deadline) {
-        await this.harness.sleep(300, false);
-        if ((await this.bagCount()) > before) {
-          committed = true;
-          break;
-        }
-      }
-      if (!committed) {
-        this.harness.guard("shop-withdraw-not-observed", true);
-        await this.step(`${label}: a shop withdraw did not commit — stopping the batch`);
-        return withdrawn;
-      }
-      withdrawn.push(item);
-      await this.harness.sleep(250, false);
-    }
-    return withdrawn;
+  ): Promise<{ withdrawn: IdentifiedItem[]; bagFull: boolean }> {
+    if (items.length === 0) return { withdrawn: [], bagFull: false };
+    const origins = items.map((item) => item.cells[0]!);
+    const sent = await this.harness.burst(origins, {
+      found: items.flatMap((entry) => entry.cells),
+      cellW: 56,
+      cellH: 56,
+      label: `shop withdraw ${items.length} (${label})`,
+      dwellMs: SHOP_DELIST.burstDwellMs,
+      chunkSize: SHOP_DELIST.burstChunk,
+    });
+    if (sent === 0) return { withdrawn: [], bagFull: false };
+    return { withdrawn: items.slice(0, sent), bagFull: false };
   }
 
   /**

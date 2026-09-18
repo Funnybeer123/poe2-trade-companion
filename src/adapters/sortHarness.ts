@@ -364,6 +364,10 @@ export class SortHarness {
       cellH: number;
       label: string;
       shift?: boolean;
+      /** Overlay dwell before clicks. Defaults: fast 150ms / normal 900ms. */
+      dwellMs?: number;
+      /** Points per host ctrlburst call (default BURST_CHUNK=3 for stop latency). */
+      chunkSize?: number;
     },
   ): Promise<number> {
     if (targets.length === 0) return 0;
@@ -404,7 +408,9 @@ export class SortHarness {
         }
       } else {
         // Let the human see the plan before it executes.
-        await this.sleep(this.options.fast ? 150 : 900, false);
+        const dwell =
+          options.dwellMs ?? (this.options.fast ? 150 : 900);
+        if (dwell > 0) await this.sleep(dwell, false);
       }
       if (this.planRejected) {
         this.planRejected = false;
@@ -412,11 +418,12 @@ export class SortHarness {
         return 0;
       }
       if (this.options.dryRun) return 0;
+      const chunk = Math.max(1, options.chunkSize ?? BURST_CHUNK);
       let sent = 0;
-      for (let i = 0; i < targets.length; i += BURST_CHUNK) {
+      for (let i = 0; i < targets.length; i += chunk) {
         this.throwIfStopped(`mid-burst: ${options.label}`);
         if (this.paused) await this.pauseGate();
-        const slice = targets.slice(i, i + BURST_CHUNK).map((cell) => ({ x: cell.x, y: cell.y }));
+        const slice = targets.slice(i, i + chunk).map((cell) => ({ x: cell.x, y: cell.y }));
         let reply = await this.host.send({ op: "ctrlburst", points: slice, shift: options.shift ?? false });
         if (!reply.ok && /focus/i.test(String(reply.error ?? ""))) {
           await this.host.send({ op: "focus" });

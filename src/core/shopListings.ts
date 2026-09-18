@@ -39,8 +39,13 @@ const PRICE_NOTE = /^~(price|b\/o)\s+(\d+(?:[./]\d+)?)\s+([a-z][a-z' -]*[a-z])\s
 
 /** Fold a note currency token to its canonical orb word ("exalt" → "exalted"). */
 export function normalizeNoteCurrency(token: string): string {
-  const folded = token.trim().toLowerCase();
-  const orb = tradeCurrencyToOrb(folded);
+  const folded = token
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, " ")
+    .replace(/\s+orbs?\b/g, "")
+    .trim();
+  const orb = tradeCurrencyToOrb(folded) ?? tradeCurrencyToOrb(folded.replace(/\s+/g, "-"));
   return orb ?? folded;
 }
 
@@ -49,22 +54,39 @@ export function normalizeNoteCurrency(token: string): string {
  * string). Returns undefined when the text carries no Note line at all;
  * an unparseable note comes back as kind "other" so callers can treat it as
  * a user-priced listing they must not touch.
+ *
+ * Also accepts an "Asking Price: Nx <Currency>" line when that appears in the
+ * copied item text (merchant listings).
  */
 export function parsePriceNote(itemText: string): PriceNote | undefined {
   const line = NOTE_LINE.exec(itemText)?.[1] ?? (itemText.trimStart().startsWith("~") ? itemText.trim() : undefined);
-  if (!line) return undefined;
-  const match = PRICE_NOTE.exec(line);
-  if (!match) return { kind: "other", raw: line };
-  const rawAmount = match[2]!;
-  const amount = rawAmount.includes("/")
-    ? Number(rawAmount.split("/")[0]) / Number(rawAmount.split("/")[1])
-    : Number(rawAmount);
-  if (!Number.isFinite(amount) || amount <= 0) return { kind: "other", raw: line };
+  if (line) {
+    const match = PRICE_NOTE.exec(line);
+    if (!match) return { kind: "other", raw: line };
+    const rawAmount = match[2]!;
+    const amount = rawAmount.includes("/")
+      ? Number(rawAmount.split("/")[0]) / Number(rawAmount.split("/")[1])
+      : Number(rawAmount);
+    if (!Number.isFinite(amount) || amount <= 0) return { kind: "other", raw: line };
+    return {
+      kind: match[1]!.toLowerCase() === "price" ? "price" : "bo",
+      amount: Math.round(amount * 10_000) / 10_000,
+      currency: normalizeNoteCurrency(match[3]!),
+      raw: line,
+    };
+  }
+  const asking = /asking\s*price\s*[:?]?\s*([0-9]{1,4})\s*[x×]?\s*([^\n]+)/i.exec(itemText);
+  if (!asking) return undefined;
+  const amount = Number(asking[1]);
+  const currency = normalizeNoteCurrency(asking[2]!.replace(/[^a-z ]+/gi, " ").trim());
+  if (!Number.isFinite(amount) || amount <= 0 || !currency) {
+    return { kind: "other", raw: asking[0]! };
+  }
   return {
-    kind: match[1]!.toLowerCase() === "price" ? "price" : "bo",
-    amount: Math.round(amount * 10_000) / 10_000,
-    currency: normalizeNoteCurrency(match[3]!),
-    raw: line,
+    kind: "price",
+    amount,
+    currency,
+    raw: asking[0]!.trim(),
   };
 }
 
@@ -689,4 +711,175 @@ export function bucketFor(
     if (bucket.exalted <= exalted && (!best || bucket.exalted > best.exalted)) best = bucket;
   }
   return best;
+}
+
+// ---------------------------------------------------------------------------
+// Chaos / Divine currency sweep
+// ---------------------------------------------------------------------------
+
+/** The only listing currencies the merchant sweep keeps. */
+export const CHAOS_DIVINE_LISTING_CURRENCIES = ["chaos", "divine"] as const;
+
+/**
+ * True when a listing/note currency is a Chaos Orb or Divine Orb.
+ * Greater/Perfect chaos and every other orb (exalted, alchemy, …) fail.
+ */
+export function isChaosOrDivineListingCurrency(currency: string | undefined): boolean {
+  if (!currency) return false;
+  const folded = normalizeNoteCurrency(currency);
+  return folded === "chaos" || folded === "divine";
+}
+
+/** True when the listing is priced at exactly 1 Chaos Orb. */
+export function isOneChaosListingPrice(price: {
+  amount?: number;
+  currency?: string;
+} | undefined): boolean {
+  if (!price || price.amount === undefined || !price.currency) return false;
+  return normalizeNoteCurrency(price.currency) === "chaos" && price.amount === 1;
+}
+
+/**
+ * Ledger/UI helper: true when the sweep would remove this asking price
+ * (wrong currency, unpriced, or exactly 1 Chaos).
+ */
+export function isCurrencySweepRemovalTarget(price: {
+  amount?: number;
+  currency?: string;
+} | undefined): boolean {
+  if (!price?.currency) return true;
+  if (isOneChaosListingPrice(price)) return true;
+  return !isChaosOrDivineListingCurrency(price.currency);
+}
+
+export type CurrencySweepAction = "keep" | "delist" | "hold";
+
+export interface CurrencySweepDecision {
+  action: CurrencySweepAction;
+  badges: string[];
+  reasons: string[];
+}
+
+/**
+ * One merchant item's next move for a Chaos/Divine-only shop.
+ * Unreadable asking prices are held (low-confidence OCR must not delete).
+ * Unpriced items, every other currency, and exact 1 Chaos listings are removed.
+ */
+export function currencySweepDecision(
+  item: Pick<ShopSnapshotItem, "note">,
+): CurrencySweepDecision {
+  const note = item.note;
+  if (!note) {
+    return {
+      action: "delist",
+      badges: ["UNPRICED"],
+      reasons: ["no Chaos or Divine asking price — remove from the merchant tab"],
+    };
+  }
+  if (note.kind === "other") {
+    return {
+      action: "hold",
+      badges: ["UNREADABLE"],
+      reasons: ["asking price did not parse — holding rather than guessing"],
+    };
+  }
+  if (isOneChaosListingPrice({ amount: note.amount, currency: note.currency })) {
+    return {
+      action: "delist",
+      badges: ["ONE-CHAOS"],
+      reasons: ["listed for 1 Chaos — remove from the merchant tab"],
+    };
+  }
+  if (isChaosOrDivineListingCurrency(note.currency)) {
+    return {
+      action: "keep",
+      badges: [],
+      reasons: [`listed in ${note.currency} — keep`],
+    };
+  }
+  return {
+    action: "delist",
+    badges: ["WRONG-CURRENCY"],
+    reasons: [
+      `listed in ${note.currency ?? "unknown"}, not Chaos or Divine — remove from the merchant tab`,
+    ],
+  };
+}
+
+export interface CurrencySweepEntry {
+  fingerprint: string;
+  name: string;
+  itemClass: string;
+  cell?: ShopCell;
+  from?: ListingPrice;
+  badges: string[];
+  reasons: string[];
+}
+
+export interface CurrencySweepPlan {
+  keepCount: number;
+  delist: CurrencySweepEntry[];
+  holds: Array<Pick<CurrencySweepEntry, "fingerprint" | "name" | "badges" | "reasons">>;
+  report: string[];
+}
+
+function listingPriceFromSnapshotItem(item: ShopSnapshotItem): ListingPrice | undefined {
+  const note = item.note;
+  if (!note || note.kind === "other" || note.amount === undefined || !note.currency) return undefined;
+  return {
+    amount: note.amount,
+    currency: note.currency,
+    ...(item.priceExalted !== undefined ? { exalted: item.priceExalted } : {}),
+  };
+}
+
+/**
+ * Scan snapshot → keep Chaos/Divine listings, delist everything else.
+ * Unreadable prices become holds. `maxActions` caps delists the same way
+ * the reprice plan does.
+ */
+export function buildCurrencySweepPlan(
+  snapshot: ShopSnapshot,
+  options: { maxActions: number },
+): CurrencySweepPlan {
+  const delist: CurrencySweepEntry[] = [];
+  const holds: CurrencySweepPlan["holds"] = [];
+  let keepCount = 0;
+  for (const item of snapshot.items) {
+    const decision = currencySweepDecision(item);
+    if (decision.action === "keep") {
+      keepCount += 1;
+      continue;
+    }
+    if (decision.action === "hold") {
+      holds.push({
+        fingerprint: item.fingerprint,
+        name: item.name,
+        badges: decision.badges,
+        reasons: decision.reasons,
+      });
+      continue;
+    }
+    const from = listingPriceFromSnapshotItem(item);
+    delist.push({
+      fingerprint: item.fingerprint,
+      name: item.name,
+      itemClass: item.itemClass,
+      ...(item.cells[0] ? { cell: item.cells[0] } : {}),
+      ...(from ? { from } : {}),
+      badges: decision.badges,
+      reasons: decision.reasons,
+    });
+  }
+  const report = [
+    `currency sweep: keep Chaos/Divine (≥2c) — ${keepCount} kept, ${delist.length} to remove, ${holds.length} held`,
+  ];
+  const maxActions = Math.max(1, Math.floor(options.maxActions));
+  if (delist.length > maxActions) {
+    report.push(
+      `${delist.length} removal(s) planned, capped at ${maxActions} per run — rerun for the rest`,
+    );
+    delist.length = maxActions;
+  }
+  return { keepCount, delist, holds, report };
 }

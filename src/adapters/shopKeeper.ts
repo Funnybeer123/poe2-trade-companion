@@ -7,7 +7,9 @@
  * mouse, reads Ctrl+C text, and appends the ledger.
  *
  * Invariants inherited from the sorter handoffs:
- *   - Ctrl+C is the only classifier; the Note line is the only price truth.
+ *   - Ctrl+C is the only classifier; the Note / Asking Price line in that
+ *     copy is the only price truth for scans (tooltip OCR is for dialog
+ *     verify / reprice read-back only).
  *   - Every write is verified: a price write by a Note re-read, a withdraw
  *     by bag growth, a deposit by the bounce check.
  *   - The price dialog is NEW driving: every control is anchored to an
@@ -29,6 +31,7 @@ import type { WinReply } from "./winHost.js";
 import {
   bucketFor,
   bucketTabs,
+  buildCurrencySweepPlan,
   buildShopSnapshot,
   deriveShopState,
   noteExalted,
@@ -454,7 +457,7 @@ export class ShopKeeper {
    * never stash navigation, so scanTab runs with navigate:false.
    */
   source(): SourceTab {
-    return { label: this.options.config.shopTab, occurrence: 0 };
+    return { label: this.options.config.shopTab, occurrence: 0, shop: true };
   }
 
   // -------------------------------------------------------------------------
@@ -663,6 +666,8 @@ export class ShopKeeper {
   /**
    * Index the shop tab by Ctrl+C ground truth. Returns the snapshot plus the
    * raw identified items (whose cells carry screen x/y for later actions).
+   * Prices come from the copied item text (Note / Asking Price line) — no
+   * per-item tooltip OCR pass.
    */
   async scan(): Promise<{ snapshot: ShopSnapshot; items: IdentifiedItem[]; freeCells: number }> {
     const config = this.options.config;
@@ -671,18 +676,10 @@ export class ShopKeeper {
     await this.requirePanel("merchant");
     const result = await this.sorter.scanTab(this.source(), { navigate: false });
     if (!result.ok) throw new Error(`shop-scan-failed:${result.reason}`);
-    // Prices come from each item's hover tooltip ("Asking Price"), never
-    // from the Ctrl+C text — one extra hover + OCR read per listed item.
-    const inputs = [];
-    for (const item of result.modelItems) {
-      await this.harness.checkpoint("reading asking prices");
-      const asking = await this.readAskingPrice({ x: item.cells[0]!.x, y: item.cells[0]!.y });
-      inputs.push({
-        text: item.text,
-        cells: item.cells,
-        ...(asking ? { askingPrice: { amount: asking.amount, currency: asking.currency } } : {}),
-      });
-    }
+    const inputs = result.modelItems.map((item) => ({
+      text: item.text,
+      cells: item.cells,
+    }));
     const snapshot = buildShopSnapshot(
       inputs,
       {
@@ -833,6 +830,34 @@ export class ShopKeeper {
     return { at, tab: config.shopTab, actions, holds, report };
   }
 
+  /**
+   * Keep Chaos Orb / Divine Orb listings except exact 1 Chaos. Everything
+   * else on the scanned merchant tab is a delist; unreadable asking prices
+   * are held.
+   */
+  planCurrencySweep(snapshot: ShopSnapshot): ShopPlan {
+    const planned = buildCurrencySweepPlan(snapshot, {
+      maxActions: this.options.config.maxActionsPerRun,
+    });
+    for (const line of planned.report) this.log(`  · ${line}`);
+    return {
+      at: this.now().toISOString(),
+      tab: snapshot.tab,
+      actions: planned.delist.map((entry) => ({
+        kind: "delist" as const,
+        fingerprint: entry.fingerprint,
+        name: entry.name,
+        itemClass: entry.itemClass,
+        ...(entry.cell ? { cell: entry.cell } : {}),
+        ...(entry.from ? { from: entry.from } : {}),
+        badges: entry.badges,
+        reasons: entry.reasons,
+      })),
+      holds: planned.holds,
+      report: planned.report,
+    };
+  }
+
   // -------------------------------------------------------------------------
   // Phase 1: apply (live only)
   // -------------------------------------------------------------------------
@@ -905,17 +930,28 @@ export class ShopKeeper {
       }
     }
 
-    for (const action of delistActions) {
-      const item = cellItem(action);
-      if (!item) {
-        failed += 1;
-        this.log(`  ! ${action.name}: no scanned cells to withdraw — skipped`);
-        continue;
+    if (delistActions.length > 0) {
+      const batch: Array<{ action: ShopAction; item: IdentifiedItem }> = [];
+      for (const action of delistActions) {
+        const item = cellItem(action);
+        if (!item) {
+          failed += 1;
+          this.log(`  ! ${action.name}: no scanned cells to withdraw — skipped`);
+          continue;
+        }
+        batch.push({ action, item });
       }
-      const done = await this.delistItems([{ action, item }]);
-      applied += done.applied;
-      failed += done.failed;
-      events.push(...done.events);
+      if (batch.length > 0) {
+        const done = await this.delistItems(batch);
+        applied += done.applied;
+        failed += done.failed;
+        events.push(...done.events);
+        if (done.bagFull) {
+          this.log(
+            `  · bag full after ${done.applied} delist(s) — ${done.failed} remaining action(s) left on the merchant tab`,
+          );
+        }
+      }
     }
 
     this.appendEvents(events);
@@ -928,26 +964,25 @@ export class ShopKeeper {
   }
 
   /**
-   * Delist = ctrl-click the listed item back into the bag (verified-serial,
-   * bag growth is the commit signal). The items stay in the BAG: moving
-   * them on to the return stash tab means closing the Merchant panel and
-   * opening the stash, which is reported for the user rather than driven.
+   * Delist = ctrl-burst every listed origin into the bag in one pass (no
+   * per-item verify). Items stay in the BAG: moving them to the return stash
+   * tab means closing Merchant and opening stash — reported, not driven.
    */
   private async delistItems(
     batch: ReadonlyArray<{ action: ShopAction; item: IdentifiedItem }>,
-  ): Promise<{ applied: number; failed: number; events: ListingEvent[] }> {
+  ): Promise<{ applied: number; failed: number; events: ListingEvent[]; bagFull: boolean }> {
     const config = this.options.config;
     const events: ListingEvent[] = [];
     if (!(await this.gotoShop())) throw new Error("shop-tab-unreachable");
-    const withdrawn = await this.sorter.withdrawItemsSerial(
+    const { withdrawn, bagFull } = await this.sorter.withdrawItemsSerial(
       batch.map((entry) => entry.item),
       config.shopTab,
     );
     if (withdrawn.length === 0) {
-      return { applied: 0, failed: batch.length, events };
+      return { applied: 0, failed: batch.length, events, bagFull };
     }
     this.log(
-      `  · ${withdrawn.length} delisted item(s) are in the bag — move them to ${config.returnTab} by hand (stash + merchant cannot be open together)`,
+      `  · ctrl-burst ${withdrawn.length} delist click(s) — items should be in the bag; move them to ${config.returnTab} by hand (stash + merchant cannot be open together)`,
     );
     let applied = 0;
     for (const { action, item } of batch) {
@@ -961,12 +996,12 @@ export class ShopKeeper {
         itemClass: action.itemClass,
         count: 1,
         by: "app",
-        certainty: "verified",
+        certainty: "heuristic",
         ...(action.from ? { previousPrice: action.from } : {}),
         reason: action.reasons[0] ?? "ladder floor",
       });
     }
-    return { applied, failed: batch.length - applied, events };
+    return { applied, failed: batch.length - applied, events, bagFull };
   }
 
   // -------------------------------------------------------------------------

@@ -22,7 +22,8 @@ const previews: Partial<Record<StashTabScriptKind, StashTabScriptKind>> = {
   "sort-inventory": "sort-inventory-dry",
   "sort-gear": "sort-gear-dry", "craft-gear": "craft-gear-dry", "shop-scan": "shop-scan-dry",
   "shop-buckets": "shop-buckets-dry", "shop-list": "shop-list-dry", "shop-apply": "shop-scan-dry",
-  "shop-apply-step": "shop-scan-dry", renumber: "renumber-dry", "vendor-cycle": "vendor-cycle-dry",
+  "shop-apply-step": "shop-scan-dry", "shop-currency-sweep": "shop-currency-sweep-dry",
+  renumber: "renumber-dry", "vendor-cycle": "vendor-cycle-dry",
 };
 export class DeckRuntime {
   private pending = new Set<DeckActionId>();

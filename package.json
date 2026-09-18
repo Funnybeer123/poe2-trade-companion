@@ -82,7 +82,9 @@
     "teach:record": "npx --yes tsx scripts/record-teach.ts",
     "shop:buckets": "npx --yes tsx scripts/shop-buckets.ts",
     "shop:buckets:live": "npx --yes tsx scripts/shop-buckets.ts --live --step",
-    "shop:tab": "npx --yes tsx scripts/shop-list-bag.ts"
+    "shop:tab": "npx --yes tsx scripts/shop-list-bag.ts",
+    "shop:currency-sweep": "npx --yes tsx scripts/shop.ts --currency-sweep",
+    "shop:currency-sweep:live": "npx --yes tsx scripts/shop.ts --currency-sweep --live --step"
   },
   "dependencies": {
     "better-sqlite3": "^13.0.3",

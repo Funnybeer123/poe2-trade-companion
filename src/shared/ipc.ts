@@ -6,7 +6,8 @@ export type StashTabScriptKind =
   | "value-dump" | "value-dump-sort" | "value-dump-resume" | "value-dump-capture-resume"
   | "craft-gear" | "craft-gear-dry" | "shop-scan-dry" | "shop-scan"
   | "shop-apply" | "shop-apply-step" | "shop-list-dry" | "shop-list"
-  | "shop-buckets-dry" | "shop-buckets";
+  | "shop-buckets-dry" | "shop-buckets"
+  | "shop-currency-sweep-dry" | "shop-currency-sweep";
 
 import type {
   BuildProfile,

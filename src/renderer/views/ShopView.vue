@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref } from "vue";
+import { isCurrencySweepRemovalTarget, isOneChaosListingPrice } from "@core/shopListings";
 import type { StashTabAdminEvent, StashTabAdminStatus } from "@core/stashTabAdmin";
 import { useGameActions } from "../composables/useGameActions";
 import {
   getShopApi,
   getStashTabAdminApi,
   type ShopConfigView,
+  type ShopListingView,
   type ShopOverviewView,
 } from "../services/rendererApi";
 
@@ -63,6 +65,9 @@ const bucketTabsText = computed({
   },
 });
 const listings = computed(() => overview.value.state ?? []);
+const foreignListings = computed(() =>
+  listings.value.filter((listing) => isCurrencySweepRemovalTarget(listing.price)),
+);
 const plan = computed(() => overview.value.plan ?? null);
 const stats = computed(() => overview.value.stats ?? []);
 const realizedTotal = computed(
@@ -72,6 +77,14 @@ const realizedTotal = computed(
 function ageDays(iso: string): string {
   const ms = Date.now() - Date.parse(iso);
   return Number.isFinite(ms) ? `${Math.max(0, ms / 86_400_000).toFixed(1)}d` : "?";
+}
+
+function listingIsForeign(listing: ShopListingView): boolean {
+  return isCurrencySweepRemovalTarget(listing.price);
+}
+
+function listingSweepBadge(listing: ShopListingView): string {
+  return isOneChaosListingPrice(listing.price) ? "1 chaos" : "not C/D";
 }
 
 async function runScriptKind(kind: string): Promise<void> {
@@ -97,6 +110,10 @@ async function runApply(): Promise<void> {
 
 async function runList(): Promise<void> {
   await runScriptKind(dryRun.value ? "shop-buckets-dry" : "shop-buckets");
+}
+
+async function runCurrencySweep(): Promise<void> {
+  await runScriptKind(dryRun.value ? "shop-currency-sweep-dry" : "shop-currency-sweep");
 }
 
 async function stopScript(): Promise<void> {
@@ -198,13 +215,36 @@ async function saveConfig(): Promise<void> {
             <span class="eyebrow">Ledger</span>
             <h2 id="shop-listings-title">Current listings</h2>
           </div>
-          <button type="button" class="button compact secondary" @click="refresh">Refresh</button>
+          <div class="listing-actions">
+            <button type="button" class="button compact secondary" @click="refresh">Refresh</button>
+            <button
+              type="button"
+              class="button compact"
+              data-test="currency-sweep"
+              :class="dryRun ? 'secondary' : 'danger'"
+              :disabled="status.running || !configured"
+              :title="dryRun
+                ? 'Reads the shop tab and lists items that are not Chaos/Divine, or are 1 Chaos'
+                : 'Ctrl-clicks non-Chaos/Divine and 1 Chaos listings back into the bag'"
+              @click="runCurrencySweep"
+            >
+              {{ dryRun ? "Preview Chaos/Divine sweep" : "Remove non-Chaos/Divine" }}
+            </button>
+          </div>
         </div>
+        <p class="muted">
+          Open Ange's Merchant on the tab you want cleaned, then run the sweep.
+          It keeps Chaos and Divine listings except exact 1 Chaos, and ctrl-clicks
+          everything else into the bag. Unreadable asking prices are held.
+          <template v-if="foreignListings.length">
+            Ledger currently flags {{ foreignListings.length }} listing(s) the sweep would remove.
+          </template>
+        </p>
         <p v-if="listings.length === 0" class="muted">
           No ledger entries yet — run a scan; existing hand-priced listings are adopted as read-only.
         </p>
         <ul v-else class="listing-list">
-          <li v-for="listing in listings" :key="listing.fingerprint">
+          <li v-for="listing in listings" :key="listing.fingerprint" :class="{ foreign: listingIsForeign(listing) }">
             <span class="listing-copy">
               <strong>{{ listing.count > 1 ? `${listing.count}x ` : "" }}{{ listing.name }}</strong>
               <small>{{ listing.itemClass }} · listed {{ ageDays(listing.listedAt) }} ago · priced {{ ageDays(listing.pricedAt) }} ago</small>
@@ -216,6 +256,7 @@ async function saveConfig(): Promise<void> {
               </template>
               <template v-else>unpriced</template>
             </span>
+            <span v-if="listingIsForeign(listing)" class="listing-badge foreign">{{ listingSweepBadge(listing) }}</span>
             <span class="listing-badge" :class="listing.by">{{ listing.by === "app" ? "auto" : listing.by }}</span>
           </li>
         </ul>
@@ -377,8 +418,11 @@ async function saveConfig(): Promise<void> {
 .listing-price { flex: none; text-align: right; display: flex; flex-direction: column; }
 .listing-price small { opacity: 0.65; }
 .listing-badge { flex: none; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 0.15rem 0.5rem; border-radius: 0.3rem; border: 1px solid rgba(140, 140, 160, 0.4); margin-top: 0.15rem; }
+.listing-actions { display: flex; flex-wrap: wrap; gap: 0.4rem; align-items: center; }
+.listing-list li.foreign { background: rgba(179, 80, 80, 0.08); margin: 0 -0.35rem; padding-left: 0.35rem; padding-right: 0.35rem; border-radius: 0.3rem; }
 .listing-badge.app { border-color: #4fa84f; color: #7dd87d; }
 .listing-badge.user { border-color: #c9a227; color: #e0c46a; }
+.listing-badge.foreign { border-color: #b35050; color: #e08a8a; }
 .plan-kind { flex: none; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; padding: 0.15rem 0.5rem; border-radius: 0.3rem; border: 1px solid rgba(140, 140, 160, 0.4); margin-top: 0.15rem; }
 .plan-kind.reprice { border-color: #c9a227; color: #e0c46a; }
 .plan-kind.delist { border-color: #b35050; color: #e08a8a; }

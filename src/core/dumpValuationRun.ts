@@ -11,7 +11,7 @@ export interface DumpValuationSorter {
   bagCellsNow(): Promise<GridCell[]>;
   identifyBagItems(options?: { exhaustive?: boolean; onProgress?: CaptureProgress }): Promise<{ items: IdentifiedItem[]; unread: GridCell[] }>;
   copyAt(x: number, y: number): Promise<string>;
-  withdrawItemsSerial(items: readonly IdentifiedItem[], label: string): Promise<IdentifiedItem[]>;
+  withdrawItemsSerial(items: readonly IdentifiedItem[], label: string): Promise<{ withdrawn: IdentifiedItem[]; bagFull: boolean }>;
   depositBagCells(points: readonly GridCell[], destination: string, options: { shiftOnly: boolean }): Promise<number>;
 }
 export type CaptureProgress = (progress: { items: IdentifiedItem[]; unread: GridCell[] }) => void;

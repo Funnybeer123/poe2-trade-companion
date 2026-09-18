@@ -3,10 +3,15 @@ import {
   ageDays,
   bucketFor,
   bucketTabs,
+  buildCurrencySweepPlan,
   buildShopSnapshot,
+  currencySweepDecision,
   defaultShopConfig,
   deriveShopState,
   formatPriceNote,
+  isChaosOrDivineListingCurrency,
+  isCurrencySweepRemovalTarget,
+  isOneChaosListingPrice,
   maxAutoListExalted,
   normalizeNoteCurrency,
   noteExalted,
@@ -110,7 +115,21 @@ describe("price-note ground truth", () => {
   it("folds currency aliases", () => {
     expect(normalizeNoteCurrency("Exalt")).toBe("exalted");
     expect(normalizeNoteCurrency("div")).toBe("divine");
+    expect(normalizeNoteCurrency("Divine Orb")).toBe("divine");
+    expect(normalizeNoteCurrency("Chaos Orbs")).toBe("chaos");
     expect(normalizeNoteCurrency("mirror")).toBe("mirror"); // unknown stays itself
+  });
+
+  it("parses Asking Price lines that appear inside a Ctrl+C copy", () => {
+    const text = [
+      "Item Class: Rings",
+      "Rarity: Rare",
+      "Cheap Band",
+      "Gold Ring",
+      "--------",
+      "Asking Price: 5x Divine Orb",
+    ].join("\n");
+    expect(parsePriceNote(text)).toMatchObject({ kind: "price", amount: 5, currency: "divine" });
   });
 });
 
@@ -387,5 +406,109 @@ describe("bucket labels under OCR", () => {
     expect(priceFromTabLabel("IOEx")).toMatchObject({ amount: 10, currency: "exalted", label: "IOEx" });
     expect(priceFromTabLabel("lEx")).toMatchObject({ amount: 1, currency: "exalted" });
     expect(priceFromTabLabel("5D")).toMatchObject({ amount: 5, currency: "divine" });
+  });
+});
+
+describe("Chaos / Divine currency sweep", () => {
+  it("accepts only Chaos Orb and Divine Orb currencies", () => {
+    expect(isChaosOrDivineListingCurrency("chaos")).toBe(true);
+    expect(isChaosOrDivineListingCurrency("Divine")).toBe(true);
+    expect(isChaosOrDivineListingCurrency("div")).toBe(true);
+    expect(isChaosOrDivineListingCurrency("exalted")).toBe(false);
+    expect(isChaosOrDivineListingCurrency("greater-chaos")).toBe(false);
+    expect(isChaosOrDivineListingCurrency("perfect-chaos")).toBe(false);
+    expect(isChaosOrDivineListingCurrency("alchemy")).toBe(false);
+    expect(isChaosOrDivineListingCurrency(undefined)).toBe(false);
+    expect(isChaosOrDivineListingCurrency("")).toBe(false);
+  });
+
+  it("keeps Chaos and Divine listings, delists every other readable currency", () => {
+    expect(currencySweepDecision({ note: { kind: "price", amount: 12, currency: "chaos", raw: "~price 12 chaos" } })).toMatchObject({
+      action: "keep",
+    });
+    expect(currencySweepDecision({ note: { kind: "bo", amount: 1, currency: "divine", raw: "~b/o 1 divine" } })).toMatchObject({
+      action: "keep",
+    });
+    expect(currencySweepDecision({ note: { kind: "price", amount: 5, currency: "exalted", raw: "~price 5 exalted" } })).toMatchObject({
+      action: "delist",
+      badges: ["WRONG-CURRENCY"],
+    });
+    expect(currencySweepDecision({ note: { kind: "price", amount: 2, currency: "greater-chaos", raw: "2x Greater Chaos" } })).toMatchObject({
+      action: "delist",
+      badges: ["WRONG-CURRENCY"],
+    });
+  });
+
+  it("also removes exact 1 Chaos listings while keeping higher Chaos prices", () => {
+    expect(isOneChaosListingPrice({ amount: 1, currency: "chaos" })).toBe(true);
+    expect(isOneChaosListingPrice({ amount: 1, currency: "Chaos" })).toBe(true);
+    expect(isOneChaosListingPrice({ amount: 2, currency: "chaos" })).toBe(false);
+    expect(isOneChaosListingPrice({ amount: 1, currency: "divine" })).toBe(false);
+    expect(isCurrencySweepRemovalTarget({ amount: 1, currency: "chaos" })).toBe(true);
+    expect(isCurrencySweepRemovalTarget({ amount: 2, currency: "chaos" })).toBe(false);
+    expect(currencySweepDecision({ note: { kind: "price", amount: 1, currency: "chaos", raw: "~price 1 chaos" } })).toMatchObject({
+      action: "delist",
+      badges: ["ONE-CHAOS"],
+    });
+    expect(currencySweepDecision({ note: { kind: "price", amount: 2, currency: "chaos", raw: "~price 2 chaos" } })).toMatchObject({
+      action: "keep",
+    });
+  });
+
+  it("removes unpriced items and holds unreadable asking prices", () => {
+    expect(currencySweepDecision({})).toMatchObject({ action: "delist", badges: ["UNPRICED"] });
+    expect(currencySweepDecision({ note: { kind: "other", raw: "ASKING PR1CE garbled" } })).toMatchObject({
+      action: "hold",
+      badges: ["UNREADABLE"],
+    });
+  });
+
+  it("plans delists from a mixed merchant scan and respects the action cap", () => {
+    const snapshot = buildShopSnapshot(
+      [
+        { text: AMULET_TEXT, cells: [{ row: 0, col: 0 }] },
+        { text: RING_TEXT, cells: [{ row: 0, col: 1 }] },
+        { text: RING_TEXT_UNPRICED, cells: [{ row: 1, col: 0 }] },
+        {
+          text: RING_TEXT_UNPRICED,
+          cells: [{ row: 1, col: 1 }],
+          askingPrice: { amount: 3, currency: "chaos" },
+        },
+        {
+          text: RING_TEXT_UNPRICED.replace("Doom Loop", "Cheap Band"),
+          cells: [{ row: 1, col: 2 }],
+          askingPrice: { amount: 1, currency: "chaos" },
+        },
+        {
+          text: RING_TEXT_UNPRICED.replace("Doom Loop", "Silent Pact"),
+          cells: [{ row: 2, col: 0 }],
+          askingPrice: { amount: 1, currency: "greater-exalted" },
+        },
+      ],
+      { at: "2026-09-18T10:00:00.000Z", tab: "Shop", priceTable: starterPriceTable() },
+    );
+    const plan = buildCurrencySweepPlan(snapshot, { maxActions: 3 });
+    expect(plan.keepCount).toBe(2);
+    expect(plan.delist.map((entry) => entry.name)).toEqual(["Doom Loop", "Doom Loop", "Cheap Band"]);
+    expect(plan.delist[0]!.from).toMatchObject({ amount: 5, currency: "exalted" });
+    expect(plan.delist[1]!.from).toBeUndefined();
+    expect(plan.delist[2]!).toMatchObject({
+      name: "Cheap Band",
+      from: { amount: 1, currency: "chaos" },
+      badges: ["ONE-CHAOS"],
+    });
+    expect(plan.report.some((line) => /capped at 3/.test(line))).toBe(true);
+    expect(plan.holds).toHaveLength(0);
+  });
+
+  it("holds a garbled note instead of deleting it", () => {
+    const snapshot = snapshotOf([
+      { text: `${RING_TEXT_UNPRICED}\n--------\nNote: offers welcome` },
+    ]);
+    const plan = buildCurrencySweepPlan(snapshot, { maxActions: 10 });
+    expect(plan.keepCount).toBe(0);
+    expect(plan.delist).toHaveLength(0);
+    expect(plan.holds).toHaveLength(1);
+    expect(plan.holds[0]!.badges).toEqual(["UNREADABLE"]);
   });
 });

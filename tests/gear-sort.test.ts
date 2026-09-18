@@ -19,6 +19,7 @@ import {
   guildDestForItem,
   parseItemClass,
   foreignItemsFor,
+  knownFootprintClaims,
   minFootprintForClass,
   isTTabLabel,
   parseCorrections,
@@ -169,6 +170,36 @@ describe("verified sprite-continuation claims", () => {
     expect(minFootprintForClass("Wands")).toEqual({ w: 1, h: 2 });
     expect(minFootprintForClass("Rings")).toEqual({ w: 1, h: 1 });
     expect(minFootprintForClass(undefined)).toEqual({ w: 1, h: 1 });
+  });
+
+  it("claims a known class footprint only when every cell is still planned", () => {
+    const planned = keys(
+      { row: 0, col: 0 },
+      { row: 0, col: 1 },
+      { row: 1, col: 0 },
+      { row: 1, col: 1 },
+      { row: 2, col: 0 },
+      { row: 2, col: 1 },
+    );
+    expect(knownFootprintClaims({ row: 0, col: 0 }, { w: 2, h: 3 }, planned, new Set())).toEqual([
+      { row: 0, col: 0 },
+      { row: 0, col: 1 },
+      { row: 1, col: 0 },
+      { row: 1, col: 1 },
+      { row: 2, col: 0 },
+      { row: 2, col: 1 },
+    ]);
+    expect(
+      knownFootprintClaims({ row: 0, col: 0 }, { w: 2, h: 3 }, keys({ row: 0, col: 0 }, { row: 0, col: 1 }), new Set()),
+    ).toBeUndefined();
+    expect(
+      knownFootprintClaims(
+        { row: 0, col: 0 },
+        { w: 2, h: 2 },
+        planned,
+        keys({ row: 0, col: 1 }),
+      ),
+    ).toBeUndefined();
   });
 
   it("trusts an item with no claimed cells regardless of shape", () => {

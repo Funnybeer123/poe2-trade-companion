@@ -141,6 +141,40 @@ describe("bursts", () => {
     expect(host.ops().at(-1)).toBe("hidemark");
   });
 
+  it("honours dwellMs=0 so shop delists skip the review pause", async () => {
+    const sleeps: number[] = [];
+    const host = new FakeHost();
+    const { harness } = makeHarness(host, new FakeControl(), {
+      sleeper: async (ms) => {
+        sleeps.push(ms);
+      },
+    });
+    await harness.burst([{ x: 100, y: 400 }], {
+      cellW: 56,
+      cellH: 56,
+      label: "shop withdraw",
+      dwellMs: 0,
+    });
+    expect(sleeps).not.toContain(150);
+    expect(sleeps).not.toContain(900);
+    expect(host.ops()).toContain("ctrlburst");
+  });
+
+  it("accepts a larger chunkSize so shop grids need fewer host round-trips", async () => {
+    const host = new FakeHost();
+    const { harness } = makeHarness(host, new FakeControl());
+    const targets = Array.from({ length: 24 }, (_, i) => ({ x: 100 + i * 56, y: 400 }));
+    const sent = await harness.burst(targets, {
+      cellW: 56,
+      cellH: 56,
+      label: "shop withdraw 24",
+      dwellMs: 0,
+      chunkSize: 24,
+    });
+    expect(sent).toBe(24);
+    expect(host.calls.filter((call) => call.op === "ctrlburst")).toHaveLength(1);
+  });
+
   it("stops mid-burst when the panic key arrives", async () => {
     const host = new FakeHost((payload) => {
       if (payload.op === "ctrlburst") {

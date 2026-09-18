@@ -26,11 +26,10 @@ export default defineConfig({
       main: {
         entry: "src/main/index.ts",
         onstart({ startup }) {
-          void startup(
-            process.env.POE2_REMOTE_DEBUG === "1"
-              ? [".", "--remote-debugging-port=9222"]
-              : undefined,
-          );
+          const args = ["."];
+          if (process.env.POE2_USER_DATA) args.push(`--user-data-dir=${process.env.POE2_USER_DATA}`);
+          if (process.env.POE2_REMOTE_DEBUG === "1") args.push("--remote-debugging-port=9222");
+          void startup(args);
         },
         vite: {
           define: {

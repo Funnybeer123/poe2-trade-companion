@@ -256,7 +256,7 @@ function exportTriageSnapshot(): void {
 
 async function evaluateClipboard() {
   if (backgroundSmoke) return null;
-  const text = await clipboard.readText().catch(() => "");
+  const text = clipboard.readText();
   if (!text || text === lastClipboard) return null;
   lastClipboard = text;
   return evaluateItemText(text, "clipboard");
@@ -384,10 +384,13 @@ function createWindow(): void {
       activateMainWindow = undefined;
     }
   });
+  const startHash = process.env.POE2_START_ROUTE ? `#${process.env.POE2_START_ROUTE}` : "";
   if (process.env.VITE_DEV_SERVER_URL) {
-    void mainWindow.loadURL(process.env.VITE_DEV_SERVER_URL);
+    void mainWindow.loadURL(`${process.env.VITE_DEV_SERVER_URL}${startHash}`);
   } else {
-    void mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"));
+    void mainWindow.loadFile(path.join(app.getAppPath(), "dist", "index.html"), {
+      hash: startHash.replace(/^#/, ""),
+    });
   }
 }
 

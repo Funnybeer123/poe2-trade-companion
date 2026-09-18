@@ -1,5 +1,5 @@
 import { clipboard } from "electron";
 
-export function readClipboardText(): Promise<string> {
+export function readClipboardText(): string {
   return clipboard.readText();
 }
