@@ -1310,12 +1310,13 @@ describe("follow drive loot clicks (SYNTHETIC label runs and hosts: a 'click' is
     expect(rig.traces.every(trace => trace.module === "loot" && trace.result === "emitted")).toBe(true);
     expect(stats(rig)).toMatchObject({ lootScans: 7, lootClicks: 3, clicks: 3 });
   });
-  it("never clicks a label lying farther from the LEADER than the leash, even when it is the nearest one to the follower, and does click one inside", async () => {
-    // Leash 5 units = 30 map px; mapScale 7. Leader at (28, 0). OUTSIDE is 10 map px from us but 38 from the leader; INSIDE is 22 from us and 12 from the leader.
-    const rig = await lootRig(320_000, { lootLeash: 5 });
-    rig.scene.leader = { dx: 28, dy: 0 };
-    const outside: LootRect = { x: ORIGIN.x - 70 - 40, y: ORIGIN.y - 10, width: 81, height: 21 }, inside: LootRect = { x: ORIGIN.x + 140 - 40, y: ORIGIN.y - 63 - 10, width: 81, height: 21 };
-    expect([lootCentre(outside), lootCentre(inside)]).toEqual([{ x: ORIGIN.x - 70, y: ORIGIN.y }, { x: ORIGIN.x + 140, y: ORIGIN.y - 63 }]);
+  it("never clicks a label the leash away from the CHARACTER, however close to the leader it lies, and does click one within reach", async () => {
+    // The leash bounds the detour, so it is measured from us. Leash 3 units = 18 map px; mapScale 7.
+    // Leader 25 map px to the left. OUTSIDE is right beside them but 25.7 map px from us; INSIDE is 15 from us and 40 from the leader.
+    const rig = await lootRig(320_000, { lootLeash: 3 });
+    rig.scene.leader = { dx: -25, dy: 0 };
+    const outside: LootRect = { x: ORIGIN.x - 180 - 40, y: ORIGIN.y - 10, width: 81, height: 21 }, inside: LootRect = { x: ORIGIN.x + 105 - 40, y: ORIGIN.y - 10, width: 81, height: 21 };
+    expect([lootCentre(outside), lootCentre(inside)]).toEqual([{ x: ORIGIN.x - 180, y: ORIGIN.y }, { x: ORIGIN.x + 105, y: ORIGIN.y }]);
     rig.scene.loot = [outside];
     await rig.service.start();
     await expect.poll(() => stats(rig).lootScans, soon).toBe(1);
@@ -1334,9 +1335,30 @@ describe("follow drive loot clicks (SYNTHETIC label runs and hosts: a 'click' is
     expect(rig.attempts.length).toBeGreaterThanOrEqual(2);
     expect(rig.attempts.every(a => a.payload.x === lootCentre(inside).x && a.payload.y === lootCentre(inside).y && a.payload.area === "loot")).toBe(true);
   });
-  it("does not even scan for loot while the leader is beyond the leash or loot is switched off", async () => {
+  it("keeps looting while it chases a leader up to two leashes ahead, and gives that up to catch one who is getting away", async () => {
+    // Leash 5 units = 30 map px, so looting runs out to 60. Items drop where the leader fights, and waiting to be
+    // back inside the leash before scanning misses most of them.
+    const rig = await lootRig(322_000, { lootLeash: 5 }), label: LootRect = { x: ORIGIN.x + 105 - 40, y: ORIGIN.y - 10, width: 81, height: 21 };
+    rig.scene.leader = { dx: 55, dy: 0 };
+    rig.scene.loot = [label];
+    await rig.service.start();
+    await expect.poll(() => stats(rig).lootScans, soon).toBe(1);
+    // Well beyond the leash and still chasing: the label 15 map px from us is scanned, and picked up on its second sighting.
+    expect(rig.service.status().decision).toMatchObject({ kind: "hold", reason: "Pick up the nearest of 1 loot label." });
+    expect(stats(rig)).toMatchObject({ lootLabels: 1, lootClicks: 0 });
+    await nextScan(rig);
+    expect(clicksIn(rig, "loot").map(a => ({ x: a.payload.x, y: a.payload.y }))).toEqual([lootCentre(label)]);
+    // The leader is getting away: catching up is now all that matters, and the same label is left where it lies.
+    rig.scene.leader = { dx: 70, dy: 0 };
+    const chasing = clicksIn(rig, "move").length;
+    for (let step = 0; step < 4; step++) { rig.clock! += 250; await cycles(rig, 3); }
+    expect(clicksIn(rig, "loot")).toHaveLength(1);
+    expect(stats(rig).lootScans).toBe(2);
+    expect(clicksIn(rig, "move").length).toBeGreaterThan(chasing);
+  });
+  it("does not even scan for loot while the leader is more than two leashes away or loot is switched off", async () => {
     const beyond = await lootRig(325_000, { lootLeash: 5 });
-    beyond.scene.leader = FAR; // 108 map px away, leash 30
+    beyond.scene.leader = FAR; // 108 map px away; the leash is 30, and looting stops beyond 60
     beyond.scene.loot = [{ x: 380, y: 100, width: 81, height: 21 }];
     const off = await lootRig(326_000, { lootEnabled: false });
     off.scene.loot = beyond.scene.loot;

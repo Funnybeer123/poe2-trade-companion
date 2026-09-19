@@ -40,6 +40,8 @@ const SPRINT_START_PX = 70, SPRINT_STOP_PX = 40;
 // A loot click lands this long after the scan that found the label; a label seen sliding across two scans is led by that much.
 const LOOT_LEAD_MS = 70, LOOT_SAME_LABEL_PX = 120, LOOT_STEADY_PX = 4;
 const RELEASE_ATTEMPTS = 240, RELEASE_RETRY_MS = 250;
+/** How far behind the leader looting still happens, in leashes: beyond that, catching up is all that matters. */
+const LOOT_CHASE_LEASHES = 2;
 /** The fastest pacing the action cap can sustain: a shorter interval would always end in a rate-limit stop. */
 export const MIN_CLICK_INTERVAL_MS = Math.ceil(60_000 / ACTIONS_PER_MINUTE);
 const FOCUS = /Focus Path of Exile 2/, COVERED = /covered at the click point/;
@@ -301,19 +303,22 @@ export class FollowerDriveService {
           let decision: SteeringDecision = manual ? { kind: "pause", reason: pauseReason } : steering.decide(observation, this.now(), aim && aim.via !== "direct" ? aim : undefined, moved);
           if (decision.kind === "near") wasNear = true;
           this.counts.cycles++; this.cycles.push(this.now() - started); if (this.cycles.length > 600) this.cycles.shift();
-          // Loot only with a trusted sighting of the leader inside the leash, a verified map centre (so no
-          // panel is open), and nobody at the mouse. Rejoining the leader always comes first.
+          // Loot while following, not only once caught up: items drop where the leader fights, so waiting to
+          // be inside the leash misses most of them. A trusted sighting and a verified map centre (so no panel
+          // is open) are still required, nobody may be at the mouse, and rejoining a leader who is getting
+          // away always comes first.
           const lootOn = current.lootEnabled === true && leashPx > 0;
-          const canLoot = lootOn && !manual && observation.leaderFound && observation.confidence >= current.confidence && observation.originVerified && distance <= leashPx;
+          const canLoot = lootOn && !manual && observation.leaderFound && observation.confidence >= current.confidence && observation.originVerified && distance <= leashPx * LOOT_CHASE_LEASHES;
           if (canLoot && started - lastLootScanAt >= LOOT_SCAN_MS) {
             lastLootScanAt = started;
             const scanAt = this.now(), scan = await capture.send({ op: "runs", ...lootArea(view), minLength: LOOT_MIN_RUN, minBrightness: LOOT_MIN_BRIGHTNESS });
             if (!live()) return;
             if (scan.ok && !scan.overflow && Number(scan.width) === view.width && Number(scan.height) === view.height) {
-              // The leash bounds how far loot may take us from the leader, not just how far we are now: drop labels lying beyond it.
-              const scale = this.settings.mapScale, lead = observation.offset!;
+              // The leash bounds the detour, so it is measured from the character: a label across the screen is
+              // not worth leaving the leader for, however near to them it lies.
+              const scale = this.settings.mapScale;
               const labels = findLootLabels(decodeFlatRuns(scan.runs), view, observation.origin, scan.hueOverflow || typeof scan.hueRuns !== "string" ? [] : decodeHueRuns(scan.hueRuns))
-                .filter(label => label.confidence >= LOOT_MIN_CONFIDENCE && Math.hypot((label.centre.x - observation.origin.x) / scale - lead.dx, (label.centre.y - observation.origin.y) / scale - lead.dy) <= leashPx);
+                .filter(label => label.confidence >= LOOT_MIN_CONFIDENCE && Math.hypot(label.centre.x - observation.origin.x, label.centre.y - observation.origin.y) / scale <= leashPx);
               const choice = loot.decide(labels, this.now());
               this.counts.lootScans++; this.counts.lootLabels = labels.length;
               // The camera scrolls while we run, so a label slides between the scan and the click. Seen twice, it is led by its own drift; seen once, it waits a scan.

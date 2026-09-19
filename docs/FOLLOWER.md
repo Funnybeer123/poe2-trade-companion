@@ -251,8 +251,8 @@ until space is pressed once. **Not yet exercised live.**
 ### Loot pickup
 
 With **Collect nearby eligible loot** on (terminal: `--loot`, `--leash`), every
-250 ms, while the leader is within the loot leash with a trusted sighting and a
-verified map centre, the capture-only host scans the world view (10–80 % of the
+250 ms, while following a leader no more than **two leashes** away with a trusted
+sighting and a verified map centre, the capture-only host scans the world view (10–80 % of the
 width, 5–80 % of the height: clear of the HUD, party frames and quest tracker) and
 `src/core/followerLoot.ts` looks for ground-item labels two ways, both designed
 from real frames:
@@ -280,9 +280,12 @@ and object labels, the Options panel, or the ritual tooltip).
 It clicks the label nearest the character, through the same controller and native
 worker as movement but with module `loot` and a separate click area (the world
 view rectangle instead of the central disc), then leaves the character alone for
-450 ms to walk there. Only labels that lie within the leash **of the leader**
-(screen offset ÷ map scale) are considered, so loot cannot drag the follower
-away. The camera scrolls while the character runs, so a label is clicked on its
+450 ms to walk there. Only labels within the leash **of the character**
+(screen offset ÷ map scale) are considered, so the detour is bounded; a label
+across the screen is not worth leaving the leader for, however near to them it
+lies. Scanning does not wait until the follower has caught up, because items drop
+where the leader fights: in the first live run with that rule there were 22 loot
+scans in 180 s. Beyond two leashes, catching up is all that matters. The camera scrolls while the character runs, so a label is clicked on its
 second sighting, led by its own drift between the two scans (70 ms worth); a
 label that sits still is clicked at its centre. Loot labels have their own fixed
 confidence floor (0.85); the leader-label confidence preference does not apply
