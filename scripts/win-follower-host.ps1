@@ -231,7 +231,7 @@ public static class FollowWin {
   public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold, Rectangle third, string thirdChannel, int thirdThreshold) { return Key(area, full, channel, threshold, second, secondChannel, secondThreshold, third, thirdChannel, thirdThreshold, 6000); }
   public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold, Rectangle third, string thirdChannel, int thirdThreshold, int cap) {
     long capturedAt = QpcMs(), started = Clock.ElapsedMilliseconds;
-    if (cap < 100 || cap > 20000) throw new Exception("Invalid point cap");
+    if (cap < 100 || cap > 60000) throw new Exception("Invalid point cap");
     if (threshold < 10 || threshold > 255 || secondThreshold < 20 || secondThreshold > 255 || thirdThreshold < 20 || thirdThreshold > 255) throw new Exception("Invalid key threshold");
     IntPtr window = Foreground();
     Rectangle bounds = Bounds(window);

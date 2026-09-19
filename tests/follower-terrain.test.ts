@@ -79,11 +79,24 @@ describe("terrain planner guards", () => {
     const flood: KeyPoint[] = []; for (let y = WINDOW.y; y < WINDOW.y + WINDOW.height; y += 2) for (let x = WINDOW.x; x < WINDOW.x + WINDOW.width; x += 1) flood.push({ x, y });
     expect(new TerrainPlanner().plan(flood, WINDOW, ORIGIN, { dx: 0, dy: -200 }, { x: 0, y: 0 }, 1, 0).aim).toBeUndefined();
   });
-  it("makes no plan when the leader is sealed off on the map, so the caller can fall back", () => {
-    const ring: KeyPoint[] = []; for (let a = 0; a < 6.3; a += .005) ring.push({ x: Math.round(ORIGIN.x + Math.cos(a) * 60), y: Math.round(ORIGIN.y + Math.sin(a) * 60) });
-    const plan = new TerrainPlanner().plan(ring, WINDOW, ORIGIN, { dx: 0, dy: -200 }, { x: 0, y: 0 }, 1, 0);
-    expect(plan.aim).toBeUndefined();
-    expect(plan.blockedAhead).toBe(true);
+  it("when the leader is sealed off on the map, walks to the reachable spot nearest to them, then makes no plan so the caller can fall back", () => {
+    const ring = (me: KeyPoint): KeyPoint[] => { const points: KeyPoint[] = []; for (let a = 0; a < 6.3; a += .005) points.push({ x: Math.round(ORIGIN.x + Math.cos(a) * 60 - me.x), y: Math.round(ORIGIN.y + Math.sin(a) * 60 - me.y) }); return points; };
+    const planner = new TerrainPlanner(), first = planner.plan(ring({ x: 0, y: 0 }), WINDOW, ORIGIN, { dx: 0, dy: -200 }, { x: 0, y: 0 }, 1, 0);
+    expect(first.blockedAhead).toBe(true);
+    expect(first.aim!.dy).toBeLessThan(-20); expect(Math.abs(first.aim!.dx)).toBeLessThan(20);
+    expect(first.path.every(p => Math.hypot(p.x - ORIGIN.x, p.y - ORIGIN.y) < 60)).toBe(true);
+    // Standing at that spot, nothing reachable is nearer: no plan.
+    const there = { x: 0, y: -48 };
+    expect(planner.plan(ring(there), WINDOW, ORIGIN, { dx: 0, dy: -152 }, there, 1, 1000).aim).toBeUndefined();
+  });
+  it("heads for where walkable ground runs off the edge of the view when the straight line is walled off", () => {
+    // A long wall to the north with open ground to the west: the leader is north, beyond the view.
+    const wall: KeyPoint[] = []; for (let x = ORIGIN.x - 150; x <= WINDOW.x + WINDOW.width; x++) for (let y = ORIGIN.y - 120; y <= ORIGIN.y - 116; y++) wall.push({ x, y });
+    const plan = new TerrainPlanner().plan(wall, WINDOW, ORIGIN, { dx: 0, dy: -1500 }, { x: 0, y: 0 }, 1, 0);
+    expect(plan.aim).toBeDefined();
+    const end = plan.path[plan.path.length - 1];
+    expect(end.y).toBeLessThan(WINDOW.y + 12);
+    expect(plan.path.some(p => p.x < ORIGIN.x - 150)).toBe(true);
   });
   it("never treats the spot we stand on as wall, and aims at a leader who is outside the window by way of its edge", () => {
     const onUs: KeyPoint[] = []; for (let d = -3; d <= 3; d++) onUs.push({ x: ORIGIN.x + d, y: ORIGIN.y });

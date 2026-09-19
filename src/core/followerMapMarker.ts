@@ -21,6 +21,11 @@ export interface MapCalibration {
   /** Orange-channel template of the player's own marker and where its top-left sits: the map centre. */
   originTemplate: NameplateTemplate;
   originAnchor: { x: number; y: number };
+  /**
+   * The leader's marker sprite on its own (green channel) and where its centre sits in that template. Used only
+   * when the name label cannot be seen: far away the marker reaches the screen edge before the label does.
+   */
+  marker?: { template: NameplateTemplate; centre: { dx: number; dy: number } };
   calibratedAt: string;
 }
 export interface MapObservation {
@@ -35,7 +40,7 @@ export interface MapObservation {
   confidence: number;
   /** The player's own marker was seen where calibration put it recently enough to trust the map centre. */
   originVerified: boolean;
-  evidence: { score: number; runnerUp: number; candidates: number; keyPixels: number; originScore: number; originSeenAgoMs: number | null; searched: "full" | "window"; overflow: boolean };
+  evidence: { score: number; runnerUp: number; candidates: number; keyPixels: number; originScore: number; originSeenAgoMs: number | null; searched: "full" | "window"; overflow: boolean; /** The sighting rests on the bare marker: the name label was off-screen. */ markerOnly?: boolean };
   timing: { captureMs: number; matchMs: number };
 }
 export interface SteeringConfig {
@@ -54,6 +59,7 @@ export const LABEL_LIMITS: TemplateLimits = { minThreshold: 60, maxThreshold: 20
 export const ORIGIN_LIMITS: TemplateLimits = { minThreshold: 30, maxThreshold: 200, minPixels: 10, minWidth: 5, minHeight: 5 };
 const TRACK_MARGIN = 96, FULL_SEARCH_EVERY_MS = 1000, ORIGIN_MARGIN = 20, ORIGIN_TOLERANCE = 5, ORIGIN_MIN_SCORE = .5, ORIGIN_STICKY_MS = 1500, ORIGIN_COVERED_MAX_MS = 10_000, MAX_MISSES = 3;
 const LABEL_FLANK = 6, LABEL_JUMP_PX = 30, LABEL_JUMP_WINDOW_MS = 250;
+const MARKER_MIN_SCORE = .75, MARKER_TRUST = .95, MARKER_CONTINUITY_MS = 700, MARKER_CONTINUITY_PX = 40;
 /** Blocked: we moved less than this many map pixels over STUCK_MS despite STUCK_CLICKS committed clicks. */
 const STUCK_TOLERANCE_PX = 2.5, STUCK_MS = 1500, STUCK_CLICKS = 6, STUCK_REST_MS = 5000;
 const RAD = Math.PI / 180, WALL_FIRST_TURN = 60 * RAD, WALL_TURN = 35 * RAD, WALL_EASE = 25 * RAD, WALL_MAX_TURN = 200 * RAD, WALL_STUCK_MS = 900, WALL_EASE_MS = 800, WALL_SIDE_MS = 25_000, WALL_SIDE_GAIN_PX = 20;
@@ -176,7 +182,7 @@ export function buildMapCalibration(green: WhiteFrame, orange: WhiteFrame, targe
   const { template: label, nameplate } = buildNameplateTemplate(green, pad(chosen.label, 2), LABEL_LIMITS);
   // The player's marker is the same sprite in orange: look for the leader marker's shape near the view centre.
   const markerBox = pad({ x: chosen.marker.x - 5, y: chosen.marker.y - 4, width: 11, height: 9 }, 2);
-  const { template: shape } = buildNameplateTemplate(green, markerBox, { ...ORIGIN_LIMITS, minThreshold: 60 });
+  const { template: shape, nameplate: shapeRect } = buildNameplateTemplate(green, markerBox, { ...ORIGIN_LIMITS, minThreshold: 60 });
   // The overlay map is centred on the player: horizontally mid-view, a little above mid-height
   // (measured at 0.4998 w, 0.4858 h). Anything orange elsewhere is scenery or the corner minimap.
   const centre: PixelRect = { x: Math.round(green.width * .485), y: Math.round(green.height * .46), width: Math.round(green.width * .03), height: Math.round(green.height * .05) };
@@ -187,7 +193,8 @@ export function buildMapCalibration(green: WhiteFrame, orange: WhiteFrame, targe
   const ownBox = pad({ x: centre.x + own.x, y: centre.y + own.y, width: shape.width, height: shape.height }, 1);
   const { template: originTemplate, nameplate: originRect } = buildNameplateTemplate(orange, ownBox, ORIGIN_LIMITS);
   return parseMapCalibration({ version: 1, targetName, view: { width: green.width, height: green.height }, label,
-    markerOffset: { dx: chosen.marker.x - nameplate.x, dy: chosen.marker.y - nameplate.y }, originTemplate, originAnchor: { x: originRect.x, y: originRect.y }, calibratedAt });
+    markerOffset: { dx: chosen.marker.x - nameplate.x, dy: chosen.marker.y - nameplate.y }, originTemplate, originAnchor: { x: originRect.x, y: originRect.y },
+    marker: { template: shape, centre: { dx: chosen.marker.x - shapeRect.x, dy: chosen.marker.y - shapeRect.y } }, calibratedAt });
 }
 
 function validTemplate(t: NameplateTemplate, limits: TemplateLimits, maxWidth: number, maxHeight: number): boolean {
@@ -202,8 +209,11 @@ export function parseMapCalibration(raw: unknown): MapCalibration {
   if (!c.markerOffset || !integer(c.markerOffset.dx) || !integer(c.markerOffset.dy) || Math.abs(c.markerOffset.dx) > 404 || c.markerOffset.dy < 0 || c.markerOffset.dy > 120) throw fail();
   const a = c.originAnchor;
   if (!a || !integer(a.x) || !integer(a.y) || a.x < ORIGIN_MARGIN || a.y < ORIGIN_MARGIN || a.x + c.originTemplate.width + ORIGIN_MARGIN > c.view.width || a.y + c.originTemplate.height + ORIGIN_MARGIN > c.view.height) throw fail();
+  const m = c.marker;
+  if (m !== undefined && (!m || !validTemplate(m.template, { ...ORIGIN_LIMITS, minThreshold: 60 }, 40, 40) || !m.centre || !integer(m.centre.dx) || !integer(m.centre.dy) || m.centre.dx < 0 || m.centre.dy < 0 || m.centre.dx >= m.template.width || m.centre.dy >= m.template.height)) throw fail();
   return { version: 1, targetName: c.targetName, view: { width: c.view.width, height: c.view.height }, label: { ...c.label, mask: [...c.label.mask] }, markerOffset: { dx: c.markerOffset.dx, dy: c.markerOffset.dy },
-    originTemplate: { ...c.originTemplate, mask: [...c.originTemplate.mask] }, originAnchor: { x: a.x, y: a.y }, calibratedAt: c.calibratedAt };
+    originTemplate: { ...c.originTemplate, mask: [...c.originTemplate.mask] }, originAnchor: { x: a.x, y: a.y },
+    ...(m ? { marker: { template: { ...m.template, mask: [...m.template.mask] }, centre: { dx: m.centre.dx, dy: m.centre.dy } } } : {}), calibratedAt: c.calibratedAt };
 }
 export function mapCalibrationIssue(c: MapCalibration, targetName: string, view?: { width: number; height: number }): string | undefined {
   if (c.targetName !== targetName) return `Map calibrated for ${c.targetName}; calibrate again for ${targetName || "the selected character"}.`;
@@ -234,7 +244,20 @@ export class MapMarkerTracker {
     return { ...base, region: this.region, full: false, searched: "window" };
   }
   observe(points: KeyPoint[] | undefined, originPoints: KeyPoint[] | undefined, searched: "full" | "window", capturedAt: number, timing: { captureMs: number; matchMs: number }): MapObservation {
-    const c = this.calibration, search = points ? findTemplateSparse(points, c.label, MIN_NAMEPLATE_SCORE, { flank: LABEL_FLANK, bounds: this.region }) : { runnerUp: 0, candidates: 0 } as NameplateSearch, best = search.best;
+    const c = this.calibration;
+    let search = points ? findTemplateSparse(points, c.label, MIN_NAMEPLATE_SCORE, { flank: LABEL_FLANK, bounds: this.region }) : { runnerUp: 0, candidates: 0 } as NameplateSearch, best = search.best, markerOnly = false;
+    if (!best && points && c.marker) {
+      // Far away the label leaves the screen before the marker does. The bare marker says nothing about whose it is,
+      // so it is believed only when it is the single marker in view and either its label would be off-screen there or
+      // it is where the labelled leader just was.
+      const found = findTemplateSparse(points, c.marker.template, MARKER_MIN_SCORE, { bounds: this.region }), lone = found.best;
+      if (lone && found.candidates === 1) {
+        const centre = { x: lone.x + c.marker.centre.dx, y: lone.y + c.marker.centre.dy }, anchor = { x: centre.x - c.markerOffset.dx, y: centre.y - c.markerOffset.dy };
+        const labelOffScreen = anchor.y < 0 || anchor.x < 0 || anchor.x + c.label.width > c.view.width || anchor.y + c.label.height > c.view.height;
+        const continues = !!this.lastLeader && capturedAt - this.lastLeader.at <= MARKER_CONTINUITY_MS && Math.hypot(centre.x - this.lastLeader.x, centre.y - this.lastLeader.y) <= MARKER_CONTINUITY_PX;
+        if (labelOffScreen || continues) { markerOnly = true; search = { best: { x: anchor.x, y: anchor.y, score: lone.score * MARKER_TRUST, matchedPixels: lone.matchedPixels }, runnerUp: found.runnerUp, candidates: 1 }; best = search.best; }
+      }
+    }
     if (best) { this.last = { x: best.x, y: best.y }; this.misses = 0; }
     // An overflowed capture never ran a search: it says nothing about the label, so the track is kept.
     else if (points && (++this.misses >= MAX_MISSES || searched === "full")) this.last = undefined;
@@ -249,19 +272,21 @@ export class MapMarkerTracker {
     // opened, the map was panned), and so does our own marker turning up somewhere else.
     const jumped = !!leader && !!this.lastLeader && capturedAt - this.lastLeader.at <= LABEL_JUMP_WINDOW_MS && Math.hypot(leader.x - this.lastLeader.x, leader.y - this.lastLeader.y) > LABEL_JUMP_PX;
     if (leader) this.lastLeader = { at: capturedAt, ...leader };
-    if (ownInPlace) this.originSeenAt = capturedAt;
-    else if (own || jumped) this.originSeenAt = undefined;
     const dx = leader ? leader.x - origin.x : 0, dy = leader ? leader.y - origin.y : 0, distance = Math.hypot(dx, dy);
+    // With the leader's marker drawn over ours, what is left of ours matches a few pixels off: that is cover, not a moved map.
+    const overlapped = !!leader && distance <= Math.max(c.originTemplate.width, c.originTemplate.height) + ORIGIN_TOLERANCE;
+    if (ownInPlace) this.originSeenAt = capturedAt;
+    else if ((own && !overlapped) || jumped) this.originSeenAt = undefined;
     const margin = best ? best.score - runnerUp : 0, seenAgo = this.originSeenAt === undefined ? null : capturedAt - this.originSeenAt;
     // The leader's marker covers ours when they stand on us; the map centre cannot have moved then, but only for a while.
-    const covered = !!leader && distance <= Math.max(c.originTemplate.width, c.originTemplate.height) && seenAgo !== null && seenAgo <= ORIGIN_COVERED_MAX_MS;
+    const covered = overlapped && seenAgo !== null && seenAgo <= ORIGIN_COVERED_MAX_MS;
     const originVerified = (seenAgo !== null && seenAgo <= ORIGIN_STICKY_MS) || covered;
     return {
       capturedAt, view: { ...c.view }, identity: { name: c.targetName, method: "map-label-template" }, leaderFound: !!best, origin, leader,
       offset: leader ? { dx, dy, distance: Math.round(distance * 10) / 10 } : undefined,
       confidence: best ? Math.round(best.score * Math.min(1, margin / .1) * 1000) / 1000 : 0, originVerified,
       evidence: { score: Math.round((best?.score ?? 0) * 1000) / 1000, runnerUp: Math.round(runnerUp * 1000) / 1000, candidates: search.candidates, keyPixels: points?.length ?? 0,
-        originScore: Math.round((own?.score ?? 0) * 1000) / 1000, originSeenAgoMs: seenAgo === null ? null : Math.round(seenAgo), searched, overflow: !points },
+        originScore: Math.round((own?.score ?? 0) * 1000) / 1000, originSeenAgoMs: seenAgo === null ? null : Math.round(seenAgo), searched, overflow: !points, ...(markerOnly ? { markerOnly: true } : {}) },
       timing,
     };
   }

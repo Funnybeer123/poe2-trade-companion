@@ -13,17 +13,18 @@ import type { PixelRect } from "./followerPerception.js";
  * therefore remembered as a wall too ("bumps", kept in the odometry frame), which means the same
  * spot is not tried twice. Pure functions over captured pixels; nothing here emits OS input.
  */
-export const TERRAIN_CHANNEL = "terrain" as const, TERRAIN_THRESHOLD = 128, TERRAIN_POINT_CAP = 20000;
+export const TERRAIN_CHANNEL = "terrain" as const, TERRAIN_THRESHOLD = 128, TERRAIN_POINT_CAP = 50000;
 /** More wall than this is not a map: a grey stone floor or a bright scene is being misread, so no plan is made. */
 const MAX_WALL_FRACTION = .3;
+/** How much farther from the leader (in cells) a map-edge exit may be than where we stand and still be worth walking to. */
+const EDGE_DETOUR_CELLS = 40, COMMIT_MS = 12_000, COMMIT_ARRIVED_CELLS = 6;
 const CELL = 4, LOOKAHEAD_PX = 56, MIN_AIM_PX = 20, CLEAR_START_CELLS = 1, NEAR_WALL_COST = 3;
 const BUMP_RADIUS_CELLS = 3, BUMP_AHEAD_PX = 14, BUMP_TTL_MS = 45_000, BUMP_MAX = 60, STUCK_MS = 1000, STUCK_CLICKS = 5, STUCK_TOLERANCE_PX = 2.5;
 
-/** The part of the overlay map used for planning: around the map centre, inside the world view (clear of the HUD). */
+/** The part of the overlay map used for planning: the whole world view, clear of the HUD, party frames and quest tracker. */
 export function terrainWindow(origin: KeyPoint, view: { width: number; height: number }): PixelRect {
-  const halfWidth = Math.round(view.height * .30), halfHeight = Math.round(view.height * .22);
-  const left = Math.max(Math.round(view.width * .10), origin.x - halfWidth), top = Math.max(Math.round(view.height * .05), origin.y - halfHeight);
-  const right = Math.min(Math.round(view.width * .80), origin.x + halfWidth), bottom = Math.min(Math.round(view.height * .80), origin.y + halfHeight);
+  const left = Math.round(view.width * .10), top = Math.round(view.height * .05), right = Math.round(view.width * .80), bottom = Math.round(view.height * .80);
+  void origin;
   return { x: left, y: top, width: Math.max(8, right - left), height: Math.max(8, bottom - top) };
 }
 
@@ -45,6 +46,8 @@ export class TerrainPlanner {
   private steps: Array<{ at: number; dx: number; dy: number }> = [];
   private clicks: Array<{ at: number; dx: number; dy: number }> = [];
   private checkedAt = -Infinity;
+  /** A fallback goal we set out for, in the odometry frame: kept until reached, unreachable or stale, so plans do not flip between exits. */
+  private committed?: { x: number; y: number; epoch: number; until: number };
 
   /** Own movement since the previous observation (map pixels), from odometry. */
   noteMotion(step: { dx: number; dy: number }, now: number): void {
@@ -123,9 +126,34 @@ export class TerrainPlanner {
         cost[next] = stepCost; from[next] = here; priority[next] = stepCost + heuristic(next); push(next);
       }
     }
-    if (!found) return { ...empty, blockedAhead, planMs: Math.round((clock() - began) * 10) / 10 };
+    // The line toward the leader may leave the mapped walkable area through a wall. Then head for the reachable place that
+    // gets nearest to them: preferably where walkable ground runs off the edge of what we can see, else simply the nearest spot.
+    let endIndex = goalIndex;
+    if (found) this.committed = undefined;
+    else {
+      const kept = this.committed && this.committed.epoch === epoch && now <= this.committed.until ? cell(origin.x + this.committed.x - position.x, origin.y + this.committed.y - position.y) : undefined;
+      const keptIndex = kept && kept.cx >= 0 && kept.cy >= 0 && kept.cx < cols && kept.cy < rows ? kept.cy * cols + kept.cx : -1;
+      // Still on the way to the exit chosen earlier, and it is still reachable: keep going there.
+      if (keptIndex !== -1 && cost[keptIndex] !== Infinity && Math.hypot(kept!.cx - start.cx, kept!.cy - start.cy) > COMMIT_ARRIVED_CELLS) endIndex = keptIndex;
+      else {
+        this.committed = undefined;
+      const lx = (origin.x + leader.dx - window.x) / CELL, ly = (origin.y + leader.dy - window.y) / CELL;
+      let bestEdge = -1, bestEdgeScore = Infinity, bestAny = -1, bestAnyScore = Infinity;
+      for (let i = 0; i < size; i++) {
+        if (cost[i] === Infinity || i === startIndex) continue;
+        const x = i % cols, y = Math.floor(i / cols), toLeader = Math.hypot(x - lx, y - ly);
+        if (toLeader < bestAnyScore) { bestAnyScore = toLeader; bestAny = i; }
+        if ((x <= 1 || y <= 1 || x >= cols - 2 || y >= rows - 2) && cost[i] + toLeader < bestEdgeScore) { bestEdgeScore = cost[i] + toLeader; bestEdge = i; }
+      }
+      const startToLeader = Math.hypot(start.cx - lx, start.cy - ly);
+      // An edge exit is only worth taking if it does not lead away from the leader; a nearest spot only if it is nearer than here.
+      endIndex = bestEdge !== -1 && Math.hypot(bestEdge % cols - lx, Math.floor(bestEdge / cols) - ly) < startToLeader + EDGE_DETOUR_CELLS ? bestEdge : bestAny !== -1 && bestAnyScore < startToLeader - 2 ? bestAny : -1;
+      if (endIndex === -1) return { ...empty, blockedAhead, planMs: Math.round((clock() - began) * 10) / 10 };
+      this.committed = { x: position.x + (endIndex % cols - start.cx) * CELL, y: position.y + (Math.floor(endIndex / cols) - start.cy) * CELL, epoch, until: now + COMMIT_MS };
+      }
+    }
     const path: Array<{ cx: number; cy: number }> = [];
-    for (let i = goalIndex; i !== -1; i = from[i]) path.push({ cx: i % cols, cy: Math.floor(i / cols) });
+    for (let i = endIndex; i !== -1; i = from[i]) path.push({ cx: i % cols, cy: Math.floor(i / cols) });
     path.reverse();
     const clear = (a: { cx: number; cy: number }, b: { cx: number; cy: number }) => { const n = Math.max(Math.abs(b.cx - a.cx), Math.abs(b.cy - a.cy)) * 2; for (let i = 1; i < n; i++) { const x = Math.round(a.cx + (b.cx - a.cx) * i / n), y = Math.round(a.cy + (b.cy - a.cy) * i / n); if (grid[y * cols + x]) return false; } return true; };
     // Aim at the farthest point within the lookahead that can be walked to in a straight line, so steering does not zigzag along grid steps.

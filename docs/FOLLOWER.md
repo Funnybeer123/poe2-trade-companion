@@ -193,10 +193,33 @@ overlay map already draws and plans before moving:
 In the simulated world (character stops dead at walls) it rounds a mapped wall,
 a building and two staggered walls with **no** bumps, leaves a dead-end pocket
 the way it came in, and learns an unmapped wall after one or two bumps.
-**Not yet verified live**: when this was finished the leader was not on the
-follower's map, so only the saved real frame and simulations have exercised it.
 It depends on this zone's map colours; zones whose scenery is grey, white or blue
 may trip the 30 % guard and fall back.
+
+Changes after the first live runs:
+
+- The planning window is now the whole world view (10–80 % of the width, 5–80 % of
+  the height), scanned by a **second capture-only worker** about four times a
+  second so marker tracking never waits for it. A real frame of a built-up area
+  produced 56,264 wall pixels; the cap is 50,000 in the loop and 60,000 natively.
+- **Goal selection.** When the straight line toward the leader is walled off, the
+  plan heads for the reachable place nearest to them: preferably where walkable
+  ground runs off the edge of the view (if that is not more than 160 map px farther
+  from the leader than we are), else the nearest reachable spot, and only if it is
+  nearer than where we stand. That goal is **committed** in the odometry frame for
+  12 s, until reached or unreachable: in the first live run without commitment the
+  plan flipped between exits (path lengths 200–2,335 px) and the character wandered
+  for 85 s before making progress.
+- **Marker-only sightings.** Far away, the leader's name label leaves the screen
+  before the marker does; on a real frame the marker sat complete on the top edge
+  of the view, the only green thing in it, which suggests the game pins far party
+  markers to the screen edge. Calibration now also keeps the bare marker sprite.
+  When the label is not found, a marker is believed only if it is the single one in
+  view and either its label would be off-screen there or it is within 40 px of where
+  the labelled leader was in the last 0.7 s; its score is scaled by 0.95. A clamped
+  marker gives direction, not distance.
+- With the leader's marker drawn over ours the remains of ours match a few pixels
+  off; that is treated as cover, not as a moved map (it paused for 6 s live).
 
 ### Sprint
 
@@ -286,6 +309,10 @@ follower character next to a stationary leader. Small samples; not a soak test.
 | Map odometry on live captures | Tracking on 351 of 354 half-second samples in one run and 352 of 355 in the next; reported support 0.36–1.0 |
 | Loot, live | 4 pickup clicks in one 3-minute run, each followed by the label count dropping to 0; 0 refused, 0 manual takeovers. 7 in the previous run, with the older detector |
 | Loot scan cost | Native flat-run scan 5.7 ms and the loop's cycle 27 / 37 ms (median / 95th) with loot scanning on, against 18 / 27 ms without |
+
+| Live, terrain planning, first run (no goal commitment, scan on the tracking worker) | From 641 map px away: 85 s of wandering (plan flipping between exits), then 613 → 186 px in 35 s; 10 bumps learned, 0 manual takeovers; loop slowed to 13 observations/s, capture→click 71 / 102 ms |
+| Live, terrain planning with committed goals and its own map worker | Reached the leader from 243 map px in ≈ 7.6 s by the plan; then followed a moving leader for ≈ 100 s: near 16 samples, gap median 86 map px (max 383 at the end as the leader ran off), **0** wall-blocked samples, 18 loot pickups, 1 manual takeover, 17 stale refusals of 791 clicks |
+| Loop speed with the map worker running | 18.9 observations/s, cycle 29.7 / 50.5 ms, capture→click 50 / 111 ms, first click after the leader moves off 6 times, worst-case reaction estimate 162 ms (95th). Slower than without planning (37/54 ms): decoding ≈ 40,000 wall pixels and A* share the JavaScript thread with the tracking loop |
 
 The one-batch down/up click (no hold) is accepted by the game as a move.
 

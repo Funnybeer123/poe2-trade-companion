@@ -28,12 +28,13 @@ interface DriveOptions {
   globalDryRun?: () => boolean;
   createCaptureHost?: () => Host;
   createInputHost?: () => Host;
+  createMapHost?: () => Host;
   audit?: (traces: QaActionTrace[]) => void;
   now?: () => number;
   pollMs?: number;
 }
 const GAME_PROCESSES = ["pathofexile", "pathofexile_x64", "pathofexilesteam", "pathofexile_x64steam", "pathofexileegs", "pathofexile_x64egs"];
-const FRAME_MAX_AGE_MS = 120, MANUAL_PAUSE_MS = 1500, ACTIONS_PER_MINUTE = 600, MAP_PX_PER_FOLLOW_UNIT = 6, LOOT_SCAN_MS = 250, PLAN_MS = 200, PLAN_KEEP_MS = 600;
+const FRAME_MAX_AGE_MS = 120, MANUAL_PAUSE_MS = 1500, ACTIONS_PER_MINUTE = 600, MAP_PX_PER_FOLLOW_UNIT = 6, LOOT_SCAN_MS = 250, PLAN_MS = 250, PLAN_KEEP_MS = 900;
 /** Sprint (hold space) only while well behind the leader, with hysteresis so it does not flutter. */
 const SPRINT_START_PX = 70, SPRINT_STOP_PX = 40;
 /** The fastest pacing the action cap can sustain: a shorter interval would always end in a rate-limit stop. */
@@ -67,6 +68,7 @@ export class FollowerDriveService {
   private reason = "Calibrate on the overlay map, then start following.";
   private captureHost?: Host;
   private inputHost?: Host;
+  private mapHost?: Host;
   private timer?: ReturnType<typeof setTimeout>;
   private generation = 0;
   private observation?: FollowerDriveStatus["observation"];
@@ -126,11 +128,18 @@ export class FollowerDriveService {
     clearTimeout(this.timer); this.timer = undefined;
     const capture = this.captureHost, input = this.inputHost; this.captureHost = undefined; this.inputHost = undefined;
     if (capture) void capture.close().catch(() => {});
+    const map = this.mapHost; this.mapHost = undefined;
+    if (map) void map.close().catch(() => {});
     // Ask for an explicit button release before the worker goes away; its own finally block is the backstop.
     if (input) void input.send({ op: "release" }).catch(() => {}).then(() => input.close()).catch(() => {});
     return this.status();
   }
   private createCaptureHost(): Host { return this.options.createCaptureHost?.() ?? startWinHost({ scriptName: "win-follower-host.ps1", requestTimeoutMs: 5000 }); }
+  /** A second capture-only worker for the large map scans. With injected hosts (tests) there is none unless one is injected too, and planning is simply off. */
+  private createMapHost(): Host | undefined {
+    if (this.options.createMapHost) return this.options.createMapHost();
+    return this.options.createCaptureHost ? undefined : startWinHost({ scriptName: "win-follower-host.ps1", requestTimeoutMs: 5000 });
+  }
   private createInputHost(): Host { return this.options.createInputHost?.() ?? startWinHost({ scriptName: "win-follower-input-host.ps1", requestTimeoutMs: 5000 }); }
   /**
    * One full-view capture with the overlay map open. The label is found automatically when exactly
@@ -203,7 +212,9 @@ export class FollowerDriveService {
     let manualUntil = -Infinity, pauseReason = "", wasNear = false, lastLootScanAt = -Infinity;
     const odometry = new MapOdometry(), trail = new LeaderTrail(), watch = { ...odometryWindow(tracker.origin, calibration.view), channel: ODOMETRY_CHANNEL, threshold: ODOMETRY_THRESHOLD };
     const terrain = new TerrainPlanner(), terrainArea = terrainWindow(tracker.origin, calibration.view);
-    let plan: (TerrainPlan & { at: number }) | undefined, lastPlanAt = -Infinity, sprinting = false;
+    let plan: (TerrainPlan & { at: number }) | undefined, lastPlanAt = -Infinity, sprinting = false, planning = false;
+    let planWanted: { origin: { x: number; y: number }; offset: { dx: number; dy: number; distance: number }; view: { width: number; height: number } } | undefined;
+    const mapScanner = this.mapHost = this.createMapHost();
     const letGo = async () => { if (sprinting) { sprinting = false; this.sprinting = false; await sink.releaseSprint(); } };
     const loot = new LootPlanner(), leashPx = (follow.lootLeash ?? 0) * MAP_PX_PER_FOLLOW_UNIT;
     /** Runs one executed decision through the controller and says what became of it. */
@@ -255,14 +266,19 @@ export class FollowerDriveService {
           const trailAim = trusted ? trail.aim(odometry.position, observation.offset!, odometry.epoch) : undefined;
           // Read the landscape off the overlay map a few times a second and plan a way to the leader round what it shows.
           if (moved.tracked) terrain.noteMotion(moved, started);
-          if (trusted && !manual && started - lastPlanAt >= PLAN_MS && observation.offset!.distance > stopPx) {
-            lastPlanAt = started;
-            const scanned = await capture.send({ op: "terrain", ...terrainArea, full: false, channel: TERRAIN_CHANNEL, threshold: TERRAIN_THRESHOLD, cap: TERRAIN_POINT_CAP });
-            if (!live()) return;
-            if (scanned.ok && !scanned.overflow && Number(scanned.width) === view.width && Number(scanned.height) === view.height) plan = { ...terrain.plan(decodeKeyPoints(scanned.points), terrainArea, observation.origin, observation.offset!, odometry.position, odometry.epoch, started), at: started };
-            else plan = undefined;
+          // The map scan is large, so it runs on its own capture worker and never holds up marker tracking.
+          planWanted = trusted && !manual && observation.offset!.distance > stopPx ? { origin: observation.origin, offset: observation.offset!, view } : undefined;
+          if (planWanted && !planning && mapScanner && started - lastPlanAt >= PLAN_MS) {
+            lastPlanAt = started; planning = true;
+            void mapScanner.send({ op: "terrain", ...terrainArea, full: false, channel: TERRAIN_CHANNEL, threshold: TERRAIN_THRESHOLD, cap: TERRAIN_POINT_CAP }).then(scanned => {
+              const wanted = planWanted;
+              if (!live() || !wanted) { plan = undefined; return; }
+              // Plan from where things are now, not where they were when the scan was asked for.
+              if (scanned.ok && !scanned.overflow && Number(scanned.width) === wanted.view.width && Number(scanned.height) === wanted.view.height) plan = { ...terrain.plan(decodeKeyPoints(scanned.points), terrainArea, wanted.origin, wanted.offset, odometry.position, odometry.epoch, this.now()), at: this.now() };
+              else plan = undefined;
+            }).catch(() => { plan = undefined; }).finally(() => { planning = false; });
           }
-          if (plan && started - plan.at > PLAN_KEEP_MS) plan = undefined;
+          if (plan && (started - plan.at > PLAN_KEEP_MS || !planWanted)) plan = undefined;
           const planned = trusted && plan?.aim ? plan.aim : undefined;
           const aim = planned ? { ...planned, via: "plan" as const } : trailAim;
           this.odometry = { tracked: moved.tracked, quality: moved.quality, trailPoints: trail.length, via: aim?.via ?? "direct" };
