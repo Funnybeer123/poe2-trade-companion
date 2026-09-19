@@ -40,6 +40,14 @@ The automation implementation must include:
 
 ## Public Companion Mode
 
+### Follow & Loot preview
+
+**Dashboard → Open follower setup** or **Tools & QA → Follow & Loot** provides
+two-PC pairing, saved preferences, and an interactive synthetic route preview.
+Live character tracking, movement, and loot pickup are not implemented yet.
+See the [feature guide](docs/FOLLOWER.md) and the
+[continuation prompt for another PC](docs/FOLLOWER_HANDOFF_PROMPT.md).
+
 ### Live price and Island Rumour helper
 
 **Tools & QA → Price helper** adds poe.ninja prices for five exchange categories,
