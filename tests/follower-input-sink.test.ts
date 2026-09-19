@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FollowerInputSink, type FollowerFrameGuard } from "../src/adapters/followerInputSink.js";
+import { FollowerInputSink, LOOT_CLICK, type FollowerFrameGuard } from "../src/adapters/followerInputSink.js";
 import { GameInputController } from "../src/core/gameInputController.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
 import { scenario } from "../src/core/scenarios.js";
@@ -28,12 +28,12 @@ describe("follower input sink (synthetic input host, no OS input)", () => {
   it("turns one left click into one guarded moveclick carrying the capture it was decided from", async () => {
     const host = fakeHost(), sink = new FollowerInputSink(host, () => FRAME);
     await sink.emit(CLICK);
-    expect(host.sent).toEqual([{ op: "moveclick", x: 398, y: 123, expectedHwnd: "66051", viewWidth: 640, viewHeight: 360, capturedAtQpcMs: 5_000_123, maxAgeMs: 120 }]);
+    expect(host.sent).toEqual([{ op: "moveclick", x: 398, y: 123, expectedHwnd: "66051", viewWidth: 640, viewHeight: 360, capturedAtQpcMs: 5_000_123, maxAgeMs: 120, area: "move" }]);
   });
   it("treats a click without a button as a left click and forwards a custom freshness limit", async () => {
     const host = fakeHost(), sink = new FollowerInputSink(host, () => FRAME, 90);
     await sink.emit({ kind: "click", x: 0, y: 0 });
-    expect(host.sent).toEqual([{ op: "moveclick", x: 0, y: 0, expectedHwnd: "66051", viewWidth: 640, viewHeight: 360, capturedAtQpcMs: 5_000_123, maxAgeMs: 90 }]);
+    expect(host.sent).toEqual([{ op: "moveclick", x: 0, y: 0, expectedHwnd: "66051", viewWidth: 640, viewHeight: 360, capturedAtQpcMs: 5_000_123, maxAgeMs: 90, area: "move" }]);
   });
   it("asks the guard again for every click, so each request carries the newest capture", async () => {
     const host = fakeHost();
@@ -127,5 +127,16 @@ describe("follower input sink (synthetic input host, no OS input)", () => {
       scenario({ id: "follow-map-marker", name: "Follow by overlay map", enabledModules: ["navigation"], dryRun: false, actionsPerMinute: 600, confidenceThreshold: .85 }), "PathOfExileSteam", "evidence", true);
     expect(traces).toHaveLength(1);
     expect(traces[0]).toMatchObject({ result: "failed", reason: expect.stringContaining("sink=Manual mouse movement") });
+  });
+});
+
+describe("follower input sink loot clicks (SYNTHETIC host, no OS input)", () => {
+  it("marks a loot pickup so the input worker allows the world view, and refuses any other text", async () => {
+    const sent: Array<Record<string, unknown>> = [];
+    const sink = new FollowerInputSink({ send: async payload => { sent.push(payload); return { ok: true, inputMs: 20, captureToInputMs: 70 }; } }, () => ({ hwnd: "66051", viewWidth: 2560, viewHeight: 1440, capturedAtQpcMs: 9_000 }));
+    await sink.emit({ kind: "click", x: 789, y: 185, button: "left", text: LOOT_CLICK });
+    expect(sent).toEqual([{ op: "moveclick", x: 789, y: 185, expectedHwnd: "66051", viewWidth: 2560, viewHeight: 1440, capturedAtQpcMs: 9_000, maxAgeMs: 120, area: "loot" }]);
+    await expect(sink.emit({ kind: "click", x: 789, y: 185, button: "left", text: "anywhere" })).rejects.toThrow("Invalid follow action");
+    expect(sent).toHaveLength(1);
   });
 });

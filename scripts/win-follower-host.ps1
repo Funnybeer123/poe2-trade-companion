@@ -97,6 +97,7 @@ public static class FollowWin {
     if (channel == "white") return 0;
     if (channel == "green") return 1;
     if (channel == "orange") return 2;
+    if (channel == "blue") return 3;
     throw new Exception("Unknown channel");
   }
   public static int ChannelValue(int r, int g, int b, string channel) { return ChannelValue(r, g, b, ChannelId(channel)); }
@@ -104,7 +105,8 @@ public static class FollowWin {
   static int ChannelValue(int r, int g, int b, int channel) {
     if (channel == 0) return Math.Min(r, Math.Min(g, b));
     if (channel == 1) return Math.Max(0, g - Math.Max(r, b));
-    return Math.Max(0, Math.Min(r - g, g - b));
+    if (channel == 2) return Math.Max(0, Math.Min(r - g, g - b));
+    return Math.Max(0, b - r);
   }
   // Client coordinates of every pixel in the rectangle whose channel value reaches the threshold,
   // as little-endian UInt16 x,y pairs. Null when there are more than the cap: not a UI marker.
@@ -126,28 +128,116 @@ public static class FollowWin {
       return points.ToArray();
     } finally { bitmap.UnlockBits(data); }
   }
+  // Horizontal runs of one flat colour: the padding rows of a ground-item label are exactly that, and
+  // rendered scenery almost never is. Each run is y, x0, x1 (UInt16 LE, client coordinates) then r, g, b.
+  // Runs darker than minBrightness are dropped here: shadows, and the black labels of doors and NPCs.
+  public static byte[] FlatRuns(Bitmap bitmap, int originX, int originY, Rectangle area, int minLength, int minBrightness, int cap) {
+    BitmapData data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+    try {
+      byte[] row = new byte[data.Stride];
+      MemoryStream runs = new MemoryStream();
+      int found = 0;
+      for (int y = area.Top; y < area.Bottom; y++) {
+        Marshal.Copy(IntPtr.Add(data.Scan0, (y - originY) * data.Stride), row, 0, data.Stride);
+        int start = area.Left, sr = 0, sg = 0, sb = 0, pr = 0, pg = 0, pb = 0;
+        for (int x = area.Left; x <= area.Right; x++) {
+          int i = (x - originX) * 4;
+          bool inside = x < area.Right;
+          int r = inside ? row[i + 2] : -999, g = inside ? row[i + 1] : -999, b = inside ? row[i] : -999;
+          bool continues = x > area.Left && inside
+            && Math.Abs(r - pr) <= 3 && Math.Abs(g - pg) <= 3 && Math.Abs(b - pb) <= 3
+            && Math.Abs(r - sr) <= 48 && Math.Abs(g - sg) <= 48 && Math.Abs(b - sb) <= 48;
+          if (!continues) {
+            if (x > area.Left && x - start >= minLength && Math.Max(sr, Math.Max(sg, sb)) >= minBrightness) {
+              if (++found > cap) return null;
+              int end = x - 1;
+              runs.WriteByte((byte)(y & 255)); runs.WriteByte((byte)(y >> 8)); runs.WriteByte((byte)(start & 255)); runs.WriteByte((byte)(start >> 8));
+              runs.WriteByte((byte)(end & 255)); runs.WriteByte((byte)(end >> 8)); runs.WriteByte((byte)sr); runs.WriteByte((byte)sg); runs.WriteByte((byte)sb);
+            }
+            start = x; sr = r; sg = g; sb = b;
+          }
+          pr = r; pg = g; pb = b;
+        }
+      }
+      return runs.ToArray();
+    } finally { bitmap.UnlockBits(data); }
+  }
+  // Hue class of a pixel: 0 for dark or unsaturated pixels (scenery, shadows, black labels), else 1..12 for
+  // 30-degree hue buckets offset by 15 degrees. Same integer arithmetic as hueClass() in src/core/followerLoot.ts.
+  public static int HueClass(int r, int g, int b) {
+    int max = Math.Max(r, Math.Max(g, b)), min = Math.Min(r, Math.Min(g, b)), chroma = max - min;
+    if (max < 45 || chroma * 100 < 50 * max) return 0;
+    int hue = max == r ? 60 * (g - b) / chroma : max == g ? 60 * (b - r) / chroma + 120 : 60 * (r - g) / chroma + 240;
+    return ((hue + 375) % 360) / 30 + 1;
+  }
+  // Runs of one hue class: a translucent label keeps its hue where a light beam or scenery shifts its brightness,
+  // so its border, fill and text stay one run where flat-colour runs shatter. Each run is y, x0, x1 (UInt16 LE) and the class.
+  public static byte[] HueRuns(Bitmap bitmap, int originX, int originY, Rectangle area, int minLength, int cap) {
+    BitmapData data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+    try {
+      byte[] row = new byte[data.Stride];
+      MemoryStream runs = new MemoryStream();
+      int found = 0;
+      for (int y = area.Top; y < area.Bottom; y++) {
+        Marshal.Copy(IntPtr.Add(data.Scan0, (y - originY) * data.Stride), row, 0, data.Stride);
+        int start = area.Left, current = -1;
+        for (int x = area.Left; x <= area.Right; x++) {
+          int i = (x - originX) * 4;
+          int cls = x < area.Right ? HueClass(row[i + 2], row[i + 1], row[i]) : -2;
+          if (cls == current) continue;
+          if (current > 0 && x - start >= minLength) {
+            if (++found > cap) return null;
+            int end = x - 1;
+            runs.WriteByte((byte)(y & 255)); runs.WriteByte((byte)(y >> 8)); runs.WriteByte((byte)(start & 255)); runs.WriteByte((byte)(start >> 8));
+            runs.WriteByte((byte)(end & 255)); runs.WriteByte((byte)(end >> 8)); runs.WriteByte((byte)current);
+          }
+          start = x; current = cls;
+        }
+      }
+      return runs.ToArray();
+    } finally { bitmap.UnlockBits(data); }
+  }
+  public static string Runs(Rectangle area, int minLength, int minBrightness) {
+    long capturedAt = QpcMs(), started = Clock.ElapsedMilliseconds;
+    if (minLength < 24 || minLength > 400 || minBrightness < 0 || minBrightness > 255) throw new Exception("Invalid run limits");
+    IntPtr window = Foreground();
+    Rectangle bounds = Bounds(window);
+    RequireInside(area, bounds);
+    Bitmap bitmap = Capture(bounds, area.X, area.Y, area.Width, area.Height);
+    byte[] runs = FlatRuns(bitmap, area.X, area.Y, area, minLength, minBrightness, 4000);
+    byte[] hues = HueRuns(bitmap, area.X, area.Y, area, minLength, 4000);
+    if (GetForegroundWindow() != window || Bounds(window) != bounds) throw new Exception("Game focus or view changed during capture");
+    return "{\"ok\":true,\"hwnd\":\"" + window.ToInt64() + "\",\"process\":\"" + ProcessName(window) + "\",\"width\":" + bounds.Width + ",\"height\":" + bounds.Height
+      + ",\"capturedAtQpcMs\":" + capturedAt + ",\"captureMs\":" + (Clock.ElapsedMilliseconds - started)
+      + ",\"overflow\":" + (runs == null ? "true" : "false") + ",\"runs\":\"" + (runs == null ? "" : Convert.ToBase64String(runs)) + "\""
+      + ",\"hueOverflow\":" + (hues == null ? "true" : "false") + ",\"hueRuns\":\"" + (hues == null ? "" : Convert.ToBase64String(hues)) + "\"}";
+  }
   static void RequireInside(Rectangle area, Rectangle bounds) {
     if (area.X < 0 || area.Y < 0 || area.Width < 8 || area.Height < 8 || area.Right > bounds.Width || area.Bottom > bounds.Height) throw new Exception("Recalibrate the game view");
   }
   // One capture of the union of both rectangles; only sparse marker pixels cross the pipe.
-  public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold) {
+  public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold) { return Key(area, full, channel, threshold, second, secondChannel, secondThreshold, Rectangle.Empty, "blue", 255); }
+  public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold, Rectangle third, string thirdChannel, int thirdThreshold) {
     long capturedAt = QpcMs(), started = Clock.ElapsedMilliseconds;
-    if (threshold < 20 || threshold > 255 || secondThreshold < 20 || secondThreshold > 255) throw new Exception("Invalid key threshold");
+    if (threshold < 20 || threshold > 255 || secondThreshold < 20 || secondThreshold > 255 || thirdThreshold < 20 || thirdThreshold > 255) throw new Exception("Invalid key threshold");
     IntPtr window = Foreground();
     Rectangle bounds = Bounds(window);
     if (full) area = new Rectangle(0, 0, bounds.Width, bounds.Height);
     RequireInside(area, bounds);
     Rectangle union = area;
     if (!second.IsEmpty) { RequireInside(second, bounds); union = Rectangle.Union(area, second); }
+    if (!third.IsEmpty) { RequireInside(third, bounds); union = Rectangle.Union(union, third); }
     Bitmap bitmap = Capture(bounds, union.X, union.Y, union.Width, union.Height);
     byte[] first = KeyPoints(bitmap, union.X, union.Y, area, channel, threshold, 6000);
     byte[] other = second.IsEmpty ? new byte[0] : KeyPoints(bitmap, union.X, union.Y, second, secondChannel, secondThreshold, 2000);
+    byte[] extra = third.IsEmpty ? new byte[0] : KeyPoints(bitmap, union.X, union.Y, third, thirdChannel, thirdThreshold, 8000);
     if (GetForegroundWindow() != window || Bounds(window) != bounds) throw new Exception("Game focus or view changed during capture");
     return "{\"ok\":true,\"hwnd\":\"" + window.ToInt64() + "\",\"process\":\"" + ProcessName(window) + "\",\"width\":" + bounds.Width + ",\"height\":" + bounds.Height
       + ",\"x\":" + area.X + ",\"y\":" + area.Y + ",\"regionWidth\":" + area.Width + ",\"regionHeight\":" + area.Height
       + ",\"capturedAtQpcMs\":" + capturedAt + ",\"captureMs\":" + (Clock.ElapsedMilliseconds - started)
       + ",\"overflow\":" + (first == null ? "true" : "false") + ",\"points\":\"" + (first == null ? "" : Convert.ToBase64String(first)) + "\""
-      + ",\"secondOverflow\":" + (other == null ? "true" : "false") + ",\"secondPoints\":\"" + (other == null ? "" : Convert.ToBase64String(other)) + "\"}";
+      + ",\"secondOverflow\":" + (other == null ? "true" : "false") + ",\"secondPoints\":\"" + (other == null ? "" : Convert.ToBase64String(other)) + "\""
+      + ",\"thirdOverflow\":" + (extra == null ? "true" : "false") + ",\"thirdPoints\":\"" + (extra == null ? "" : Convert.ToBase64String(extra)) + "\"}";
   }
 }
 '@
@@ -162,6 +252,10 @@ while ($null -ne ($line = [Console]::ReadLine())) {
     elseif ($command.op -eq 'preview') { $reply = [FollowWin]::Sample(0, 0, 0, 0, $true, $true) }
     elseif ($command.op -eq 'sample') { $reply = [FollowWin]::Sample([int]$command.x, [int]$command.y, [int]$command.width, [int]$command.height, $command.full -eq $true, $false) }
     elseif ($command.op -eq 'record') { $reply = [FollowWin]::Record([string]$command.file) }
+    elseif ($command.op -eq 'runs') {
+      $area = New-Object System.Drawing.Rectangle ([int]$command.x), ([int]$command.y), ([int]$command.width), ([int]$command.height)
+      $reply = [FollowWin]::Runs($area, [int]$command.minLength, [int]$command.minBrightness)
+    }
     elseif ($command.op -eq 'key') {
       $area = New-Object System.Drawing.Rectangle ([int]$command.x), ([int]$command.y), ([int]$command.width), ([int]$command.height)
       $second = [System.Drawing.Rectangle]::Empty; $secondChannel = 'orange'; $secondThreshold = 255
@@ -169,7 +263,12 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         $second = New-Object System.Drawing.Rectangle ([int]$command.second.x), ([int]$command.second.y), ([int]$command.second.width), ([int]$command.second.height)
         $secondChannel = [string]$command.second.channel; $secondThreshold = [int]$command.second.threshold
       }
-      $reply = [FollowWin]::Key($area, $command.full -eq $true, [string]$command.channel, [int]$command.threshold, $second, $secondChannel, $secondThreshold)
+      $third = [System.Drawing.Rectangle]::Empty; $thirdChannel = 'blue'; $thirdThreshold = 255
+      if ($null -ne $command.third) {
+        $third = New-Object System.Drawing.Rectangle ([int]$command.third.x), ([int]$command.third.y), ([int]$command.third.width), ([int]$command.third.height)
+        $thirdChannel = [string]$command.third.channel; $thirdThreshold = [int]$command.third.threshold
+      }
+      $reply = [FollowWin]::Key($area, $command.full -eq $true, [string]$command.channel, [int]$command.threshold, $second, $secondChannel, $secondThreshold, $third, $thirdChannel, $thirdThreshold)
     }
     else { throw 'Unknown follower capture operation' }
   } catch {

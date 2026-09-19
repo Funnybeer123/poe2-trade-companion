@@ -1,12 +1,14 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { FollowerInputSink, type FollowerFrameGuard } from "../adapters/followerInputSink.js";
+import { FollowerInputSink, LOOT_CLICK, type FollowerFrameGuard } from "../adapters/followerInputSink.js";
 import { pngPlanes } from "../adapters/pngWhiteness.js";
 import { startWinHost } from "../adapters/winHost.js";
 import {
   buildMapCalibration, decodeKeyPoints, FollowSteering, mapCalibrationIssue, MapMarkerTracker, parseMapCalibration,
   type MapCalibration, type SteeringDecision,
 } from "../core/followerMapMarker.js";
+import { decodeFlatRuns, decodeHueRuns, findLootLabels, LOOT_MIN_BRIGHTNESS, LOOT_MIN_RUN, lootArea, LootPlanner } from "../core/followerLoot.js";
+import { LeaderTrail, MapOdometry, ODOMETRY_CHANNEL, ODOMETRY_THRESHOLD, odometryWindow } from "../core/followerTrail.js";
 import { templatePixelCount, type PixelRect } from "../core/followerPerception.js";
 import { GameInputController } from "../core/gameInputController.js";
 import type { KillSwitch } from "../core/killSwitch.js";
@@ -20,7 +22,7 @@ interface DriveOptions {
   killSwitch: KillSwitch;
   mode: RuntimeMode;
   /** Live follower preferences: who to follow, how close, and the minimum confidence. */
-  follow: () => { targetName: string; followDistance: number; confidence: number };
+  follow: () => { targetName: string; followDistance: number; confidence: number; lootEnabled?: boolean; lootLeash?: number };
   blocked?: () => string | undefined;
   globalDryRun?: () => boolean;
   createCaptureHost?: () => Host;
@@ -30,7 +32,7 @@ interface DriveOptions {
   pollMs?: number;
 }
 const GAME_PROCESSES = ["pathofexile", "pathofexile_x64", "pathofexilesteam", "pathofexile_x64steam", "pathofexileegs", "pathofexile_x64egs"];
-const FRAME_MAX_AGE_MS = 120, MANUAL_PAUSE_MS = 1500, ACTIONS_PER_MINUTE = 600, MAP_PX_PER_FOLLOW_UNIT = 6;
+const FRAME_MAX_AGE_MS = 120, MANUAL_PAUSE_MS = 1500, ACTIONS_PER_MINUTE = 600, MAP_PX_PER_FOLLOW_UNIT = 6, LOOT_SCAN_MS = 250;
 /** The fastest pacing the action cap can sustain: a shorter interval would always end in a rate-limit stop. */
 export const MIN_CLICK_INTERVAL_MS = Math.ceil(60_000 / ACTIONS_PER_MINUTE);
 const FOCUS = /Focus Path of Exile 2/, COVERED = /covered at the click point/;
@@ -66,11 +68,12 @@ export class FollowerDriveService {
   private observation?: FollowerDriveStatus["observation"];
   private decision?: SteeringDecision;
   private frame?: FollowerFrameGuard & { at: number };
+  private odometry?: FollowerDriveStatus["odometry"];
   private cycles: number[] = [];
   private latencies: number[] = [];
   /** Capture-to-click times of the first click after standing near the leader: the reaction to them moving off. */
   private resumes: number[] = [];
-  private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0 };
+  private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0 };
   private startedAt = 0;
   private readonly calibrationFile: string;
   private readonly settingsFile: string;
@@ -93,7 +96,7 @@ export class FollowerDriveService {
       calibration: c && { targetName: c.targetName, view: c.view, origin: new MapMarkerTracker(c).origin, markerOffset: c.markerOffset, labelPixels: templatePixelCount(c.label), labelMask: c.label.mask, calibratedAt: c.calibratedAt },
       calibrationIssue: this.calibrationError ?? (c ? mapCalibrationIssue(c, this.options.follow().targetName) : undefined),
       observation: o && { ...o, ageMs: Math.max(0, Math.round(this.now() - o.capturedAt)) },
-      decision: this.decision,
+      decision: this.decision, odometry: this.running ? this.odometry : undefined,
       stats: this.counts.cycles ? {
         ...this.counts, observationsPerSecond: elapsed > 0 ? Math.round(this.counts.cycles / elapsed * 10) / 10 : 0,
         cycleMsP50: percentile(this.cycles, .5), cycleMsP95: cycleP95, captureToInputMsP50: percentile(this.latencies, .5), captureToInputMsP95: inputP95,
@@ -190,8 +193,27 @@ export class FollowerDriveService {
     }, FRAME_MAX_AGE_MS);
     const controller = new GameInputController(sink, this.options.killSwitch, this.options.mode);
     this.running = true; this.reason = "Starting capture and input workers…";
-    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0 }; this.startedAt = this.now();
-    let manualUntil = -Infinity, pauseReason = "", wasNear = false;
+    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0 }; this.startedAt = this.now();
+    let manualUntil = -Infinity, pauseReason = "", wasNear = false, lastLootScanAt = -Infinity;
+    const odometry = new MapOdometry(), trail = new LeaderTrail(), watch = { ...odometryWindow(tracker.origin, calibration.view), channel: ODOMETRY_CHANNEL, threshold: ODOMETRY_THRESHOLD };
+    const loot = new LootPlanner(), leashPx = (follow.lootLeash ?? 0) * MAP_PX_PER_FOLLOW_UNIT;
+    /** Runs one executed decision through the controller and says what became of it. */
+    const execute = async (module: "navigation" | "loot", rule: string, reason: string, x: number, y: number, confidence: number, process: string, allowed: boolean, evidence: string, lootEnabled: boolean, threshold: number): Promise<"emitted" | "previewed" | "paused" | "retry" | "stopped"> => {
+      const policy = scenario({ id: "follow-map-marker", name: "Follow by overlay map", enabledModules: lootEnabled ? ["navigation", "loot"] : ["navigation"], dryRun: previewOnly || this.dryRun(), actionsPerMinute: ACTIONS_PER_MINUTE, confidenceThreshold: threshold, timingProfile: "tight" });
+      const traces = await controller.execute({ module, rule, reason, intended: [{ kind: "click", x, y, button: "left", ...(module === "loot" ? { text: LOOT_CLICK } : {}) }], confidence }, policy, process, evidence, allowed);
+      this.options.audit?.(traces);
+      // Long sessions must not retain every trace in memory.
+      controller.actionTraces.splice(0);
+      if (!live()) return "stopped";
+      const trace = traces[0];
+      if (trace?.result === "emitted") return "emitted";
+      if (trace?.reason.includes("safety=dry-run")) { this.reason = `Preview only: would ${reason.charAt(0).toLowerCase()}${reason.slice(1)}`; return "previewed"; }
+      if (trace?.reason.includes("safety=rate-limited")) { this.stop(`Action limit reached (${ACTIONS_PER_MINUTE}/minute).`); return "stopped"; }
+      if (trace?.result === "failed" && COVERED.test(trace.reason)) { this.counts.refused++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Another window covers the game at the click point — pausing."; return "paused"; }
+      if (trace?.result === "failed" && MANUAL.test(trace.reason)) { this.counts.manualTakeovers++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Manual control detected — following resumes shortly."; return "paused"; }
+      if (trace?.result === "failed" && RETRY.test(trace.reason)) { this.counts.refused++; this.reason = "A click was refused as stale or unfocused; retrying on a fresh capture."; return "retry"; }
+      this.stop(trace ? `Movement input stopped: ${trace.reason}` : "Movement input produced no trace."); return "stopped";
+    };
     const tick = async () => {
       if (!live()) return;
       const started = this.now();
@@ -201,7 +223,7 @@ export class FollowerDriveService {
         if (stop) { this.stop(stop); return; }
         if (this.dryRun() !== previewOnly) { this.stop("Dry-run setting changed — press Start to resume."); return; }
         const request = tracker.nextRequest(started);
-        const reply = await capture.send({ op: "key", ...request.region, full: request.full, channel: request.channel, threshold: request.threshold, second: request.second });
+        const reply = await capture.send({ op: "key", ...request.region, full: request.full, channel: request.channel, threshold: request.threshold, second: request.second, third: watch });
         if (!live()) return;
         this.frame = undefined;
         if (!reply.ok) {
@@ -215,35 +237,54 @@ export class FollowerDriveService {
           observation.timing.matchMs = Math.round((this.now() - received) * 10) / 10;
           this.observation = { ...observation, ageMs: 0 };
           this.frame = { hwnd: String(reply.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(reply.capturedAtQpcMs), at: started };
-          const manual = this.now() < manualUntil;
-          const decision: SteeringDecision = manual ? { kind: "pause", reason: pauseReason } : steering.decide(observation, this.now());
-          this.decision = decision; this.reason = decision.reason;
+          const manual = this.now() < manualUntil, distance = observation.offset?.distance ?? Infinity;
+          // Our own movement from the slide of the map outlines, then the leader's path in that frame.
+          const moved = odometry.update(reply.thirdOverflow || typeof reply.thirdPoints !== "string" ? undefined : decodeKeyPoints(reply.thirdPoints), started);
+          const trusted = observation.leaderFound && !!observation.offset && observation.confidence >= current.confidence && observation.originVerified;
+          if (trusted && moved.tracked) trail.record(odometry.position, observation.offset!, odometry.epoch);
+          const aim = trusted ? trail.aim(odometry.position, observation.offset!, odometry.epoch) : undefined;
+          this.odometry = { tracked: moved.tracked, quality: moved.quality, trailPoints: trail.length, via: aim?.via ?? "direct" };
+          let decision: SteeringDecision = manual ? { kind: "pause", reason: pauseReason } : steering.decide(observation, this.now(), aim?.via === "trail" ? aim : undefined, moved);
           if (decision.kind === "near") wasNear = true;
           this.counts.cycles++; this.cycles.push(this.now() - started); if (this.cycles.length > 600) this.cycles.shift();
-          if (decision.kind === "move") {
-            const policy = scenario({ id: "follow-map-marker", name: "Follow by overlay map", enabledModules: ["navigation"], dryRun: previewOnly || this.dryRun(), actionsPerMinute: ACTIONS_PER_MINUTE, confidenceThreshold: current.confidence, timingProfile: "tight" });
-            const evidence = JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, leader: observation.leader, origin: observation.origin, offset: observation.offset, evidence: observation.evidence });
-            const traces = await controller.execute({ module: "navigation", rule: "follow-map-marker", reason: decision.reason, intended: [{ kind: "click", x: decision.x, y: decision.y, button: "left" }], confidence: observation.confidence }, policy, process, evidence, allowed);
-            this.options.audit?.(traces);
-            // Long sessions must not retain every trace in memory.
-            controller.actionTraces.splice(0);
+          // Loot only with a trusted sighting of the leader inside the leash, a verified map centre (so no
+          // panel is open), and nobody at the mouse. Rejoining the leader always comes first.
+          const lootOn = current.lootEnabled === true && leashPx > 0;
+          const canLoot = lootOn && !manual && observation.leaderFound && observation.confidence >= current.confidence && observation.originVerified && distance <= leashPx;
+          if (canLoot && started - lastLootScanAt >= LOOT_SCAN_MS) {
+            lastLootScanAt = started;
+            const scanAt = this.now(), scan = await capture.send({ op: "runs", ...lootArea(view), minLength: LOOT_MIN_RUN, minBrightness: LOOT_MIN_BRIGHTNESS });
             if (!live()) return;
-            const trace = traces[0];
-            if (trace?.result === "emitted") {
+            if (scan.ok && !scan.overflow && Number(scan.width) === view.width && Number(scan.height) === view.height) {
+              const labels = findLootLabels(decodeFlatRuns(scan.runs), view, observation.origin, scan.hueOverflow || typeof scan.hueRuns !== "string" ? [] : decodeHueRuns(scan.hueRuns)), choice = loot.decide(labels, this.now());
+              this.counts.lootScans++; this.counts.lootLabels = labels.length;
+              if (choice.kind === "loot" && choice.label) {
+                // The click is bound to the scan that found the label, not to the earlier marker capture.
+                this.frame = { hwnd: String(scan.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(scan.capturedAtQpcMs), at: scanAt };
+                const outcome = await execute("loot", "pick-up-nearest-label", choice.reason, choice.label.centre.x, choice.label.centre.y, choice.label.confidence, process, allowed,
+                  JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, label: choice.label, labelsInView: labels.length, leaderDistance: distance }), true, current.confidence);
+                if (outcome === "stopped") return;
+                if (outcome === "emitted" || outcome === "previewed") { loot.committed(labels.length, this.now()); this.counts.lootClicks++; if (outcome === "emitted") this.counts.clicks++; else this.counts.previewed++; }
+              }
+              if (choice.kind !== "idle" || choice.label) decision = { kind: "hold", reason: choice.reason, distance };
+            }
+          }
+          // While the character walks to an item, do not pull it back toward the leader.
+          else if (canLoot && loot.busy(this.now()) && decision.kind === "move") decision = { kind: "hold", reason: "Walking to a loot pickup.", distance };
+          this.decision = decision; this.reason = decision.reason;
+          if (decision.kind === "move") {
+            const evidence = JSON.stringify({ capturedAtQpcMs: this.frame!.capturedAtQpcMs, hwnd: this.frame!.hwnd, leader: observation.leader, origin: observation.origin, offset: observation.offset, evidence: observation.evidence });
+            const outcome = await execute("navigation", "follow-map-marker", decision.reason, decision.x, decision.y, observation.confidence, process, allowed, evidence, lootOn, current.confidence);
+            if (outcome === "stopped") return;
+            if (outcome === "emitted") {
               steering.committed(this.now()); this.counts.clicks++;
               if (sink.lastInput) {
                 this.latencies.push(sink.lastInput.captureToInputMs); if (this.latencies.length > 600) this.latencies.shift();
                 if (wasNear) { this.resumes.push(sink.lastInput.captureToInputMs); if (this.resumes.length > 600) this.resumes.shift(); }
               }
               wasNear = false;
-            } else if (trace?.reason.includes("safety=dry-run")) { steering.committed(this.now()); this.counts.previewed++; this.reason = `Preview only: would ${decision.reason.charAt(0).toLowerCase()}${decision.reason.slice(1)}`; }
-            else if (trace?.reason.includes("safety=rate-limited")) { this.stop(`Action limit reached (${ACTIONS_PER_MINUTE}/minute).`); return; }
-            else if (trace?.result === "failed" && COVERED.test(trace.reason)) { this.counts.refused++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Another window covers the game at the click point — pausing."; }
-            else if (trace?.result === "failed" && MANUAL.test(trace.reason)) { this.counts.manualTakeovers++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Manual control detected — following resumes shortly."; }
-            else if (trace?.result === "failed" && RETRY.test(trace.reason)) { this.counts.refused++; this.reason = "A click was refused as stale or unfocused; retrying on a fresh capture."; }
-            else { this.stop(trace ? `Movement input stopped: ${trace.reason}` : "Movement input produced no trace."); return; }
-          }
-        }
+            } else if (outcome === "previewed") { steering.committed(this.now()); this.counts.previewed++; }
+          }        }
       } catch (e) {
         if (generation === this.generation) this.stop(e instanceof Error ? e.message : "Follow worker failed.");
       } finally {

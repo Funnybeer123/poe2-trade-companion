@@ -1,7 +1,7 @@
 // Runs the follow loop from a terminal, so the game keeps focus (the Electron window would take it).
 // Dry-run unless --live is given. Ctrl+Shift+Esc is the emergency stop; moving the mouse or holding
 // a mouse button takes manual control. Always ends after --seconds.
-//   npm run follower:live -- --target <LeaderName> [--seconds 20] [--calibrate] [--live] [--distance 2] [--confidence 0.85] [--scale 7] [--interval 110] [--dir <folder>]
+//   npm run follower:live -- --target <LeaderName> [--seconds 20] [--calibrate] [--live] [--loot] [--leash 7] [--distance 2] [--confidence 0.85] [--scale 7] [--interval 110] [--dir <folder>]
 import os from "node:os";
 import path from "node:path";
 import { startEmergencyStopMonitor } from "../src/adapters/emergencyStopMonitor.js";
@@ -17,7 +17,7 @@ const directory = option("--dir") ?? path.join(os.homedir(), "AppData", "Roaming
 const killSwitch = new KillSwitch();
 const service = new FollowerDriveService({
   directory, killSwitch, mode: "authorized-qa", audit: driveAudit(directory),
-  follow: () => ({ targetName, followDistance: number("--distance", 2, 1, 10), confidence: number("--confidence", .85, .5, 1) }),
+  follow: () => ({ targetName, followDistance: number("--distance", 2, 1, 10), confidence: number("--confidence", .85, .5, 1), lootEnabled: args.includes("--loot"), lootLeash: number("--leash", 7, 2, 25) }),
 });
 const finish = (reason: string, code = 0) => {
   const final = service.status();
@@ -48,7 +48,7 @@ catch (e) { if (live) { console.error(`No emergency stop available, refusing liv
   const report = setInterval(() => {
     const s = service.status();
     if (!s.running) { clearInterval(report); finish(`Stopped: ${s.reason}`, 1); return; }
-    console.log(`${((Date.now() - began) / 1000).toFixed(1).padStart(5)} s  ${(s.decision?.kind ?? "-").padEnd(5)} d=${String(s.observation?.offset?.distance ?? "-").padStart(5)} conf=${s.observation?.confidence ?? "-"} origin=${s.observation?.originVerified ? "ok" : "NO"}(${s.observation?.evidence.originScore ?? "-"}) ${s.observation?.evidence.searched ?? ""} obs/s=${s.stats?.observationsPerSecond ?? "-"} cycle p50/p95=${s.stats?.cycleMsP50 ?? "-"}/${s.stats?.cycleMsP95 ?? "-"} clicks=${s.stats?.clicks ?? 0} previewed=${s.stats?.previewed ?? 0} refused=${s.stats?.refused ?? 0} manual=${s.stats?.manualTakeovers ?? 0} input p50/p95=${s.stats?.captureToInputMsP50 ?? "-"}/${s.stats?.captureToInputMsP95 ?? "-"}  ${s.reason}`);
+    console.log(`${((Date.now() - began) / 1000).toFixed(1).padStart(5)} s  ${(s.decision?.kind ?? "-").padEnd(5)} d=${String(s.observation?.offset?.distance ?? "-").padStart(5)} conf=${s.observation?.confidence ?? "-"} odo=${s.odometry ? `${s.odometry.tracked ? "ok" : "no"}:${s.odometry.quality}:${s.odometry.via}:${s.odometry.trailPoints}` : "-"} origin=${s.observation?.originVerified ? "ok" : "NO"}(${s.observation?.evidence.originScore ?? "-"}) ${s.observation?.evidence.searched ?? ""} obs/s=${s.stats?.observationsPerSecond ?? "-"} cycle p50/p95=${s.stats?.cycleMsP50 ?? "-"}/${s.stats?.cycleMsP95 ?? "-"} clicks=${s.stats?.clicks ?? 0} previewed=${s.stats?.previewed ?? 0} loot=${s.stats?.lootClicks ?? 0}/${s.stats?.lootLabels ?? 0}labels/${s.stats?.lootScans ?? 0}scans refused=${s.stats?.refused ?? 0} manual=${s.stats?.manualTakeovers ?? 0} input p50/p95=${s.stats?.captureToInputMsP50 ?? "-"}/${s.stats?.captureToInputMsP95 ?? "-"}  ${s.reason}`);
     if (Date.now() - began >= seconds * 1000) { clearInterval(report); finish("Time limit reached."); }
   }, 500);
 })().catch(e => { console.error(String(e)); service.stop("Failed."); monitor?.close(); process.exit(1); });

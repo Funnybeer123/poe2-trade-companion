@@ -80,7 +80,7 @@ function png(width: number, height: number, channels: 3 | 4, rgba: (x: number, y
 
 describe("colour channels (synthetic pixels)", () => {
   it("computes white = min(R,G,B), green = G − max(R,B) and orange = min(R − G, G − B), never below zero", () => {
-    expect(PLANE_CHANNELS).toEqual(["white", "green", "orange"]);
+    expect(PLANE_CHANNELS).toEqual(["white", "green", "orange", "blue"]);
     const cases: Array<[number[], number, number, number]> = [
       // rgb, white, green, orange
       [[240, 250, 230], 230, 10, 0], [[255, 255, 255], 255, 0, 0], [[0, 0, 0], 0, 0, 0], [[128, 128, 128], 128, 0, 0],
@@ -684,5 +684,65 @@ describe("follow steering (synthetic observations)", () => {
       expect(Math.hypot(d.x - view.width / 2, d.y - view.height / 2)).toBeLessThanOrEqual(view.height * .30);
       expect((d.x - centre.x) * (marker.x - centre.x) + (d.y - centre.y) * (marker.y - centre.y)).toBeGreaterThan(0);
     }
+  });
+});
+
+describe("follow steering round obstacles (SIMULATED world: a point character that stops dead at walls)", () => {
+  const VIEW = { width: 2560, height: 1440 }, ORIGIN = { x: 1279, y: 700 }, CONFIG: SteeringConfig = { stopPx: 12, resumePx: 18, clickIntervalMs: 110, mapScale: 7, confidence: .85 };
+  type Box = { x0: number; y0: number; x1: number; y1: number };
+  const seen = (dx: number, dy: number): MapObservation => ({ capturedAt: 0, view: VIEW, identity: { name: "Main", method: "map-label-template" }, leaderFound: true, origin: ORIGIN, leader: { x: ORIGIN.x + dx, y: ORIGIN.y + dy },
+    offset: { dx, dy, distance: Math.hypot(dx, dy) }, confidence: 1, originVerified: true, evidence: { score: 1, runnerUp: 0, candidates: 1, keyPixels: 300, originScore: 1, originSeenAgoMs: 0, searched: "window", overflow: false }, timing: { captureMs: 1, matchMs: 1 } });
+  /**
+   * 30 Hz loop. The character walks at 48 map px/s toward its last click and does not slide along walls
+   * (the game does slide a little, so this is harsher). `odometry` false leaves only the leader's offset as a motion cue.
+   */
+  function simulate(walls: Box[], start: { x: number; y: number }, leader: { x: number; y: number }, seconds: number, odometry = true) {
+    const steering = new FollowSteering(CONFIG), inside = (x: number, y: number) => walls.some(w => x > w.x0 && x < w.x1 && y > w.y0 && y < w.y1);
+    let me = { ...start }, heading: { x: number; y: number } | undefined, clicks = 0, rests = 0, arrivedAt: number | undefined; const reasons = new Set<string>();
+    for (let now = 0; now < seconds * 1000 && arrivedAt === undefined; now += 33) {
+      const before = { ...me };
+      if (heading) { const nx = me.x + heading.x * 48 * .033, ny = me.y + heading.y * 48 * .033; if (!inside(nx, ny)) me = { x: nx, y: ny }; }
+      const decision = steering.decide(seen(leader.x - me.x, leader.y - me.y), now, undefined, odometry ? { dx: me.x - before.x, dy: me.y - before.y, tracked: true } : undefined);
+      reasons.add(decision.reason.replace(/\d+(\.\d+)?/g, "#"));
+      if (decision.kind === "move") { const dx = decision.x - ORIGIN.x, dy = decision.y - ORIGIN.y, r = Math.hypot(dx, dy); heading = { x: dx / r, y: dy / r }; steering.committed(now); clicks++; expect(Math.hypot(decision.x - VIEW.width / 2, decision.y - VIEW.height / 2)).toBeLessThanOrEqual(VIEW.height * .3); }
+      else if (decision.kind === "near") { heading = undefined; arrivedAt = now; }
+      else if (decision.kind === "pause") { heading = undefined; rests++; }
+    }
+    return { arrivedAt, clicks, rests, me, reasons: [...reasons] };
+  }
+  it("walks straight to the leader across open ground", () => {
+    const run = simulate([], { x: 0, y: 0 }, { x: 200, y: -150 }, 20);
+    expect(run.arrivedAt).toBeLessThan(6000);
+    expect(run.reasons.some(r => r.startsWith("Blocked"))).toBe(false);
+  });
+  it("gets round a wall that lies across the straight line", () => {
+    const run = simulate([{ x0: -150, y0: -160, x1: 150, y1: -140 }], { x: 0, y: 0 }, { x: 0, y: -300 }, 90);
+    expect(run.arrivedAt).toBeDefined();
+    expect(run.reasons.some(r => r.startsWith("Blocked: going round"))).toBe(true);
+  });
+  it("gets round a large building whose corner is far from the straight line", () => {
+    const run = simulate([{ x0: -100, y0: -250, x1: 400, y1: -50 }], { x: 0, y: 0 }, { x: 150, y: -320 }, 180);
+    expect(run.arrivedAt).toBeDefined();
+  });
+  it("gets past two staggered walls, one corner after another", () => {
+    const run = simulate([{ x0: -200, y0: -120, x1: 80, y1: -100 }, { x0: -60, y0: -260, x1: 260, y1: -240 }], { x: 0, y: 0 }, { x: 0, y: -380 }, 240);
+    expect(run.arrivedAt).toBeDefined();
+  });
+  it("still gets round a wall with no odometry, using the change in the leader's offset as its motion cue", () => {
+    const run = simulate([{ x0: -150, y0: -160, x1: 150, y1: -140 }], { x: 0, y: 0 }, { x: 0, y: -300 }, 120, false);
+    expect(run.arrivedAt).toBeDefined();
+  });
+  it("rests instead of clicking forever when it is sealed in, then tries again", () => {
+    const sealed: Box[] = [{ x0: -60, y0: -80, x1: 60, y1: -60 }, { x0: -60, y0: 60, x1: 60, y1: 80 }, { x0: -80, y0: -80, x1: -60, y1: 80 }, { x0: 60, y0: -80, x1: 80, y1: 80 }];
+    const run = simulate(sealed, { x: 0, y: 0 }, { x: 0, y: -300 }, 120);
+    expect(run.arrivedAt).toBeUndefined();
+    expect(run.rests).toBeGreaterThan(100);
+    expect(run.reasons).toContain("Blocked: no way round found toward Main. Resting before trying again.");
+    // It tries each side for 25 s, then rests: fewer clicks than one every 110 ms for two minutes (about 1090).
+    expect(run.clicks).toBeLessThan(1000);
+  });
+  it("does not call a standstill blocked unless its own clicks were committed", () => {
+    const steering = new FollowSteering(CONFIG);
+    for (let now = 0; now < 8000; now += 33) { const d = steering.decide(seen(157, -188), now, undefined, { dx: 0, dy: 0, tracked: true }); if (d.kind === "move") expect(d.reason).toMatch(/^Move toward/); }
   });
 });

@@ -548,7 +548,7 @@ describe("follow drive live clicks (synthetic hosts: a 'click' is an array entry
     const target = expectedClick(FAR, 7);
     for (const attempt of rig.attempts) {
       // The freshest capture at the moment of the click is the one the click is bound to.
-      expect(attempt.payload).toEqual({ op: "moveclick", ...target, expectedHwnd: HWND, viewWidth: W, viewHeight: H, capturedAtQpcMs: attempt.newestCaptureQpc, maxAgeMs: 120 });
+      expect(attempt.payload).toEqual({ op: "moveclick", ...target, expectedHwnd: HWND, viewWidth: W, viewHeight: H, capturedAtQpcMs: attempt.newestCaptureQpc, maxAgeMs: 120, area: "move" });
       expect(insideSafeDisc(attempt.payload)).toBe(true);
     }
     // Direction and reach, stated without the formula: up and to the right of the map centre, 0.26 h away.

@@ -26,6 +26,15 @@ Expect 1280 720 2560 1440 -5 120 'Stale capture'    # a capture "from the future
 Expect 1280 720 2560 1440 10 5000 'Invalid freshness limit'
 Expect 10 10 100 100 0 120 'Invalid game view'
 Expect -50 500 400 1000 0 120 'Click outside the safe movement area'   # tall narrow view: the disc overhangs the client
+function ExpectLoot($x, $y, $error) { $check = [FollowInput]::Check($x, $y, 2560, 1440, 10, 120, 'loot'); if ($null -eq $error) { if (-not $check.Ok) { throw "Loot click $x,$y should be accepted: $($check.Error)" } } elseif ($check.Ok -or $check.Error -ne $error) { throw "Loot click $x,$y expected '$error' but got ok=$($check.Ok) '$($check.Error)'" } }
+ExpectLoot 790 185 $null                              # a label near the top of the world view, outside the movement disc
+ExpectLoot 1900 1100 $null
+ExpectLoot 255 600 'Click outside the loot area'      # party frames
+ExpectLoot 2048 600 'Click outside the loot area'     # quest tracker
+ExpectLoot 1280 1152 'Click outside the loot area'    # HUD
+ExpectLoot 1280 71 'Click outside the loot area'      # top edge, where clipped tooltips sit
+if (([FollowInput]::Check(1280, 720, 2560, 1440, 10, 120, 'anywhere')).Error -ne 'Unknown click area') { throw 'Unknown click areas must be refused' }
+if (([FollowInput]::Check(790, 185, 2560, 1440, 10, 120, 'move')).Error -ne 'Click outside the safe movement area') { throw 'A movement click must not borrow the loot area' }
 Expect 420 500 400 1000 0 120 'Click outside the safe movement area'
 if (-not [FollowInput]::Release()) { throw 'Nothing held: release must report success and must not throw' }
 if (-not [FollowInput]::HumanStillActive($true, 5000)) { throw 'A cursor that moved again is still under manual control' }

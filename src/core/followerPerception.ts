@@ -3,15 +3,17 @@ export interface PixelRect { x: number; y: number; width: number; height: number
 /**
  * Single-channel planes the capture host can produce. Each is high only for one kind of UI ink:
  * white = min(R,G,B) for bright unsaturated text; green = G − max(R,B) for party map markers and
- * labels; orange = min(R − G, G − B) for the player's own map marker.
+ * labels; orange = min(R − G, G − B) for the player's own map marker; blue = B − R for the overlay map's
+ * outlines, which show how far the map (and so the player) has moved.
  * scripts/win-follower-host.ps1 implements the same formulas natively.
  */
-export type PlaneChannel = "white" | "green" | "orange";
-export const PLANE_CHANNELS: readonly PlaneChannel[] = ["white", "green", "orange"];
+export type PlaneChannel = "white" | "green" | "orange" | "blue";
+export const PLANE_CHANNELS: readonly PlaneChannel[] = ["white", "green", "orange", "blue"];
 export function channelValue(r: number, g: number, b: number, channel: PlaneChannel): number {
   if (channel === "white") return Math.min(r, g, b);
   if (channel === "green") return Math.max(0, g - Math.max(r, b));
-  return Math.max(0, Math.min(r - g, g - b));
+  if (channel === "orange") return Math.max(0, Math.min(r - g, g - b));
+  return Math.max(0, b - r);
 }
 /** One byte per pixel of one PlaneChannel. */
 export interface WhiteFrame { width: number; height: number; pixels: Uint8Array }

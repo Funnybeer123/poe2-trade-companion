@@ -36,8 +36,12 @@ export interface FollowerDriveStatus {
   calibrationIssue?: string;
   observation?: MapObservation & { ageMs: number };
   decision?: SteeringDecision;
+  /** Own-movement tracking from the map outlines, and whether steering is following the leader's trail or aiming straight at them. */
+  odometry?: { tracked: boolean; quality: number; trailPoints: number; via: "trail" | "direct" };
   stats?: {
     cycles: number; clicks: number; previewed: number; refused: number; manualTakeovers: number; observationsPerSecond: number;
+    /** Loot: scans run, labels in the latest scan, and pickup clicks sent (or previewed). */
+    lootScans: number; lootLabels: number; lootClicks: number;
     cycleMsP50?: number; cycleMsP95?: number; captureToInputMsP50?: number; captureToInputMsP95?: number; worstCaseReactionMsP95?: number;
     /** First clicks after standing near the leader, i.e. reactions to them moving off, and their capture-to-click times. */
     resumes?: number; resumeCaptureToInputMsP50?: number; resumeCaptureToInputMsP95?: number;

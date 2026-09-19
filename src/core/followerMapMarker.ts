@@ -54,6 +54,9 @@ export const LABEL_LIMITS: TemplateLimits = { minThreshold: 60, maxThreshold: 20
 export const ORIGIN_LIMITS: TemplateLimits = { minThreshold: 30, maxThreshold: 200, minPixels: 10, minWidth: 5, minHeight: 5 };
 const TRACK_MARGIN = 96, FULL_SEARCH_EVERY_MS = 1000, ORIGIN_MARGIN = 20, ORIGIN_TOLERANCE = 5, ORIGIN_MIN_SCORE = .5, ORIGIN_STICKY_MS = 1500, ORIGIN_COVERED_MAX_MS = 10_000, MAX_MISSES = 3;
 const LABEL_FLANK = 6, LABEL_JUMP_PX = 30, LABEL_JUMP_WINDOW_MS = 250;
+/** Blocked: we moved less than this many map pixels over STUCK_MS despite STUCK_CLICKS committed clicks. */
+const STUCK_TOLERANCE_PX = 2.5, STUCK_MS = 1500, STUCK_CLICKS = 6, STUCK_REST_MS = 5000;
+const RAD = Math.PI / 180, WALL_FIRST_TURN = 60 * RAD, WALL_TURN = 35 * RAD, WALL_EASE = 25 * RAD, WALL_MAX_TURN = 200 * RAD, WALL_STUCK_MS = 900, WALL_EASE_MS = 800, WALL_SIDE_MS = 25_000, WALL_SIDE_GAIN_PX = 20;
 /** The input worker refuses clicks beyond 0.30 h of the view centre; steering stays just inside that. */
 const SAFE_DISC = .29;
 const integer = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n);
@@ -272,25 +275,96 @@ export class MapMarkerTracker {
 export class FollowSteering {
   private moving = false;
   private lastClickAt = -Infinity;
+  /** Recent own movement (or, without odometry, change in the leader's offset): the "did that click move us" sensor. */
+  private steps: Array<{ at: number; dx: number; dy: number }> = [];
+  private lastOffset?: { dx: number; dy: number };
+  private clicksSinceMoved = 0;
+  private checkedAt = -Infinity;
+  /** Wall-following: an absolute heading (radians, screen axes) held while something blocks the straight line. */
+  private wall?: { side: 1 | -1; heading: number; turned: number; easedAt: number; since: number; from: number };
+  private preferredSide: 1 | -1 = 1;
+  /** From the first time we were blocked until we get clearly nearer: slipping back to the straight line and sticking again is the same episode. */
+  private episode?: { at: number; from: number; fails: number };
+  private flips = 0;
+  private restUntil = -Infinity;
   constructor(private readonly config: SteeringConfig) {}
-  decide(o: MapObservation | undefined, now: number): SteeringDecision {
+  private travelled(now: number, withinMs: number): number {
+    let dx = 0, dy = 0;
+    for (const s of this.steps) if (now - s.at <= withinMs) { dx += s.dx; dy += s.dy; }
+    return Math.hypot(dx, dy);
+  }
+  private reset(): void { this.wall = undefined; this.episode = undefined; this.flips = 0; this.steps = []; this.clicksSinceMoved = 0; this.checkedAt = -Infinity; }
+  /**
+   * Clicking straight at the goal walks into whatever is in between. When committed clicks stop moving
+   * us we are against something, so hold a heading turned away from the goal to one side: each time that
+   * heading is blocked too, turn further away; each time it is moving, ease back toward the goal. That
+   * hugs a wall round its corners. Having turned most of the way round without getting free, try the
+   * other side; after both sides, rest and start again. It is reactive, not pathfinding: it cannot plan
+   * through a maze, and the leader's trail is always preferred when there is one.
+   */
+  private heading(goal: number, distance: number, now: number): { angle: number; note?: string } | "rest" {
+    if (now < this.restUntil) return "rest";
+    const stuck = this.clicksSinceMoved >= STUCK_CLICKS && now - this.checkedAt >= (this.wall ? WALL_STUCK_MS : STUCK_MS) && this.travelled(now, this.wall ? WALL_STUCK_MS : STUCK_MS) < STUCK_TOLERANCE_PX;
+    const between = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
+    if (this.episode && distance <= this.episode.from - WALL_SIDE_GAIN_PX) this.episode = { at: now, from: distance, fails: 0 };
+    if (this.episode && now - this.episode.at >= WALL_SIDE_MS) {
+      // A long time on this side, in and out of the wall, without getting nearer: it is not the way round.
+      if (++this.episode.fails >= 2) { this.reset(); this.restUntil = now + STUCK_REST_MS; return "rest"; }
+      this.preferredSide = (this.preferredSide === 1 ? -1 : 1) as 1 | -1; this.episode.at = now;
+      this.wall = { side: this.preferredSide, heading: goal + this.preferredSide * WALL_FIRST_TURN, turned: WALL_FIRST_TURN, easedAt: now, since: now, from: distance };
+      this.checkedAt = now; this.clicksSinceMoved = 0;
+    }
+    if (!this.wall) {
+      if (!stuck) return { angle: goal };
+      this.episode ??= { at: now, from: distance, fails: 0 };
+      this.wall = { side: this.preferredSide, heading: goal + this.preferredSide * WALL_FIRST_TURN, turned: WALL_FIRST_TURN, easedAt: now, since: now, from: distance };
+      this.checkedAt = now; this.clicksSinceMoved = 0;
+    } else if (stuck) {
+      this.wall.heading += this.wall.side * WALL_TURN; this.wall.turned += WALL_TURN; this.checkedAt = now; this.clicksSinceMoved = 0; this.wall.easedAt = now;
+      if (this.wall.turned > WALL_MAX_TURN) {
+        if (++this.flips >= 2) { this.reset(); this.restUntil = now + STUCK_REST_MS; return "rest"; }
+        const side = (this.wall.side === 1 ? -1 : 1) as 1 | -1;
+        this.wall = { side, heading: goal + side * WALL_FIRST_TURN, turned: WALL_FIRST_TURN, easedAt: now, since: now, from: distance };
+      }
+    } else if (now - this.wall.easedAt >= WALL_EASE_MS && this.travelled(now, WALL_EASE_MS) >= STUCK_TOLERANCE_PX) {
+      // Moving freely along this heading: lean back toward the goal, which is also toward the wall we are rounding.
+      this.wall.heading -= this.wall.side * WALL_EASE; this.wall.turned = Math.max(0, this.wall.turned - WALL_EASE); this.wall.easedAt = now;
+      if (between(this.wall.heading, goal) <= WALL_EASE) { this.preferredSide = this.wall.side; this.wall = undefined; this.flips = 0; return { angle: goal }; }
+    }
+    const degrees = Math.round(between(this.wall.heading, goal) * 180 / Math.PI);
+    return { angle: this.wall.heading, note: `Blocked: going round to the ${this.wall.side === 1 ? "right" : "left"}, ${degrees}° off the line` };
+  }
+  /**
+   * `aim` is where to walk (map pixels from us) when that is not straight at the leader: a point on the leader's trail.
+   * `motion` is our own movement since the previous observation, from map odometry, when that is tracking.
+   */
+  decide(o: MapObservation | undefined, now: number, aim?: { dx: number; dy: number }, motion?: { dx: number; dy: number; tracked: boolean }): SteeringDecision {
     if (!o) return { kind: "hold", reason: "No observation." };
     if (!o.leaderFound || !o.leader || !o.offset) return { kind: "hold", reason: `${o.identity.name}'s map label is not visible.` };
     if (o.confidence < this.config.confidence) return { kind: "hold", reason: `Label confidence ${o.confidence} is below ${this.config.confidence}.`, distance: o.offset.distance };
     if (!o.originVerified) return { kind: "pause", reason: "Your own map marker is not at the calibrated map centre: a panel is open or the overlay map is hidden.", distance: o.offset.distance };
     const d = o.offset.distance;
-    if (d <= (this.moving ? this.config.stopPx : this.config.resumePx)) { this.moving = false; return { kind: "near", reason: "Within following distance.", distance: d }; }
-    this.moving = true;
+    // Without odometry, a changing leader offset is the only sign that somebody moved.
+    const step = motion?.tracked ? { dx: motion.dx, dy: motion.dy } : this.lastOffset ? { dx: this.lastOffset.dx - o.offset.dx, dy: this.lastOffset.dy - o.offset.dy } : { dx: 0, dy: 0 };
+    this.lastOffset = { dx: o.offset.dx, dy: o.offset.dy };
+    if (step.dx || step.dy) this.steps.push({ at: now, ...step });
+    while (this.steps.length && now - this.steps[0].at > STUCK_MS * 2) this.steps.shift();
+    if (this.travelled(now, STUCK_MS) >= STUCK_TOLERANCE_PX && !this.wall) { this.clicksSinceMoved = 0; this.checkedAt = now; }
+    if (d <= (this.moving ? this.config.stopPx : this.config.resumePx)) { this.moving = false; this.reset(); return { kind: "near", reason: "Within following distance.", distance: d }; }
+    if (!this.moving) { this.moving = true; this.checkedAt = now; this.clicksSinceMoved = 0; }
+    const toward = aim && Math.hypot(aim.dx, aim.dy) > 1 ? aim : o.offset, reach = Math.hypot(toward.dx, toward.dy);
+    const course = this.heading(Math.atan2(toward.dy, toward.dx), d, now);
+    if (course === "rest") return { kind: "pause", reason: `Blocked: no way round found toward ${o.identity.name}. Resting before trying again.`, distance: d };
     if (now - this.lastClickAt < this.config.clickIntervalMs) return { kind: "hold", reason: "Pacing movement clicks.", distance: d };
     // Aim where the leader is on screen if the map scale is right; the clamp keeps clicks off our own feet and off the HUD.
-    const radius = Math.max(o.view.height * .06, Math.min(o.view.height * .26, d * this.config.mapScale));
-    let x = o.origin.x + o.offset.dx / d * radius, y = o.origin.y + o.offset.dy / d * radius;
+    const radius = course.note ? o.view.height * .2 : Math.max(o.view.height * .06, Math.min(o.view.height * .26, reach * this.config.mapScale));
+    let x = o.origin.x + Math.cos(course.angle) * radius, y = o.origin.y + Math.sin(course.angle) * radius;
     // The map centre is only near the view centre; pull the target in so the input worker never has to refuse it.
     const cx = o.view.width / 2, cy = o.view.height / 2, out = Math.hypot(x - cx, y - cy), limit = o.view.height * SAFE_DISC;
     if (out > limit) { x = cx + (x - cx) / out * limit; y = cy + (y - cy) / out * limit; }
     x = Math.max(0, Math.min(o.view.width - 1, Math.round(x))); y = Math.max(0, Math.min(o.view.height - 1, Math.round(y)));
-    return { kind: "move", x, y, distance: d, reason: `Move toward ${o.identity.name}: ${Math.round(d)} map px away.` };
+    return { kind: "move", x, y, distance: d, reason: course.note ? `${course.note} to ${o.identity.name}, ${Math.round(d)} map px away.` : `${toward === o.offset ? "Move toward" : "Follow the path of"} ${o.identity.name}: ${Math.round(d)} map px away.` };
   }
   /** Call only when a click was really emitted (or previewed in dry-run): refused input must retry at once. */
-  committed(now: number): void { this.lastClickAt = now; }
+  committed(now: number): void { this.lastClickAt = now; this.clicksSinceMoved++; }
 }

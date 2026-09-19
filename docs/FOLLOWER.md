@@ -128,13 +128,77 @@ leader. It was designed from live frames of the game at 2560 × 1440:
   it sends nothing. With `--live` it refuses to start until the emergency-stop
   monitor is ready, and always ends after `--seconds`.
 
+### Following the leader's path, and getting round walls
+
+Aiming straight at the leader walks into whatever they went round (seen live: 1,239
+clicks into a building in three minutes). Two mechanisms replace that:
+
+- **Trail.** `src/core/followerTrail.ts`. The overlay map is centred on the player,
+  so its blue outlines (`blue = B − R`, threshold 60) slide across the screen as
+  the player moves. `MapOdometry` votes for the slide between consecutive captures
+  in a window around the map centre (±9 px search, at most 450 sampled points,
+  2–6 ms) and refuses ambiguous slides (support below 30 %, or a rival shift
+  within 10 %); a gap over 250 ms, a missing map, or six unmatched captures starts
+  a new epoch. Adding the leader's offset to the player's position records where
+  the leader has been (`LeaderTrail`, one point per 6 map px, 600 points). Steering
+  aims 45 map px further along that trail than the point on it nearest to us, and
+  straight at the leader only within 35 map px or when the trail has nothing to
+  add. The trail only exists for what the follower watched: a cold start behind a
+  building has none.
+- **Wall-following.** `FollowSteering`. Six committed clicks that move us less
+  than 2.5 map px in 1.5 s (own movement from odometry; the change in the leader's
+  offset when odometry is not tracking) mean we are against something. It then
+  holds a heading 60° to one side of the goal; turns 35° further away each time
+  that heading is blocked for 0.9 s; eases 25° back toward the goal each 0.8 s it
+  is moving, which hugs a wall round its corners; returns to the straight line
+  when the heading is within 25° of it; tries the other side after turning more
+  than 200° or after 25 s without getting 20 map px nearer; and rests 5 s after
+  both sides fail. It is reactive, not pathfinding. In a simulated world whose
+  character stops dead at walls it gets round a wall, a large building and two
+  staggered walls, with and without odometry, and rests when sealed in.
+
+### Loot pickup
+
+With **Collect nearby eligible loot** on (terminal: `--loot`, `--leash`), every
+250 ms, while the leader is within the loot leash with a trusted sighting and a
+verified map centre, the capture-only host scans the world view (10–80 % of the
+width, 5–80 % of the height: clear of the HUD, party frames and quest tracker) and
+`src/core/followerLoot.ts` looks for ground-item labels two ways, both designed
+from real frames:
+
+- **Flat fills.** Rows of one flat colour across the label (top padding), rows
+  broken by text, flat rows again, same left and right edges. Found the opaque
+  orange "Lesser Desert Rune" label and the translucent dark-blue "Rawhide Belt".
+- **Hue blocks.** A translucent label with a vivid border, fill and text is too
+  noisy to be flat, and a drop beam behind it shifts its brightness, but it keeps
+  one hue class (30° buckets, saturation ≥ 50 %, brightness ≥ 45) from edge to
+  edge on nearly every row. Found the yellow-on-olive rare "Lapis Amulet" (61 of
+  63 rows) that the flat detector missed.
+
+**Dark labels are never clicked.** Doors, area transitions, waypoints, NPCs, the
+ritual altar, and items your filter leaves unstyled all use the same near-black
+box with white text; nothing in the pixels tells them apart, and clicking a
+transition would leave the leader. Use an item filter that gives wanted items a
+coloured background or border. On seven saved real frames the detector found all
+four coloured labels and nothing else (none of nine black item labels, four NPC
+and object labels, the Options panel, or the ritual tooltip).
+
+It clicks the label nearest the character, through the same controller and native
+worker as movement but with module `loot` and a separate click area (the world
+view rectangle instead of the central disc), then leaves the character alone for
+450 ms to walk there. Rejoining the leader always comes first: beyond the leash it
+stops looting and follows. Labels move with the camera, so an item cannot be
+recognised between scans; five clicks in a row that never reduce the number of
+labels (full inventory, unreachable item) make it back off for 6 s.
+
 Requirements and limits:
 
 - Mouse movement (`use_wasd_to_move=false`) with left-click bound to move; the
   overlay map open rather than the corner minimap; the leader in the same area.
-- It cannot follow through doors, portals, waypoints, or area transitions, open the
-  map itself, or avoid obstacles: it clicks toward the leader and relies on the
-  game's own pathing. A click can land on an item label, NPC, or object and interact
+- It cannot follow through doors, portals, waypoints, or area transitions, or open
+  the map itself. Round obstacles it has the leader's trail and reactive
+  wall-following (above), not a planner: a maze, or a cold start far behind several
+  buildings, can still defeat it. A click can land on an item label, NPC, or object and interact
   with it; if that opens a panel the map centre check pauses following.
 - Map scale (screen pixels per map pixel) is an estimate from one frame (≈ 7).
 - Status reports observations/second, cycle time, and native capture-to-click time
@@ -165,7 +229,16 @@ follower character next to a stationary leader. Small samples; not a soak test.
 | Reaction to the leader moving off (6 events): capture-start → first click complete | 42 / 60 ms (median / 95th); worst case incl. one cycle ≈ 100 ms |
 | Same run, from ≈ 48 s | The label vanished, then returned with our own marker no longer at the map centre: the loop paused and sent nothing, as designed. The cause on screen was not recorded (no screenshot is kept). The game then lost focus and the loop idled to its time limit. |
 
+| Live, straight-line chase into a building (before trail and wall-following) | Stuck 237 map px away for 3 min: 1,239 clicks, no progress. The later angle sweep moved it (237–290 px) but fell back into the same pocket; the operator freed it by hand |
+| Map odometry on live captures | Tracking on 351 of 354 half-second samples in one run and 352 of 355 in the next; reported support 0.36–1.0 |
+| Loot, live | 4 pickup clicks in one 3-minute run, each followed by the label count dropping to 0; 0 refused, 0 manual takeovers. 7 in the previous run, with the older detector |
+| Loot scan cost | Native flat-run scan 5.7 ms and the loop's cycle 27 / 37 ms (median / 95th) with loot scanning on, against 18 / 27 ms without |
+
 The one-batch down/up click (no hold) is accepted by the game as a move.
+
+Trail-following and wall-following have **not** been exercised live yet: in the
+only run since they were added the leader stayed within 29 map px. Their evidence
+is the simulation and unit tests only.
 
 Not measured: accuracy with several party members or look-alike names, behaviour in combat
 effects, long sessions, and a second PC's hardware. Human visual reaction time is

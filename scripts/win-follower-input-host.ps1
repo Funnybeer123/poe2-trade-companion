@@ -60,11 +60,19 @@ public static class FollowInput {
     foreach (int button in new [] { 0x01, 0x02, 0x04 }) if (Down(button)) throw new Exception("Mouse button held - manual control");
   }
   // Pure request validation, shared by the live path and the synthetic tests.
-  public static FollowClickCheck Check(int x, int y, int viewWidth, int viewHeight, long ageMs, int maxAgeMs) {
+  public static FollowClickCheck Check(int x, int y, int viewWidth, int viewHeight, long ageMs, int maxAgeMs) { return Check(x, y, viewWidth, viewHeight, ageMs, maxAgeMs, "move"); }
+  public static FollowClickCheck Check(int x, int y, int viewWidth, int viewHeight, long ageMs, int maxAgeMs, string area) {
     FollowClickCheck result = new FollowClickCheck();
     if (viewWidth < 320 || viewHeight < 240) { result.Error = "Invalid game view"; return result; }
     if (maxAgeMs < 1 || maxAgeMs > 150) { result.Error = "Invalid freshness limit"; return result; }
     if (ageMs < 0 || ageMs > maxAgeMs) { result.Error = "Stale capture"; return result; }
+    if (area == "loot") {
+      // Loot labels can be anywhere in the world view: the same rectangle as lootArea() in src/core/followerLoot.ts,
+      // clear of the HUD, party frames, chat input and quest tracker.
+      if (x < Math.Round(viewWidth * 0.10) || y < Math.Round(viewHeight * 0.05) || x >= Math.Round(viewWidth * 0.80) || y >= Math.Round(viewHeight * 0.80)) { result.Error = "Click outside the loot area"; return result; }
+      result.Ok = true; return result;
+    }
+    if (area != "move") { result.Error = "Unknown click area"; return result; }
     // Movement clicks stay inside the client and inside a central disc, clear of the HUD, panels and screen edges.
     double dx = x - viewWidth / 2.0, dy = y - viewHeight / 2.0, limit = viewHeight * 0.30;
     if (x < 0 || y < 0 || x >= viewWidth || y >= viewHeight || dx * dx + dy * dy > limit * limit) { result.Error = "Click outside the safe movement area"; return result; }
@@ -86,8 +94,8 @@ public static class FollowInput {
     return false;
   }
   static void NoteHuman(FollowInputPoint cursor) { placed = false; humanSeen = true; humanAt = cursor; humanSince = QpcMs(); }
-  public static void MoveClick(int x, int y, string expectedHwnd, int viewWidth, int viewHeight, long capturedAtQpcMs, int maxAgeMs) {
-    FollowClickCheck check = Check(x, y, viewWidth, viewHeight, QpcMs() - capturedAtQpcMs, maxAgeMs);
+  public static void MoveClick(int x, int y, string expectedHwnd, int viewWidth, int viewHeight, long capturedAtQpcMs, int maxAgeMs, string area) {
+    FollowClickCheck check = Check(x, y, viewWidth, viewHeight, QpcMs() - capturedAtQpcMs, maxAgeMs, area);
     if (!check.Ok) throw new Exception(check.Error);
     if (!Release()) throw new Exception("A movement button release was rejected earlier");
     if (GetSystemMetrics(23) != 0) throw new Exception("Swapped mouse buttons are not supported: turn off 'Switch primary and secondary buttons' to follow");
@@ -139,7 +147,7 @@ try { while ($null -ne ($line = [Console]::ReadLine())) {
     elseif ($command.op -eq 'release') { $reply = @{ ok = [FollowInput]::Release() } }
     elseif ($command.op -eq 'moveclick') {
       $started = [FollowInput]::QpcMs()
-      [FollowInput]::MoveClick([int]$command.x, [int]$command.y, [string]$command.expectedHwnd, [int]$command.viewWidth, [int]$command.viewHeight, [long]$command.capturedAtQpcMs, [int]$command.maxAgeMs)
+      [FollowInput]::MoveClick([int]$command.x, [int]$command.y, [string]$command.expectedHwnd, [int]$command.viewWidth, [int]$command.viewHeight, [long]$command.capturedAtQpcMs, [int]$command.maxAgeMs, $(if ($null -eq $command.area) { 'move' } else { [string]$command.area }))
       $done = [FollowInput]::QpcMs()
       $reply = @{ ok = $true; inputMs = ($done - $started); captureToInputMs = ($done - [long]$command.capturedAtQpcMs) }
     } else { throw 'Unknown follower input operation' }
