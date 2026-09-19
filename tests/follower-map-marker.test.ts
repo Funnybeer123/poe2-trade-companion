@@ -695,20 +695,29 @@ describe("follow steering round obstacles (SIMULATED world: a point character th
   /**
    * 30 Hz loop. The character walks at 48 map px/s toward its last click and does not slide along walls
    * (the game does slide a little, so this is harsher). `odometry` false leaves only the leader's offset as a motion cue.
+   * `velocity` keeps the leader running (map px/s), `aim` stands in for a trail or plan, `blackout` hides the label for a while.
    */
-  function simulate(walls: Box[], start: { x: number; y: number }, leader: { x: number; y: number }, seconds: number, odometry = true) {
+  type Point = { x: number; y: number };
+  type World = { velocity?: Point; aim?: (me: Point, leader: Point, now: number) => { dx: number; dy: number } | undefined; blackout?: [number, number] };
+  function simulate(walls: Box[], start: Point, leaderStart: Point, seconds: number, odometry = true, world: World = {}) {
     const steering = new FollowSteering(CONFIG), inside = (x: number, y: number) => walls.some(w => x > w.x0 && x < w.x1 && y > w.y0 && y < w.y1);
-    let me = { ...start }, heading: { x: number; y: number } | undefined, clicks = 0, rests = 0, arrivedAt: number | undefined; const reasons = new Set<string>();
+    let me = { ...start }, heading: { x: number; y: number } | undefined, clicks = 0, rests = 0, arrivedAt: number | undefined; const reasons = new Set<string>(), leader = { ...leaderStart };
+    /** First and last time steering reported being blocked, and the first time it went round to the left. */
+    const blocked: { first?: number; last?: number; left?: number } = {};
     for (let now = 0; now < seconds * 1000 && arrivedAt === undefined; now += 33) {
       const before = { ...me };
       if (heading) { const nx = me.x + heading.x * 48 * .033, ny = me.y + heading.y * 48 * .033; if (!inside(nx, ny)) me = { x: nx, y: ny }; }
-      const decision = steering.decide(seen(leader.x - me.x, leader.y - me.y), now, undefined, odometry ? { dx: me.x - before.x, dy: me.y - before.y, tracked: true } : undefined);
+      if (world.velocity) { leader.x += world.velocity.x * .033; leader.y += world.velocity.y * .033; }
+      const hidden = world.blackout && now >= world.blackout[0] && now < world.blackout[1];
+      const decision = steering.decide(hidden ? undefined : seen(leader.x - me.x, leader.y - me.y), now, world.aim?.(me, leader, now), odometry ? { dx: me.x - before.x, dy: me.y - before.y, tracked: true } : undefined);
       reasons.add(decision.reason.replace(/\d+(\.\d+)?/g, "#"));
+      if (decision.reason.startsWith("Blocked")) { blocked.first ??= now; blocked.last = now; if (decision.reason.includes("to the left")) blocked.left ??= now; }
       if (decision.kind === "move") { const dx = decision.x - ORIGIN.x, dy = decision.y - ORIGIN.y, r = Math.hypot(dx, dy); heading = { x: dx / r, y: dy / r }; steering.committed(now); clicks++; expect(Math.hypot(decision.x - VIEW.width / 2, decision.y - VIEW.height / 2)).toBeLessThanOrEqual(VIEW.height * .3); }
       else if (decision.kind === "near") { heading = undefined; arrivedAt = now; }
       else if (decision.kind === "pause") { heading = undefined; rests++; }
+      else if (hidden) heading = undefined;
     }
-    return { arrivedAt, clicks, rests, me, reasons: [...reasons] };
+    return { arrivedAt, clicks, rests, me, blocked, reasons: [...reasons] };
   }
   it("walks straight to the leader across open ground", () => {
     const run = simulate([], { x: 0, y: 0 }, { x: 200, y: -150 }, 20);
@@ -740,6 +749,71 @@ describe("follow steering round obstacles (SIMULATED world: a point character th
     expect(run.reasons).toContain("Blocked: no way round found toward Main. Resting before trying again.");
     // It tries each side for 25 s, then rests: fewer clicks than one every 110 ms for two minutes (about 1090).
     expect(run.clicks).toBeLessThan(1000);
+  });
+  it("F17: after a brief snag it follows a running leader freely: never forced off course later, never rested", () => {
+    // The leader runs as fast as we walk, so we never get 20 px nearer: only walking free can end the episode.
+    const run = simulate([{ x0: -10, y0: -40, x1: 30, y1: -30 }], { x: 0, y: 0 }, { x: 0, y: -130 }, 70, true, { velocity: { x: 0, y: -48 } });
+    expect(run.blocked.first).toBeLessThan(5000);
+    expect(run.blocked.last! - run.blocked.first!).toBeLessThan(12_000);
+    expect(run.rests).toBe(0);
+    expect(run.arrivedAt).toBeUndefined();
+  });
+  it("F17: still gives a side 25 s while it is in and out of the wall, not counting time the label was hidden", () => {
+    const wide: Box[] = [{ x0: -3000, y0: -160, x1: 3000, y1: -140 }];
+    const plain = simulate(wide, { x: 0, y: 0 }, { x: 0, y: -300 }, 50), hidden = simulate(wide, { x: 0, y: 0 }, { x: 0, y: -300 }, 50, true, { blackout: [10_000, 20_000] });
+    expect(plain.blocked.left! - plain.blocked.first!).toBeGreaterThan(24_500);
+    expect(plain.blocked.left! - plain.blocked.first!).toBeLessThan(26_000);
+    expect(hidden.blocked.left! - plain.blocked.left!).toBeGreaterThanOrEqual(9000);
+  });
+  it("F17: reaching the leader ends a rest", () => {
+    const steering = new FollowSteering(CONFIG); let now = 0, d: SteeringDecision = { kind: "hold", reason: "" };
+    for (; now < 60_000 && d.kind !== "pause"; now += 33) { d = steering.decide(seen(0, -300), now, undefined, { dx: 0, dy: 0, tracked: true }); if (d.kind === "move") steering.committed(now); }
+    expect(d.reason).toMatch(/^Blocked: no way round/);
+    expect(steering.decide(seen(0, -300), now, undefined, { dx: 0, dy: 0, tracked: true }).kind).toBe("pause");
+    expect(steering.decide(seen(5, 0), now + 33, undefined, { dx: 0, dy: 0, tracked: true }).kind).toBe("near");
+    expect(steering.decide(seen(0, -300), now + 66, undefined, { dx: 0, dy: 0, tracked: true }).kind).toBe("move");
+  });
+  /** Stands still against something north of it until steering latches a wall heading; returns that heading and the time. */
+  function latched(steering: FollowSteering) {
+    for (let now = 0; now < 5000; now += 33) {
+      const d = steering.decide(seen(0, -300), now, undefined, { dx: 0, dy: 0, tracked: true });
+      if (d.kind === "move") { steering.committed(now); if (d.reason.startsWith("Blocked")) return { now: now + 33, angle: Math.atan2(d.y - ORIGIN.y, d.x - ORIGIN.x) }; }
+    }
+    throw new Error("never latched");
+  }
+  const clickAngle = (d: SteeringDecision) => d.kind === "move" ? Math.atan2(d.y - ORIGIN.y, d.x - ORIGIN.x) * 180 / Math.PI : NaN;
+  it("F20: drops the wall heading at once when the aim swings round the other way or back out", () => {
+    for (const aim of [{ dx: -100, dy: 0 }, { dx: 0, dy: 100 }, { dx: -70, dy: 70 }]) {
+      const steering = new FollowSteering(CONFIG), wall = latched(steering);
+      expect(wall.angle * 180 / Math.PI).toBeCloseTo(-30, 0);
+      const d = steering.decide(seen(0, -300), wall.now + 110, aim, { dx: 0, dy: 0, tracked: true });
+      expect(d.reason).toMatch(/^Follow the path of/);
+      expect(clickAngle(d)).toBeCloseTo(Math.atan2(aim.dy, aim.dx) * 180 / Math.PI, 0);
+    }
+  });
+  it("F20: hands over to an aim that swings onto the wall heading without waiting to ease, and keeps the wall for a small swing", () => {
+    const along = new FollowSteering(CONFIG), wall = latched(along);
+    const d = along.decide(seen(0, -300), wall.now + 110, { dx: 100 * Math.cos(wall.angle + .2), dy: 100 * Math.sin(wall.angle + .2) }, { dx: 0, dy: 0, tracked: true });
+    expect(d.reason).toMatch(/^Follow the path of/);
+    const small = new FollowSteering(CONFIG), held = latched(small);
+    // 30° either way is still the same wall.
+    for (const swing of [-30, 30]) { const a = (-90 + swing) * Math.PI / 180, kept = small.decide(seen(0, -300), held.now + 110, { dx: 100 * Math.cos(a), dy: 100 * Math.sin(a) }, { dx: 0, dy: 0, tracked: true }); expect(kept.reason).toMatch(/^Blocked: going round to the right/); }
+  });
+  it("F20: latched going round the far corner, it takes a plan round the near corner as soon as one is supplied", () => {
+    // Near corner west at x = -60, far corner east at x = 400; with no plan steering goes right (east).
+    const building: Box[] = [{ x0: -60, y0: -200, x1: 400, y1: -100 }], route: Point[] = [{ x: -75, y: -92 }, { x: -75, y: -215 }];
+    let planFrom: number | undefined, at = 0, eastmost = -Infinity;
+    const run = simulate(building, { x: 0, y: 0 }, { x: 0, y: -300 }, 60, true, { aim: (me, leader, now) => {
+      if (planFrom === undefined) { if (me.x < 40) return undefined; planFrom = now; }
+      eastmost = Math.max(eastmost, me.x);
+      while (at < route.length && Math.hypot(route[at].x - me.x, route[at].y - me.y) < 8) at++;
+      const to = route[at] ?? leader; return { dx: to.x - me.x, dy: to.y - me.y };
+    } });
+    expect(planFrom).toBeDefined();
+    expect(run.blocked.first).toBeLessThan(planFrom!);
+    expect(eastmost).toBeLessThan(45);
+    expect(run.blocked.last).toBeLessThan(planFrom!);
+    expect(run.arrivedAt).toBeLessThan(planFrom! + 12_000);
   });
   it("does not call a standstill blocked unless its own clicks were committed", () => {
     const steering = new FollowSteering(CONFIG);

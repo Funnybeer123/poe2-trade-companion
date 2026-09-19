@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TerrainPlanner, terrainWindow } from "../src/core/followerTerrain.js";
+import { TERRAIN_POINT_CAP, TerrainPlanner, terrainWindow } from "../src/core/followerTerrain.js";
 import type { KeyPoint } from "../src/core/followerMapMarker.js";
 
 // SIMULATED world. The map draws box outlines as wall pixels around a point character that stops dead at walls.
@@ -76,8 +76,21 @@ describe("terrain planning round what the map shows (SIMULATED world)", () => {
 
 describe("terrain planner guards", () => {
   it("makes no plan from a scene that is mostly 'wall': a grey floor or bright scene is being misread", () => {
-    const flood: KeyPoint[] = []; for (let y = WINDOW.y; y < WINDOW.y + WINDOW.height; y += 2) for (let x = WINDOW.x; x < WINDOW.x + WINDOW.width; x += 1) flood.push({ x, y });
+    // Thinned to what the capture can deliver: the point cap is a transport limit, the guard must trip below it.
+    const flood: KeyPoint[] = []; for (let y = WINDOW.y; y < WINDOW.y + WINDOW.height; y += 7) for (let x = WINDOW.x; x < WINDOW.x + WINDOW.width; x += 7) flood.push({ x, y });
+    expect(flood.length).toBeLessThan(TERRAIN_POINT_CAP);
     expect(new TerrainPlanner().plan(flood, WINDOW, ORIGIN, { dx: 0, dy: -200 }, { x: 0, y: 0 }, 1, 0).aim).toBeUndefined();
+  });
+  it("makes no plan through scattered speckle: the guard counts blocked cells, not pixels", () => {
+    // One pixel every 16 px is under 1% of the pixels but over half the cells once stamped, with one-cell corridors A* would happily thread.
+    const speckle: KeyPoint[] = []; for (let y = WINDOW.y; y < WINDOW.y + WINDOW.height; y += 16) for (let x = WINDOW.x; x < WINDOW.x + WINDOW.width; x += 16) speckle.push({ x, y });
+    expect(speckle.length).toBeLessThan(10_000);
+    const plan = new TerrainPlanner().plan(speckle, WINDOW, ORIGIN, { dx: 0, dy: -200 }, { x: 0, y: 0 }, 1, 0);
+    expect(plan.aim).toBeUndefined(); expect(plan.path).toEqual([]);
+  });
+  it("still plans when a quarter of the cells are wall", () => {
+    const slab: KeyPoint[] = []; for (let y = WINDOW.y; y < WINDOW.y + WINDOW.height * .25; y += 4) for (let x = WINDOW.x; x < WINDOW.x + WINDOW.width; x += 4) slab.push({ x, y });
+    expect(new TerrainPlanner().plan(slab, WINDOW, ORIGIN, { dx: 200, dy: 0 }, { x: 0, y: 0 }, 1, 0).aim).toBeDefined();
   });
   it("when the leader is sealed off on the map, walks to the reachable spot nearest to them, then makes no plan so the caller can fall back", () => {
     const ring = (me: KeyPoint): KeyPoint[] => { const points: KeyPoint[] = []; for (let a = 0; a < 6.3; a += .005) points.push({ x: Math.round(ORIGIN.x + Math.cos(a) * 60 - me.x), y: Math.round(ORIGIN.y + Math.sin(a) * 60 - me.y) }); return points; };
@@ -107,13 +120,34 @@ describe("terrain planner guards", () => {
   });
   it("forgets bumps from another odometry epoch and old ones", () => {
     const planner = new TerrainPlanner();
-    for (let now = 0; now <= 1200; now += 110) planner.noteClick({ dx: 0, dy: -1 }, { x: 0, y: 0 }, 1, now);
+    for (let now = 0; now <= 1200; now += 110) { planner.noteMotion({ dx: 0, dy: 0 }, now); planner.noteClick({ dx: 0, dy: -1 }, { x: 0, y: 0 }, 1, now); }
     expect(planner.bumpCount).toBe(1);
     expect(planner.plan([], WINDOW, ORIGIN, { dx: 0, dy: -200 }, { x: 0, y: 0 }, 1, 2000).bumps).toBe(1);
     expect(planner.plan([], WINDOW, ORIGIN, { dx: 0, dy: -200 }, { x: 0, y: 0 }, 2, 2100).bumps).toBe(0);
-    for (let now = 3000; now <= 4200; now += 110) planner.noteClick({ dx: 0, dy: -1 }, { x: 0, y: 0 }, 2, now);
+    for (let now = 3000; now <= 4200; now += 110) { planner.noteMotion({ dx: 0, dy: 0, tracked: true }, now); planner.noteClick({ dx: 0, dy: -1 }, { x: 0, y: 0 }, 2, now); }
     expect(planner.plan([], WINDOW, ORIGIN, { dx: 0, dy: -200 }, { x: 0, y: 0 }, 2, 4300).bumps).toBe(1);
     expect(planner.plan([], WINDOW, ORIGIN, { dx: 0, dy: -200 }, { x: 0, y: 0 }, 2, 4300 + 46_000).bumps).toBe(0);
+  });
+  it("never records a bump without positive evidence of standing still: no motion samples, or blind odometry", () => {
+    const silent = new TerrainPlanner(), blind = new TerrainPlanner();
+    for (let now = 0; now <= 5000; now += 110) {
+      expect(silent.noteClick({ dx: 0, dy: -1 }, { x: 0, y: 0 }, 1, now)).toBe(false);
+      blind.noteMotion({ dx: 0, dy: 0, tracked: false }, now); expect(blind.noteClick({ dx: 0, dy: -1 }, { x: 0, y: 0 }, 1, now)).toBe(false);
+    }
+    expect(silent.bumpCount).toBe(0); expect(blind.bumpCount).toBe(0);
+  });
+  it("needs tracked samples over the whole click window: a blind frame, a gap or a stale sample starts the wait again", () => {
+    const click = (p: TerrainPlanner, now: number) => p.noteClick({ dx: 0, dy: -1 }, { x: 0, y: 0 }, 1, now);
+    // Blind until 2000, then tracked and still: the clicks made while blind do not count.
+    const recovered = new TerrainPlanner(); let bumpedAt: number | undefined;
+    for (let now = 0; now <= 4000 && bumpedAt === undefined; now += 110) { recovered.noteMotion({ dx: 0, dy: 0, tracked: now >= 2000 }, now); if (click(recovered, now)) bumpedAt = now; }
+    expect(bumpedAt).toBeGreaterThanOrEqual(2000 + 800);
+    // One blind frame every 700 ms: never a full window of evidence.
+    const flaky = new TerrainPlanner();
+    for (let now = 0, n = 0; now <= 6000; now += 100, n++) { flaky.noteMotion({ dx: 0, dy: 0, tracked: n % 7 !== 0 }, now); expect(click(flaky, now)).toBe(false); }
+    // Samples that stopped arriving say nothing about now.
+    const stale = new TerrainPlanner();
+    for (let now = 0; now <= 3000; now += 110) { if (now < 500) stale.noteMotion({ dx: 0, dy: 0 }, now); expect(click(stale, now)).toBe(false); }
   });
   it("does not record a bump while the character is moving", () => {
     const planner = new TerrainPlanner();

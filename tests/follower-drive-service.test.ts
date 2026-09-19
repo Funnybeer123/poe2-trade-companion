@@ -50,6 +50,46 @@ interface Scene {
   onKey?: () => void;
   /** Holds a 'preview' capture open until the test lets it finish. */
   previewGate?: Promise<void>;
+  /** Ground-item labels in game-client pixels, reported by op 'runs' as flat runs: `padding` flat rows (default 5), text rows with no run, `padding` flat rows. */
+  loot?: LootRect[];
+  /** Blue map-outline pixels for odometry: sent as `thirdPoints` of a 'key' reply when present. */
+  blue?: Point[];
+  /** Terrain pixels the injected map host reports for op 'terrain' (none: open ground). */
+  walls?: Point[];
+}
+type Rect = { x: number; y: number; width: number; height: number };
+interface LootRect extends Rect { padding?: number; colour?: Rgb }
+/** A bright saturated fill, as an item filter would give a wanted item. */
+const LOOT_ORANGE: Rgb = [238, 180, 97];
+/** Where a click on an odd-sized label belongs: its middle pixel. */
+const lootCentre = (label: LootRect): Point => ({ x: label.x + (label.width - 1) / 2, y: label.y + (label.height - 1) / 2 });
+/** The capture worker's 'runs' format, written out independently of src/: 9 bytes per run, y x0 x1 as uint16 LE, then r g b. */
+function flatRuns(scene: Scene, area: Rect, minLength: number, minBrightness: number): string {
+  const runs: number[][] = [];
+  for (const label of scene.loot ?? []) {
+    const padding = label.padding ?? 5, colour = label.colour ?? LOOT_ORANGE;
+    for (let row = 0; row < label.height; row++) {
+      if (row >= padding && row < label.height - padding) continue; // text rows: nothing flat and long enough to report
+      const y = label.y + row, x0 = Math.max(label.x, area.x), x1 = Math.min(label.x + label.width - 1, area.x + area.width - 1);
+      if (y >= area.y && y < area.y + area.height && x1 - x0 + 1 >= minLength && Math.max(...colour) >= minBrightness) runs.push([y, x0, x1, ...colour]);
+    }
+  }
+  runs.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+  const bytes = Buffer.alloc(runs.length * 9);
+  runs.forEach(([y, x0, x1, r, g, b], i) => { bytes.writeUInt16LE(y, i * 9); bytes.writeUInt16LE(x0, i * 9 + 2); bytes.writeUInt16LE(x1, i * 9 + 4); bytes[i * 9 + 6] = r; bytes[i * 9 + 7] = g; bytes[i * 9 + 8] = b; });
+  return bytes.toString("base64");
+}
+function encodePoints(points: Point[], rect: Rect): string {
+  const inside = points.filter(p => p.x >= rect.x && p.y >= rect.y && p.x < rect.x + rect.width && p.y < rect.y + rect.height);
+  const bytes = Buffer.alloc(inside.length * 4);
+  inside.forEach((p, i) => { bytes.writeUInt16LE(p.x, i * 4); bytes.writeUInt16LE(p.y, i * 4 + 2); });
+  return bytes.toString("base64");
+}
+/** A fixed pseudo-random scatter of map-outline pixels round the map centre: it matches itself at no shift and nowhere else. */
+function outlines(count = 160): Point[] {
+  let seed = 12345;
+  const next = () => (seed = seed * 48271 % 2147483647) / 2147483647;
+  return Array.from({ length: count }, () => ({ x: ORIGIN.x - 70 + Math.floor(next() * 140), y: ORIGIN.y - 50 + Math.floor(next() * 100) }));
 }
 const markerBox = (at: Offset): Point => ({ x: ORIGIN.x + at.dx - 5, y: ORIGIN.y + at.dy - 4 });
 const labelRect = (at: Offset) => ({ x: markerBox(at).x - 25, y: markerBox(at).y - 14, width: 60, height: 10 });
@@ -98,7 +138,7 @@ function png(scene: Scene): Buffer {
 interface Attempt { payload: Payload; clock: number; newestCaptureQpc: number }
 interface Rig {
   service: FollowerDriveService; directory: string; scene: Scene; killSwitch: KillSwitch;
-  follow: { targetName: string; followDistance: number; confidence: number };
+  follow: { targetName: string; followDistance: number; confidence: number; lootEnabled?: boolean; lootLeash?: number };
   blocked?: string; globalDryRun: boolean;
   /** Service clock. A number freezes time until the test advances it; undefined uses the real clock. */
   clock?: number;
@@ -114,16 +154,25 @@ interface Rig {
   traces: QaActionTrace[];
   /** The status reason each cycle left behind, sampled when the next capture begins. */
   reasons: Set<string>;
+  /** Requests the injected map host received (only with `setup({ mapHost: true })`). */
+  map: Payload[];
+  /** capturedAtQpcMs of every 'runs' reply. */
+  scanQpc: number[];
+  /** Refusals for 'sprint' hold requests: the first one is used up by the next request with the same `start` flag. Letting go is never refused. */
+  sprintRefusals: Array<{ start: boolean; error: string }>;
+  /** How many 'release' requests are answered { ok: false } (a key is still held) before one succeeds, and when each one was asked (real time). */
+  releaseRefusals: number; releasedAt: number[];
 }
 const rigs: Rig[] = [], directories: string[] = [];
 const temporary = () => { const d = mkdtempSync(path.join(tmpdir(), "poe-follower-drive-")); directories.push(d); return d; };
-function setup(options: { directory?: string; clock?: number; scene?: Partial<Scene>; killSwitch?: KillSwitch } = {}): Rig {
+function setup(options: { directory?: string; clock?: number; scene?: Partial<Scene>; killSwitch?: KillSwitch; mapHost?: boolean } = {}): Rig {
   const rig: Rig = {
     service: undefined as unknown as FollowerDriveService, directory: options.directory ?? temporary(), killSwitch: options.killSwitch ?? new KillSwitch(),
     scene: { leader: FAR, own: { dx: 0, dy: 0 }, process: GAME, hwnd: HWND, view: { width: W, height: H }, ...options.scene },
     follow: { targetName: "Main", followDistance: 2, confidence: .85 }, globalDryRun: false, clock: options.clock,
     capture: [], input: [], attempts: [], refusals: [], latencies: [37], capturePing: { ok: true }, inputPing: { ok: true }, releaseFails: false,
     created: { capture: 0, input: 0 }, newestCaptureQpc: 5_000_000, traces: [], reasons: new Set(),
+    map: [], scanQpc: [], sprintRefusals: [], releaseRefusals: 0, releasedAt: [],
   };
   const now = () => rig.clock ?? performance.now();
   rig.service = new FollowerDriveService({
@@ -140,6 +189,11 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
           const shared = { ok: true, hwnd: scene.hwnd, process: scene.process, ...scene.view, captureMs: 3 };
           if (payload.op === "preview") await scene.previewGate;
           if (payload.op === "preview") return { ...shared, pixels: "", image: `data:image/png;base64,${png(scene).toString("base64")}` };
+          if (payload.op === "runs") {
+            rig.newestCaptureQpc += 9; rig.scanQpc.push(rig.newestCaptureQpc);
+            const scanned = { x: Number(payload.x), y: Number(payload.y), width: Number(payload.width), height: Number(payload.height) };
+            return { ...shared, capturedAtQpcMs: rig.newestCaptureQpc, overflow: false, runs: flatRuns(scene, scanned, Number(payload.minLength), Number(payload.minBrightness)) };
+          }
           if (payload.op !== "key") return { ok: false, error: "Unknown follower capture operation" };
           rig.reasons.add(rig.service.status().reason);
           scene.onKey?.();
@@ -150,6 +204,7 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
             ...shared, capturedAtQpcMs: rig.newestCaptureQpc,
             overflow: !!scene.overflow, points: scene.corruptPoints ? scene.corruptPoints.value : scene.overflow ? "" : keyPoints(scene, area, payload.channel, Number(payload.threshold)),
             secondOverflow: false, secondPoints: keyPoints(scene, second, second.channel, second.threshold),
+            ...(scene.blue ? { thirdOverflow: false, thirdPoints: encodePoints(scene.blue, payload.third as Rect) } : {}),
           };
         },
         close: async () => { rig.capture.push({ op: "closed" }); },
@@ -161,7 +216,17 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
         send: async (payload: Payload) => {
           rig.input.push(payload);
           if (payload.op === "ping") { if (rig.inputPing instanceof Error) throw rig.inputPing; return rig.inputPing; }
-          if (payload.op === "release") { if (rig.releaseFails) throw new Error("win-input-host-closed"); return { ok: true }; }
+          if (payload.op === "release") {
+            if (rig.releaseFails) throw new Error("win-input-host-closed");
+            rig.releasedAt.push(performance.now());
+            return rig.releaseRefusals-- > 0 ? { ok: false, error: "Space is still held" } : { ok: true };
+          }
+          if (payload.op === "sprint") {
+            const refusal = rig.sprintRefusals[0];
+            if (payload.hold !== true || !refusal || refusal.start !== payload.start) return { ok: true };
+            rig.sprintRefusals.shift();
+            return { ok: false, error: refusal.error };
+          }
           if (payload.op !== "moveclick") return { ok: false, error: "Unknown follower input operation" };
           rig.attempts.push({ payload, clock: now(), newestCaptureQpc: rig.newestCaptureQpc });
           const refusal = rig.refusals.shift();
@@ -172,6 +237,18 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
         close: async () => { rig.input.push({ op: "closed" }); },
       };
     },
+    // Without `mapHost` no map worker exists at all, exactly as before: terrain planning is simply off.
+    ...(options.mapHost ? {
+      createMapHost: () => ({
+        send: async (payload: Payload) => {
+          rig.map.push(payload);
+          if (payload.op !== "terrain") return { ok: false, error: "Unknown follower capture operation" };
+          const scene = rig.scene;
+          return { ok: true, hwnd: scene.hwnd, process: scene.process, ...scene.view, captureMs: 5, capturedAtQpcMs: rig.newestCaptureQpc, overflow: false, points: encodePoints(scene.walls ?? [], payload as unknown as Rect) };
+        },
+        close: async () => { rig.map.push({ op: "closed" }); },
+      }),
+    } : {}),
   });
   rigs.push(rig);
   return rig;
@@ -183,10 +260,18 @@ async function calibrated(options: Parameters<typeof setup>[0] = {}): Promise<Ri
   rig.capture.length = 0;
   return rig;
 }
-const goLive = (rig: Rig, settings: { mapScale?: number; clickIntervalMs?: number } = {}) => rig.service.configure({ version: 1, dryRun: false, mapScale: 7, clickIntervalMs: 100, ...settings });
+const goLive = (rig: Rig, settings: { mapScale?: number; clickIntervalMs?: number; sprint?: boolean } = {}) => rig.service.configure({ version: 1, dryRun: false, mapScale: 7, clickIntervalMs: 100, ...settings });
 const soon = { timeout: 5000, interval: 4 };
 const ops = (log: Payload[]) => log.map(entry => String(entry.op));
-const stats = (rig: Rig) => rig.service.status().stats ?? { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0 };
+const stats = (rig: Rig) => rig.service.status().stats ?? { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0 };
+/** Advances the frozen clock by one loot-scan period (250 ms) and waits for the scan that earns. Everything the scan leads to happens in the same cycle. */
+async function nextScan(rig: Rig): Promise<void> {
+  const from = stats(rig).lootScans;
+  rig.clock! += 250;
+  await expect.poll(() => stats(rig).lootScans, soon).toBe(from + 1);
+}
+const sprintOps = (rig: Rig) => rig.input.filter(entry => entry.op === "sprint");
+const clicksIn = (rig: Rig, area: "move" | "loot") => rig.attempts.filter(attempt => attempt.payload.area === area);
 /** Waits until the loop has completed `count` more observe-decide cycles. */
 async function cycles(rig: Rig, count = 8): Promise<void> {
   const from = stats(rig).cycles;
@@ -1132,6 +1217,382 @@ describe("follow drive stopping (synthetic hosts, no OS input)", () => {
     rig.releaseFails = true;
     rig.service.stop();
     await expect.poll(() => ops(rig.input), soon).toEqual(["ping", "release", "closed"]);
+  });
+});
+
+describe("follow drive stop() keeps asking for a release (synthetic input host, no OS input)", () => {
+  it("asks again about 250 ms after a release that reports a key still held, and closes the input worker only after one succeeded", async () => {
+    const rig = await calibrated();
+    await rig.service.start();
+    await cycles(rig, 2);
+    rig.releaseRefusals = 2;
+    expect(rig.service.stop("Stopped by the operator.")).toMatchObject({ running: false, reason: "Stopped by the operator." });
+    // The first answer is { ok: false }: the worker's watchdog is the only thing that can still let go, so it must stay alive.
+    await expect.poll(() => rig.releasedAt.length, soon).toBe(1);
+    expect(ops(rig.input)).toEqual(["ping", "release"]);
+    await expect.poll(() => rig.releasedAt.length, soon).toBe(2);
+    expect(ops(rig.input)).toEqual(["ping", "release", "release"]);
+    await expect.poll(() => ops(rig.input), soon).toEqual(["ping", "release", "release", "release", "closed"]);
+    // Real timers: the retries are spaced by the 250 ms retry delay (a little slack for timer rounding).
+    for (const gap of [rig.releasedAt[1] - rig.releasedAt[0], rig.releasedAt[2] - rig.releasedAt[1]]) { expect(gap).toBeGreaterThanOrEqual(240); expect(gap).toBeLessThan(2000); }
+    // The capture worker does not wait for any of that, and nothing is asked after the close.
+    expect(ops(rig.capture).at(-1)).toBe("closed");
+    await new Promise(resolve => setTimeout(resolve, 300));
+    expect(ops(rig.input)).toHaveLength(5);
+  });
+});
+
+describe("follow drive loot clicks (SYNTHETIC label runs and hosts: a 'click' is an array entry, no OS input)", () => {
+  /** Leader 33 map px away with a stop distance of 30 (resume 36): steering says "near", so every moveclick in these tests is a loot click. */
+  async function lootRig(clock: number, follow: Partial<Rig["follow"]> = {}): Promise<Rig> {
+    const rig = await calibrated({ clock });
+    rig.follow = { ...rig.follow, followDistance: 5, lootEnabled: true, lootLeash: 10, ...follow };
+    goLive(rig);
+    rig.scene.leader = { dx: 33, dy: 0 };
+    return rig;
+  }
+  it("does not click a label on its first sighting; on the second scan a label that sat still is clicked at its centre, bound to the scan that found it", async () => {
+    const rig = await lootRig(300_000), label = { x: 380, y: 100, width: 81, height: 21 };
+    rig.scene.loot = [label];
+    await rig.service.start();
+    await expect.poll(() => stats(rig).lootScans, soon).toBe(1);
+    await cycles(rig);
+    // Seen once: the scan is asked of the loot area only (10–80 % × 5–80 % of the view), the label is counted, and nothing is clicked however many cycles pass.
+    expect(rig.capture.find(entry => entry.op === "runs")).toEqual({ op: "runs", x: 64, y: 18, width: 448, height: 270, minLength: 48, minBrightness: 45 });
+    expect(stats(rig)).toMatchObject({ lootScans: 1, lootLabels: 1, lootClicks: 0, clicks: 0 });
+    expect([...rig.reasons]).toContain("Pick up the nearest of 1 loot label.");
+    expect(rig.attempts).toEqual([]);
+    expect(rig.traces).toEqual([]);
+    await nextScan(rig);
+    expect(rig.attempts).toHaveLength(1);
+    expect(lootCentre(label)).toEqual({ x: 420, y: 110 });
+    // The click carries the scan's capture time, which is newer than any marker capture before it.
+    expect(rig.attempts[0].payload).toEqual({ op: "moveclick", x: 420, y: 110, expectedHwnd: HWND, viewWidth: W, viewHeight: H, capturedAtQpcMs: rig.scanQpc[1], maxAgeMs: 120, area: "loot" });
+    expect(rig.scanQpc).toHaveLength(2);
+    expect(rig.traces).toHaveLength(1);
+    expect(rig.traces[0]).toMatchObject({ module: "loot", decisionRule: "pick-up-nearest-label", result: "emitted", confidence: 1, processName: GAME, input: { kind: "click", x: 420, y: 110, button: "left", text: "loot" } });
+    expect(JSON.parse(rig.traces[0].evidenceHash)).toMatchObject({ capturedAtQpcMs: rig.scanQpc[1], hwnd: HWND, click: { x: 420, y: 110 }, label: { centre: { x: 420, y: 110 }, rect: label }, labelsInView: 1, leaderDistance: 33 });
+    expect(stats(rig)).toMatchObject({ lootScans: 2, lootClicks: 1, clicks: 1 });
+    // The character is left alone to walk there: no second click while the clock stands still.
+    await cycles(rig);
+    expect(rig.attempts).toHaveLength(1);
+  });
+  it("leads a label that slid between two scans by its own drift × 70 ms, clamps the led click into the loot area, and takes a jump of 120 px or more for a different label", async () => {
+    const rig = await lootRig(310_000), label: LootRect = { x: 280, y: 100, width: 81, height: 21 };
+    rig.scene.loot = [label];
+    await rig.service.start();
+    await expect.poll(() => stats(rig).lootScans, soon).toBe(1);
+    // The camera scrolls: 50 px right and 25 px up in the 250 ms between the scans is 0.2 and −0.1 px/ms, so the click leads by (+14, −7).
+    label.x += 50; label.y -= 25;
+    await nextScan(rig);
+    expect(lootCentre(label)).toEqual({ x: 370, y: 85 });
+    expect(rig.attempts.map(a => a.payload)).toMatchObject([{ x: 384, y: 78, area: "loot", capturedAtQpcMs: rig.scanQpc[1] }]);
+    expect(JSON.parse(rig.traces[0].evidenceHash)).toMatchObject({ label: { centre: { x: 370, y: 85 } }, click: { x: 384, y: 78 } });
+    // Same direction, further along: beyond the label's centre, on the line it is sliding along.
+    expect([384 - 370, 78 - 85]).toEqual([50 * 70 / 250, -25 * 70 / 250]);
+    // 250 ms after a click the character is still walking (clicks are 450 ms apart), but the sighting counts for the next drift.
+    Object.assign(label, { x: 363, y: 100, width: 49 });
+    await nextScan(rig);
+    expect(rig.attempts).toHaveLength(1);
+    // Sliding right at 0.4 px/ms with its right edge on the last scanned column (511): 487 + 28 is outside, so the click is pulled back onto that column.
+    label.x += 100;
+    await nextScan(rig);
+    expect(lootCentre(label)).toEqual({ x: 487, y: 110 });
+    expect(rig.attempts.map(a => a.payload).slice(1)).toMatchObject([{ x: 511, y: 110, area: "loot" }]);
+    // A label 150 px from the last one is not the same label sliding: it waits a scan like any first sighting, then is clicked where it sits.
+    await nextScan(rig);
+    expect(rig.attempts).toHaveLength(2);
+    Object.assign(label, { x: 297, width: 81 });
+    await nextScan(rig);
+    expect(rig.attempts).toHaveLength(2);
+    await nextScan(rig);
+    expect(rig.attempts.map(a => a.payload).slice(2)).toMatchObject([{ x: 337, y: 110, area: "loot" }]);
+    expect(rig.traces.every(trace => trace.module === "loot" && trace.result === "emitted")).toBe(true);
+    expect(stats(rig)).toMatchObject({ lootScans: 7, lootClicks: 3, clicks: 3 });
+  });
+  it("never clicks a label lying farther from the LEADER than the leash, even when it is the nearest one to the follower, and does click one inside", async () => {
+    // Leash 5 units = 30 map px; mapScale 7. Leader at (28, 0). OUTSIDE is 10 map px from us but 38 from the leader; INSIDE is 22 from us and 12 from the leader.
+    const rig = await lootRig(320_000, { lootLeash: 5 });
+    rig.scene.leader = { dx: 28, dy: 0 };
+    const outside: LootRect = { x: ORIGIN.x - 70 - 40, y: ORIGIN.y - 10, width: 81, height: 21 }, inside: LootRect = { x: ORIGIN.x + 140 - 40, y: ORIGIN.y - 63 - 10, width: 81, height: 21 };
+    expect([lootCentre(outside), lootCentre(inside)]).toEqual([{ x: ORIGIN.x - 70, y: ORIGIN.y }, { x: ORIGIN.x + 140, y: ORIGIN.y - 63 }]);
+    rig.scene.loot = [outside];
+    await rig.service.start();
+    await expect.poll(() => stats(rig).lootScans, soon).toBe(1);
+    for (let scan = 0; scan < 4; scan++) await nextScan(rig);
+    expect(stats(rig)).toMatchObject({ lootScans: 5, lootLabels: 0, lootClicks: 0 });
+    expect(rig.attempts).toEqual([]);
+    expect(rig.service.status().decision).toMatchObject({ kind: "near" });
+    rig.scene.loot = [outside, inside];
+    await nextScan(rig);
+    expect(stats(rig)).toMatchObject({ lootLabels: 1, lootClicks: 0 });
+    await nextScan(rig);
+    expect(rig.attempts.map(a => a.payload)).toMatchObject([{ ...lootCentre(inside), area: "loot" }]);
+    expect(JSON.parse(rig.traces[0].evidenceHash)).toMatchObject({ labelsInView: 1 });
+    // Two more pickups' worth of scans: the label outside the leash is still never the target.
+    for (let scan = 0; scan < 4; scan++) await nextScan(rig);
+    expect(rig.attempts.length).toBeGreaterThanOrEqual(2);
+    expect(rig.attempts.every(a => a.payload.x === lootCentre(inside).x && a.payload.y === lootCentre(inside).y && a.payload.area === "loot")).toBe(true);
+  });
+  it("does not even scan for loot while the leader is beyond the leash or loot is switched off", async () => {
+    const beyond = await lootRig(325_000, { lootLeash: 5 });
+    beyond.scene.leader = FAR; // 108 map px away, leash 30
+    beyond.scene.loot = [{ x: 380, y: 100, width: 81, height: 21 }];
+    const off = await lootRig(326_000, { lootEnabled: false });
+    off.scene.loot = beyond.scene.loot;
+    for (const rig of [beyond, off]) {
+      await rig.service.start();
+      await cycles(rig);
+      rig.clock! += 1000;
+      await cycles(rig);
+      expect(ops(rig.capture)).not.toContain("runs");
+      expect(stats(rig)).toMatchObject({ lootScans: 0, lootClicks: 0 });
+      expect(clicksIn(rig, "loot")).toEqual([]);
+    }
+  });
+  it("gates a loot click by the loot detector's own 0.85, not by the leader-label preference: a 0.92 label is clicked with confidence 0.95 required, and following does not stop", async () => {
+    // The leader's own sighting is 1 in this rig, so it passes 0.95; the label has exactly 3 flat padding rows, which the detector scores 0.8 + 3 × 0.04.
+    const rig = await lootRig(330_000, { confidence: .95 }), label = { x: 380, y: 100, width: 81, height: 21, padding: 3 };
+    rig.scene.loot = [label];
+    await rig.service.start();
+    await expect.poll(() => stats(rig).lootScans, soon).toBe(1);
+    expect(rig.service.status().observation).toMatchObject({ leaderFound: true, confidence: 1 });
+    await nextScan(rig);
+    expect(rig.attempts.map(a => a.payload)).toMatchObject([{ ...lootCentre(label), area: "loot" }]);
+    expect(rig.traces).toHaveLength(1);
+    expect(rig.traces[0]).toMatchObject({ module: "loot", result: "emitted", reason: expect.stringContaining("safety=ok") });
+    expect(rig.traces[0].confidence).toBeCloseTo(.92, 9);
+    expect(rig.traces[0].confidence).toBeLessThan(rig.follow.confidence);
+    await nextScan(rig); await nextScan(rig);
+    expect(rig.service.status()).toMatchObject({ running: true, stats: { lootClicks: 2, clicks: 2, refused: 0 } });
+    expect(rig.traces.some(trace => trace.reason.includes("confidence-too-low"))).toBe(false);
+  });
+  it("keeps sending movement clicks while loot scans find no labels: an empty scan is not a 'hold'", async () => {
+    const rig = await lootRig(340_000, { followDistance: 2 });
+    rig.scene.leader = { dx: 40, dy: 0 }; // beyond the stop distance, inside the 60 px leash
+    await rig.service.start();
+    await expect.poll(() => stats(rig).clicks, soon).toBe(1);
+    expect(stats(rig)).toMatchObject({ lootScans: 1, lootLabels: 0 });
+    // The clock is frozen: each 250 ms step earns exactly one scan and one movement click, in the same cycle as the scan.
+    for (let step = 1; step <= 5; step++) {
+      await nextScan(rig);
+      expect(stats(rig)).toMatchObject({ lootScans: step + 1, clicks: step + 1, lootClicks: 0 });
+      expect(rig.service.status().decision).toMatchObject({ kind: "move" });
+    }
+    await cycles(rig, 3);
+    expect(rig.service.status().decision).toMatchObject({ kind: "hold", reason: "Pacing movement clicks." });
+    expect(clicksIn(rig, "move")).toHaveLength(6);
+    expect([...rig.reasons]).not.toContain("No loot labels in view.");
+  });
+  it("keeps sending movement clicks while loot is backing off after five fruitless pickups", async () => {
+    const rig = await lootRig(350_000, { followDistance: 2 });
+    rig.scene.leader = { dx: 40, dy: 0 };
+    rig.scene.loot = [{ x: ORIGIN.x + 100, y: ORIGIN.y - 73, width: 81, height: 21 }]; // never picked up: the inventory is full
+    await rig.service.start();
+    await expect.poll(() => stats(rig).lootScans, soon).toBe(1);
+    // Loot clicks are 450 ms apart and scans 250 ms, so one pickup per two scans: five of them by the 10th scan, and the 12th decides to back off.
+    for (let scan = 2; scan <= 12; scan++) await nextScan(rig);
+    expect(stats(rig)).toMatchObject({ lootScans: 12, lootClicks: 5 });
+    expect(clicksIn(rig, "loot")).toHaveLength(5);
+    const moves = clicksIn(rig, "move").length;
+    for (let step = 1; step <= 3; step++) {
+      await nextScan(rig);
+      expect(clicksIn(rig, "move").length).toBeGreaterThanOrEqual(moves + step);
+      expect(rig.service.status().decision?.kind).toBe("move");
+    }
+    expect(stats(rig)).toMatchObject({ lootClicks: 5, lootLabels: 1 });
+    expect(clicksIn(rig, "loot")).toHaveLength(5);
+    expect([...rig.reasons].some(reason => reason.includes("not picking anything up"))).toBe(false);
+    expect(rig.service.status().running).toBe(true);
+  });
+});
+
+describe("follow drive sprint (synthetic input host: 'sprint' requests are array entries, no key is ever pressed)", () => {
+  async function sprintRig(clock: number): Promise<Rig> {
+    const rig = await calibrated({ clock });
+    goLive(rig, { sprint: true });
+    return rig;
+  }
+  const renews = (rig: Rig) => sprintOps(rig).filter(entry => entry.hold === true && entry.start === false).length;
+  it("accepts sprint only as a boolean and saves it only when on", () => {
+    const base = { version: 1, dryRun: false, mapScale: 7, clickIntervalMs: 100 } as const;
+    expect(parseDriveSettings({ ...base, sprint: true })).toEqual({ ...base, sprint: true });
+    expect(parseDriveSettings({ ...base, sprint: false })).toEqual(base);
+    expect(() => parseDriveSettings({ ...base, sprint: "yes" })).toThrow("sprint must be on or off");
+  });
+  it("starts the hold through the controller on the back of an emitted move click, renews it on later cycles, and starts again through the controller after 'Sprint lapsed'", async () => {
+    const rig = await sprintRig(400_000); // leader FAR: 108 map px, beyond the 70 px start distance
+    await rig.service.start();
+    await expect.poll(() => stats(rig).sprints, soon).toBe(1);
+    expect(rig.service.status()).toMatchObject({ running: true, sprinting: true, settings: { sprint: true }, stats: { clicks: 1 } });
+    // The click comes first, so the cursor already points where we are heading; the hold is bound to the same capture as that click.
+    expect(rig.input.slice(0, 3)).toEqual([{ op: "ping" }, rig.attempts[0].payload, { op: "sprint", hold: true, start: true, expectedHwnd: HWND, viewWidth: W, viewHeight: H, capturedAtQpcMs: rig.attempts[0].payload.capturedAtQpcMs, maxAgeMs: 120 }]);
+    expect(rig.traces.map(trace => [trace.decisionRule, trace.result])).toEqual([["follow-map-marker", "emitted"], ["sprint-to-catch-up", "emitted"]]);
+    expect(rig.traces[1]).toMatchObject({ module: "navigation", reason: expect.stringContaining("Sprint: 108 map px behind."), input: { kind: "key", key: "space", text: "hold" } });
+    // Pacing cycles keep the hold alive with start:false, each bound to that cycle's fresh capture, without going through the controller again.
+    await expect.poll(() => renews(rig), soon).toBeGreaterThanOrEqual(3);
+    const renewals = sprintOps(rig).slice(1);
+    expect(renewals.every(entry => entry.hold === true && entry.start === false && entry.expectedHwnd === HWND && entry.maxAgeMs === 120)).toBe(true);
+    expect(renewals.map(entry => Number(entry.capturedAtQpcMs)).every((qpc, i, all) => qpc > Number(i ? all[i - 1] : rig.attempts[0].payload.capturedAtQpcMs))).toBe(true);
+    expect(rig.traces).toHaveLength(2);
+    expect(rig.service.status().sprinting).toBe(true);
+    // The worker let the key go by itself (its hold lapsed): a renew can never press it again.
+    rig.sprintRefusals.push({ start: false, error: "Sprint lapsed" });
+    await expect.poll(() => rig.service.status().sprinting, soon).toBe(false);
+    expect(rig.service.status().running).toBe(true);
+    const lapsedAt = sprintOps(rig).length;
+    await cycles(rig);
+    // No renew of a hold that is gone, no start without a fresh move click, and no stop.
+    expect(sprintOps(rig)).toHaveLength(lapsedAt);
+    expect(rig.service.status()).toMatchObject({ running: true, sprinting: false, stats: { sprints: 1, refused: 0, manualTakeovers: 0 } });
+    rig.clock! += 100;
+    await expect.poll(() => stats(rig).sprints, soon).toBe(2);
+    expect(sprintOps(rig)[lapsedAt]).toMatchObject({ op: "sprint", hold: true, start: true, capturedAtQpcMs: rig.attempts[1].payload.capturedAtQpcMs });
+    expect(rig.input[rig.input.indexOf(sprintOps(rig)[lapsedAt]) - 1]).toBe(rig.attempts[1].payload);
+    expect(rig.traces.filter(trace => trace.decisionRule === "sprint-to-catch-up").map(trace => trace.result)).toEqual(["emitted", "emitted"]);
+    expect(rig.service.status().sprinting).toBe(true);
+    // Nothing ever asked the worker to let go in all this.
+    expect(sprintOps(rig).some(entry => entry.hold !== true)).toBe(false);
+  });
+  it("does not sprint under 70 map px or with the setting off, keeps sprinting down to 40 map px once started, and lets go below that", async () => {
+    const off = await calibrated({ clock: 405_000 });
+    goLive(off);
+    const close = await sprintRig(406_000);
+    close.scene.leader = { dx: 69, dy: 0 };
+    for (const rig of [off, close]) {
+      await rig.service.start();
+      await expect.poll(() => stats(rig).clicks, soon).toBe(1);
+      await cycles(rig);
+      expect(sprintOps(rig)).toEqual([]);
+      expect(rig.service.status().sprinting).toBe(false);
+    }
+    // One more map px and the next move click starts it.
+    close.scene.leader = { dx: 70, dy: 0 };
+    close.clock! += 100;
+    await expect.poll(() => stats(close).sprints, soon).toBe(1);
+    const see = async (dx: number) => { close.scene.leader = { dx, dy: 0 }; await expect.poll(() => close.service.status().observation?.offset?.distance, soon).toBe(dx); };
+    await see(40);
+    const before = renews(close);
+    await expect.poll(() => renews(close), soon).toBeGreaterThan(before + 2);
+    expect(close.service.status().sprinting).toBe(true);
+    await see(39);
+    await expect.poll(() => close.service.status().sprinting, soon).toBe(false);
+    expect(sprintOps(close).at(-1)).toEqual({ op: "sprint", hold: false });
+    await cycles(close);
+    expect(sprintOps(close).filter(entry => entry.hold === false)).toHaveLength(1);
+    expect(sprintOps(close).at(-1)).toEqual({ op: "sprint", hold: false });
+  });
+  it("lets go of the sprint key before a loot click is sent", async () => {
+    const rig = await calibrated({ clock: 410_000 });
+    rig.follow = { ...rig.follow, lootEnabled: true, lootLeash: 20 }; // 120 map px: the leader is inside it at sprinting distance
+    goLive(rig, { sprint: true });
+    await rig.service.start();
+    await expect.poll(() => rig.service.status().sprinting, soon).toBe(true);
+    rig.scene.loot = [{ x: ORIGIN.x + 100, y: ORIGIN.y - 73, width: 81, height: 21 }];
+    // First sighting, then the click: by then the hold may have been started again by a move click in between.
+    await nextScan(rig);
+    expect(clicksIn(rig, "loot")).toEqual([]);
+    await expect.poll(() => rig.service.status().sprinting, soon).toBe(true);
+    await nextScan(rig);
+    expect(clicksIn(rig, "loot")).toHaveLength(1);
+    const at = rig.input.indexOf(clicksIn(rig, "loot")[0].payload);
+    expect(rig.input[at - 1]).toEqual({ op: "sprint", hold: false });
+    // The last thing said about the key before the click, with a hold somewhere before that.
+    expect(rig.input.slice(0, at - 1).some(entry => entry.op === "sprint" && entry.start === true)).toBe(true);
+    expect(rig.service.status().sprinting).toBe(false);
+    // While the character walks to the item nothing holds the key again.
+    await cycles(rig);
+    expect(rig.input.slice(at + 1).filter(entry => entry.op === "sprint")).toEqual([]);
+  });
+  it.each([["Stale capture", "refused"], ["Manual mouse movement", "manualTakeovers"]] as const)("lets go of the sprint key after a moveclick refused with '%s' while sprinting", async (refusal, counter) => {
+    const rig = await sprintRig(420_000);
+    await rig.service.start();
+    await expect.poll(() => rig.service.status().sprinting, soon).toBe(true);
+    await expect.poll(() => renews(rig), soon).toBeGreaterThanOrEqual(1);
+    rig.refusals.push(refusal);
+    rig.clock! += 100;
+    await expect.poll(() => stats(rig)[counter], soon).toBe(1);
+    const at = rig.input.indexOf(rig.attempts[1].payload);
+    // That cycle renewed the hold, had its click refused, and let go at once.
+    expect(rig.input.slice(at - 1, at + 2)).toMatchObject([{ op: "sprint", hold: true, start: false }, { op: "moveclick" }, { op: "sprint", hold: false }]);
+    expect(rig.service.status().running).toBe(true);
+    if (counter === "manualTakeovers") {
+      // The player has the mouse: no hold of any kind for the 1500 ms pause.
+      expect(rig.service.status().sprinting).toBe(false);
+      rig.clock! += 1499;
+      await cycles(rig);
+      expect(rig.input.slice(at + 2)).toEqual([]);
+      rig.clock! += 1;
+    }
+    // The retry's accepted click starts the hold again, through the controller.
+    await expect.poll(() => stats(rig).sprints, soon).toBe(2);
+    expect(rig.input.slice(at + 2, at + 4)).toMatchObject([{ op: "moveclick", area: "move" }, { op: "sprint", hold: true, start: true }]);
+    expect(sprintOps(rig).filter(entry => entry.hold === false)).toHaveLength(1);
+  });
+  it("counts a sprint start refused with 'Space held - manual control' as a manual takeover pause, not a stop", async () => {
+    const rig = await sprintRig(430_000);
+    rig.sprintRefusals.push({ start: true, error: "Space held - manual control" });
+    await rig.service.start();
+    await expect.poll(() => stats(rig).manualTakeovers, soon).toBe(1);
+    expect(rig.service.status()).toMatchObject({ running: true, sprinting: false, reason: "Manual control detected — following resumes shortly.", stats: { clicks: 1, sprints: 0, refused: 0 } });
+    expect(rig.traces.map(trace => [trace.decisionRule, trace.result])).toEqual([["follow-map-marker", "emitted"], ["sprint-to-catch-up", "failed"]]);
+    expect(rig.traces[1].reason).toContain("sink=Space held - manual control");
+    rig.clock! += 1499;
+    await cycles(rig);
+    expect(rig.service.status().decision).toEqual({ kind: "pause", reason: "Manual control detected — following resumes shortly." });
+    expect(ops(rig.input)).toEqual(["ping", "moveclick", "sprint"]);
+    rig.clock! += 1;
+    await expect.poll(() => stats(rig).sprints, soon).toBe(1);
+    expect(rig.service.status()).toMatchObject({ running: true, sprinting: true, stats: { clicks: 2, manualTakeovers: 1 } });
+    // The key was never down while the player held it, so there was nothing to let go of.
+    expect(sprintOps(rig).slice(0, 2)).toMatchObject([{ hold: true, start: true }, { hold: true, start: true }]);
+    expect(sprintOps(rig).some(entry => entry.hold === false)).toBe(false);
+  });
+  it("lets go of the sprint key when a capture fails while sprinting", async () => {
+    const rig = await sprintRig(440_000);
+    await rig.service.start();
+    await expect.poll(() => rig.service.status().sprinting, soon).toBe(true);
+    rig.scene.captureError = "Focus Path of Exile 2 to continue";
+    await expect.poll(() => sprintOps(rig).at(-1), soon).toEqual({ op: "sprint", hold: false });
+    expect(rig.service.status()).toMatchObject({ running: true, sprinting: false, reason: "Focus Path of Exile 2 to continue", observation: undefined });
+    // Said once; the failed captures that follow have nothing left to let go of.
+    await new Promise(resolve => setTimeout(resolve, 250));
+    expect(sprintOps(rig).filter(entry => entry.hold === false)).toHaveLength(1);
+    expect(sprintOps(rig).at(-1)).toEqual({ op: "sprint", hold: false });
+    // Focus returns: the next accepted move click starts the hold again.
+    rig.scene.captureError = undefined;
+    rig.clock! += 100;
+    await expect.poll(() => stats(rig).sprints, soon).toBe(2);
+  });
+});
+
+describe("follow drive aim source (SYNTHETIC blue outline pixels for odometry and an injected map host, no OS input)", () => {
+  it("walks the terrain plan while the leader has left no trail, and the leader-walked trail once there is one and nothing has been bumped into", async () => {
+    const rig = await calibrated({ clock: 500_000, mapHost: true });
+    goLive(rig);
+    rig.scene.blue = outlines();
+    rig.scene.leader = { dx: 40, dy: 0 };
+    await rig.service.start();
+    // Open ground on the map scan: a plan exists. One trail point is no trail, so the plan is what is walked.
+    await expect.poll(() => rig.service.status().terrain?.planned, soon).toBe(true);
+    await expect.poll(() => rig.service.status().odometry, soon).toMatchObject({ tracked: true, quality: 1, trailPoints: 1, via: "plan" });
+    expect(rig.map[0]).toMatchObject({ op: "terrain", x: 64, y: 18, width: 448, height: 270, full: false, channel: "terrain" });
+    expect(rig.service.status().terrain).toMatchObject({ planned: true, walls: 0, bumps: 0, blockedAhead: false });
+    // The leader walks off to the right in 10 px steps while we stand still (the outline pixels do not slide): 7 trail points, 60 px of trail.
+    for (let dx = 50; dx <= 100; dx += 10) { rig.scene.leader = { dx, dy: 0 }; await expect.poll(() => rig.service.status().observation?.offset?.dx, soon).toBe(dx); }
+    await expect.poll(() => rig.service.status().odometry?.via, soon).toBe("trail");
+    // The plan is still there and still has an aim: the trail won, it did not merely fill a gap.
+    expect(rig.service.status()).toMatchObject({ odometry: { tracked: true, trailPoints: 7, via: "trail" }, terrain: { planned: true, bumps: 0 } });
+    rig.service.stop();
+    await expect.poll(() => ops(rig.map).at(-1), soon).toBe("closed");
+  });
+  it("reports 'direct' without a map host and without odometry, as in every other test of this file", async () => {
+    const rig = await calibrated({ clock: 510_000 });
+    goLive(rig);
+    await rig.service.start();
+    await cycles(rig);
+    expect(rig.service.status()).toMatchObject({ odometry: { tracked: false, trailPoints: 0, via: "direct" }, terrain: undefined });
+    expect(rig.map).toEqual([]);
   });
 });
 

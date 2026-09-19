@@ -7,7 +7,7 @@ import {
   buildMapCalibration, decodeKeyPoints, FollowSteering, mapCalibrationIssue, MapMarkerTracker, parseMapCalibration,
   type MapCalibration, type SteeringDecision,
 } from "../core/followerMapMarker.js";
-import { decodeFlatRuns, decodeHueRuns, findLootLabels, LOOT_MIN_BRIGHTNESS, LOOT_MIN_RUN, lootArea, LootPlanner } from "../core/followerLoot.js";
+import { decodeFlatRuns, decodeHueRuns, findLootLabels, LOOT_MIN_BRIGHTNESS, LOOT_MIN_CONFIDENCE, LOOT_MIN_RUN, lootArea, LootPlanner } from "../core/followerLoot.js";
 import { TERRAIN_CHANNEL, TERRAIN_POINT_CAP, TERRAIN_THRESHOLD, TerrainPlanner, terrainWindow, type TerrainPlan } from "../core/followerTerrain.js";
 import { LeaderTrail, MapOdometry, ODOMETRY_CHANNEL, ODOMETRY_THRESHOLD, odometryWindow } from "../core/followerTrail.js";
 import { templatePixelCount, type PixelRect } from "../core/followerPerception.js";
@@ -34,13 +34,16 @@ interface DriveOptions {
   pollMs?: number;
 }
 const GAME_PROCESSES = ["pathofexile", "pathofexile_x64", "pathofexilesteam", "pathofexile_x64steam", "pathofexileegs", "pathofexile_x64egs"];
-const FRAME_MAX_AGE_MS = 120, MANUAL_PAUSE_MS = 1500, ACTIONS_PER_MINUTE = 600, MAP_PX_PER_FOLLOW_UNIT = 6, LOOT_SCAN_MS = 250, PLAN_MS = 250, PLAN_KEEP_MS = 900;
+const FRAME_MAX_AGE_MS = 120, MANUAL_PAUSE_MS = 1500, ACTIONS_PER_MINUTE = 600, MAP_PX_PER_FOLLOW_UNIT = 6, LOOT_SCAN_MS = 250, PLAN_MS = 250, PLAN_KEEP_MS = 900, PLAN_NOT_WITHIN_PX = 35;
 /** Sprint (hold space) only while well behind the leader, with hysteresis so it does not flutter. */
 const SPRINT_START_PX = 70, SPRINT_STOP_PX = 40;
+// A loot click lands this long after the scan that found the label; a label seen sliding across two scans is led by that much.
+const LOOT_LEAD_MS = 70, LOOT_SAME_LABEL_PX = 120, LOOT_STEADY_PX = 4;
+const RELEASE_ATTEMPTS = 240, RELEASE_RETRY_MS = 250;
 /** The fastest pacing the action cap can sustain: a shorter interval would always end in a rate-limit stop. */
 export const MIN_CLICK_INTERVAL_MS = Math.ceil(60_000 / ACTIONS_PER_MINUTE);
 const FOCUS = /Focus Path of Exile 2/, COVERED = /covered at the click point/;
-const MANUAL = /Manual mouse movement|Mouse button held|Modifier key held/, RETRY = /Stale capture|capture stale|Focus Path of Exile|focus or view changed/i;
+const MANUAL = /Manual mouse movement|Mouse button held|Modifier key held|Space held/, RETRY = /Stale capture|capture stale|Focus Path of Exile|focus or view changed/i;
 
 export function defaultDriveSettings(): FollowerDriveSettings { return { version: 1, dryRun: true, mapScale: 7, clickIntervalMs: 110 }; }
 export function parseDriveSettings(raw: unknown): FollowerDriveSettings {
@@ -131,7 +134,15 @@ export class FollowerDriveService {
     const map = this.mapHost; this.mapHost = undefined;
     if (map) void map.close().catch(() => {});
     // Ask for an explicit button release before the worker goes away; its own finally block is the backstop.
-    if (input) void input.send({ op: "release" }).catch(() => {}).then(() => input.close()).catch(() => {});
+    // While it reports a key still held (a secure desktop rejects input), its watchdog is the only thing that can let go: keep it alive and keep asking.
+    if (input) void (async () => {
+      for (let attempt = 0; attempt < RELEASE_ATTEMPTS; attempt++) {
+        const reply = await input.send({ op: "release" }).catch(() => undefined);
+        if (!reply || reply.ok) break;
+        await new Promise(resolve => setTimeout(resolve, RELEASE_RETRY_MS));
+      }
+      await input.close().catch(() => {});
+    })();
     return this.status();
   }
   private createCaptureHost(): Host { return this.options.createCaptureHost?.() ?? startWinHost({ scriptName: "win-follower-host.ps1", requestTimeoutMs: 5000 }); }
@@ -209,7 +220,7 @@ export class FollowerDriveService {
     const controller = new GameInputController(sink, this.options.killSwitch, this.options.mode);
     this.running = true; this.reason = "Starting capture and input workers…";
     this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0 }; this.sprinting = false; this.startedAt = this.now();
-    let manualUntil = -Infinity, pauseReason = "", wasNear = false, lastLootScanAt = -Infinity;
+    let manualUntil = -Infinity, pauseReason = "", wasNear = false, lastLootScanAt = -Infinity, lootSeen: { x: number; y: number; at: number } | undefined;
     const odometry = new MapOdometry(), trail = new LeaderTrail(), watch = { ...odometryWindow(tracker.origin, calibration.view), channel: ODOMETRY_CHANNEL, threshold: ODOMETRY_THRESHOLD };
     const terrain = new TerrainPlanner(), terrainArea = terrainWindow(tracker.origin, calibration.view);
     let plan: (TerrainPlan & { at: number }) | undefined, lastPlanAt = -Infinity, sprinting = false, planning = false;
@@ -229,9 +240,9 @@ export class FollowerDriveService {
       if (trace?.result === "emitted") return "emitted";
       if (trace?.reason.includes("safety=dry-run")) { this.reason = `Preview only: would ${reason.charAt(0).toLowerCase()}${reason.slice(1)}`; return "previewed"; }
       if (trace?.reason.includes("safety=rate-limited")) { this.stop(`Action limit reached (${ACTIONS_PER_MINUTE}/minute).`); return "stopped"; }
-      if (trace?.result === "failed" && COVERED.test(trace.reason)) { this.counts.refused++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Another window covers the game at the click point — pausing."; return "paused"; }
-      if (trace?.result === "failed" && MANUAL.test(trace.reason)) { this.counts.manualTakeovers++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Manual control detected — following resumes shortly."; return "paused"; }
-      if (trace?.result === "failed" && RETRY.test(trace.reason)) { this.counts.refused++; this.reason = "A click was refused as stale or unfocused; retrying on a fresh capture."; return "retry"; }
+      if (trace?.result === "failed" && COVERED.test(trace.reason)) { this.counts.refused++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Another window covers the game at the click point — pausing."; await letGo(); return "paused"; }
+      if (trace?.result === "failed" && MANUAL.test(trace.reason)) { this.counts.manualTakeovers++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Manual control detected — following resumes shortly."; await letGo(); return "paused"; }
+      if (trace?.result === "failed" && RETRY.test(trace.reason)) { this.counts.refused++; this.reason = "A click was refused as stale or unfocused; retrying on a fresh capture."; await letGo(); return "retry"; }
       this.stop(trace ? `Movement input stopped: ${trace.reason}` : "Movement input produced no trace."); return "stopped";
     };
     const tick = async () => {
@@ -249,6 +260,7 @@ export class FollowerDriveService {
         if (!reply.ok) {
           // An unfocused or covered game is not an observation, and nothing is clicked.
           this.observation = undefined; this.decision = undefined; this.reason = String(reply.error ?? "Game capture unavailable."); delay = 100;
+          await letGo();
         } else {
           const view = { width: Number(reply.width), height: Number(reply.height) }, changed = mapCalibrationIssue(calibration, calibration.targetName, view);
           if (changed) { this.stop(changed); return; }
@@ -265,7 +277,8 @@ export class FollowerDriveService {
           if (trusted && moved.tracked) trail.record(odometry.position, observation.offset!, odometry.epoch);
           const trailAim = trusted ? trail.aim(odometry.position, observation.offset!, odometry.epoch) : undefined;
           // Read the landscape off the overlay map a few times a second and plan a way to the leader round what it shows.
-          if (moved.tracked) terrain.noteMotion(moved, started);
+          // Blind odometry is reported too: it is not evidence of standing still.
+          terrain.noteMotion(moved, started);
           // The map scan is large, so it runs on its own capture worker and never holds up marker tracking.
           planWanted = trusted && !manual && observation.offset!.distance > stopPx ? { origin: observation.origin, offset: observation.offset!, view } : undefined;
           if (planWanted && !planning && mapScanner && started - lastPlanAt >= PLAN_MS) {
@@ -279,7 +292,9 @@ export class FollowerDriveService {
             }).catch(() => { plan = undefined; }).finally(() => { planning = false; });
           }
           if (plan && (started - plan.at > PLAN_KEEP_MS || !planWanted)) plan = undefined;
-          const planned = trusted && plan?.aim ? plan.aim : undefined;
+          // A path the leader actually walked beats a route read off pixels, until following it has bumped into something. Close in, go straight.
+          const trailKnows = trailAim?.via === "trail" && !plan?.bumps;
+          const planned = trusted && plan?.aim && !trailKnows && observation.offset!.distance > PLAN_NOT_WITHIN_PX ? plan.aim : undefined;
           const aim = planned ? { ...planned, via: "plan" as const } : trailAim;
           this.odometry = { tracked: moved.tracked, quality: moved.quality, trailPoints: trail.length, via: aim?.via ?? "direct" };
           this.terrain = plan && { planned: !!plan.aim, pathPx: plan.pathPx, walls: plan.walls, bumps: plan.bumps, blockedAhead: plan.blockedAhead, planMs: plan.planMs };
@@ -295,17 +310,30 @@ export class FollowerDriveService {
             const scanAt = this.now(), scan = await capture.send({ op: "runs", ...lootArea(view), minLength: LOOT_MIN_RUN, minBrightness: LOOT_MIN_BRIGHTNESS });
             if (!live()) return;
             if (scan.ok && !scan.overflow && Number(scan.width) === view.width && Number(scan.height) === view.height) {
-              const labels = findLootLabels(decodeFlatRuns(scan.runs), view, observation.origin, scan.hueOverflow || typeof scan.hueRuns !== "string" ? [] : decodeHueRuns(scan.hueRuns)), choice = loot.decide(labels, this.now());
+              // The leash bounds how far loot may take us from the leader, not just how far we are now: drop labels lying beyond it.
+              const scale = this.settings.mapScale, lead = observation.offset!;
+              const labels = findLootLabels(decodeFlatRuns(scan.runs), view, observation.origin, scan.hueOverflow || typeof scan.hueRuns !== "string" ? [] : decodeHueRuns(scan.hueRuns))
+                .filter(label => label.confidence >= LOOT_MIN_CONFIDENCE && Math.hypot((label.centre.x - observation.origin.x) / scale - lead.dx, (label.centre.y - observation.origin.y) / scale - lead.dy) <= leashPx);
+              const choice = loot.decide(labels, this.now());
               this.counts.lootScans++; this.counts.lootLabels = labels.length;
-              if (choice.kind === "loot" && choice.label) {
+              // The camera scrolls while we run, so a label slides between the scan and the click. Seen twice, it is led by its own drift; seen once, it waits a scan.
+              const centre = choice.label?.centre, before = lootSeen, area = lootArea(view);
+              lootSeen = centre && { ...centre, at: scanAt };
+              const drift = centre && before && scanAt - before.at <= 2 * LOOT_SCAN_MS + 100 && Math.hypot(centre.x - before.x, centre.y - before.y) <= LOOT_SAME_LABEL_PX ? { x: (centre.x - before.x) / (scanAt - before.at), y: (centre.y - before.y) / (scanAt - before.at) } : undefined;
+              if (choice.kind === "loot" && choice.label && drift) {
+                const steady = Math.hypot(drift.x, drift.y) * (scanAt - before!.at) <= LOOT_STEADY_PX;
+                const x = steady ? centre!.x : Math.min(area.x + area.width - 1, Math.max(area.x, Math.round(centre!.x + drift.x * LOOT_LEAD_MS))), y = steady ? centre!.y : Math.min(area.y + area.height - 1, Math.max(area.y, Math.round(centre!.y + drift.y * LOOT_LEAD_MS)));
+                // Never click a label with the sprint key down.
+                await letGo();
                 // The click is bound to the scan that found the label, not to the earlier marker capture.
                 this.frame = { hwnd: String(scan.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(scan.capturedAtQpcMs), at: scanAt };
-                const outcome = await execute("loot", "pick-up-nearest-label", choice.reason, choice.label.centre.x, choice.label.centre.y, choice.label.confidence, process, allowed,
-                  JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, label: choice.label, labelsInView: labels.length, leaderDistance: distance }), true, current.confidence);
+                const outcome = await execute("loot", "pick-up-nearest-label", choice.reason, x, y, choice.label.confidence, process, allowed,
+                  JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, label: choice.label, click: { x, y }, labelsInView: labels.length, leaderDistance: distance }), true, LOOT_MIN_CONFIDENCE);
                 if (outcome === "stopped") return;
                 if (outcome === "emitted" || outcome === "previewed") { loot.committed(labels.length, this.now()); this.counts.lootClicks++; if (outcome === "emitted") this.counts.clicks++; else this.counts.previewed++; }
               }
-              if (choice.kind !== "idle" || choice.label) decision = { kind: "hold", reason: choice.reason, distance };
+              // Hold only for a label being acted on: a backoff or an empty scan must not interrupt following (or drop the sprint) four times a second.
+              if (choice.label) decision = { kind: "hold", reason: choice.reason, distance };
             }
           }
           // While the character walks to an item, do not pull it back toward the leader.
@@ -320,7 +348,8 @@ export class FollowerDriveService {
             const evidence = JSON.stringify({ capturedAtQpcMs: this.frame!.capturedAtQpcMs, hwnd: this.frame!.hwnd, leader: observation.leader, origin: observation.origin, offset: observation.offset, evidence: observation.evidence });
             const outcome = await execute("navigation", "follow-map-marker", decision.reason, decision.x, decision.y, observation.confidence, process, allowed, evidence, lootOn, current.confidence);
             if (outcome === "stopped") return;
-            if (outcome === "emitted" || outcome === "previewed") terrain.noteClick({ dx: decision.x - observation.origin.x, dy: decision.y - observation.origin.y }, odometry.position, odometry.epoch, this.now());
+            // A previewed click moves nothing, so it says nothing about walls.
+            if (outcome === "emitted") terrain.noteClick({ dx: decision.x - observation.origin.x, dy: decision.y - observation.origin.y }, odometry.position, odometry.epoch, this.now());
             // Start sprinting only on the back of an accepted movement click, so the cursor is already where we are heading.
             if (outcome === "emitted" && wantSprint && !sprinting) {
               const started = await execute("navigation", "sprint-to-catch-up", `Sprint: ${Math.round(distance)} map px behind.`, decision.x, decision.y, observation.confidence, process, allowed, evidence, lootOn, current.confidence, true);

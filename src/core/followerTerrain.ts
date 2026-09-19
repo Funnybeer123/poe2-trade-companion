@@ -14,12 +14,12 @@ import type { PixelRect } from "./followerPerception.js";
  * spot is not tried twice. Pure functions over captured pixels; nothing here emits OS input.
  */
 export const TERRAIN_CHANNEL = "terrain" as const, TERRAIN_THRESHOLD = 128, TERRAIN_POINT_CAP = 50000;
-/** More wall than this is not a map: a grey stone floor or a bright scene is being misread, so no plan is made. */
+/** More blocked cells than this is not a map: a grey stone floor, speckle or a bright scene is being misread, so no plan is made. */
 const MAX_WALL_FRACTION = .3;
 /** How much farther from the leader (in cells) a map-edge exit may be than where we stand and still be worth walking to. */
 const EDGE_DETOUR_CELLS = 40, COMMIT_MS = 12_000, COMMIT_ARRIVED_CELLS = 6;
 const CELL = 4, LOOKAHEAD_PX = 56, MIN_AIM_PX = 20, CLEAR_START_CELLS = 1, NEAR_WALL_COST = 3;
-const BUMP_RADIUS_CELLS = 3, BUMP_AHEAD_PX = 14, BUMP_TTL_MS = 45_000, BUMP_MAX = 60, STUCK_MS = 1000, STUCK_CLICKS = 5, STUCK_TOLERANCE_PX = 2.5;
+const BUMP_RADIUS_CELLS = 3, BUMP_AHEAD_PX = 14, BUMP_TTL_MS = 45_000, BUMP_MAX = 60, STUCK_MS = 1000, STUCK_CLICKS = 5, STUCK_TOLERANCE_PX = 2.5, MOTION_GAP_MS = 250;
 
 /** The part of the overlay map used for planning: the whole world view, clear of the HUD, party frames and quest tracker. */
 export function terrainWindow(origin: KeyPoint, view: { width: number; height: number }): PixelRect {
@@ -46,12 +46,19 @@ export class TerrainPlanner {
   private steps: Array<{ at: number; dx: number; dy: number }> = [];
   private clicks: Array<{ at: number; dx: number; dy: number }> = [];
   private checkedAt = -Infinity;
+  /** Start of the unbroken run of tracked odometry samples, and the latest of them. */
+  private trackedSince?: number;
+  private motionAt = -Infinity;
   /** A fallback goal we set out for, in the odometry frame: kept until reached, unreachable or stale, so plans do not flip between exits. */
   private committed?: { x: number; y: number; epoch: number; until: number };
 
-  /** Own movement since the previous observation (map pixels), from odometry. */
-  noteMotion(step: { dx: number; dy: number }, now: number): void {
-    if (step.dx || step.dy) this.steps.push({ at: now, ...step });
+  /** Own movement since the previous observation (map pixels), from odometry; call on every tick, with tracked:false when odometry is blind. */
+  noteMotion(step: { dx: number; dy: number; tracked?: boolean }, now: number): void {
+    // Blind odometry, or a gap in it, is not evidence of standing still.
+    if (step.tracked === false) { this.trackedSince = undefined; this.steps = []; return; }
+    if (this.trackedSince === undefined || now - this.motionAt > MOTION_GAP_MS) this.trackedSince = now;
+    this.motionAt = now;
+    if (step.dx || step.dy) this.steps.push({ at: now, dx: step.dx, dy: step.dy });
     while (this.steps.length && now - this.steps[0].at > STUCK_MS) this.steps.shift();
   }
   /**
@@ -61,6 +68,7 @@ export class TerrainPlanner {
   noteClick(direction: { dx: number; dy: number }, position: KeyPoint, epoch: number, now: number): boolean {
     this.clicks.push({ at: now, ...direction });
     while (this.clicks.length && now - this.clicks[0].at > STUCK_MS) this.clicks.shift();
+    if (this.trackedSince === undefined || this.trackedSince > this.clicks[0].at || now - this.motionAt > MOTION_GAP_MS) return false;
     let mx = 0, my = 0; for (const s of this.steps) if (now - s.at <= STUCK_MS) { mx += s.dx; my += s.dy; }
     if (this.clicks.length < STUCK_CLICKS || now - this.checkedAt < STUCK_MS || now - this.clicks[0].at < STUCK_MS * .8 || Math.hypot(mx, my) >= STUCK_TOLERANCE_PX) return false;
     this.checkedAt = now;
@@ -83,8 +91,10 @@ export class TerrainPlanner {
     // 2 = wall (dilated by one cell so dotted outlines and diagonal lines do not leak), 1 = next to a wall.
     const grid = new Uint8Array(size);
     const block = (cx: number, cy: number, radius: number) => { for (let y = Math.max(0, cy - radius); y <= Math.min(rows - 1, cy + radius); y++) for (let x = Math.max(0, cx - radius); x <= Math.min(cols - 1, cx + radius); x++) grid[y * cols + x] = 2; };
-    if (walls.length > size * CELL * CELL * MAX_WALL_FRACTION) return empty;
     for (const p of walls) { const c = cell(p.x, p.y); if (c.cx >= 0 && c.cy >= 0 && c.cx < cols && c.cy < rows) block(c.cx, c.cy, 1); }
+    // Counted in cells after dilation, so the guard is the same at any resolution and catches scattered speckle too.
+    let blocked = 0; for (let i = 0; i < size; i++) if (grid[i] === 2) blocked++;
+    if (blocked > size * MAX_WALL_FRACTION) return empty;
     for (const b of this.bumps) { const c = cell(origin.x + b.x - position.x, origin.y + b.y - position.y); if (c.cx >= 0 && c.cy >= 0 && c.cx < cols && c.cy < rows) block(c.cx, c.cy, BUMP_RADIUS_CELLS); }
     // We are standing where we are standing: never inside a wall, whatever the outline says. Bumps stay: they are ahead of us, not under us.
     for (let y = start.cy - CLEAR_START_CELLS; y <= start.cy + CLEAR_START_CELLS; y++) for (let x = start.cx - CLEAR_START_CELLS; x <= start.cx + CLEAR_START_CELLS; x++) {

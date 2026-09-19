@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FollowerInputSink, LOOT_CLICK, type FollowerFrameGuard } from "../src/adapters/followerInputSink.js";
+import { FollowerInputSink, LOOT_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../src/adapters/followerInputSink.js";
 import { GameInputController } from "../src/core/gameInputController.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
 import { scenario } from "../src/core/scenarios.js";
@@ -138,5 +138,54 @@ describe("follower input sink loot clicks (SYNTHETIC host, no OS input)", () => 
     expect(sent).toEqual([{ op: "moveclick", x: 789, y: 185, expectedHwnd: "66051", viewWidth: 2560, viewHeight: 1440, capturedAtQpcMs: 9_000, maxAgeMs: 120, area: "loot" }]);
     await expect(sink.emit({ kind: "click", x: 789, y: 185, button: "left", text: "anywhere" })).rejects.toThrow("Invalid follow action");
     expect(sent).toHaveLength(1);
+  });
+});
+
+describe("follower input sink sprint hold (SYNTHETIC host: a 'sprint' request is an array entry, no key is pressed)", () => {
+  const HOLD: InputAction = { kind: "key", key: "space", text: SPRINT_HOLD };
+  it("starts the hold through emit with start:true, guarded by the capture the decision came from, and records no click timing", async () => {
+    const host = fakeHost(), sink = new FollowerInputSink(host, () => FRAME);
+    await sink.emit(HOLD);
+    expect(host.sent).toEqual([{ op: "sprint", hold: true, start: true, expectedHwnd: "66051", viewWidth: 640, viewHeight: 360, capturedAtQpcMs: 5_000_123, maxAgeMs: 120 }]);
+    expect(sink.lastInput).toBeUndefined();
+  });
+  it("throws the host's refusal of a start so the controller can classify it, and refuses a start without a fresh frame before contacting the host", async () => {
+    await expect(new FollowerInputSink(fakeHost({ ok: false, error: "Space held - manual control" }), () => FRAME).emit(HOLD)).rejects.toThrow("Space held - manual control");
+    await expect(new FollowerInputSink(fakeHost({ ok: false }), () => FRAME).emit(HOLD)).rejects.toThrow("Sprint input failed");
+    const host = fakeHost();
+    await expect(new FollowerInputSink(host, () => undefined).emit(HOLD)).rejects.toThrow("Follow stopped or capture stale");
+    await expect(new FollowerInputSink(host, () => ({ ...FRAME, hwnd: "" })).emit(HOLD)).rejects.toThrow("Capture stale: incomplete capture guard");
+    expect(host.sent).toEqual([]);
+  });
+  it.each<[string, InputAction]>([["another key", { kind: "key", key: "shift", text: SPRINT_HOLD }], ["space without the hold marker", { kind: "key", key: "space" }], ["space with other text", { kind: "key", key: "space", text: "tap" }]])("rejects %s without contacting the host", async (_name, action) => {
+    const host = fakeHost(), sink = new FollowerInputSink(host, () => FRAME);
+    await expect(sink.emit(action)).rejects.toThrow("Invalid follow action");
+    expect(host.sent).toEqual([]);
+  });
+  it("renews with start:false under the newest frame, and throws when the worker refuses: a lapsed hold must be started again through the controller", async () => {
+    const host = fakeHost({ ok: true }, { ok: false, error: "Sprint lapsed" });
+    let frame = FRAME;
+    const sink = new FollowerInputSink(host, () => frame, 90);
+    await sink.renewSprint();
+    frame = { ...FRAME, capturedAtQpcMs: 5_000_456 };
+    await expect(sink.renewSprint()).rejects.toThrow("Sprint lapsed");
+    expect(host.sent).toEqual([
+      { op: "sprint", hold: true, start: false, expectedHwnd: "66051", viewWidth: 640, viewHeight: 360, capturedAtQpcMs: 5_000_123, maxAgeMs: 90 },
+      { op: "sprint", hold: true, start: false, expectedHwnd: "66051", viewWidth: 640, viewHeight: 360, capturedAtQpcMs: 5_000_456, maxAgeMs: 90 },
+    ]);
+    expect(host.sent.every(entry => entry.start === false)).toBe(true);
+  });
+  it("lets go instead of renewing when the frame is stale, and reports it", async () => {
+    const host = fakeHost(), sink = new FollowerInputSink(host, () => undefined);
+    await expect(sink.renewSprint()).rejects.toThrow("Follow stopped or capture stale");
+    expect(host.sent).toEqual([{ op: "sprint", hold: false }]);
+  });
+  it("is never refused a release: not by the guard, not by the worker's answer, not by a dead transport", async () => {
+    const refused = fakeHost({ ok: false, error: "Sprint lapsed" });
+    await new FollowerInputSink(refused, () => undefined).releaseSprint();
+    expect(refused.sent).toEqual([{ op: "sprint", hold: false }]);
+    const dead = fakeHost(new Error("win-input-host-closed"));
+    await expect(new FollowerInputSink(dead, () => FRAME).releaseSprint()).resolves.toBeUndefined();
+    expect(dead.sent).toEqual([{ op: "sprint", hold: false }]);
   });
 });

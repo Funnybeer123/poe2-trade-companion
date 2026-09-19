@@ -113,12 +113,15 @@ public static class FollowInput {
   }
   static void EnsureWatchdog() {
     if (sprintWatchdog != null) return;
-    sprintWatchdog = new Thread(() => { while (true) { Thread.Sleep(40); bool expired; lock (sprintGate) { expired = spaceHeld && QpcMs() > spaceDeadline; } if (expired) ReleaseSprint(); } });
+    // Check and release under one lock, so a renew cannot land between them and be undone.
+    sprintWatchdog = new Thread(() => { while (true) { Thread.Sleep(40); bool expired; lock (sprintGate) { expired = spaceHeld && QpcMs() > spaceDeadline; if (expired) ReleaseSprint(); } } });
     sprintWatchdog.IsBackground = true; sprintWatchdog.Name = "Follower sprint watchdog"; sprintWatchdog.Start();
   }
-  // Presses space if it is not held yet and renews the hold; every guard a click has applies, and failing any of them lets go.
-  public static void Sprint(string expectedHwnd, int viewWidth, int viewHeight, long capturedAtQpcMs, int maxAgeMs) {
+  // Renews the hold; every guard a click has applies, and failing any of them lets go. Space goes down only on a
+  // controller-emitted start: a renew of a hold that lapsed fails instead of pressing again, unaudited.
+  public static void Sprint(string expectedHwnd, int viewWidth, int viewHeight, long capturedAtQpcMs, int maxAgeMs, bool start) {
     try {
+      if (!start) lock (sprintGate) { if (!spaceHeld) throw new Exception("Sprint lapsed"); }
       FollowClickCheck check = Check(viewWidth / 2, viewHeight / 2, viewWidth, viewHeight, QpcMs() - capturedAtQpcMs, maxAgeMs, "move");
       if (!check.Ok) throw new Exception(check.Error);
       IntPtr window = GetForegroundWindow();
@@ -130,15 +133,25 @@ public static class FollowInput {
       if (humanSeen) throw new Exception("Manual mouse movement");
       EnsureWatchdog();
       lock (sprintGate) {
-        if (!spaceHeld) { if (SendInput(1, new [] { Space(true) }, Marshal.SizeOf(typeof(FollowInputEvent))) != 1) throw new Exception("Windows rejected sprint input"); spaceHeld = true; }
+        if (!spaceHeld) {
+          if (!start) throw new Exception("Sprint lapsed");
+          // Only while we hold nothing: the key state also reports our own injected hold. Our later space-up would cut a human's hold short.
+          if (Down(0x20)) throw new Exception("Space held - manual control");
+          if (SendInput(1, new [] { Space(true) }, Marshal.SizeOf(typeof(FollowInputEvent))) != 1) throw new Exception("Windows rejected sprint input");
+          spaceHeld = true;
+        }
         spaceDeadline = QpcMs() + SprintRenewMs;
       }
     } catch { ReleaseSprint(); throw; }
   }
   static void NoteHuman(FollowInputPoint cursor) { placed = false; humanSeen = true; humanAt = cursor; humanSince = QpcMs(); }
+  // Any refusal means the follower is not in control, so the held key goes up with it, not a watchdog period later.
   public static void MoveClick(int x, int y, string expectedHwnd, int viewWidth, int viewHeight, long capturedAtQpcMs, int maxAgeMs, string area) {
+    try { GuardedClick(x, y, expectedHwnd, viewWidth, viewHeight, capturedAtQpcMs, maxAgeMs, area); } catch { ReleaseSprint(); throw; }
+  }
+  static void GuardedClick(int x, int y, string expectedHwnd, int viewWidth, int viewHeight, long capturedAtQpcMs, int maxAgeMs, string area) {
     FollowClickCheck check = Check(x, y, viewWidth, viewHeight, QpcMs() - capturedAtQpcMs, maxAgeMs, area);
-    if (!check.Ok) { ReleaseSprint(); throw new Exception(check.Error); }
+    if (!check.Ok) throw new Exception(check.Error);
     if (!Release()) throw new Exception("A movement button release was rejected earlier");
     if (GetSystemMetrics(23) != 0) throw new Exception("Swapped mouse buttons are not supported: turn off 'Switch primary and secondary buttons' to follow");
     IntPtr window = GetForegroundWindow();
@@ -188,7 +201,7 @@ try { while ($null -ne ($line = [Console]::ReadLine())) {
     if ($command.op -eq 'ping') { $reply = @{ ok = $true } }
     elseif ($command.op -eq 'release') { $sprintReleased = [FollowInput]::ReleaseSprint(); $reply = @{ ok = ([FollowInput]::Release() -and $sprintReleased) } }
     elseif ($command.op -eq 'sprint') {
-      if ($command.hold -eq $true) { [FollowInput]::Sprint([string]$command.expectedHwnd, [int]$command.viewWidth, [int]$command.viewHeight, [long]$command.capturedAtQpcMs, [int]$command.maxAgeMs); $reply = @{ ok = $true; held = $true } }
+      if ($command.hold -eq $true) { [FollowInput]::Sprint([string]$command.expectedHwnd, [int]$command.viewWidth, [int]$command.viewHeight, [long]$command.capturedAtQpcMs, [int]$command.maxAgeMs, ($command.start -eq $true)); $reply = @{ ok = $true; held = $true } }
       else { $reply = @{ ok = [FollowInput]::ReleaseSprint(); held = $false } }
     }
     elseif ($command.op -eq 'moveclick') {

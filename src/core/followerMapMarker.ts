@@ -62,7 +62,7 @@ const LABEL_FLANK = 6, LABEL_JUMP_PX = 30, LABEL_JUMP_WINDOW_MS = 250;
 const MARKER_MIN_SCORE = .75, MARKER_TRUST = .95, MARKER_CONTINUITY_MS = 700, MARKER_CONTINUITY_PX = 40;
 /** Blocked: we moved less than this many map pixels over STUCK_MS despite STUCK_CLICKS committed clicks. */
 const STUCK_TOLERANCE_PX = 2.5, STUCK_MS = 1500, STUCK_CLICKS = 6, STUCK_REST_MS = 5000;
-const RAD = Math.PI / 180, WALL_FIRST_TURN = 60 * RAD, WALL_TURN = 35 * RAD, WALL_EASE = 25 * RAD, WALL_MAX_TURN = 200 * RAD, WALL_STUCK_MS = 900, WALL_EASE_MS = 800, WALL_SIDE_MS = 25_000, WALL_SIDE_GAIN_PX = 20;
+const RAD = Math.PI / 180, WALL_FIRST_TURN = 60 * RAD, WALL_TURN = 35 * RAD, WALL_EASE = 25 * RAD, WALL_MAX_TURN = 200 * RAD, WALL_STUCK_MS = 900, WALL_EASE_MS = 800, WALL_SIDE_MS = 25_000, WALL_SIDE_GAIN_PX = 20, WALL_SWING = 45 * RAD, EPISODE_CLEAR_MS = 6000, EPISODE_GAP_MS = 1000;
 /** The input worker refuses clicks beyond 0.30 h of the view centre; steering stays just inside that. */
 const SAFE_DISC = .29;
 const integer = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n);
@@ -306,54 +306,70 @@ export class FollowSteering {
   private clicksSinceMoved = 0;
   private checkedAt = -Infinity;
   /** Wall-following: an absolute heading (radians, screen axes) held while something blocks the straight line. */
-  private wall?: { side: 1 | -1; heading: number; turned: number; easedAt: number; since: number; from: number };
+  private wall?: { side: 1 | -1; heading: number; /** The goal this heading was turned away from. */ goal: number; turned: number; easedAt: number; since: number; from: number };
   private preferredSide: 1 | -1 = 1;
   /** From the first time we were blocked until we get clearly nearer: slipping back to the straight line and sticking again is the same episode. */
-  private episode?: { at: number; from: number; fails: number };
+  private episode?: { at: number; from: number; fails: number; blockedAt: number };
   private flips = 0;
   private restUntil = -Infinity;
+  private headedAt = -Infinity;
   constructor(private readonly config: SteeringConfig) {}
   private travelled(now: number, withinMs: number): number {
     let dx = 0, dy = 0;
     for (const s of this.steps) if (now - s.at <= withinMs) { dx += s.dx; dy += s.dy; }
     return Math.hypot(dx, dy);
   }
-  private reset(): void { this.wall = undefined; this.episode = undefined; this.flips = 0; this.steps = []; this.clicksSinceMoved = 0; this.checkedAt = -Infinity; }
+  private reset(): void { this.wall = undefined; this.episode = undefined; this.flips = 0; this.steps = []; this.clicksSinceMoved = 0; this.checkedAt = -Infinity; this.restUntil = -Infinity; }
   /**
    * Clicking straight at the goal walks into whatever is in between. When committed clicks stop moving
    * us we are against something, so hold a heading turned away from the goal to one side: each time that
    * heading is blocked too, turn further away; each time it is moving, ease back toward the goal. That
    * hugs a wall round its corners. Having turned most of the way round without getting free, try the
    * other side; after both sides, rest and start again. It is reactive, not pathfinding: it cannot plan
-   * through a maze, and the leader's trail is always preferred when there is one.
+   * through a maze. The goal is whatever aim the caller supplies (trail or plan): once that swings well
+   * away from the goal the wall heading was built against, the wall is dropped and the new aim walked at once.
    */
   private heading(goal: number, distance: number, now: number): { angle: number; note?: string } | "rest" {
     if (now < this.restUntil) return "rest";
     const stuck = this.clicksSinceMoved >= STUCK_CLICKS && now - this.checkedAt >= (this.wall ? WALL_STUCK_MS : STUCK_MS) && this.travelled(now, this.wall ? WALL_STUCK_MS : STUCK_MS) < STUCK_TOLERANCE_PX;
     const between = (a: number, b: number) => Math.abs(Math.atan2(Math.sin(a - b), Math.cos(a - b)));
-    if (this.episode && distance <= this.episode.from - WALL_SIDE_GAIN_PX) this.episode = { at: now, from: distance, fails: 0 };
+    const gap = now - this.headedAt; this.headedAt = now;
+    if (this.episode) {
+      // Time not spent steering (label lost, panel open) is not time spent failing to get round.
+      if (gap > EPISODE_GAP_MS) this.episode.at += gap;
+      if (this.wall || stuck) this.episode.blockedAt = now;
+      // Walking free this long: the obstacle is behind us, and its side timer must not fire later.
+      else if (now - this.episode.blockedAt >= EPISODE_CLEAR_MS) this.episode = undefined;
+    }
+    if (this.episode && distance <= this.episode.from - WALL_SIDE_GAIN_PX) this.episode = { at: now, from: distance, fails: 0, blockedAt: this.episode.blockedAt };
     if (this.episode && now - this.episode.at >= WALL_SIDE_MS) {
       // A long time on this side, in and out of the wall, without getting nearer: it is not the way round.
       if (++this.episode.fails >= 2) { this.reset(); this.restUntil = now + STUCK_REST_MS; return "rest"; }
       this.preferredSide = (this.preferredSide === 1 ? -1 : 1) as 1 | -1; this.episode.at = now;
-      this.wall = { side: this.preferredSide, heading: goal + this.preferredSide * WALL_FIRST_TURN, turned: WALL_FIRST_TURN, easedAt: now, since: now, from: distance };
+      this.wall = { side: this.preferredSide, heading: goal + this.preferredSide * WALL_FIRST_TURN, goal, turned: WALL_FIRST_TURN, easedAt: now, since: now, from: distance };
       this.checkedAt = now; this.clicksSinceMoved = 0;
+    }
+    if (this.wall) {
+      // The aim now points round the other way, or back out: this heading was turned from a goal that no longer holds.
+      const swing = Math.atan2(Math.sin(goal - this.wall.goal), Math.cos(goal - this.wall.goal));
+      if (-this.wall.side * swing > WALL_SWING || Math.abs(swing) > 2 * WALL_SWING) { this.wall = undefined; this.clicksSinceMoved = 0; this.checkedAt = now; return { angle: goal }; }
     }
     if (!this.wall) {
       if (!stuck) return { angle: goal };
-      this.episode ??= { at: now, from: distance, fails: 0 };
-      this.wall = { side: this.preferredSide, heading: goal + this.preferredSide * WALL_FIRST_TURN, turned: WALL_FIRST_TURN, easedAt: now, since: now, from: distance };
+      this.episode ??= { at: now, from: distance, fails: 0, blockedAt: now };
+      this.wall = { side: this.preferredSide, heading: goal + this.preferredSide * WALL_FIRST_TURN, goal, turned: WALL_FIRST_TURN, easedAt: now, since: now, from: distance };
       this.checkedAt = now; this.clicksSinceMoved = 0;
     } else if (stuck) {
       this.wall.heading += this.wall.side * WALL_TURN; this.wall.turned += WALL_TURN; this.checkedAt = now; this.clicksSinceMoved = 0; this.wall.easedAt = now;
       if (this.wall.turned > WALL_MAX_TURN) {
         if (++this.flips >= 2) { this.reset(); this.restUntil = now + STUCK_REST_MS; return "rest"; }
         const side = (this.wall.side === 1 ? -1 : 1) as 1 | -1;
-        this.wall = { side, heading: goal + side * WALL_FIRST_TURN, turned: WALL_FIRST_TURN, easedAt: now, since: now, from: distance };
+        this.wall = { side, heading: goal + side * WALL_FIRST_TURN, goal, turned: WALL_FIRST_TURN, easedAt: now, since: now, from: distance };
       }
-    } else if (now - this.wall.easedAt >= WALL_EASE_MS && this.travelled(now, WALL_EASE_MS) >= STUCK_TOLERANCE_PX) {
+    } else {
       // Moving freely along this heading: lean back toward the goal, which is also toward the wall we are rounding.
-      this.wall.heading -= this.wall.side * WALL_EASE; this.wall.turned = Math.max(0, this.wall.turned - WALL_EASE); this.wall.easedAt = now;
+      if (now - this.wall.easedAt >= WALL_EASE_MS && this.travelled(now, WALL_EASE_MS) >= STUCK_TOLERANCE_PX) { this.wall.heading -= this.wall.side * WALL_EASE; this.wall.turned = Math.max(0, this.wall.turned - WALL_EASE); this.wall.easedAt = now; }
+      // Tested on every call, not only after easing: an aim that swings onto this heading takes over at once.
       if (between(this.wall.heading, goal) <= WALL_EASE) { this.preferredSide = this.wall.side; this.wall = undefined; this.flips = 0; return { angle: goal }; }
     }
     const degrees = Math.round(between(this.wall.heading, goal) * 180 / Math.PI);

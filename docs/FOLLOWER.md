@@ -183,12 +183,21 @@ overlay map already draws and plans before moving:
 - **Bump memory.** The map can be wrong or unexplored. Five committed clicks in a
   second that move the character less than 2.5 map px record a wall 14 px ahead,
   in the odometry frame, for 45 s (same odometry epoch only); the next plan goes
-  round it. The same spot is therefore not tried twice.
-- **Guards.** More than 30 % of the window reading as wall (a grey stone floor, a
-  bright scene) means the map is being misread: no plan. No path (leader sealed
+  round it. The same spot is therefore not tried twice. A bump needs positive
+  evidence of standing still: tracked odometry samples covering the whole second
+  of clicks. Blind odometry, a gap in it, or a previewed click proves nothing.
+- **Guards.** More than 30 % of the grid cells blocked (a grey stone floor, a
+  bright scene, speckle) means the map is being misread: no plan. No path (leader sealed
   off on the map) also means no plan. Without a plan steering falls back to the
   leader's trail, then to the straight line with reactive wall-following.
-- Priority of where to aim: terrain plan, then trail, then straight at the leader.
+- Priority of where to aim: the trail the leader actually walked, while following
+  it has not bumped into anything; otherwise the terrain plan (cold start, new
+  odometry epoch, or after a bump); then straight at the leader, which is also
+  used within 35 map px. The plane is a bare colour test, so item labels on screen
+  can read as walls: a walked path is better evidence than a planned one.
+- Reactive wall-following gives way to a plan or trail whose aim swings more than
+  45° away from the side being felt along (90° either way), and its 25 s side
+  timer only runs within 6 s of actually being blocked.
 
 In the simulated world (character stops dead at walls) it rounds a mapped wall,
 a building and two staggered walls with **no** bumps, leaves a dead-end pocket
@@ -227,9 +236,15 @@ With `sprint` on (terminal: `--sprint`), space is held while the follower is
 heading somewhere and at least 70 map px behind (let go under 40, for loot, for
 manual control, near the leader, and whenever a sighting is not trusted). The
 first press goes through `GameInputController` on the back of an accepted
-movement click; renewals are re-checked natively with every guard a click has;
-letting go is never refused. The input worker releases the key itself if it is
-not renewed within 350 ms, on any refusal, on `release`, and when it ends. If the
+movement click; renewals are re-checked natively with every guard a click has
+and **can never press the key**: a hold that lapsed (watchdog, refusal) answers
+"Sprint lapsed" and must be started again through the controller. The first
+press is refused while a person already holds space. Letting go is never
+refused, and happens before every loot click, after any refused click and on a
+failed capture. The input worker releases the key itself if it is
+not renewed within 350 ms, on any refusal of a sprint or a click, on `release`,
+and when it ends. On stop the worker is kept alive, and asked again, until it
+reports the key released (a secure desktop rejects input for a while). If the
 worker process is killed outright while holding, the key stays logically down
 until space is pressed once. **Not yet exercised live.**
 
@@ -251,7 +266,10 @@ from real frames:
   edge on nearly every row. Found the yellow-on-olive rare "Lapis Amulet" (61 of
   63 rows) that the flat detector missed.
 
-**Dark labels are never clicked.** Doors, area transitions, waypoints, NPCs, the
+**Dark labels are not clicked.** A flat fill must be bright (max channel ≥ 110) or
+clearly coloured (chroma ≥ 35 % of its brightest channel, and ≥ 45 bright); a black
+box lifted to grey by a bright backdrop fails both. A black box tinted by a
+strongly coloured backdrop remains indistinguishable from a dim coloured fill. Doors, area transitions, waypoints, NPCs, the
 ritual altar, and items your filter leaves unstyled all use the same near-black
 box with white text; nothing in the pixels tells them apart, and clicking a
 transition would leave the leader. Use an item filter that gives wanted items a
@@ -262,10 +280,20 @@ and object labels, the Options panel, or the ritual tooltip).
 It clicks the label nearest the character, through the same controller and native
 worker as movement but with module `loot` and a separate click area (the world
 view rectangle instead of the central disc), then leaves the character alone for
-450 ms to walk there. Rejoining the leader always comes first: beyond the leash it
+450 ms to walk there. Only labels that lie within the leash **of the leader**
+(screen offset ÷ map scale) are considered, so loot cannot drag the follower
+away. The camera scrolls while the character runs, so a label is clicked on its
+second sighting, led by its own drift between the two scans (70 ms worth); a
+label that sits still is clicked at its centre. Loot labels have their own fixed
+confidence floor (0.85); the leader-label confidence preference does not apply
+to them. Two neighbouring labels that the detector joins are clicked on a real
+piece, never in the gap between them. Rejoining the leader always comes first: beyond the leash it
 stops looting and follows. Labels move with the camera, so an item cannot be
 recognised between scans; five clicks in a row that never reduce the number of
-labels (full inventory, unreachable item) make it back off for 6 s.
+labels (full inventory, unreachable item) make it back off for 6 s, doubling up
+to 96 s. A lower count must be seen on two scans in a row to count as a pickup,
+so one missed detection does not reset that. A backoff or an empty scan does not
+interrupt following.
 
 Requirements and limits:
 

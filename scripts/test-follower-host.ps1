@@ -76,7 +76,7 @@ try {
   Write-Output ('Native flat-run scan: {0:N1} ms per 1792x1080 world area (10 iterations; excludes screen capture).' -f ($clock.Elapsed.TotalMilliseconds / 10))
 } finally { $world.Dispose() }
 # Hue classes measured on real labels: yellow border, the same border brightened by a drop beam, olive fill, orange fill, dark-blue fill; and what must be class 0.
-$expectHue = @{ '213,213,2' = 3; '237,212,75' = 3; '76,72,16' = 3; '238,180,97' = 2; '30,17,66' = 10; '130,99,77' = 0; '12,8,5' = 0; '250,250,250' = 0; '60,56,79' = 0 }
+$expectHue = @{ '213,213,2' = 3; '237,212,75' = 3; '76,72,16' = 3; '238,180,97' = 2; '30,17,66' = 10; '130,99,77' = 0; '12,8,5' = 0; '250,250,250' = 0; '60,56,79' = 0; '126,200,100' = 5; '100,126,200' = 9; '200,100,126' = 1; '200,100,130' = 12 }
 foreach ($rgb in $expectHue.Keys) { $p = $rgb -split ','; $got = [FollowWin]::HueClass([int]$p[0], [int]$p[1], [int]$p[2]); if ($got -ne $expectHue[$rgb]) { throw "Hue class of $rgb should be $($expectHue[$rgb]) but was $got" } }
 $hued = New-Object System.Drawing.Bitmap 200, 12, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)
 try {
