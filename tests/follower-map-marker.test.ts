@@ -80,7 +80,7 @@ function png(width: number, height: number, channels: 3 | 4, rgba: (x: number, y
 
 describe("colour channels (synthetic pixels)", () => {
   it("computes white = min(R,G,B), green = G − max(R,B) and orange = min(R − G, G − B), never below zero", () => {
-    expect(PLANE_CHANNELS).toEqual(["white", "green", "orange", "blue"]);
+    expect(PLANE_CHANNELS).toEqual(["white", "green", "orange", "blue", "outline", "mini", "terrain"]);
     const cases: Array<[number[], number, number, number]> = [
       // rgb, white, green, orange
       [[240, 250, 230], 230, 10, 0], [[255, 255, 255], 255, 0, 0], [[0, 0, 0], 0, 0, 0], [[128, 128, 128], 128, 0, 0],

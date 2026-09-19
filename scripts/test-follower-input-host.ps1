@@ -37,11 +37,16 @@ if (([FollowInput]::Check(1280, 720, 2560, 1440, 10, 120, 'anywhere')).Error -ne
 if (([FollowInput]::Check(790, 185, 2560, 1440, 10, 120, 'move')).Error -ne 'Click outside the safe movement area') { throw 'A movement click must not borrow the loot area' }
 Expect 420 500 400 1000 0 120 'Click outside the safe movement area'
 if (-not [FollowInput]::Release()) { throw 'Nothing held: release must report success and must not throw' }
+$spaceDown = [FollowInput]::Space($true); $spaceUp = [FollowInput]::Space($false)
+if ($spaceDown.Type -ne 1 -or $spaceDown.Data.Key.Vk -ne 0x20 -or $spaceDown.Data.Key.Scan -ne 0x39 -or $spaceDown.Data.Key.Flags -ne 0 -or $spaceUp.Data.Key.Flags -ne 2) { throw 'Sprint must be the space key, down then up' }
+if (-not [FollowInput]::ReleaseSprint()) { throw 'Nothing held: releasing sprint must report success and send nothing' }
+if ([FollowInput]::SprintRenewMs -gt 500) { throw 'The sprint hold must lapse quickly when it is not renewed' }
 if (-not [FollowInput]::HumanStillActive($true, 5000)) { throw 'A cursor that moved again is still under manual control' }
 if (-not [FollowInput]::HumanStillActive($false, 999)) { throw 'A cursor must rest for a full second before following resumes' }
 if ([FollowInput]::HumanStillActive($false, 1000)) { throw 'A rested cursor hands control back' }
 $source = Get-Content (Join-Path $PSScriptRoot 'win-follower-input-host.ps1') -Raw
 if ($source -notmatch 'SendInput\(2, new \[\] \{ Button\(true\), Button\(false\) \}') { throw 'Movement clicks must be one down/up batch' }
+if ($source -notmatch 'catch \{ ReleaseSprint\(\); throw; \}' -or $source -notmatch 'expired = spaceHeld && QpcMs\(\) > spaceDeadline') { throw 'Sprint must let go on any refusal and have a watchdog' }
 if ($source -notmatch 'GetAncestor\(WindowFromPoint\(cursor\), 2\) != window') { throw 'The window under the cursor must be hit-tested before clicking' }
 foreach ($forbidden in @('CopyFromScreen', 'BitBlt', 'keybd_event', 'SetWindowsHookEx', 'SetForegroundWindow', 'PostMessage')) {
   if ($source -match "\b$forbidden\b") { throw "Movement host must not reference $forbidden" }

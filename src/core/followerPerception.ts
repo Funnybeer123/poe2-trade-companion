@@ -7,13 +7,20 @@ export interface PixelRect { x: number; y: number; width: number; height: number
  * outlines, which show how far the map (and so the player) has moved.
  * scripts/win-follower-host.ps1 implements the same formulas natively.
  */
-export type PlaneChannel = "white" | "green" | "orange" | "blue";
-export const PLANE_CHANNELS: readonly PlaneChannel[] = ["white", "green", "orange", "blue"];
+export type PlaneChannel = "white" | "green" | "orange" | "blue" | "outline" | "mini" | "terrain";
+export const PLANE_CHANNELS: readonly PlaneChannel[] = ["white", "green", "orange", "blue", "outline", "mini", "terrain"];
 export function channelValue(r: number, g: number, b: number, channel: PlaneChannel): number {
   if (channel === "white") return Math.min(r, g, b);
   if (channel === "green") return Math.max(0, g - Math.max(r, b));
   if (channel === "orange") return Math.max(0, Math.min(r - g, g - b));
-  return Math.max(0, b - r);
+  if (channel === "blue") return Math.max(0, b - r);
+  // The overlay map's building models are translucent white: bright and nearly neutral. The value is the brightness.
+  const max = Math.max(r, g, b), mini = max - Math.min(r, g, b) <= 22 ? max : 0;
+  if (channel === "mini") return mini;
+  // Terrain: anything the overlay map draws as not walkable (outline, water edge, building model), as a yes/no plane.
+  if (channel === "terrain") return (b >= 90 ? Math.max(0, b - Math.max(r, g)) : 0) >= 14 || mini >= 125 ? 255 : 0;
+  // The walkable-area outline (lavender) and water edges (bright blue): blue above both other channels, and not dark.
+  return b >= 90 ? Math.max(0, b - Math.max(r, g)) : 0;
 }
 /** One byte per pixel of one PlaneChannel. */
 export interface WhiteFrame { width: number; height: number; pixels: Uint8Array }

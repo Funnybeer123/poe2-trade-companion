@@ -429,7 +429,7 @@ describe("follow drive start conditions (synthetic hosts, no OS input)", () => {
     rig.clock! += 1000;
     await expect.poll(() => keys().slice(before).some(request => request.full === true), soon).toBe(true);
     // Following never asks for a screenshot, a dense sample, or a recording.
-    expect(new Set(ops(rig.capture))).toEqual(new Set(["ping", "key"]));
+    expect(new Set(ops(rig.capture))).toEqual(new Set(["ping", "key", "terrain"]));
   });
   it("stops and closes both workers when either fails its ping", async () => {
     const rig = await calibrated();

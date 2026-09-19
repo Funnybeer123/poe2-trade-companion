@@ -157,6 +157,59 @@ clicks into a building in three minutes). Two mechanisms replace that:
   character stops dead at walls it gets round a wall, a large building and two
   staggered walls, with and without odometry, and rests when sealed in.
 
+### Reading the landscape and planning a way round it
+
+Reacting to walls only after hitting them is slow and, from a cold start behind
+a building, failed live. `src/core/followerTerrain.ts` reads the terrain the
+overlay map already draws and plans before moving:
+
+- **What counts as wall.** One native plane, `terrain`: the walkable-area outline
+  (lavender; `B − max(R,G) ≥ 14` with `B ≥ 90`, which also takes the bright-blue
+  water edges) or a building model (translucent white: `max − min ≤ 22` and
+  `max ≥ 125`). Measured on a real frame: 2,586 outline and 15,699 building
+  pixels in an 864 × 634 window, with only specks of scenery. The outline alone
+  is not enough: where it crosses a white building model it is washed out, and
+  on the real frame a path leaked through exactly such a gap next to the player.
+- **Planning.** Five times a second the capture-only host returns those pixels
+  for a window around the map centre (inside the world view, clear of the HUD).
+  They become walls on a 4 px grid, dilated by one cell; A* (8 neighbours, no
+  corner cutting, extra cost beside walls) runs from the player's marker to the
+  leader's, or to where the line toward the leader leaves the window. Steering
+  aims at the farthest point within 56 map px along that path that is reachable
+  in a straight line. Unexplored map has no walls, so the path goes out through
+  explored openings and then straight. On the real stuck frame it planned back
+  down the corridor, out its open end, and round the building (1,045 px) in
+  11 ms; typical plans take 3–7 ms.
+- **Bump memory.** The map can be wrong or unexplored. Five committed clicks in a
+  second that move the character less than 2.5 map px record a wall 14 px ahead,
+  in the odometry frame, for 45 s (same odometry epoch only); the next plan goes
+  round it. The same spot is therefore not tried twice.
+- **Guards.** More than 30 % of the window reading as wall (a grey stone floor, a
+  bright scene) means the map is being misread: no plan. No path (leader sealed
+  off on the map) also means no plan. Without a plan steering falls back to the
+  leader's trail, then to the straight line with reactive wall-following.
+- Priority of where to aim: terrain plan, then trail, then straight at the leader.
+
+In the simulated world (character stops dead at walls) it rounds a mapped wall,
+a building and two staggered walls with **no** bumps, leaves a dead-end pocket
+the way it came in, and learns an unmapped wall after one or two bumps.
+**Not yet verified live**: when this was finished the leader was not on the
+follower's map, so only the saved real frame and simulations have exercised it.
+It depends on this zone's map colours; zones whose scenery is grey, white or blue
+may trip the 30 % guard and fall back.
+
+### Sprint
+
+With `sprint` on (terminal: `--sprint`), space is held while the follower is
+heading somewhere and at least 70 map px behind (let go under 40, for loot, for
+manual control, near the leader, and whenever a sighting is not trusted). The
+first press goes through `GameInputController` on the back of an accepted
+movement click; renewals are re-checked natively with every guard a click has;
+letting go is never refused. The input worker releases the key itself if it is
+not renewed within 350 ms, on any refusal, on `release`, and when it ends. If the
+worker process is killed outright while holding, the key stays logically down
+until space is pressed once. **Not yet exercised live.**
+
 ### Loot pickup
 
 With **Collect nearby eligible loot** on (terminal: `--loot`, `--leash`), every

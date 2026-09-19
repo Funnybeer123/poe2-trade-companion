@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { FollowerInputSink, LOOT_CLICK, type FollowerFrameGuard } from "../adapters/followerInputSink.js";
+import { FollowerInputSink, LOOT_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../adapters/followerInputSink.js";
 import { pngPlanes } from "../adapters/pngWhiteness.js";
 import { startWinHost } from "../adapters/winHost.js";
 import {
@@ -8,6 +8,7 @@ import {
   type MapCalibration, type SteeringDecision,
 } from "../core/followerMapMarker.js";
 import { decodeFlatRuns, decodeHueRuns, findLootLabels, LOOT_MIN_BRIGHTNESS, LOOT_MIN_RUN, lootArea, LootPlanner } from "../core/followerLoot.js";
+import { TERRAIN_CHANNEL, TERRAIN_POINT_CAP, TERRAIN_THRESHOLD, TerrainPlanner, terrainWindow, type TerrainPlan } from "../core/followerTerrain.js";
 import { LeaderTrail, MapOdometry, ODOMETRY_CHANNEL, ODOMETRY_THRESHOLD, odometryWindow } from "../core/followerTrail.js";
 import { templatePixelCount, type PixelRect } from "../core/followerPerception.js";
 import { GameInputController } from "../core/gameInputController.js";
@@ -32,7 +33,9 @@ interface DriveOptions {
   pollMs?: number;
 }
 const GAME_PROCESSES = ["pathofexile", "pathofexile_x64", "pathofexilesteam", "pathofexile_x64steam", "pathofexileegs", "pathofexile_x64egs"];
-const FRAME_MAX_AGE_MS = 120, MANUAL_PAUSE_MS = 1500, ACTIONS_PER_MINUTE = 600, MAP_PX_PER_FOLLOW_UNIT = 6, LOOT_SCAN_MS = 250;
+const FRAME_MAX_AGE_MS = 120, MANUAL_PAUSE_MS = 1500, ACTIONS_PER_MINUTE = 600, MAP_PX_PER_FOLLOW_UNIT = 6, LOOT_SCAN_MS = 250, PLAN_MS = 200, PLAN_KEEP_MS = 600;
+/** Sprint (hold space) only while well behind the leader, with hysteresis so it does not flutter. */
+const SPRINT_START_PX = 70, SPRINT_STOP_PX = 40;
 /** The fastest pacing the action cap can sustain: a shorter interval would always end in a rate-limit stop. */
 export const MIN_CLICK_INTERVAL_MS = Math.ceil(60_000 / ACTIONS_PER_MINUTE);
 const FOCUS = /Focus Path of Exile 2/, COVERED = /covered at the click point/;
@@ -42,7 +45,8 @@ export function defaultDriveSettings(): FollowerDriveSettings { return { version
 export function parseDriveSettings(raw: unknown): FollowerDriveSettings {
   const s = raw as FollowerDriveSettings | null;
   if (!s || s.version !== 1 || typeof s.dryRun !== "boolean" || !Number.isFinite(s.mapScale) || s.mapScale < 2 || s.mapScale > 20 || !Number.isInteger(s.clickIntervalMs) || s.clickIntervalMs < MIN_CLICK_INTERVAL_MS || s.clickIntervalMs > 1000) throw new Error(`Invalid follow settings: map scale 2–20 and click interval ${MIN_CLICK_INTERVAL_MS}–1000 ms.`);
-  return { version: 1, dryRun: s.dryRun, mapScale: s.mapScale, clickIntervalMs: s.clickIntervalMs };
+  if (s.sprint !== undefined && typeof s.sprint !== "boolean") throw new Error("Invalid follow settings: sprint must be on or off.");
+  return { version: 1, dryRun: s.dryRun, mapScale: s.mapScale, clickIntervalMs: s.clickIntervalMs, ...(s.sprint ? { sprint: true } : {}) };
 }
 function percentile(values: number[], p: number): number | undefined {
   if (!values.length) return undefined;
@@ -69,11 +73,13 @@ export class FollowerDriveService {
   private decision?: SteeringDecision;
   private frame?: FollowerFrameGuard & { at: number };
   private odometry?: FollowerDriveStatus["odometry"];
+  private terrain?: FollowerDriveStatus["terrain"];
   private cycles: number[] = [];
   private latencies: number[] = [];
   /** Capture-to-click times of the first click after standing near the leader: the reaction to them moving off. */
   private resumes: number[] = [];
-  private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0 };
+  private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0 };
+  private sprinting = false;
   private startedAt = 0;
   private readonly calibrationFile: string;
   private readonly settingsFile: string;
@@ -96,7 +102,7 @@ export class FollowerDriveService {
       calibration: c && { targetName: c.targetName, view: c.view, origin: new MapMarkerTracker(c).origin, markerOffset: c.markerOffset, labelPixels: templatePixelCount(c.label), labelMask: c.label.mask, calibratedAt: c.calibratedAt },
       calibrationIssue: this.calibrationError ?? (c ? mapCalibrationIssue(c, this.options.follow().targetName) : undefined),
       observation: o && { ...o, ageMs: Math.max(0, Math.round(this.now() - o.capturedAt)) },
-      decision: this.decision, odometry: this.running ? this.odometry : undefined,
+      decision: this.decision, odometry: this.running ? this.odometry : undefined, terrain: this.running ? this.terrain : undefined, sprinting: this.running && this.sprinting,
       stats: this.counts.cycles ? {
         ...this.counts, observationsPerSecond: elapsed > 0 ? Math.round(this.counts.cycles / elapsed * 10) / 10 : 0,
         cycleMsP50: percentile(this.cycles, .5), cycleMsP95: cycleP95, captureToInputMsP50: percentile(this.latencies, .5), captureToInputMsP95: inputP95,
@@ -116,7 +122,7 @@ export class FollowerDriveService {
     return this.status();
   }
   stop(reason = "Following stopped."): FollowerDriveStatus {
-    this.generation++; this.running = false; this.reason = reason; this.observation = undefined; this.decision = undefined; this.frame = undefined;
+    this.generation++; this.running = false; this.sprinting = false; this.reason = reason; this.observation = undefined; this.decision = undefined; this.frame = undefined;
     clearTimeout(this.timer); this.timer = undefined;
     const capture = this.captureHost, input = this.inputHost; this.captureHost = undefined; this.inputHost = undefined;
     if (capture) void capture.close().catch(() => {});
@@ -193,14 +199,17 @@ export class FollowerDriveService {
     }, FRAME_MAX_AGE_MS);
     const controller = new GameInputController(sink, this.options.killSwitch, this.options.mode);
     this.running = true; this.reason = "Starting capture and input workers…";
-    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0 }; this.startedAt = this.now();
+    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0 }; this.sprinting = false; this.startedAt = this.now();
     let manualUntil = -Infinity, pauseReason = "", wasNear = false, lastLootScanAt = -Infinity;
     const odometry = new MapOdometry(), trail = new LeaderTrail(), watch = { ...odometryWindow(tracker.origin, calibration.view), channel: ODOMETRY_CHANNEL, threshold: ODOMETRY_THRESHOLD };
+    const terrain = new TerrainPlanner(), terrainArea = terrainWindow(tracker.origin, calibration.view);
+    let plan: (TerrainPlan & { at: number }) | undefined, lastPlanAt = -Infinity, sprinting = false;
+    const letGo = async () => { if (sprinting) { sprinting = false; this.sprinting = false; await sink.releaseSprint(); } };
     const loot = new LootPlanner(), leashPx = (follow.lootLeash ?? 0) * MAP_PX_PER_FOLLOW_UNIT;
     /** Runs one executed decision through the controller and says what became of it. */
-    const execute = async (module: "navigation" | "loot", rule: string, reason: string, x: number, y: number, confidence: number, process: string, allowed: boolean, evidence: string, lootEnabled: boolean, threshold: number): Promise<"emitted" | "previewed" | "paused" | "retry" | "stopped"> => {
+    const execute = async (module: "navigation" | "loot", rule: string, reason: string, x: number, y: number, confidence: number, process: string, allowed: boolean, evidence: string, lootEnabled: boolean, threshold: number, sprint = false): Promise<"emitted" | "previewed" | "paused" | "retry" | "stopped"> => {
       const policy = scenario({ id: "follow-map-marker", name: "Follow by overlay map", enabledModules: lootEnabled ? ["navigation", "loot"] : ["navigation"], dryRun: previewOnly || this.dryRun(), actionsPerMinute: ACTIONS_PER_MINUTE, confidenceThreshold: threshold, timingProfile: "tight" });
-      const traces = await controller.execute({ module, rule, reason, intended: [{ kind: "click", x, y, button: "left", ...(module === "loot" ? { text: LOOT_CLICK } : {}) }], confidence }, policy, process, evidence, allowed);
+      const traces = await controller.execute({ module, rule, reason, intended: [sprint ? { kind: "key", key: "space", text: SPRINT_HOLD } : { kind: "click", x, y, button: "left", ...(module === "loot" ? { text: LOOT_CLICK } : {}) }], confidence }, policy, process, evidence, allowed);
       this.options.audit?.(traces);
       // Long sessions must not retain every trace in memory.
       controller.actionTraces.splice(0);
@@ -237,14 +246,28 @@ export class FollowerDriveService {
           observation.timing.matchMs = Math.round((this.now() - received) * 10) / 10;
           this.observation = { ...observation, ageMs: 0 };
           this.frame = { hwnd: String(reply.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(reply.capturedAtQpcMs), at: started };
-          const manual = this.now() < manualUntil, distance = observation.offset?.distance ?? Infinity;
+          const distance = observation.offset?.distance ?? Infinity;
+          const manual = this.now() < manualUntil;
           // Our own movement from the slide of the map outlines, then the leader's path in that frame.
           const moved = odometry.update(reply.thirdOverflow || typeof reply.thirdPoints !== "string" ? undefined : decodeKeyPoints(reply.thirdPoints), started);
           const trusted = observation.leaderFound && !!observation.offset && observation.confidence >= current.confidence && observation.originVerified;
           if (trusted && moved.tracked) trail.record(odometry.position, observation.offset!, odometry.epoch);
-          const aim = trusted ? trail.aim(odometry.position, observation.offset!, odometry.epoch) : undefined;
+          const trailAim = trusted ? trail.aim(odometry.position, observation.offset!, odometry.epoch) : undefined;
+          // Read the landscape off the overlay map a few times a second and plan a way to the leader round what it shows.
+          if (moved.tracked) terrain.noteMotion(moved, started);
+          if (trusted && !manual && started - lastPlanAt >= PLAN_MS && observation.offset!.distance > stopPx) {
+            lastPlanAt = started;
+            const scanned = await capture.send({ op: "terrain", ...terrainArea, full: false, channel: TERRAIN_CHANNEL, threshold: TERRAIN_THRESHOLD, cap: TERRAIN_POINT_CAP });
+            if (!live()) return;
+            if (scanned.ok && !scanned.overflow && Number(scanned.width) === view.width && Number(scanned.height) === view.height) plan = { ...terrain.plan(decodeKeyPoints(scanned.points), terrainArea, observation.origin, observation.offset!, odometry.position, odometry.epoch, started), at: started };
+            else plan = undefined;
+          }
+          if (plan && started - plan.at > PLAN_KEEP_MS) plan = undefined;
+          const planned = trusted && plan?.aim ? plan.aim : undefined;
+          const aim = planned ? { ...planned, via: "plan" as const } : trailAim;
           this.odometry = { tracked: moved.tracked, quality: moved.quality, trailPoints: trail.length, via: aim?.via ?? "direct" };
-          let decision: SteeringDecision = manual ? { kind: "pause", reason: pauseReason } : steering.decide(observation, this.now(), aim?.via === "trail" ? aim : undefined, moved);
+          this.terrain = plan && { planned: !!plan.aim, pathPx: plan.pathPx, walls: plan.walls, bumps: plan.bumps, blockedAhead: plan.blockedAhead, planMs: plan.planMs };
+          let decision: SteeringDecision = manual ? { kind: "pause", reason: pauseReason } : steering.decide(observation, this.now(), aim && aim.via !== "direct" ? aim : undefined, moved);
           if (decision.kind === "near") wasNear = true;
           this.counts.cycles++; this.cycles.push(this.now() - started); if (this.cycles.length > 600) this.cycles.shift();
           // Loot only with a trusted sighting of the leader inside the leash, a verified map centre (so no
@@ -272,10 +295,22 @@ export class FollowerDriveService {
           // While the character walks to an item, do not pull it back toward the leader.
           else if (canLoot && loot.busy(this.now()) && decision.kind === "move") decision = { kind: "hold", reason: "Walking to a loot pickup.", distance };
           this.decision = decision; this.reason = decision.reason;
+          // Sprint while far behind and actually heading somewhere; let go for loot, manual control, arrival, or anything unsure.
+          const heading = decision.kind === "move" || (decision.kind === "hold" && decision.reason === "Pacing movement clicks.");
+          const wantSprint = this.settings.sprint === true && heading && !manual && trusted && distance >= (sprinting ? SPRINT_STOP_PX : SPRINT_START_PX) && !loot.busy(this.now());
+          if (!wantSprint) await letGo();
+          else if (sprinting) { try { await sink.renewSprint(); } catch { sprinting = false; this.sprinting = false; } }
           if (decision.kind === "move") {
             const evidence = JSON.stringify({ capturedAtQpcMs: this.frame!.capturedAtQpcMs, hwnd: this.frame!.hwnd, leader: observation.leader, origin: observation.origin, offset: observation.offset, evidence: observation.evidence });
             const outcome = await execute("navigation", "follow-map-marker", decision.reason, decision.x, decision.y, observation.confidence, process, allowed, evidence, lootOn, current.confidence);
             if (outcome === "stopped") return;
+            if (outcome === "emitted" || outcome === "previewed") terrain.noteClick({ dx: decision.x - observation.origin.x, dy: decision.y - observation.origin.y }, odometry.position, odometry.epoch, this.now());
+            // Start sprinting only on the back of an accepted movement click, so the cursor is already where we are heading.
+            if (outcome === "emitted" && wantSprint && !sprinting) {
+              const started = await execute("navigation", "sprint-to-catch-up", `Sprint: ${Math.round(distance)} map px behind.`, decision.x, decision.y, observation.confidence, process, allowed, evidence, lootOn, current.confidence, true);
+              if (started === "stopped") return;
+              if (started === "emitted") { sprinting = true; this.sprinting = true; this.counts.sprints++; }
+            }
             if (outcome === "emitted") {
               steering.committed(this.now()); this.counts.clicks++;
               if (sink.lastInput) {

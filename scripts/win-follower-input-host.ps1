@@ -93,10 +93,52 @@ public static class FollowInput {
     }
     return false;
   }
+  // Sprint is a held key, so it has a dead-man's switch: unless the loop renews it every few captures, a
+  // background thread lets go. It is also released on any refusal, on "release", and when this worker ends.
+  static readonly object sprintGate = new object();
+  static bool spaceHeld;
+  static long spaceDeadline;
+  static Thread sprintWatchdog;
+  public const int SprintRenewMs = 350;
+  public static FollowInputEvent Space(bool down) {
+    FollowInputEvent input = new FollowInputEvent(); input.Type = 1; input.Data.Key.Vk = 0x20; input.Data.Key.Scan = 0x39; input.Data.Key.Flags = down ? 0u : 2u; return input;
+  }
+  public static bool ReleaseSprint() {
+    lock (sprintGate) {
+      if (!spaceHeld) return true;
+      int size = Marshal.SizeOf(typeof(FollowInputEvent));
+      for (int attempt = 0; attempt < 3; attempt++) { if (SendInput(1, new [] { Space(false) }, size) == 1) { spaceHeld = false; return true; } Thread.Sleep(5); }
+      return false;
+    }
+  }
+  static void EnsureWatchdog() {
+    if (sprintWatchdog != null) return;
+    sprintWatchdog = new Thread(() => { while (true) { Thread.Sleep(40); bool expired; lock (sprintGate) { expired = spaceHeld && QpcMs() > spaceDeadline; } if (expired) ReleaseSprint(); } });
+    sprintWatchdog.IsBackground = true; sprintWatchdog.Name = "Follower sprint watchdog"; sprintWatchdog.Start();
+  }
+  // Presses space if it is not held yet and renews the hold; every guard a click has applies, and failing any of them lets go.
+  public static void Sprint(string expectedHwnd, int viewWidth, int viewHeight, long capturedAtQpcMs, int maxAgeMs) {
+    try {
+      FollowClickCheck check = Check(viewWidth / 2, viewHeight / 2, viewWidth, viewHeight, QpcMs() - capturedAtQpcMs, maxAgeMs, "move");
+      if (!check.Ok) throw new Exception(check.Error);
+      IntPtr window = GetForegroundWindow();
+      if (window == IntPtr.Zero || !Allowed(ProcessName(window))) throw new Exception("Focus Path of Exile 2 to continue");
+      if (window.ToInt64().ToString() != expectedHwnd) throw new Exception("Game window changed");
+      Rectangle bounds = Bounds(window);
+      if (bounds.Width != viewWidth || bounds.Height != viewHeight) throw new Exception("Game view changed");
+      ThrowIfHumanInput();
+      if (humanSeen) throw new Exception("Manual mouse movement");
+      EnsureWatchdog();
+      lock (sprintGate) {
+        if (!spaceHeld) { if (SendInput(1, new [] { Space(true) }, Marshal.SizeOf(typeof(FollowInputEvent))) != 1) throw new Exception("Windows rejected sprint input"); spaceHeld = true; }
+        spaceDeadline = QpcMs() + SprintRenewMs;
+      }
+    } catch { ReleaseSprint(); throw; }
+  }
   static void NoteHuman(FollowInputPoint cursor) { placed = false; humanSeen = true; humanAt = cursor; humanSince = QpcMs(); }
   public static void MoveClick(int x, int y, string expectedHwnd, int viewWidth, int viewHeight, long capturedAtQpcMs, int maxAgeMs, string area) {
     FollowClickCheck check = Check(x, y, viewWidth, viewHeight, QpcMs() - capturedAtQpcMs, maxAgeMs, area);
-    if (!check.Ok) throw new Exception(check.Error);
+    if (!check.Ok) { ReleaseSprint(); throw new Exception(check.Error); }
     if (!Release()) throw new Exception("A movement button release was rejected earlier");
     if (GetSystemMetrics(23) != 0) throw new Exception("Swapped mouse buttons are not supported: turn off 'Switch primary and secondary buttons' to follow");
     IntPtr window = GetForegroundWindow();
@@ -144,7 +186,11 @@ try { while ($null -ne ($line = [Console]::ReadLine())) {
   try {
     $command = $line | ConvertFrom-Json
     if ($command.op -eq 'ping') { $reply = @{ ok = $true } }
-    elseif ($command.op -eq 'release') { $reply = @{ ok = [FollowInput]::Release() } }
+    elseif ($command.op -eq 'release') { $sprintReleased = [FollowInput]::ReleaseSprint(); $reply = @{ ok = ([FollowInput]::Release() -and $sprintReleased) } }
+    elseif ($command.op -eq 'sprint') {
+      if ($command.hold -eq $true) { [FollowInput]::Sprint([string]$command.expectedHwnd, [int]$command.viewWidth, [int]$command.viewHeight, [long]$command.capturedAtQpcMs, [int]$command.maxAgeMs); $reply = @{ ok = $true; held = $true } }
+      else { $reply = @{ ok = [FollowInput]::ReleaseSprint(); held = $false } }
+    }
     elseif ($command.op -eq 'moveclick') {
       $started = [FollowInput]::QpcMs()
       [FollowInput]::MoveClick([int]$command.x, [int]$command.y, [string]$command.expectedHwnd, [int]$command.viewWidth, [int]$command.viewHeight, [long]$command.capturedAtQpcMs, [int]$command.maxAgeMs, $(if ($null -eq $command.area) { 'move' } else { [string]$command.area }))
@@ -158,4 +204,4 @@ try { while ($null -ne ($line = [Console]::ReadLine())) {
   }
   [Console]::WriteLine(($reply | ConvertTo-Json -Compress))
   [Console]::Out.Flush()
-} } finally { [void][FollowInput]::Release(); try { [void][FollowInput]::timeEndPeriod(1) } catch {} }
+} } finally { [void][FollowInput]::ReleaseSprint(); [void][FollowInput]::Release(); try { [void][FollowInput]::timeEndPeriod(1) } catch {} }

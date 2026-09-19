@@ -7,6 +7,8 @@ export interface FollowerFrameGuard { hwnd: string; viewWidth: number; viewHeigh
 
 /** Marks a click as a loot pickup: the input worker then allows the world view instead of the central movement disc. */
 export const LOOT_CLICK = "loot";
+/** Marks a key action as starting the sprint hold. Renewing and releasing it are not new input and have their own methods. */
+export const SPRINT_HOLD = "hold";
 /** One guarded left-click per action: no queue, no focus changes, no keys, nothing held after it returns. */
 export class FollowerInputSink implements InputSink {
   /** Native timings of the most recent accepted click: host time and capture-start to click-complete. */
@@ -16,11 +18,28 @@ export class FollowerInputSink implements InputSink {
     const frame = this.guard();
     if (!frame) throw new Error("Follow stopped or capture stale");
     if (!frame.hwnd || !Number.isFinite(frame.capturedAtQpcMs) || !Number.isInteger(frame.viewWidth) || !Number.isInteger(frame.viewHeight)) throw new Error("Capture stale: incomplete capture guard");
+    if (action.kind === "key") {
+      if (action.key !== "space" || action.text !== SPRINT_HOLD) throw new Error("Invalid follow action");
+      await this.holdSprint(frame);
+      return;
+    }
     if (action.text !== undefined && action.text !== LOOT_CLICK) throw new Error("Invalid follow action");
     if (action.kind !== "click" || (action.button ?? "left") !== "left" || action.modifier || !Number.isInteger(action.x) || !Number.isInteger(action.y)) throw new Error("Invalid follow action");
     const result = await this.host.send({ op: "moveclick", x: action.x, y: action.y, expectedHwnd: frame.hwnd, viewWidth: frame.viewWidth, viewHeight: frame.viewHeight, capturedAtQpcMs: frame.capturedAtQpcMs, maxAgeMs: this.maxAgeMs, area: action.text === LOOT_CLICK ? "loot" : "move" });
     if (!result.ok) throw new Error(String(result.error ?? "Follow input failed"));
     this.lastInput = { inputMs: Number(result.inputMs) || 0, captureToInputMs: Number(result.captureToInputMs) || 0 };
   }
+  private async holdSprint(frame: FollowerFrameGuard): Promise<void> {
+    const result = await this.host.send({ op: "sprint", hold: true, expectedHwnd: frame.hwnd, viewWidth: frame.viewWidth, viewHeight: frame.viewHeight, capturedAtQpcMs: frame.capturedAtQpcMs, maxAgeMs: this.maxAgeMs });
+    if (!result.ok) throw new Error(String(result.error ?? "Sprint input failed"));
+  }
+  /** Keeps an already started sprint alive for another few hundred milliseconds. The worker re-checks every guard and lets go if any fails. */
+  async renewSprint(): Promise<void> {
+    const frame = this.guard();
+    if (!frame) { await this.releaseSprint(); throw new Error("Follow stopped or capture stale"); }
+    await this.holdSprint(frame);
+  }
+  /** Letting go is never refused: not by the guard, the kill switch, or dry-run. */
+  async releaseSprint(): Promise<void> { await this.host.send({ op: "sprint", hold: false }).catch(() => undefined); }
   clear(): void { /* One action at a time; the worker releases the button itself and is terminated on stop. */ }
 }

@@ -24,6 +24,9 @@ try {
 } finally { $bitmap.Dispose() }
 # Channel formulas must match channelValue() in src/core/followerPerception.ts.
 if ([FollowWin]::ChannelValue(60, 210, 80, 'green') -ne 130 -or [FollowWin]::ChannelValue(250, 250, 250, 'green') -ne 0 -or [FollowWin]::ChannelValue(200, 90, 20, 'green') -ne 0) { throw 'Green channel mismatch' }
+foreach ($case in @(@(128,123,157,255), @(62,127,165,255), @(148,140,138,255), @(124,115,112,0), @(150,110,80,0), @(60,50,45,0), @(238,180,97,0))) { if ([FollowWin]::ChannelValue($case[0], $case[1], $case[2], 'terrain') -ne $case[3]) { throw "Terrain channel mismatch for $($case[0..2] -join ',')" } }
+if ([FollowWin]::ChannelValue(148, 140, 138, 'mini') -ne 148 -or [FollowWin]::ChannelValue(150, 110, 80, 'mini') -ne 0) { throw 'Mini channel mismatch' }
+if ([FollowWin]::ChannelValue(128, 123, 157, 'outline') -ne 29 -or [FollowWin]::ChannelValue(62, 127, 165, 'outline') -ne 38 -or [FollowWin]::ChannelValue(150, 110, 80, 'outline') -ne 0 -or [FollowWin]::ChannelValue(40, 38, 80, 'outline') -ne 0 -or [FollowWin]::ChannelValue(180, 175, 172, 'outline') -ne 0) { throw 'Outline channel mismatch' }
 if ([FollowWin]::ChannelValue(62, 127, 165, 'blue') -ne 103 -or [FollowWin]::ChannelValue(200, 150, 100, 'blue') -ne 0) { throw 'Blue channel mismatch' }
 if ([FollowWin]::ChannelValue(230, 120, 30, 'orange') -ne 90 -or [FollowWin]::ChannelValue(200, 30, 30, 'orange') -ne 0 -or [FollowWin]::ChannelValue(60, 210, 80, 'orange') -ne 0) { throw 'Orange channel mismatch' }
 $keyed = New-Object System.Drawing.Bitmap 20, 12, ([System.Drawing.Imaging.PixelFormat]::Format32bppArgb)

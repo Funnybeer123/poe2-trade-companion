@@ -98,6 +98,9 @@ public static class FollowWin {
     if (channel == "green") return 1;
     if (channel == "orange") return 2;
     if (channel == "blue") return 3;
+    if (channel == "outline") return 4;
+    if (channel == "mini") return 5;
+    if (channel == "terrain") return 6;
     throw new Exception("Unknown channel");
   }
   public static int ChannelValue(int r, int g, int b, string channel) { return ChannelValue(r, g, b, ChannelId(channel)); }
@@ -106,7 +109,15 @@ public static class FollowWin {
     if (channel == 0) return Math.Min(r, Math.Min(g, b));
     if (channel == 1) return Math.Max(0, g - Math.Max(r, b));
     if (channel == 2) return Math.Max(0, Math.Min(r - g, g - b));
-    return Math.Max(0, b - r);
+    if (channel == 3) return Math.Max(0, b - r);
+    // The overlay map's walkable-area outline is lavender and its water edges bright blue: blue above both other channels.
+    int outline = b >= 90 ? Math.Max(0, b - Math.Max(r, g)) : 0;
+    if (channel == 4) return outline;
+    // The map's building models are translucent white: bright and nearly neutral. The value is the brightness.
+    int max = Math.Max(r, Math.Max(g, b)), mini = max - Math.Min(r, Math.Min(g, b)) <= 22 ? max : 0;
+    if (channel == 5) return mini;
+    // Terrain: anything the overlay map draws as not walkable, as a yes/no plane.
+    return outline >= 14 || mini >= 125 ? 255 : 0;
   }
   // Client coordinates of every pixel in the rectangle whose channel value reaches the threshold,
   // as little-endian UInt16 x,y pairs. Null when there are more than the cap: not a UI marker.
@@ -217,9 +228,11 @@ public static class FollowWin {
   }
   // One capture of the union of both rectangles; only sparse marker pixels cross the pipe.
   public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold) { return Key(area, full, channel, threshold, second, secondChannel, secondThreshold, Rectangle.Empty, "blue", 255); }
-  public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold, Rectangle third, string thirdChannel, int thirdThreshold) {
+  public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold, Rectangle third, string thirdChannel, int thirdThreshold) { return Key(area, full, channel, threshold, second, secondChannel, secondThreshold, third, thirdChannel, thirdThreshold, 6000); }
+  public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold, Rectangle third, string thirdChannel, int thirdThreshold, int cap) {
     long capturedAt = QpcMs(), started = Clock.ElapsedMilliseconds;
-    if (threshold < 20 || threshold > 255 || secondThreshold < 20 || secondThreshold > 255 || thirdThreshold < 20 || thirdThreshold > 255) throw new Exception("Invalid key threshold");
+    if (cap < 100 || cap > 20000) throw new Exception("Invalid point cap");
+    if (threshold < 10 || threshold > 255 || secondThreshold < 20 || secondThreshold > 255 || thirdThreshold < 20 || thirdThreshold > 255) throw new Exception("Invalid key threshold");
     IntPtr window = Foreground();
     Rectangle bounds = Bounds(window);
     if (full) area = new Rectangle(0, 0, bounds.Width, bounds.Height);
@@ -228,7 +241,7 @@ public static class FollowWin {
     if (!second.IsEmpty) { RequireInside(second, bounds); union = Rectangle.Union(area, second); }
     if (!third.IsEmpty) { RequireInside(third, bounds); union = Rectangle.Union(union, third); }
     Bitmap bitmap = Capture(bounds, union.X, union.Y, union.Width, union.Height);
-    byte[] first = KeyPoints(bitmap, union.X, union.Y, area, channel, threshold, 6000);
+    byte[] first = KeyPoints(bitmap, union.X, union.Y, area, channel, threshold, cap);
     byte[] other = second.IsEmpty ? new byte[0] : KeyPoints(bitmap, union.X, union.Y, second, secondChannel, secondThreshold, 2000);
     byte[] extra = third.IsEmpty ? new byte[0] : KeyPoints(bitmap, union.X, union.Y, third, thirdChannel, thirdThreshold, 8000);
     if (GetForegroundWindow() != window || Bounds(window) != bounds) throw new Exception("Game focus or view changed during capture");
@@ -256,7 +269,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
       $area = New-Object System.Drawing.Rectangle ([int]$command.x), ([int]$command.y), ([int]$command.width), ([int]$command.height)
       $reply = [FollowWin]::Runs($area, [int]$command.minLength, [int]$command.minBrightness)
     }
-    elseif ($command.op -eq 'key') {
+    elseif ($command.op -eq 'key' -or $command.op -eq 'terrain') {   # 'terrain' is the same capture under its own name, so logs and tests can tell map reading from marker tracking
       $area = New-Object System.Drawing.Rectangle ([int]$command.x), ([int]$command.y), ([int]$command.width), ([int]$command.height)
       $second = [System.Drawing.Rectangle]::Empty; $secondChannel = 'orange'; $secondThreshold = 255
       if ($null -ne $command.second) {
@@ -268,7 +281,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         $third = New-Object System.Drawing.Rectangle ([int]$command.third.x), ([int]$command.third.y), ([int]$command.third.width), ([int]$command.third.height)
         $thirdChannel = [string]$command.third.channel; $thirdThreshold = [int]$command.third.threshold
       }
-      $reply = [FollowWin]::Key($area, $command.full -eq $true, [string]$command.channel, [int]$command.threshold, $second, $secondChannel, $secondThreshold, $third, $thirdChannel, $thirdThreshold)
+      $reply = [FollowWin]::Key($area, $command.full -eq $true, [string]$command.channel, [int]$command.threshold, $second, $secondChannel, $secondThreshold, $third, $thirdChannel, $thirdThreshold, $(if ($null -eq $command.cap) { 6000 } else { [int]$command.cap }))
     }
     else { throw 'Unknown follower capture operation' }
   } catch {

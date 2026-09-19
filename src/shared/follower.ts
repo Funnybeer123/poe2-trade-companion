@@ -25,7 +25,7 @@ export interface FollowerPerceptionStatus {
   recording?: { directory: string; frames: number; remainingMs: number };
   lastRecording?: { directory: string; frames: number };
 }
-export interface FollowerDriveSettings { version: 1; dryRun: boolean; mapScale: number; clickIntervalMs: number }
+export interface FollowerDriveSettings { version: 1; dryRun: boolean; mapScale: number; clickIntervalMs: number; /** Hold space to sprint while well behind the leader. */ sprint?: boolean }
 export interface FollowerDriveStatus {
   running: boolean;
   reason: string;
@@ -37,11 +37,15 @@ export interface FollowerDriveStatus {
   observation?: MapObservation & { ageMs: number };
   decision?: SteeringDecision;
   /** Own-movement tracking from the map outlines, and whether steering is following the leader's trail or aiming straight at them. */
-  odometry?: { tracked: boolean; quality: number; trailPoints: number; via: "trail" | "direct" };
+  odometry?: { tracked: boolean; quality: number; trailPoints: number; via: "plan" | "trail" | "direct" };
+  /** The landscape read off the overlay map: whether a path to the leader was planned, its length, walls seen, and places remembered from bumping into them. */
+  /** Space is being held to sprint right now. */
+  sprinting?: boolean;
+  terrain?: { planned: boolean; pathPx: number; walls: number; bumps: number; blockedAhead: boolean; planMs: number };
   stats?: {
     cycles: number; clicks: number; previewed: number; refused: number; manualTakeovers: number; observationsPerSecond: number;
     /** Loot: scans run, labels in the latest scan, and pickup clicks sent (or previewed). */
-    lootScans: number; lootLabels: number; lootClicks: number;
+    lootScans: number; lootLabels: number; lootClicks: number; sprints: number;
     cycleMsP50?: number; cycleMsP95?: number; captureToInputMsP50?: number; captureToInputMsP95?: number; worstCaseReactionMsP95?: number;
     /** First clicks after standing near the leader, i.e. reactions to them moving off, and their capture-to-click times. */
     resumes?: number; resumeCaptureToInputMsP50?: number; resumeCaptureToInputMsP95?: number;
