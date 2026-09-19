@@ -12,7 +12,7 @@ export function installFollower(getMain: () => BrowserWindow | undefined, blocke
     status: () => service.status(), configure: value => service.configure(value), "generate-key": () => service.generateKey(),
     start: key => service.start(key), stop: () => service.stop(), demo: () => service.demo(),
     perception: () => perception.status(), capture: () => perception.capture(), calibrate: value => perception.calibrate(value),
-    "clear-calibration": () => perception.clearCalibration(), observe: () => perception.start(), "stop-observing": () => perception.stop(),
+    "clear-calibration": () => perception.clearCalibration(), observe: () => perception.start(), "stop-observing": () => perception.stop(), record: value => perception.record(value),
   };
   for (const [action, handler] of Object.entries(handlers)) ipcMain.handle(`follower:${action}`, (event, value: unknown) => {
     const main = getMain();

@@ -25,7 +25,7 @@ async function refresh(): Promise<void> {
     const seen = await api?.perception(); if (!disposed && seen) perception.value = seen;
   }
   catch (e) { if (!disposed) error.value = String(e); }
-  if (!disposed) timer = setTimeout(() => void refresh(), perception.value?.observing ? 250 : 1000);
+  if (!disposed) timer = setTimeout(() => void refresh(), perception.value?.observing || perception.value?.recording ? 250 : 1000);
 }
 onMounted(async () => {
   try { const next = await api?.status(); if (!disposed && next) { status.value = next; config.value = next.config; } }
@@ -73,11 +73,11 @@ function pick(event: MouseEvent): void {
   const region = { x: Math.min(point.x, corner.value.x), y: Math.min(point.y, corner.value.y), width: Math.abs(point.x - corner.value.x) + 1, height: Math.abs(point.y - corner.value.y) + 1 };
   corner.value = undefined; regions.value[selection.value] = region;
 }
-async function perceive(action: "calibrate" | "clearCalibration" | "observe" | "stopObserving"): Promise<void> {
+async function perceive(action: "calibrate" | "clearCalibration" | "observe" | "stopObserving" | "record"): Promise<void> {
   if (!api) return;
   error.value = "";
   try {
-    const next = action === "calibrate" ? await api.calibrate({ nameplate: regions.value.nameplate!, searchArea: regions.value.searchArea }) : await api[action]();
+    const next = action === "calibrate" ? await api.calibrate({ nameplate: regions.value.nameplate!, searchArea: regions.value.searchArea }) : action === "record" ? await api.record({ seconds: 20 }) : await api[action]();
     if (disposed) return;
     perception.value = next;
     if (action === "calibrate") { shot.value = undefined; regions.value = {}; }
@@ -146,12 +146,15 @@ function demo(): void {
           <button :disabled="!api || capturing" @click="captureView">{{ capturing ? 'Waiting for the game…' : 'Capture game view' }}</button>
           <button v-if="!perception?.observing" :disabled="!api || !perception?.calibration || !!perception?.calibrationIssue" @click="perceive('observe')">Start observation</button>
           <button v-else @click="perceive('stopObserving')">Stop observation</button>
+          <button v-if="!perception?.recording" :disabled="!api || capturing" @click="perceive('record')">Record 20 s for testing</button>
+          <button v-else @click="perceive('stopObserving')">Stop recording ({{ Math.ceil(perception.recording.remainingMs / 1000) }} s)</button>
         </div>
       </div>
       <p v-if="!api" class="muted">Open the desktop app on the follower PC to capture the game.</p>
       <p class="muted" role="status">{{ perception?.reason ?? 'Capture the game view to calibrate.' }}</p>
       <p v-if="perception?.calibrationIssue" class="follower-error" role="alert">{{ perception.calibrationIssue }}</p>
       <p v-if="perception?.calibration">Calibrated for <strong>{{ perception.calibration.targetName }}</strong> at {{ perception.calibration.view.width }} × {{ perception.calibration.view.height }} · {{ perception.calibration.templatePixels }} text pixels · <time :datetime="perception.calibration.calibratedAt">{{ new Date(perception.calibration.calibratedAt).toLocaleString() }}</time> <button class="follower-link" @click="perceive('clearCalibration')">Clear calibration</button></p>
+      <p v-if="perception?.lastRecording" class="muted">Last recording: {{ perception.lastRecording.frames }} frames in <code>{{ perception.lastRecording.directory }}</code>. Recordings are full game screenshots kept on this PC; they are never sent to the other PC.</p>
       <div v-if="shot" class="follower-calibrate">
         <div class="follower-actions">
           <label>Select <select v-model="selection" @change="corner = undefined"><option value="nameplate">Leader's name text</option><option value="searchArea">Search area (optional)</option></select></label>

@@ -64,6 +64,16 @@ public static class FollowWin {
     frameGraphics.CopyFromScreen(bounds.X + x, bounds.Y + y, 0, 0, new Size(width, height), CopyPixelOperation.SourceCopy);
     return frameBuffer;
   }
+  // Fixture recording: one full-view PNG written straight to disk, so large frames never cross the pipe.
+  public static string Record(string file) {
+    long started = Clock.ElapsedMilliseconds;
+    if (String.IsNullOrEmpty(file) || !Path.IsPathRooted(file) || !file.EndsWith(".png", StringComparison.OrdinalIgnoreCase) || !Directory.Exists(Path.GetDirectoryName(file)) || File.Exists(file)) throw new Exception("Invalid recording path");
+    IntPtr window = Foreground();
+    Rectangle bounds = Bounds(window);
+    Capture(bounds, 0, 0, bounds.Width, bounds.Height).Save(file, ImageFormat.Png);
+    if (GetForegroundWindow() != window || Bounds(window) != bounds) { File.Delete(file); throw new Exception("Game focus or view changed during capture"); }
+    return "{\"ok\":true,\"width\":" + bounds.Width + ",\"height\":" + bounds.Height + ",\"captureMs\":" + (Clock.ElapsedMilliseconds - started) + "}";
+  }
   // JSON is assembled here: ConvertTo-Json is too slow for multi-megabyte frames.
   public static string Sample(int x, int y, int width, int height, bool full, bool png) {
     long started = Clock.ElapsedMilliseconds;
@@ -91,6 +101,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
     if ($command.op -eq 'ping') { $reply = '{"ok":true}' }
     elseif ($command.op -eq 'preview') { $reply = [FollowWin]::Sample(0, 0, 0, 0, $true, $true) }
     elseif ($command.op -eq 'sample') { $reply = [FollowWin]::Sample([int]$command.x, [int]$command.y, [int]$command.width, [int]$command.height, $command.full -eq $true, $false) }
+    elseif ($command.op -eq 'record') { $reply = [FollowWin]::Record([string]$command.file) }
     else { throw 'Unknown follower capture operation' }
   } catch {
     $message = $_.Exception.Message

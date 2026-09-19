@@ -21,6 +21,8 @@ export interface FollowerPerceptionStatus {
   calibrationIssue?: string;
   observation?: LeaderObservation & { ageMs: number };
   stats?: { cycleMs: number; observationsPerSecond: number };
+  recording?: { directory: string; frames: number; remainingMs: number };
+  lastRecording?: { directory: string; frames: number };
 }
 export interface FollowerBridge {
   status(): Promise<FollowerStatus>;
@@ -35,4 +37,5 @@ export interface FollowerBridge {
   clearCalibration(): Promise<FollowerPerceptionStatus>;
   observe(): Promise<FollowerPerceptionStatus>;
   stopObserving(): Promise<FollowerPerceptionStatus>;
+  record(options: { seconds: number }): Promise<FollowerPerceptionStatus>;
 }

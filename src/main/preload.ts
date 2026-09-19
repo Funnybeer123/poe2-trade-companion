@@ -83,6 +83,7 @@ contextBridge.exposeInMainWorld("poe2", {
     clearCalibration: () => ipcRenderer.invoke("follower:clear-calibration"),
     observe: () => ipcRenderer.invoke("follower:observe"),
     stopObserving: () => ipcRenderer.invoke("follower:stop-observing"),
+    record: (options: { seconds: number }) => ipcRenderer.invoke("follower:record", options),
   },
   combat: {
     setGlobalDryRun: (enabled: boolean) => ipcRenderer.invoke("combat:global-dry-run", enabled),

@@ -40,7 +40,7 @@ describe("Follow & Loot screen", () => {
       observation: { capturedAt: 1, ageMs: 18, view: calibration.view, identity: { name: "Main", method: "nameplate-template" }, found: true, position: { x: 150, y: 60 }, confidence: .62, evidence: { score: .91, runnerUp: .85, matchedPixels: 280, templatePixels: 300, candidates: 2, searched: "window" }, timing: { captureMs: 9, matchMs: 3.2 } } };
     let current: object = idle;
     const follower = { status: vi.fn(async () => status), perception: vi.fn(async () => current), capture: vi.fn(async () => ({ image: "data:image/png;base64,AAAA", width: 1000, height: 500, capturedAt: "2026-09-19T00:00:00.000Z" })),
-      calibrate: vi.fn(async () => (current = { ...idle, calibration })), observe: vi.fn(async () => (current = observing)), stopObserving: vi.fn(async () => (current = { ...idle, calibration })), clearCalibration: vi.fn(async () => (current = idle)) };
+      calibrate: vi.fn(async () => (current = { ...idle, calibration })), observe: vi.fn(async () => (current = observing)), stopObserving: vi.fn(async (): Promise<object> => (current = { ...idle, calibration })), clearCalibration: vi.fn(async () => (current = idle)) };
     window.poe2 = { follower } as unknown as Poe2Bridge;
     const wrapper = mount(FollowerTool); wrappers.push(wrapper); await flushPromises();
     const button = (text: string) => wrapper.findAll("button").find(b => b.text() === text)!;
@@ -59,5 +59,14 @@ describe("Follow & Loot screen", () => {
     await button("Stop observation").trigger("click"); await flushPromises();
     expect(follower.stopObserving).toHaveBeenCalledOnce();
     expect(wrapper.find("dl").exists()).toBe(false);
+    const record = vi.fn(async () => (current = { ...idle, recording: { directory: "C:\\data\\recordings\\r1", frames: 3, remainingMs: 16400 } }));
+    Object.assign(follower, { record });
+    await button("Record 20 s for testing").trigger("click"); await flushPromises();
+    expect(record).toHaveBeenCalledWith({ seconds: 20 });
+    expect(wrapper.text()).toContain("Stop recording (17 s)");
+    follower.stopObserving.mockImplementation(async () => (current = { ...idle, lastRecording: { directory: "C:\\data\\recordings\\r1", frames: 80 } }));
+    await button("Stop recording (17 s)").trigger("click"); await flushPromises();
+    expect(wrapper.text()).toContain("80 frames in C:\\data\\recordings\\r1");
+    expect(wrapper.text()).toContain("never sent to the other PC");
   });
 });

@@ -64,6 +64,44 @@ Known limits, none yet measured on real gameplay:
   observations/second target during full searches until this is measured and,
   if needed, replaced.
 
+## Recording and measuring on real gameplay
+
+Synthetic tests cannot say how well perception works in the game. To measure it:
+
+1. **Record.** On the follower PC, with both characters in the same area, press
+   **Record 20 s for testing** and switch to the game. The capture-only host writes
+   about four full-view PNG frames per second plus `manifest.json` to
+   `follower/recordings/<timestamp>/` under the app's user data (the screen shows
+   the path). Only moments when the game is focused are recorded; resizing the game
+   ends the recording. Useful scenes: leader walking across the screen, leader
+   behind scenery or effects, another player with a similar name nearby, leader
+   leaving the screen, a menu or the map overlay open, a loading screen.
+   Recordings are full screenshots: they show character names and chat. They stay
+   on this PC and are not sent to the peer. Do not commit them without checking.
+2. **Replay.** `npm run follower:replay -- "<recording directory>"` runs every frame
+   through the same `LeaderTracker` as the live preview, using recorded offsets as
+   the clock, and prints per-frame position, score, next-best score, confidence,
+   and match time. It reads `calibration.json` from the app's follower directory
+   unless `--calibration <file>` is given; `--gate 0.85` sets the confidence gate.
+   Without labels this output is **not** an accuracy measurement.
+3. **Label.** Add `labels.json` beside the manifest. Give the rectangle around the
+   leader's name text, or `null` when the leader is not visible. Unlisted frames
+   are ignored.
+
+   ```json
+   { "version": 1, "targetName": "ExactLeaderName", "frames": {
+     "frame-0001.png": { "leader": { "x": 1210, "y": 540, "width": 96, "height": 14 } },
+     "frame-0040.png": { "leader": null, "note": "loading screen" } } }
+   ```
+4. **Measure.** Replay again. It reports recall, recall at the gate, misses, and —
+   most important before any input is connected — **accepted but wrong** sightings
+   (false acquisitions or wrong locations whose confidence passed the gate). Figures
+   describe that recording only; record several scenes before drawing conclusions.
+
+A tracking window cannot see a look-alike elsewhere on screen; only the periodic
+full search (every 2 s) can. Replay reproduces this, so look-alike errors can
+persist for up to 2 s in the results just as they would live.
+
 ## Connect two PCs
 
 1. Run this build on both PCs on the same local network.
@@ -130,6 +168,8 @@ real socket pairing/reconnect, secret-free persistence, shutdown, and UI behavio
 `tests/follower-perception.test.ts` and `tests/follower-perception-service.test.ts`
 cover template building, search, ambiguity, tracking, calibration invalidation,
 focus loss, and the emergency latch on synthetic frames.
+`tests/follower-fixture.test.ts` covers recorded-PNG decoding and the replay
+metrics, again on synthetic recordings.
 `powershell.exe -NoProfile -File scripts/test-follower-host.ps1` checks the native
 host without capturing the desktop and asserts it references no input API.
 Packaged Electron smoke tests exercise the screen and replay with game input and

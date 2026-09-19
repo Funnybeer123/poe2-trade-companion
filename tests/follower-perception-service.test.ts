@@ -3,6 +3,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { FollowerPerceptionService } from "../src/main/followerPerceptionService.js";
+import { parseRecordingManifest } from "../src/core/followerFixture.js";
 
 // SYNTHETIC host: a scripted scene replaces the desktop. No capture, no OS input.
 const W = 640, H = 360;
@@ -20,6 +21,7 @@ function fakeHost(scene: Scene, log: Array<Record<string, unknown>>) {
     send: async (payload: Record<string, unknown>) => {
       log.push(payload);
       if (payload.op === "ping") return { ok: true };
+      if (payload.op === "record" && !scene.error) { writeFileSync(String(payload.file), "png"); return { ok: true, ...(scene.view ?? { width: W, height: H }), captureMs: 5 }; }
       if (scene.error) return { ok: false, error: scene.error };
       const view = scene.view ?? { width: W, height: H };
       const region = payload.op === "preview" ? { x: 0, y: 0, ...view } : { x: Number(payload.x), y: Number(payload.y), width: Number(payload.width), height: Number(payload.height) };
@@ -69,6 +71,37 @@ describe("follower perception service (synthetic capture host)", () => {
     expect(service.status().observation).toMatchObject({ confidence: 0, position: undefined });
     expect(service.stop().observation).toBeUndefined();
     expect(log.every(entry => ["ping", "preview", "sample", "closed"].includes(String(entry.op)))).toBe(true);
+  });
+  it("records frames with a manifest, skips unfocused moments, and ends early when the view changes", async () => {
+    const scene: Scene = { error: "Focus Path of Exile 2 to continue" }, { service, directory } = setup(scene);
+    await expect(service.record({ seconds: 2 })).rejects.toThrow("between 5 and 30");
+    const started = await service.record({ seconds: 5 });
+    expect(started.recording?.directory.startsWith(path.join(directory, "recordings"))).toBe(true);
+    await expect.poll(() => service.status().reason).toContain("Focus Path of Exile 2");
+    expect(service.status().recording?.frames).toBe(0);
+    scene.error = undefined;
+    await expect.poll(() => service.status().recording?.frames ?? 0, { timeout: 3000 }).toBeGreaterThanOrEqual(2);
+    scene.view = { width: 1280, height: 720 };
+    await expect.poll(() => service.status().recording, { timeout: 3000 }).toBeUndefined();
+    const done = service.status();
+    expect(done.reason).toContain("Game view changed; recording ended early.");
+    const manifest = parseRecordingManifest(JSON.parse(readFileSync(path.join(done.lastRecording!.directory, "manifest.json"), "utf8")));
+    expect(manifest).toMatchObject({ view: { width: W, height: H } });
+    expect(manifest.frames).toHaveLength(done.lastRecording!.frames);
+    expect(manifest.frames.every(f => existsSync(path.join(done.lastRecording!.directory, f.file)))).toBe(true);
+    expect(existsSync(path.join(done.lastRecording!.directory, `frame-${String(manifest.frames.length + 1).padStart(4, "0")}.png`))).toBe(false);
+  });
+  it("keeps frames recorded before a manual stop and removes an empty recording", async () => {
+    const scene: Scene = {}, { service, directory } = setup(scene);
+    await service.record({ seconds: 5 });
+    await expect.poll(() => service.status().recording?.frames ?? 0, { timeout: 3000 }).toBeGreaterThanOrEqual(1);
+    service.stop();
+    await expect.poll(() => service.status().lastRecording?.frames ?? 0).toBeGreaterThanOrEqual(1);
+    expect(existsSync(path.join(service.status().lastRecording!.directory, "manifest.json"))).toBe(true);
+    const empty = setup({ error: "Focus Path of Exile 2 to continue" });
+    const begun = await empty.service.record({ seconds: 5 }); empty.service.stop();
+    await expect.poll(() => existsSync(begun.recording!.directory)).toBe(false);
+    expect(directory).not.toBe(empty.directory);
   });
   it("shows no observation while the game is unfocused and resumes afterwards", async () => {
     const scene: Scene = { name: { x: 100, y: 80 } }, { service } = setup(scene);
