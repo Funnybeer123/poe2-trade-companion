@@ -77,6 +77,12 @@ contextBridge.exposeInMainWorld("poe2", {
     start: (key: string) => ipcRenderer.invoke("follower:start", key),
     stop: () => ipcRenderer.invoke("follower:stop"),
     demo: () => ipcRenderer.invoke("follower:demo"),
+    perception: () => ipcRenderer.invoke("follower:perception"),
+    capture: () => ipcRenderer.invoke("follower:capture"),
+    calibrate: (regions: Parameters<import("../shared/follower.js").FollowerBridge["calibrate"]>[0]) => ipcRenderer.invoke("follower:calibrate", regions),
+    clearCalibration: () => ipcRenderer.invoke("follower:clear-calibration"),
+    observe: () => ipcRenderer.invoke("follower:observe"),
+    stopObserving: () => ipcRenderer.invoke("follower:stop-observing"),
   },
   combat: {
     setGlobalDryRun: (enabled: boolean) => ipcRenderer.invoke("combat:global-dry-run", enabled),

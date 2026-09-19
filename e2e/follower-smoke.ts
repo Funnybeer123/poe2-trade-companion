@@ -6,6 +6,10 @@ export async function followerSmoke(mode: SmokeBuildMode, info: TestInfo) {
     await page.getByRole("link", { name: "Open follower setup" }).click();
     await expect(page.getByRole("heading", { name: "Follow & Loot", exact: true })).toBeVisible();
     await expect(page.getByText("Connecting the PCs does not move a character", { exact: false })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "Live observation preview" })).toBeVisible();
+    await expect(page.getByRole("button", { name: "Start observation" })).toBeDisabled();
+    expect(await page.evaluate(() => window.poe2!.follower!.perception())).toMatchObject({ observing: false, inputCapability: "none" });
+    await expect(page.evaluate(() => window.poe2!.follower!.capture())).rejects.toThrow(/disabled during background UI smoke/);
     await page.getByLabel("Character to follow").fill("SmokeMain");
     await page.getByRole("button", { name: "Save preferences", exact: true }).click();
     await expect.poll(() => page.evaluate(() => window.poe2!.follower!.status().then(s => s.config.targetName))).toBe("SmokeMain");

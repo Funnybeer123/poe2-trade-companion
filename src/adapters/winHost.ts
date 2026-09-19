@@ -12,11 +12,11 @@ export interface WinHostOptions {
   requestTimeoutMs?: number;
   /** Optional desktop-owned native cancellation latch; only for the bag helper. */
   bagStopFile?: string;
-  scriptName?: "win-input-host.ps1" | "win-combat-host.ps1" | "win-price-helper.ps1" | "win-bag-host.ps1";
+  scriptName?: "win-input-host.ps1" | "win-combat-host.ps1" | "win-price-helper.ps1" | "win-bag-host.ps1" | "win-follower-host.ps1";
 }
 
 export function resolveWinHostScript(scriptName = "win-input-host.ps1"): string {
-  if (!["win-input-host.ps1", "win-combat-host.ps1", "win-price-helper.ps1", "win-emergency-stop.ps1", "win-bag-host.ps1"].includes(scriptName)) {
+  if (!["win-input-host.ps1", "win-combat-host.ps1", "win-price-helper.ps1", "win-emergency-stop.ps1", "win-bag-host.ps1", "win-follower-host.ps1"].includes(scriptName)) {
     throw new Error("Unsupported native helper script");
   }
   const here = path.dirname(fileURLToPath(import.meta.url));

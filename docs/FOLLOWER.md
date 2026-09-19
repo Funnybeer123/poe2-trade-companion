@@ -13,10 +13,56 @@ Open **Dashboard → Open follower setup** or **Tools & QA → Follow & Loot**.
 - Interactive synthetic route replay. It includes a wall detour and emits no input.
 - Emergency stop and application shutdown close peer connections.
 
-This increment does **not** capture live character positions, recognize ground
-loot, register maps across PCs, move a character, or pick up an item. The app says
-this explicitly. A connected peer is not evidence of working game perception.
-Network latency is not capture-to-input latency. No API model is required at runtime.
+The feature does **not** recognize ground loot, register maps across PCs, move a
+character, or pick up an item. The app says this explicitly. A connected peer is
+not evidence of working game perception. Network latency is not capture-to-input
+latency. No API model is required at runtime.
+
+## Live observation preview (second increment)
+
+**Follow & Loot → Live observation preview** watches the follower PC's game view
+for the selected character's nameplate. It is capture-only:
+
+- `scripts/win-follower-host.ps1` contains no input, hook, or cursor API, and
+  `FollowerPerceptionService` has no `GameInputController`, input sink, or peer
+  transport. Screenshots and observations stay on this PC.
+- It captures only while an allowlisted Path of Exile process owns the foreground
+  window, and stops on emergency stop, app shutdown, and background smoke runs.
+
+Calibrate: save the character to follow, put the leader on screen, **Capture game
+view**, then click two opposite corners tightly around the name above their
+character. Optionally select a search area that excludes the party panel if it
+shows the same name. The main process builds a binary text template from its own
+captured pixels (`min(R,G,B)` at an Otsu threshold clamped to 110–235); the
+renderer supplies rectangles only. Calibration is saved to
+`follower/calibration.json` under the app's user data and survives navigation and
+restarts. It is invalidated when the game client size or the selected character
+changes; recalibrate after changing resolution, window size, or UI scale.
+
+Observation: each cycle captures either a ±160 px window around the last sighting
+or, at least every 2 s and after a loss, the whole search area. Matches are scored
+with the Dice coefficient over text pixels, so missing text and surplus bright
+pixels both lower the score; 0.6 is the detection floor. Confidence is the score
+scaled down when a second, non-overlapping candidate scores within 0.1 of the
+best, reaching zero for identical nameplates. The screen shows identity and
+method, position in client pixels, confidence against your configured minimum,
+evidence (score, next-best score, matched/template pixels, candidates, search
+mode), observation age, and capture/match/cycle timings.
+
+Known limits, none yet measured on real gameplay:
+
+- All automated tests use **synthetic** frames and a scripted capture host. No
+  accuracy, false-acquisition rate, or frame rate has been measured in the game.
+- A nameplate position is a screen position, not a map position. Nothing feeds
+  `FollowerPlanner` yet.
+- There is no gameplay-state detection: menus, loading screens, and cutscenes
+  simply produce "not visible".
+- Template matching assumes the name renders at a fixed pixel size. Bright or
+  busy scenery behind the text, partial occlusion, and similar names lower or
+  confuse scores. Borderless/windowed modes are required for screen capture.
+- Full frames cross a PowerShell pipe as base64; expect well below the 30–60
+  observations/second target during full searches until this is measured and,
+  if needed, replaced.
 
 ## Connect two PCs
 
@@ -61,8 +107,9 @@ blind recovery input.
 
 ## Next implementation milestones
 
-1. Follower-side game capture and calibration, plus recorded-frame datasets for
-   character/nameplate detection. Measure correct identity and false acquisitions.
+1. Recorded-frame datasets for character/nameplate detection (occlusion, similar
+   names, menus, loading screens, target disappearance). Measure correct identity,
+   false acquisitions, and achieved observation rate; add gameplay-state detection.
 2. Main-PC route observations and matching map landmarks on the follower PC.
    Extend the authenticated peer protocol with versioned, bounded observations,
    freshness checks, and map-registration evidence.
@@ -80,5 +127,10 @@ sessions and record the limitations.
 Run `npm run typecheck`, `npm run lint`, and `npm run test:all`. Dedicated tests
 cover navigation/loot replay, malformed observations, identity/freshness failures,
 real socket pairing/reconnect, secret-free persistence, shutdown, and UI behavior.
+`tests/follower-perception.test.ts` and `tests/follower-perception-service.test.ts`
+cover template building, search, ambiguity, tracking, calibration invalidation,
+focus loss, and the emergency latch on synthetic frames.
+`powershell.exe -NoProfile -File scripts/test-follower-host.ps1` checks the native
+host without capturing the desktop and asserts it references no input API.
 Packaged Electron smoke tests exercise the screen and replay with game input and
 network startup disabled.

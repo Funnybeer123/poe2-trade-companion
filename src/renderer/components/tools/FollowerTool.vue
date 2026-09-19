@@ -2,7 +2,8 @@
 import { computed, onBeforeUnmount, onMounted, ref, toRaw } from "vue";
 import { defaultFollowerConfig, parseFollowerConfig, type FollowReplayStep } from "../../../core/follower.js";
 import { followerDemo } from "../../../core/followerReplay.js";
-import type { FollowerStatus } from "../../../shared/follower.js";
+import type { PixelRect } from "../../../core/followerPerception.js";
+import type { FollowerCapture, FollowerPerceptionStatus, FollowerStatus } from "../../../shared/follower.js";
 
 const api = window.poe2?.follower;
 const config = ref(defaultFollowerConfig()), status = ref<FollowerStatus>();
@@ -12,12 +13,19 @@ const current = computed(() => steps.value[stepIndex.value]);
 const connected = computed(() => status.value?.connection === "connected");
 const active = computed(() => !!status.value && !["stopped", "error"].includes(status.value.connection));
 const routePoints = computed(() => current.value?.decision.route.map(p => `${p.x * 30 + 15},${p.y * 30 + 15}`).join(" ") ?? "");
+const perception = ref<FollowerPerceptionStatus>(), shot = ref<FollowerCapture>(), capturing = ref(false);
+const selection = ref<"nameplate" | "searchArea">("nameplate"), corner = ref<{ x: number; y: number }>();
+const regions = ref<{ nameplate?: PixelRect; searchArea?: PixelRect }>({});
+const observed = computed(() => perception.value?.observation);
 let timer: ReturnType<typeof setTimeout> | undefined, disposed = false, revision = 0;
 async function refresh(): Promise<void> {
   const version = revision;
-  try { const next = await api?.status(); if (!disposed && version === revision && next) status.value = next; }
+  try {
+    const next = await api?.status(); if (!disposed && version === revision && next) status.value = next;
+    const seen = await api?.perception(); if (!disposed && seen) perception.value = seen;
+  }
   catch (e) { if (!disposed) error.value = String(e); }
-  if (!disposed) timer = setTimeout(() => void refresh(), 1000);
+  if (!disposed) timer = setTimeout(() => void refresh(), perception.value?.observing ? 250 : 1000);
 }
 onMounted(async () => {
   try { const next = await api?.status(); if (!disposed && next) { status.value = next; config.value = next.config; } }
@@ -47,6 +55,34 @@ async function generateKey(): Promise<void> {
   try { const key = await api?.generateKey(); if (!disposed && key) { pairingKey.value = key; showKey.value = true; } }
   catch (e) { if (!disposed) error.value = String(e); }
 }
+async function captureView(): Promise<void> {
+  if (!api || capturing.value) return;
+  capturing.value = true; error.value = "";
+  try { const next = await api.capture(); if (!disposed) { shot.value = next; regions.value = {}; corner.value = undefined; selection.value = "nameplate"; } }
+  catch (e) { if (!disposed) error.value = String(e); }
+  finally { capturing.value = false; }
+}
+function pick(event: MouseEvent): void {
+  if (!shot.value) return;
+  const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect();
+  const point = {
+    x: Math.max(0, Math.min(shot.value.width - 1, Math.floor((event.clientX - bounds.left) * shot.value.width / bounds.width))),
+    y: Math.max(0, Math.min(shot.value.height - 1, Math.floor((event.clientY - bounds.top) * shot.value.height / bounds.height))),
+  };
+  if (!corner.value) { corner.value = point; return; }
+  const region = { x: Math.min(point.x, corner.value.x), y: Math.min(point.y, corner.value.y), width: Math.abs(point.x - corner.value.x) + 1, height: Math.abs(point.y - corner.value.y) + 1 };
+  corner.value = undefined; regions.value[selection.value] = region;
+}
+async function perceive(action: "calibrate" | "clearCalibration" | "observe" | "stopObserving"): Promise<void> {
+  if (!api) return;
+  error.value = "";
+  try {
+    const next = action === "calibrate" ? await api.calibrate({ nameplate: regions.value.nameplate!, searchArea: regions.value.searchArea }) : await api[action]();
+    if (disposed) return;
+    perception.value = next;
+    if (action === "calibrate") { shot.value = undefined; regions.value = {}; }
+  } catch (e) { if (!disposed) error.value = String(e); }
+}
 function demo(): void {
   try { steps.value = followerDemo(parseFollowerConfig(toRaw(config.value))); stepIndex.value = 0; error.value = ""; }
   catch (e) { error.value = String(e); }
@@ -60,8 +96,8 @@ function demo(): void {
       <span class="follower-badge">Preview release</span>
     </header>
     <div class="follower-notice">
-      <strong>Connection and route preview are ready.</strong>
-      <span>Live character tracking, map reading, and game controls are still in development. Connecting the PCs does not move a character or pick up items.</span>
+      <strong>Connection, route preview, and live observation preview are ready.</strong>
+      <span>Map reading, loot detection, and game controls are still in development. The observation preview only watches the screen. Connecting the PCs does not move a character or pick up items.</span>
     </div>
     <p v-if="error" class="follower-error" role="alert">{{ error }}</p>
     <div class="follower-grid">
@@ -103,6 +139,44 @@ function demo(): void {
         <small class="follower-save-note">Saving stops the current connection. Your pairing key is not saved.</small>
       </section>
     </div>
+    <section class="card follower-section" aria-labelledby="follower-observe-title">
+      <div class="follower-preview-header">
+        <div><h3 id="follower-observe-title">Live observation preview</h3><p class="muted">Watches this PC's game view for the selected character's nameplate. It sends no game input and shares nothing with the other PC.</p></div>
+        <div class="follower-actions">
+          <button :disabled="!api || capturing" @click="captureView">{{ capturing ? 'Waiting for the game…' : 'Capture game view' }}</button>
+          <button v-if="!perception?.observing" :disabled="!api || !perception?.calibration || !!perception?.calibrationIssue" @click="perceive('observe')">Start observation</button>
+          <button v-else @click="perceive('stopObserving')">Stop observation</button>
+        </div>
+      </div>
+      <p v-if="!api" class="muted">Open the desktop app on the follower PC to capture the game.</p>
+      <p class="muted" role="status">{{ perception?.reason ?? 'Capture the game view to calibrate.' }}</p>
+      <p v-if="perception?.calibrationIssue" class="follower-error" role="alert">{{ perception.calibrationIssue }}</p>
+      <p v-if="perception?.calibration">Calibrated for <strong>{{ perception.calibration.targetName }}</strong> at {{ perception.calibration.view.width }} × {{ perception.calibration.view.height }} · {{ perception.calibration.templatePixels }} text pixels · <time :datetime="perception.calibration.calibratedAt">{{ new Date(perception.calibration.calibratedAt).toLocaleString() }}</time> <button class="follower-link" @click="perceive('clearCalibration')">Clear calibration</button></p>
+      <div v-if="shot" class="follower-calibrate">
+        <div class="follower-actions">
+          <label>Select <select v-model="selection" @change="corner = undefined"><option value="nameplate">Leader's name text</option><option value="searchArea">Search area (optional)</option></select></label>
+          <button :disabled="!regions.nameplate" @click="perceive('calibrate')">Save calibration</button>
+          <button @click="shot = undefined">Discard screenshot</button>
+        </div>
+        <p class="muted">{{ corner ? 'Now click the opposite corner.' : selection === 'nameplate' ? 'With the leader on screen, click two opposite corners tightly around the name above their character.' : 'Click two opposite corners of the area to search. Exclude the party panel if it shows the same name.' }}</p>
+        <div class="follower-shot" @click="pick">
+          <img :src="shot.image" :alt="`Captured game view, ${shot.width} by ${shot.height}`" draggable="false" />
+          <svg :viewBox="`0 0 ${shot.width} ${shot.height}`" aria-hidden="true">
+            <rect v-if="regions.searchArea" v-bind="regions.searchArea" fill="none" stroke="#72c5ff" stroke-width="3" stroke-dasharray="12 8" />
+            <rect v-if="regions.nameplate" v-bind="regions.nameplate" fill="none" stroke="#99e3bc" stroke-width="3" />
+          </svg>
+        </div>
+      </div>
+      <dl v-if="perception?.observing" class="follower-observation" aria-label="Current observation">
+        <div><dt>Identity</dt><dd>{{ observed ? `${observed.identity.name} · nameplate template` : '—' }}</dd></div>
+        <div><dt>Sighting</dt><dd>{{ !observed ? 'No observation' : observed.found ? `Nameplate at ${observed.position!.x}, ${observed.position!.y} px` : 'Not visible' }}</dd></div>
+        <div><dt>Confidence</dt><dd>{{ observed ? `${Math.round(observed.confidence * 100)}%` : '—' }}<span v-if="observed && status && observed.confidence < status.config.confidence" class="muted"> · below your {{ Math.round(status.config.confidence * 100) }}% minimum</span></dd></div>
+        <div><dt>Evidence</dt><dd v-if="observed">Match {{ observed.evidence.score }} · next best {{ observed.evidence.runnerUp }} · {{ observed.evidence.matchedPixels }} / {{ observed.evidence.templatePixels }} text pixels · {{ observed.evidence.candidates }} candidate(s) · {{ observed.evidence.searched === 'full' ? 'full search' : 'tracking window' }}</dd><dd v-else>—</dd></div>
+        <div><dt>Observation age</dt><dd>{{ observed ? `${observed.ageMs} ms` : '—' }}</dd></div>
+        <div><dt>Timing</dt><dd v-if="observed">Capture {{ observed.timing.captureMs }} ms · match {{ observed.timing.matchMs }} ms<span v-if="perception.stats"> · cycle {{ perception.stats.cycleMs }} ms · {{ perception.stats.observationsPerSecond }} observations/s</span></dd><dd v-else>—</dd></div>
+      </dl>
+      <p class="muted">Accuracy on real gameplay has not been measured yet. Recalibrate after changing resolution, window size, UI scale, or the character to follow.</p>
+    </section>
     <section class="card follower-section" aria-labelledby="follower-preview-title">
       <div class="follower-preview-header"><div><h3 id="follower-preview-title">Route preview</h3><p class="muted">Synthetic observations demonstrate the planner. No game capture or input.</p></div><button @click="demo">Run route demo</button></div>
       <div v-if="current" class="follower-preview">
@@ -150,7 +224,15 @@ function demo(): void {
 .follower-decision h4 { margin: 10px 0; font-size: 16px; }
 .follower-decision > strong { color: #99e3bc; }
 .follower-empty { padding: 24px; text-align: center; border: 1px dashed #344353; border-radius: 8px; color: #a6b3c5; }
+.follower-calibrate { display: grid; gap: 12px; margin: 16px 0; }
+.follower-shot { position: relative; cursor: crosshair; line-height: 0; border: 1px solid #344353; border-radius: 8px; overflow: hidden; }
+.follower-shot img { width: 100%; user-select: none; }
+.follower-shot svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.follower-observation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 24px; margin: 16px 0; font-size: 13px; }
+.follower-observation dt { color: #8fc6e8; font-size: 11px; letter-spacing: .8px; text-transform: uppercase; }
+.follower-observation dd { margin: 4px 0 0; line-height: 1.5; }
+.follower-tool .follower-link { border: 0; background: none; padding: 0 0 0 8px; color: #acd8f4; text-decoration: underline; }
 .follower-error { padding: 12px; color: #ffb3b3; background: #461f29; border-radius: 6px; }
-@media (max-width: 1000px) { .follower-grid, .follower-preview { grid-template-columns: 1fr; } }
+@media (max-width: 1000px) { .follower-grid, .follower-preview, .follower-observation { grid-template-columns: 1fr; } }
 @media (max-width: 560px) { .follower-header, .follower-preview-header { flex-direction: column; } }
 </style>

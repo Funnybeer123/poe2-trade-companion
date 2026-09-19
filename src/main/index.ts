@@ -64,7 +64,6 @@ import {
 import { ScannerRuntimeService } from "./scanRuntimeService.js";
 import { CombatAssistService, combatStorage } from "./combatAssistService.js";
 import { installFollower } from "./followerIntegration.js";
-import type { FollowerService } from "./followerService.js";
 import { defaultCombatConfig } from "../core/combatAssist.js";
 import { startEmergencyStopMonitor } from "../adapters/emergencyStopMonitor.js";
 import { sendRendererEvent } from "./rendererEvents.js";
@@ -105,7 +104,7 @@ let priceHelperService: PriceHelperService | undefined;
 let scannerService: ScannerRuntimeService | undefined;
 let combatService: CombatAssistService | undefined;
 let combatGlobalDryRun = true;
-let followerService: FollowerService | undefined;
+let followerService: ReturnType<typeof installFollower> | undefined;
 import { DEFAULT_POE_PROCESS_ALLOWLIST } from "../core/capabilities.js";
 let deckServer: import("./deckServer.js").DeckServer | undefined;
 let deckRuntime: import("./deckRuntime.js").DeckRuntime | undefined;
@@ -553,7 +552,7 @@ if (ownsInstance) void app.whenReady().then(() => {
       }
     },
   });
-  followerService = installFollower(() => mainWindow, () => backgroundSmoke ? "Peer connections are disabled during background UI smoke checks." : killSwitch.isLatched() ? "Emergency stop is latched. Rearm before connecting." : undefined);
+  followerService = installFollower(() => mainWindow, () => backgroundSmoke ? "Peer connections and game capture are disabled during background UI smoke checks." : killSwitch.isLatched() ? "Emergency stop is latched. Rearm before connecting or capturing." : undefined);
   const stopAllInput = () => {
     followerService?.stop("Emergency stop — rearm before connecting.");
     killSwitch.trip();
