@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
-import { decodeFlatRuns, decodeHueRuns, DEFAULT_LOOT_CONFIG, findLootLabels, hueClass, LOOT_MIN_CONFIDENCE, lootArea, LootPlanner, type FlatRun, type HueRun, type LootLabel } from "../src/core/followerLoot.js";
+import { decodeFlatRuns, decodeHueRuns, DEFAULT_LOOT_CONFIG, findLootLabels, hueClass, LOOT_DARK_MAX, LOOT_DARK_MAX_CONFIDENCE, LOOT_MIN_CONFIDENCE, lootArea, LootPlanner, type FlatRun, type HueRun, type LootLabel } from "../src/core/followerLoot.js";
 
 // SYNTHETIC runs. The label geometry and colours below were measured on two real 2560x1440 frames
 // (an opaque orange label and a translucent dark-blue one), but these tests prove the rules, not game accuracy.
 const VIEW = { width: 2560, height: 1440 }, CENTRE = { x: 1280, y: 700 };
-const ORANGE = { r: 238, g: 180, b: 97 }, BLUE = { r: 45, g: 39, b: 71 }, BLACK = { r: 12, g: 8, b: 5 };
+const ORANGE = { r: 238, g: 180, b: 97 }, BLUE = { r: 45, g: 39, b: 71 }, BLACK = { r: 12, g: 8, b: 5 }, NEAR_BLACK = { r: 6, g: 6, b: 7 };
 /** A filled label: `padding` flat rows, text rows with no full-width run, then `padding` flat rows. */
 function label(x0: number, y: number, width: number, height: number, colour: { r: number; g: number; b: number }, padding = 10, jitter = 0): FlatRun[] {
   const runs: FlatRun[] = [];
@@ -81,6 +81,65 @@ describe("loot label detection (synthetic flat runs)", () => {
     const weakest = [...findLootLabels(label(600, 300, 300, 60, ORANGE, 3), VIEW, CENTRE), ...findLootLabels([], VIEW, CENTRE, hueBlock(600, 300, 300, 61, 3, row => row % 2 === 0))];
     expect(weakest.map(l => l.confidence)).toEqual([.92, .89]);
     for (const found of weakest) expect(found.confidence).toBeGreaterThanOrEqual(LOOT_MIN_CONFIDENCE);
+  });
+});
+
+/**
+ * A near-black box: `top` flat rows, text rows the run scan cannot report, then `bottom` flat rows. The
+ * defaults are the "Stitched Gloves" label measured on a real 2560x1440 frame: 258x50, 14 rows above the
+ * text and 12 below. Doors, waypoints and area transitions draw the identical box.
+ */
+function darkBox(x0: number, y: number, width = 258, height = 50, top = 14, bottom = 12, colour = NEAR_BLACK): FlatRun[] {
+  return Array.from({ length: height }, (_, row) => row).filter(row => row < top || row >= height - bottom).map(row => ({ y: y + row, x0, x1: x0 + width - 1, ...colour }));
+}
+const solidBlack = (x0: number, y: number, width: number, height: number): FlatRun[] => Array.from({ length: height }, (_, row) => ({ y: y + row, x0, x1: x0 + width - 1, ...NEAR_BLACK }));
+
+describe("near-black loot labels (only with { dark: true })", () => {
+  const DARK = { dark: true }, GLOVES = darkBox(1102, 437), RECT = { x: 1102, y: 437, width: 258, height: 50 };
+  it("reports the measured Stitched Gloves box when dark pickup is on, and nothing at all when it is off", () => {
+    for (const off of [undefined, {}, { dark: false }]) expect(findLootLabels(GLOVES, VIEW, CENTRE, [], off)).toEqual([]);
+    expect(findLootLabels(GLOVES, VIEW, CENTRE, [], DARK)).toEqual([{ rect: RECT, centre: { x: 1231, y: 462 }, colour: NEAR_BLACK, dark: true, confidence: LOOT_DARK_MAX_CONFIDENCE }]);
+  });
+  it("marks only the dark label, leaves the coloured rules untouched, and never rates a dark box above a coloured one", () => {
+    const orange = label(610, 156, 358, 59, ORANGE), found = findLootLabels([...orange, ...GLOVES], VIEW, CENTRE, [], DARK);
+    expect(found.filter(l => !l.dark)).toEqual(findLootLabels(orange, VIEW, CENTRE));
+    expect(found.map(l => l.confidence)).toEqual([LOOT_DARK_MAX_CONFIDENCE, 1]);
+    for (const dark of found.filter(l => l.dark)) expect(dark.confidence).toBeLessThan(Math.min(...found.filter(l => !l.dark).map(l => l.confidence)));
+    // A bigger dark box over a coloured label must not take its place in the overlap pile.
+    const coloured = label(600, 300, 300, 60, ORANGE);
+    expect(findLootLabels([...coloured, ...darkBox(580, 290, 400, 70)], VIEW, CENTRE, [], DARK)).toEqual(findLootLabels(coloured, VIEW, CENTRE));
+  });
+  it("holds a dark box to the fill threshold: 20 is near-black, 21 is a dim fill neither rule accepts", () => {
+    expect(LOOT_DARK_MAX).toBe(20);
+    expect(findLootLabels(darkBox(1102, 437, 258, 50, 14, 12, { r: 20, g: 19, b: 20 }), VIEW, CENTRE, [], DARK)).toHaveLength(1);
+    for (const fill of [{ r: 21, g: 20, b: 20 }, { r: 44, g: 30, b: 20 }]) expect(findLootLabels(darkBox(1102, 437, 258, 50, 14, 12, fill), VIEW, CENTRE, [], DARK)).toEqual([]);
+  });
+  it("rejects a dark box on the first or last scanned row, where the rest of it may lie outside the scan", () => {
+    const area = lootArea(VIEW), lastRow = area.y + area.height - 1;
+    expect(findLootLabels(darkBox(1102, area.y), VIEW, CENTRE, [], DARK)).toEqual([]);
+    expect(findLootLabels(darkBox(1102, lastRow - 49), VIEW, CENTRE, [], DARK)).toEqual([]);
+    expect(findLootLabels(darkBox(1102, area.y + 1), VIEW, CENTRE, [], DARK)).toHaveLength(1);
+    expect(findLootLabels(darkBox(1102, lastRow - 50), VIEW, CENTRE, [], DARK)).toHaveLength(1);
+  });
+  it("rejects flat black scenery and any dark shape that is not label-shaped", () => {
+    for (const runs of [solidBlack(1102, 437, 258, 50), solidBlack(400, 200, 1000, 60), solidBlack(400, 200, 1000, 600), darkBox(1102, 437, 258, 50, 23, 20),
+      darkBox(1102, 437, 258, 20, 6, 6), darkBox(1102, 437, 258, 140), darkBox(1102, 437, 50, 50), darkBox(300, 437, 1400, 50), darkBox(1102, 437, 258, 50, 2, 12), darkBox(1102, 437, 258, 50, 14, 2)])
+      expect(findLootLabels(runs, VIEW, CENTRE, [], DARK)).toEqual([]);
+  });
+  it("stays fast on a whole capture cap of near-black scenery runs, and still finds the one real box in it", () => {
+    const area = lootArea(VIEW), junk: FlatRun[] = [];
+    let seed = 12345;
+    const next = (n: number) => (seed = seed * 48271 % 2147483647) % n;
+    // Dark pickup asks the worker for every run, however dark; it answers with up to its 4000-run cap. The
+    // junk ends by x 1502, well clear of the join gap in front of the one real box out at 1700.
+    for (let i = 0; i < 4000; i++) { const x0 = area.x + next(900); junk.push({ y: area.y + 1 + next(area.height - 2), x0, x1: x0 + 48 + next(300), r: next(LOOT_DARK_MAX + 1), g: next(LOOT_DARK_MAX + 1), b: next(LOOT_DARK_MAX + 1) }); }
+    const started = performance.now();
+    expect(findLootLabels(junk, VIEW, CENTRE, [], DARK)).toEqual([]);
+    const found = findLootLabels([...junk, ...darkBox(1700, 437)], VIEW, CENTRE, [], DARK);
+    const elapsed = performance.now() - started;
+    expect(found.map(l => l.rect)).toEqual([{ x: 1700, y: 437, width: 258, height: 50 }]);
+    // Two passes over a full cap, well inside one of the four scans a second.
+    expect(elapsed).toBeLessThan(100);
   });
 });
 
