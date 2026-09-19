@@ -161,11 +161,13 @@ follower character next to a stationary leader. Small samples; not a soak test.
 | Capture-start → click-complete after the fixes (29 clicks) | 37 / 54 ms (median / 95th) |
 | Worst-case reaction estimate after the fixes (95th) | 81 ms = one cycle (27) + capture→click (54) |
 
+| Live, leader running around for ≈ 46 s | 274 clicks, 0 refused, 0 manual takeovers; gap 7–106 map px, median 41, closing to ≤ 10 whenever the leader slowed (a level 6 follower cannot outrun a level 95 leader) |
+| Reaction to the leader moving off (6 events): capture-start → first click complete | 42 / 60 ms (median / 95th); worst case incl. one cycle ≈ 100 ms |
+| Same run, from ≈ 48 s | The label vanished, then returned with our own marker no longer at the map centre: the loop paused and sent nothing, as designed. The cause on screen was not recorded (no screenshot is kept). The game then lost focus and the loop idled to its time limit. |
+
 The one-batch down/up click (no hold) is accepted by the game as a move.
 
-Not measured: reaction to a leader who *starts* moving while the loop is running
-(in every live run the leader was already standing still when it started),
-accuracy with several party members or look-alike names, behaviour in combat
+Not measured: accuracy with several party members or look-alike names, behaviour in combat
 effects, long sessions, and a second PC's hardware. Human visual reaction time is
 commonly around 200–250 ms; the 81–92 ms figures are this loop's own worst case
 for sending a click, not the character's movement speed.

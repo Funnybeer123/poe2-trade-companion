@@ -39,6 +39,8 @@ export interface FollowerDriveStatus {
   stats?: {
     cycles: number; clicks: number; previewed: number; refused: number; manualTakeovers: number; observationsPerSecond: number;
     cycleMsP50?: number; cycleMsP95?: number; captureToInputMsP50?: number; captureToInputMsP95?: number; worstCaseReactionMsP95?: number;
+    /** First clicks after standing near the leader, i.e. reactions to them moving off, and their capture-to-click times. */
+    resumes?: number; resumeCaptureToInputMsP50?: number; resumeCaptureToInputMsP95?: number;
   };
 }
 export interface FollowerBridge {

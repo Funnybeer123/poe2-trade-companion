@@ -68,6 +68,8 @@ export class FollowerDriveService {
   private frame?: FollowerFrameGuard & { at: number };
   private cycles: number[] = [];
   private latencies: number[] = [];
+  /** Capture-to-click times of the first click after standing near the leader: the reaction to them moving off. */
+  private resumes: number[] = [];
   private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0 };
   private startedAt = 0;
   private readonly calibrationFile: string;
@@ -95,6 +97,7 @@ export class FollowerDriveService {
       stats: this.counts.cycles ? {
         ...this.counts, observationsPerSecond: elapsed > 0 ? Math.round(this.counts.cycles / elapsed * 10) / 10 : 0,
         cycleMsP50: percentile(this.cycles, .5), cycleMsP95: cycleP95, captureToInputMsP50: percentile(this.latencies, .5), captureToInputMsP95: inputP95,
+        resumes: this.resumes.length, resumeCaptureToInputMsP50: percentile(this.resumes, .5), resumeCaptureToInputMsP95: percentile(this.resumes, .95),
         // A change can land just after a capture starts, so the worst case adds one whole cycle.
         worstCaseReactionMsP95: cycleP95 !== undefined && inputP95 !== undefined ? Math.round((cycleP95 + inputP95) * 10) / 10 : undefined,
       } : undefined,
@@ -187,8 +190,8 @@ export class FollowerDriveService {
     }, FRAME_MAX_AGE_MS);
     const controller = new GameInputController(sink, this.options.killSwitch, this.options.mode);
     this.running = true; this.reason = "Starting capture and input workers…";
-    this.cycles = []; this.latencies = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0 }; this.startedAt = this.now();
-    let manualUntil = -Infinity, pauseReason = "";
+    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0 }; this.startedAt = this.now();
+    let manualUntil = -Infinity, pauseReason = "", wasNear = false;
     const tick = async () => {
       if (!live()) return;
       const started = this.now();
@@ -215,6 +218,7 @@ export class FollowerDriveService {
           const manual = this.now() < manualUntil;
           const decision: SteeringDecision = manual ? { kind: "pause", reason: pauseReason } : steering.decide(observation, this.now());
           this.decision = decision; this.reason = decision.reason;
+          if (decision.kind === "near") wasNear = true;
           this.counts.cycles++; this.cycles.push(this.now() - started); if (this.cycles.length > 600) this.cycles.shift();
           if (decision.kind === "move") {
             const policy = scenario({ id: "follow-map-marker", name: "Follow by overlay map", enabledModules: ["navigation"], dryRun: previewOnly || this.dryRun(), actionsPerMinute: ACTIONS_PER_MINUTE, confidenceThreshold: current.confidence, timingProfile: "tight" });
@@ -227,7 +231,11 @@ export class FollowerDriveService {
             const trace = traces[0];
             if (trace?.result === "emitted") {
               steering.committed(this.now()); this.counts.clicks++;
-              if (sink.lastInput) { this.latencies.push(sink.lastInput.captureToInputMs); if (this.latencies.length > 600) this.latencies.shift(); }
+              if (sink.lastInput) {
+                this.latencies.push(sink.lastInput.captureToInputMs); if (this.latencies.length > 600) this.latencies.shift();
+                if (wasNear) { this.resumes.push(sink.lastInput.captureToInputMs); if (this.resumes.length > 600) this.resumes.shift(); }
+              }
+              wasNear = false;
             } else if (trace?.reason.includes("safety=dry-run")) { steering.committed(this.now()); this.counts.previewed++; this.reason = `Preview only: would ${decision.reason.charAt(0).toLowerCase()}${decision.reason.slice(1)}`; }
             else if (trace?.reason.includes("safety=rate-limited")) { this.stop(`Action limit reached (${ACTIONS_PER_MINUTE}/minute).`); return; }
             else if (trace?.result === "failed" && COVERED.test(trace.reason)) { this.counts.refused++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Another window covers the game at the click point — pausing."; }
