@@ -259,7 +259,7 @@ function exportTriageSnapshot(): void {
 
 async function evaluateClipboard() {
   if (backgroundSmoke) return null;
-  const text = clipboard.readText();
+  const text = await clipboard.readText();
   if (!text || text === lastClipboard) return null;
   lastClipboard = text;
   return evaluateItemText(text, "clipboard");

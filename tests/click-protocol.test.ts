@@ -1,4 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import { resolveWinHostScript } from "../src/adapters/winHost.js";
 import { clampToRect } from "../src/core/screenLayout.js";
@@ -36,6 +37,6 @@ describe("live click protocol", () => {
   it("resolves the Windows input host from the repo, not the parent folder", () => {
     const host = resolveWinHostScript();
     expect(existsSync(host)).toBe(true);
-    expect(host.replaceAll("\\", "/")).toMatch(/poe2-trade-companion\/scripts\/win-input-host\.ps1$/i);
+    expect(host).toBe(fileURLToPath(new URL("../scripts/win-input-host.ps1", import.meta.url)));
   });
 });

@@ -2388,7 +2388,7 @@ export class GearSorter {
     const { phantomScope, looksEmpty, probePoint, sameSpriteAsLeft, onSilent, footprintSkip } = options;
     const reads: Array<{ cell: GridCell; text: string }> = [];
     const unread: GridCell[] = [];
-    const plannedByKey = new Map(cells.map((cell) => [`${cell.row},${cell.col}`, cell] as const));
+    const plannedByKey = new Map<string, GridCell>(cells.map((cell) => [`${cell.row},${cell.col}`, cell] as const));
     const plannedKeys = new Set(plannedByKey.keys());
     const covered = new Set<string>();
     const gotText = (cell: GridCell, text: string): boolean => {
