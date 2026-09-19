@@ -1,4 +1,5 @@
 import type { FollowerConfig, FollowReplayStep } from "../core/follower.js";
+import type { MapObservation, SteeringDecision } from "../core/followerMapMarker.js";
 import type { LeaderObservation, PixelRect } from "../core/followerPerception.js";
 
 export interface FollowerStatus {
@@ -24,6 +25,22 @@ export interface FollowerPerceptionStatus {
   recording?: { directory: string; frames: number; remainingMs: number };
   lastRecording?: { directory: string; frames: number };
 }
+export interface FollowerDriveSettings { version: 1; dryRun: boolean; mapScale: number; clickIntervalMs: number }
+export interface FollowerDriveStatus {
+  running: boolean;
+  reason: string;
+  settings: FollowerDriveSettings;
+  /** Effective dry-run: the saved setting or the app-wide Dry-run switch. */
+  dryRun: boolean;
+  calibration?: { targetName: string; view: { width: number; height: number }; origin: { x: number; y: number }; markerOffset: { dx: number; dy: number }; labelPixels: number; /** The calibrated label as rows of # and . so the operator can read whose name was captured. */ labelMask: string[]; calibratedAt: string };
+  calibrationIssue?: string;
+  observation?: MapObservation & { ageMs: number };
+  decision?: SteeringDecision;
+  stats?: {
+    cycles: number; clicks: number; previewed: number; refused: number; manualTakeovers: number; observationsPerSecond: number;
+    cycleMsP50?: number; cycleMsP95?: number; captureToInputMsP50?: number; captureToInputMsP95?: number; worstCaseReactionMsP95?: number;
+  };
+}
 export interface FollowerBridge {
   status(): Promise<FollowerStatus>;
   configure(config: FollowerConfig): Promise<FollowerStatus>;
@@ -38,4 +55,11 @@ export interface FollowerBridge {
   observe(): Promise<FollowerPerceptionStatus>;
   stopObserving(): Promise<FollowerPerceptionStatus>;
   record(options: { seconds: number }): Promise<FollowerPerceptionStatus>;
+  driveStatus(): Promise<FollowerDriveStatus>;
+  driveConfigure(settings: FollowerDriveSettings): Promise<FollowerDriveStatus>;
+  /** Omit the selection to find the only party label on the overlay map automatically. */
+  driveCalibrate(selection?: { label: PixelRect }): Promise<FollowerDriveStatus & { capture: FollowerCapture }>;
+  driveClearCalibration(): Promise<FollowerDriveStatus>;
+  driveStart(): Promise<FollowerDriveStatus>;
+  driveStop(): Promise<FollowerDriveStatus>;
 }

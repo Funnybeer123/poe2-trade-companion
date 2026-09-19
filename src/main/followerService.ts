@@ -29,6 +29,8 @@ export class FollowerService {
     try { const file = path.join(directory, "settings.json"); if (existsSync(file)) this.config = parseFollowerConfig(JSON.parse(readFileSync(file, "utf8"))); }
     catch { this.reason = "Saved follower settings are invalid. Review and save them again."; }
   }
+  /** Cheap read for per-capture loops: status() enumerates network adapters and deep-clones. */
+  get followTarget(): { targetName: string; followDistance: number; confidence: number } { const c = this.config; return { targetName: c.targetName, followDistance: c.followDistance, confidence: c.confidence }; }
   status(): FollowerStatus {
     const stale = this.lastSeenAt !== undefined && Date.now() - this.lastSeenAt > 2000;
     return structuredClone({ config: this.config, connection: stale && this.connection === "connected" ? "disconnected" : this.connection,

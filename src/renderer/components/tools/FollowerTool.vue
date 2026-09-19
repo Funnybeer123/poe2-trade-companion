@@ -3,7 +3,7 @@ import { computed, onBeforeUnmount, onMounted, ref, toRaw } from "vue";
 import { defaultFollowerConfig, parseFollowerConfig, type FollowReplayStep } from "../../../core/follower.js";
 import { followerDemo } from "../../../core/followerReplay.js";
 import type { PixelRect } from "../../../core/followerPerception.js";
-import type { FollowerCapture, FollowerPerceptionStatus, FollowerStatus } from "../../../shared/follower.js";
+import type { FollowerCapture, FollowerDriveStatus, FollowerPerceptionStatus, FollowerStatus } from "../../../shared/follower.js";
 
 const api = window.poe2?.follower;
 const config = ref(defaultFollowerConfig()), status = ref<FollowerStatus>();
@@ -17,15 +17,18 @@ const perception = ref<FollowerPerceptionStatus>(), shot = ref<FollowerCapture>(
 const selection = ref<"nameplate" | "searchArea">("nameplate"), corner = ref<{ x: number; y: number }>();
 const regions = ref<{ nameplate?: PixelRect; searchArea?: PixelRect }>({});
 const observed = computed(() => perception.value?.observation);
+const drive = ref<FollowerDriveStatus>(), driveDraft = ref({ dryRun: true, mapScale: 7, clickIntervalMs: 110 }), driveBusy = ref(false), driveLoaded = ref(false);
+const seen = computed(() => drive.value?.observation);
 let timer: ReturnType<typeof setTimeout> | undefined, disposed = false, revision = 0;
 async function refresh(): Promise<void> {
   const version = revision;
   try {
     const next = await api?.status(); if (!disposed && version === revision && next) status.value = next;
-    const seen = await api?.perception(); if (!disposed && seen) perception.value = seen;
+    const watched = await api?.perception(); if (!disposed && watched) perception.value = watched;
+    const driving = await api?.driveStatus?.(); if (!disposed && driving) { drive.value = driving; if (!driveLoaded.value) { driveDraft.value = { dryRun: driving.settings.dryRun, mapScale: driving.settings.mapScale, clickIntervalMs: driving.settings.clickIntervalMs }; driveLoaded.value = true; } }
   }
   catch (e) { if (!disposed) error.value = String(e); }
-  if (!disposed) timer = setTimeout(() => void refresh(), perception.value?.observing || perception.value?.recording ? 250 : 1000);
+  if (!disposed) timer = setTimeout(() => void refresh(), perception.value?.observing || perception.value?.recording || drive.value?.running ? 250 : 1000);
 }
 onMounted(async () => {
   try { const next = await api?.status(); if (!disposed && next) { status.value = next; config.value = next.config; } }
@@ -83,6 +86,15 @@ async function perceive(action: "calibrate" | "clearCalibration" | "observe" | "
     if (action === "calibrate") { shot.value = undefined; regions.value = {}; }
   } catch (e) { if (!disposed) error.value = String(e); }
 }
+async function driving(action: "driveCalibrate" | "driveClearCalibration" | "driveStart" | "driveStop" | "driveConfigure"): Promise<void> {
+  if (!api || driveBusy.value) return;
+  driveBusy.value = true; error.value = "";
+  try {
+    const next = action === "driveConfigure" ? await api.driveConfigure({ version: 1, ...toRaw(driveDraft.value) }) : await api[action]();
+    if (!disposed) drive.value = next;
+  } catch (e) { if (!disposed) error.value = String(e); }
+  finally { driveBusy.value = false; }
+}
 function demo(): void {
   try { steps.value = followerDemo(parseFollowerConfig(toRaw(config.value))); stepIndex.value = 0; error.value = ""; }
   catch (e) { error.value = String(e); }
@@ -96,8 +108,8 @@ function demo(): void {
       <span class="follower-badge">Preview release</span>
     </header>
     <div class="follower-notice">
-      <strong>Connection, route preview, and live observation preview are ready.</strong>
-      <span>Map reading, loot detection, and game controls are still in development. The observation preview only watches the screen. Connecting the PCs does not move a character or pick up items.</span>
+      <strong>Connection, route preview, observation preview, and following by the overlay map are ready.</strong>
+      <span>Loot pickup, area transitions, and two-PC route sharing are still in development. Following starts only when you press Start and defaults to a preview that sends no clicks. Connecting the PCs does not move a character or pick up items.</span>
     </div>
     <p v-if="error" class="follower-error" role="alert">{{ error }}</p>
     <div class="follower-grid">
@@ -139,6 +151,36 @@ function demo(): void {
         <small class="follower-save-note">Saving stops the current connection. Your pairing key is not saved.</small>
       </section>
     </div>
+    <section class="card follower-section" aria-labelledby="follower-drive-title">
+      <div class="follower-preview-header">
+        <div><h3 id="follower-drive-title">Follow by overlay map</h3><p class="muted">Reads {{ config.targetName || 'the leader' }}'s green marker on this PC's overlay map and left-clicks toward it. Needs the overlay map open (Tab), mouse movement (not WASD), and the leader in the same area.</p></div>
+        <div class="follower-actions">
+          <button :disabled="!api || driveBusy || drive?.running" @click="driving('driveCalibrate')">{{ driveBusy ? 'Working…' : 'Calibrate on overlay map' }}</button>
+          <button v-if="!drive?.running" :disabled="!api || driveBusy || !drive?.calibration || !!drive?.calibrationIssue" @click="driving('driveStart')">{{ drive?.dryRun ?? true ? 'Start preview (no clicks)' : 'Start following' }}</button>
+          <button v-else @click="driving('driveStop')">Stop following</button>
+        </div>
+      </div>
+      <p class="muted" role="status">{{ drive?.reason ?? 'Calibrate on the overlay map, then start following.' }}</p>
+      <p v-if="drive?.calibrationIssue" class="follower-error" role="alert">{{ drive.calibrationIssue }}</p>
+      <p v-if="drive?.calibration">Calibrated on <strong>{{ drive.calibration.targetName }}</strong>'s map label at {{ drive.calibration.view.width }} × {{ drive.calibration.view.height }} · map centre {{ drive.calibration.origin.x }}, {{ drive.calibration.origin.y }} · {{ drive.calibration.labelPixels }} label pixels <button class="follower-link" :disabled="drive.running" @click="driving('driveClearCalibration')">Clear</button></p>
+      <pre v-if="drive?.calibration" class="follower-mask" :aria-label="`Captured map label, which should read ${drive.calibration.targetName}`">{{ drive.calibration.labelMask.map(row => row.replace(/\./g, ' ').replace(/#/g, '█')).join('\n') }}</pre>
+      <p v-if="drive?.calibration" class="muted">Check that the captured label above reads {{ drive.calibration.targetName }}. Calibration cannot read names: it takes the only party label on the map.</p>
+      <fieldset :disabled="driveBusy || drive?.running" class="follower-fields follower-drive-fields">
+        <label class="follower-check"><input v-model="driveDraft.dryRun" type="checkbox" />Preview only — decide and trace, but send no clicks</label>
+        <label>Map scale · screen pixels per map pixel<input v-model.number="driveDraft.mapScale" type="number" min="2" max="20" step="0.5" /></label>
+        <label>Minimum time between movement clicks · ms<input v-model.number="driveDraft.clickIntervalMs" type="number" min="100" max="1000" step="10" /></label>
+        <div class="follower-actions"><button type="button" :disabled="!api" @click="driving('driveConfigure')">Save follow settings</button><small v-if="drive && drive.dryRun && !drive.settings.dryRun">The app-wide Dry-run switch is on, so no clicks are sent.</small></div>
+      </fieldset>
+      <dl v-if="drive?.running" class="follower-observation" aria-label="Follow state">
+        <div><dt>Leader</dt><dd>{{ !seen ? 'No observation' : seen.leaderFound ? `${seen.identity.name} · ${seen.offset!.distance} map px away` : 'Label not visible' }}</dd></div>
+        <div><dt>Decision</dt><dd>{{ drive.decision ? `${drive.decision.kind} — ${drive.decision.reason}` : '—' }}</dd></div>
+        <div><dt>Confidence</dt><dd>{{ seen ? `${Math.round(seen.confidence * 100)}% · match ${seen.evidence.score} · next best ${seen.evidence.runnerUp}` : '—' }}</dd></div>
+        <div><dt>Map centre</dt><dd>{{ seen ? (seen.originVerified ? 'Your marker is in place' : 'Your marker is not where calibration put it') : '—' }}</dd></div>
+        <div><dt>Speed</dt><dd v-if="drive.stats">{{ drive.stats.observationsPerSecond }} observations/s · cycle {{ drive.stats.cycleMsP50 }} / {{ drive.stats.cycleMsP95 }} ms (median / 95th)</dd><dd v-else>—</dd></div>
+        <div><dt>Input</dt><dd v-if="drive.stats">{{ drive.stats.clicks }} clicks · {{ drive.stats.previewed }} previewed · {{ drive.stats.refused }} refused · {{ drive.stats.manualTakeovers }} manual takeovers<span v-if="drive.stats.captureToInputMsP95 !== undefined"> · capture→click {{ drive.stats.captureToInputMsP50 }} / {{ drive.stats.captureToInputMsP95 }} ms</span></dd><dd v-else>—</dd></div>
+      </dl>
+      <p class="muted">Moving the mouse or holding a mouse button takes control back for a moment; Ctrl+Shift+Esc stops everything. It never clicks when it cannot see the label, and it cannot yet follow through doors, portals, or area transitions.</p>
+    </section>
     <section class="card follower-section" aria-labelledby="follower-observe-title">
       <div class="follower-preview-header">
         <div><h3 id="follower-observe-title">Live observation preview</h3><p class="muted">Watches this PC's game view for the selected character's nameplate. It sends no game input and shares nothing with the other PC.</p></div>
@@ -228,6 +270,9 @@ function demo(): void {
 .follower-decision > strong { color: #99e3bc; }
 .follower-empty { padding: 24px; text-align: center; border: 1px dashed #344353; border-radius: 8px; color: #a6b3c5; }
 .follower-calibrate { display: grid; gap: 12px; margin: 16px 0; }
+.follower-mask { margin: 8px 0; padding: 8px 10px; width: max-content; max-width: 100%; overflow-x: auto; background: #0b1018; border-radius: 6px; color: #7fe39a; font: 4px/4px monospace; letter-spacing: 0; }
+.follower-drive-fields { grid-template-columns: repeat(2, minmax(0, 1fr)); margin-top: 16px; }
+.follower-drive-fields > :first-child, .follower-drive-fields > :last-child { grid-column: 1 / -1; }
 .follower-shot { position: relative; cursor: crosshair; line-height: 0; border: 1px solid #344353; border-radius: 8px; overflow: hidden; }
 .follower-shot img { width: 100%; user-select: none; }
 .follower-shot svg { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }

@@ -12,6 +12,7 @@ asarUnpack:
   - scripts/win-combat-host.ps1
   - scripts/win-input-host.ps1
   - scripts/win-follower-host.ps1
+  - scripts/win-follower-input-host.ps1
 files:
   - scripts/win-bag-host.ps1
   - scripts/win-price-helper.ps1
@@ -22,6 +23,7 @@ files:
   - scripts/win-combat-host.ps1
   - scripts/win-input-host.ps1
   - scripts/win-follower-host.ps1
+  - scripts/win-follower-input-host.ps1
 extraMetadata:
   poe2BuildMode: authorized-qa
 win:

@@ -89,6 +89,66 @@ public static class FollowWin {
       + ",\"x\":" + x + ",\"y\":" + y + ",\"regionWidth\":" + width + ",\"regionHeight\":" + height
       + ",\"captureMs\":" + (Clock.ElapsedMilliseconds - started) + ",\"pixels\":\"" + pixels + "\"" + image + "}";
   }
+  // System-wide monotonic milliseconds: comparable across processes on this PC, so the
+  // separate input host can refuse clicks that were decided from an old capture.
+  public static long QpcMs() { return Stopwatch.GetTimestamp() * 1000 / Stopwatch.Frequency; }
+  // Same formulas as channelValue() in src/core/followerPerception.ts.
+  public static int ChannelId(string channel) {
+    if (channel == "white") return 0;
+    if (channel == "green") return 1;
+    if (channel == "orange") return 2;
+    throw new Exception("Unknown channel");
+  }
+  public static int ChannelValue(int r, int g, int b, string channel) { return ChannelValue(r, g, b, ChannelId(channel)); }
+  // The id is resolved once per capture: no string compares inside the pixel loop.
+  static int ChannelValue(int r, int g, int b, int channel) {
+    if (channel == 0) return Math.Min(r, Math.Min(g, b));
+    if (channel == 1) return Math.Max(0, g - Math.Max(r, b));
+    return Math.Max(0, Math.Min(r - g, g - b));
+  }
+  // Client coordinates of every pixel in the rectangle whose channel value reaches the threshold,
+  // as little-endian UInt16 x,y pairs. Null when there are more than the cap: not a UI marker.
+  public static byte[] KeyPoints(Bitmap bitmap, int originX, int originY, Rectangle area, string channelName, int threshold, int cap) {
+    int channel = ChannelId(channelName);
+    BitmapData data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
+    try {
+      byte[] row = new byte[data.Stride];
+      MemoryStream points = new MemoryStream();
+      int found = 0;
+      for (int y = area.Top; y < area.Bottom; y++) {
+        Marshal.Copy(IntPtr.Add(data.Scan0, (y - originY) * data.Stride), row, 0, data.Stride);
+        for (int x = area.Left, i = (area.Left - originX) * 4; x < area.Right; x++, i += 4) {
+          if (ChannelValue(row[i + 2], row[i + 1], row[i], channel) < threshold) continue;
+          if (++found > cap) return null;
+          points.WriteByte((byte)(x & 255)); points.WriteByte((byte)(x >> 8)); points.WriteByte((byte)(y & 255)); points.WriteByte((byte)(y >> 8));
+        }
+      }
+      return points.ToArray();
+    } finally { bitmap.UnlockBits(data); }
+  }
+  static void RequireInside(Rectangle area, Rectangle bounds) {
+    if (area.X < 0 || area.Y < 0 || area.Width < 8 || area.Height < 8 || area.Right > bounds.Width || area.Bottom > bounds.Height) throw new Exception("Recalibrate the game view");
+  }
+  // One capture of the union of both rectangles; only sparse marker pixels cross the pipe.
+  public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold) {
+    long capturedAt = QpcMs(), started = Clock.ElapsedMilliseconds;
+    if (threshold < 20 || threshold > 255 || secondThreshold < 20 || secondThreshold > 255) throw new Exception("Invalid key threshold");
+    IntPtr window = Foreground();
+    Rectangle bounds = Bounds(window);
+    if (full) area = new Rectangle(0, 0, bounds.Width, bounds.Height);
+    RequireInside(area, bounds);
+    Rectangle union = area;
+    if (!second.IsEmpty) { RequireInside(second, bounds); union = Rectangle.Union(area, second); }
+    Bitmap bitmap = Capture(bounds, union.X, union.Y, union.Width, union.Height);
+    byte[] first = KeyPoints(bitmap, union.X, union.Y, area, channel, threshold, 6000);
+    byte[] other = second.IsEmpty ? new byte[0] : KeyPoints(bitmap, union.X, union.Y, second, secondChannel, secondThreshold, 2000);
+    if (GetForegroundWindow() != window || Bounds(window) != bounds) throw new Exception("Game focus or view changed during capture");
+    return "{\"ok\":true,\"hwnd\":\"" + window.ToInt64() + "\",\"process\":\"" + ProcessName(window) + "\",\"width\":" + bounds.Width + ",\"height\":" + bounds.Height
+      + ",\"x\":" + area.X + ",\"y\":" + area.Y + ",\"regionWidth\":" + area.Width + ",\"regionHeight\":" + area.Height
+      + ",\"capturedAtQpcMs\":" + capturedAt + ",\"captureMs\":" + (Clock.ElapsedMilliseconds - started)
+      + ",\"overflow\":" + (first == null ? "true" : "false") + ",\"points\":\"" + (first == null ? "" : Convert.ToBase64String(first)) + "\""
+      + ",\"secondOverflow\":" + (other == null ? "true" : "false") + ",\"secondPoints\":\"" + (other == null ? "" : Convert.ToBase64String(other)) + "\"}";
+  }
 }
 '@
 try { [void][FollowWin]::SetProcessDpiAwareness(2) } catch {}
@@ -102,6 +162,15 @@ while ($null -ne ($line = [Console]::ReadLine())) {
     elseif ($command.op -eq 'preview') { $reply = [FollowWin]::Sample(0, 0, 0, 0, $true, $true) }
     elseif ($command.op -eq 'sample') { $reply = [FollowWin]::Sample([int]$command.x, [int]$command.y, [int]$command.width, [int]$command.height, $command.full -eq $true, $false) }
     elseif ($command.op -eq 'record') { $reply = [FollowWin]::Record([string]$command.file) }
+    elseif ($command.op -eq 'key') {
+      $area = New-Object System.Drawing.Rectangle ([int]$command.x), ([int]$command.y), ([int]$command.width), ([int]$command.height)
+      $second = [System.Drawing.Rectangle]::Empty; $secondChannel = 'orange'; $secondThreshold = 255
+      if ($null -ne $command.second) {
+        $second = New-Object System.Drawing.Rectangle ([int]$command.second.x), ([int]$command.second.y), ([int]$command.second.width), ([int]$command.second.height)
+        $secondChannel = [string]$command.second.channel; $secondThreshold = [int]$command.second.threshold
+      }
+      $reply = [FollowWin]::Key($area, $command.full -eq $true, [string]$command.channel, [int]$command.threshold, $second, $secondChannel, $secondThreshold)
+    }
     else { throw 'Unknown follower capture operation' }
   } catch {
     $message = $_.Exception.Message

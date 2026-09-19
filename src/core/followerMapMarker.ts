@@ -1,0 +1,296 @@
+import {
+  buildNameplateTemplate, findNameplate, MIN_NAMEPLATE_SCORE, templatePixelCount,
+  type NameplateMatch, type NameplateSearch, type NameplateTemplate, type PixelRect, type TemplateLimits, type WhiteFrame,
+} from "./followerPerception.js";
+
+/**
+ * Following by the overlay map. With the map overlay open, Path of Exile 2 draws the player's own
+ * marker (orange) at the map centre and each party member's marker with a name label (saturated
+ * green). The vector between the two gives direction and distance to the leader, on screen or off.
+ * Pure functions over captured pixels; nothing here emits OS input.
+ */
+export interface KeyPoint { x: number; y: number }
+export interface MapCalibration {
+  version: 1;
+  targetName: string;
+  view: { width: number; height: number };
+  /** Green-channel template of the leader's name label on the overlay map. */
+  label: NameplateTemplate;
+  /** From the label template's top-left to the centre of the leader's marker beneath it. */
+  markerOffset: { dx: number; dy: number };
+  /** Orange-channel template of the player's own marker and where its top-left sits: the map centre. */
+  originTemplate: NameplateTemplate;
+  originAnchor: { x: number; y: number };
+  calibratedAt: string;
+}
+export interface MapObservation {
+  capturedAt: number;
+  view: { width: number; height: number };
+  identity: { name: string; method: "map-label-template" };
+  leaderFound: boolean;
+  /** Player marker centre and leader marker centre in game-client pixels; offset = leader − origin in map pixels. */
+  origin: KeyPoint;
+  leader?: KeyPoint;
+  offset?: { dx: number; dy: number; distance: number };
+  confidence: number;
+  /** The player's own marker was seen where calibration put it recently enough to trust the map centre. */
+  originVerified: boolean;
+  evidence: { score: number; runnerUp: number; candidates: number; keyPixels: number; originScore: number; originSeenAgoMs: number | null; searched: "full" | "window"; overflow: boolean };
+  timing: { captureMs: number; matchMs: number };
+}
+export interface SteeringConfig {
+  /** Map pixels: stop clicking inside stopPx, start again beyond resumePx. */
+  stopPx: number; resumePx: number;
+  clickIntervalMs: number;
+  /** Approximate screen pixels of world movement per overlay-map pixel. */
+  mapScale: number;
+  confidence: number;
+}
+export type SteeringDecision =
+  | { kind: "move"; x: number; y: number; distance: number; reason: string }
+  | { kind: "hold" | "near" | "pause"; reason: string; distance?: number };
+
+export const LABEL_LIMITS: TemplateLimits = { minThreshold: 60, maxThreshold: 200, minPixels: 24, minWidth: 12, minHeight: 6 };
+export const ORIGIN_LIMITS: TemplateLimits = { minThreshold: 30, maxThreshold: 200, minPixels: 10, minWidth: 5, minHeight: 5 };
+const TRACK_MARGIN = 96, FULL_SEARCH_EVERY_MS = 1000, ORIGIN_MARGIN = 20, ORIGIN_TOLERANCE = 5, ORIGIN_MIN_SCORE = .5, ORIGIN_STICKY_MS = 1500, ORIGIN_COVERED_MAX_MS = 10_000, MAX_MISSES = 3;
+const LABEL_FLANK = 6, LABEL_JUMP_PX = 30, LABEL_JUMP_WINDOW_MS = 250;
+/** The input worker refuses clicks beyond 0.30 h of the view centre; steering stays just inside that. */
+const SAFE_DISC = .29;
+const integer = (n: unknown): n is number => typeof n === "number" && Number.isInteger(n);
+
+export function decodeKeyPoints(base64: unknown): KeyPoint[] {
+  if (typeof base64 !== "string") throw new Error("Capture worker returned no marker pixels.");
+  const bytes = Buffer.from(base64, "base64");
+  if (bytes.length % 4) throw new Error("Capture worker returned malformed marker pixels.");
+  const points: KeyPoint[] = [];
+  for (let i = 0; i < bytes.length; i += 4) points.push({ x: bytes.readUInt16LE(i), y: bytes.readUInt16LE(i + 2) });
+  return points;
+}
+export function keyPointsOf(frame: WhiteFrame, threshold: number, area: PixelRect = { x: 0, y: 0, width: frame.width, height: frame.height }): KeyPoint[] {
+  const points: KeyPoint[] = [];
+  for (let y = area.y; y < area.y + area.height; y++) for (let x = area.x; x < area.x + area.width; x++) if (frame.pixels[y * frame.width + x] >= threshold) points.push({ x, y });
+  return points;
+}
+
+/**
+ * The same Dice-scored template search as findNameplate, over a sparse list of above-threshold
+ * pixels instead of a dense plane. A few probe offsets vote for anchors; only anchors with enough
+ * votes are scored exactly. Cost scales with marker pixels on screen, not with screen size.
+ *
+ * Without options, anchors may overhang the searched region: a clipped label still matches where it
+ * really is, but pixels outside the region can never count against it. `bounds` keeps every anchor
+ * inside the region that was actually captured. `flank` rejects a candidate with
+ * ink directly left or right of it on the same rows: the name continues, so it is a longer name that
+ * merely contains this one ("Ranger" inside "RangerTwo"), which Dice alone would score near 1.
+ */
+export interface SparseSearchOptions { flank?: number; bounds?: PixelRect }
+export function findTemplateSparse(points: KeyPoint[], template: NameplateTemplate, minScore = MIN_NAMEPLATE_SCORE, options: SparseSearchOptions = {}): NameplateSearch {
+  const flank = options.flank ?? 0, bounds = options.bounds;
+  const offsets: KeyPoint[] = [];
+  template.mask.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (row[x] === "#") offsets.push({ x, y }); });
+  const total = offsets.length;
+  if (!total || !points.length) return { runnerUp: 0, candidates: 0 };
+  const key = (x: number, y: number) => (y + 1024) * 131072 + x + 1024, present = new Set<number>();
+  for (const p of points) present.add(key(p.x, p.y));
+  const floor = minScore * .75, step = Math.max(1, Math.floor(total / 32)), probes = offsets.filter((_, i) => i % step === 0);
+  // Dice >= floor needs matched >= total * floor / (2 - floor); probes sample that fraction, halved for slack.
+  const need = Math.max(1, Math.floor(probes.length * floor / (2 - floor) * .5)), votes = new Map<number, number>();
+  for (const p of points) for (const o of probes) { const k = key(p.x - o.x, p.y - o.y); votes.set(k, (votes.get(k) ?? 0) + 1); }
+  const found: NameplateMatch[] = [];
+  for (const [k, count] of votes) {
+    if (count < need) continue;
+    const x = k % 131072 - 1024, y = Math.floor(k / 131072) - 1024;
+    if (bounds && (x < bounds.x || y < bounds.y || x + template.width > bounds.x + bounds.width || y + template.height > bounds.y + bounds.height)) continue;
+    let matched = 0, windowOn = 0;
+    for (const o of offsets) if (present.has(key(x + o.x, y + o.y))) matched++;
+    if (2 * matched / (total + matched) < floor) continue;
+    let beside = 0;
+    for (const p of points) if (p.y >= y && p.y < y + template.height) {
+      if (p.x >= x && p.x < x + template.width) windowOn++;
+      else if (p.x >= x - flank && p.x < x + template.width + flank) beside++;
+    }
+    if (beside >= 3) continue;
+    const score = 2 * matched / (total + windowOn);
+    if (score >= floor) found.push({ x, y, score, matchedPixels: matched });
+  }
+  const distinct: NameplateMatch[] = [];
+  for (const m of found.sort((a, b) => b.score - a.score || a.y - b.y || a.x - b.x)) {
+    if (distinct.length < 8 && distinct.every(d => Math.abs(m.x - d.x) >= template.width || Math.abs(m.y - d.y) >= template.height)) distinct.push(m);
+  }
+  if (!distinct.length || distinct[0].score < minScore) return { runnerUp: distinct[0]?.score ?? 0, candidates: 0 };
+  return { best: distinct[0], runnerUp: distinct[1]?.score ?? 0, candidates: distinct.filter(m => m.score >= minScore).length };
+}
+
+interface Cluster { left: number; top: number; right: number; bottom: number; count: number; sumX: number; sumY: number }
+/** Groups marker pixels that sit within one glyph gap of each other: a label is one cluster, its marker another. */
+function clusters(points: KeyPoint[]): Cluster[] {
+  if (points.length > 3000) throw new Error("Too much saturated green on screen to find the map label. Calibrate away from green effects, or pass the rectangle around the label.");
+  const parent = points.map((_, i) => i), find = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
+  for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
+    if (Math.abs(points[i].x - points[j].x) <= 5 && Math.abs(points[i].y - points[j].y) <= 2) parent[find(i)] = find(j);
+  }
+  const byRoot = new Map<number, Cluster>();
+  points.forEach((p, i) => {
+    const root = find(i), c = byRoot.get(root);
+    if (!c) byRoot.set(root, { left: p.x, top: p.y, right: p.x, bottom: p.y, count: 1, sumX: p.x, sumY: p.y });
+    else { c.left = Math.min(c.left, p.x); c.top = Math.min(c.top, p.y); c.right = Math.max(c.right, p.x); c.bottom = Math.max(c.bottom, p.y); c.count++; c.sumX += p.x; c.sumY += p.y; }
+  });
+  return [...byRoot.values()];
+}
+/** Every party label on the overlay map that has its marker directly beneath it. */
+export function findMapLabels(green: WhiteFrame, threshold = 80, near?: PixelRect): Array<{ label: PixelRect; marker: KeyPoint }> {
+  // A selection only has to touch the label, so look a whole label's width around it, and no further:
+  // green scenery elsewhere must not defeat a manual selection.
+  const x = near ? Math.max(0, near.x - 400) : 0, y = near ? Math.max(0, near.y - 24) : 0;
+  const area = near ? { x, y, width: Math.min(green.width, near.x + near.width + 400) - x, height: Math.min(green.height, near.y + near.height + 40) - y } : undefined;
+  const all = clusters(keyPointsOf(green, threshold, area)), pairs: Array<{ label: PixelRect; marker: KeyPoint }> = [];
+  for (const label of all) {
+    const width = label.right - label.left + 1, height = label.bottom - label.top + 1;
+    if (width < 24 || width > 400 || height < 6 || height > 24 || label.count < 40) continue;
+    const centre = (label.left + label.right) / 2;
+    const marker = all.find(m => m !== label && m.right - m.left + 1 >= 5 && m.right - m.left + 1 <= 18 && m.bottom - m.top + 1 >= 5 && m.bottom - m.top + 1 <= 16 && m.count >= 10
+      && Math.abs((m.left + m.right) / 2 - centre) <= 12 && m.top - label.bottom >= 1 && m.top - label.bottom <= 12);
+    if (marker) pairs.push({ label: { x: label.left, y: label.top, width, height }, marker: { x: Math.round(marker.sumX / marker.count), y: Math.round(marker.sumY / marker.count) } });
+  }
+  return pairs;
+}
+
+/**
+ * Calibrates from one full-view capture with the overlay map open and the leader on it.
+ * With `labelRect` omitted, exactly one party label must be visible; otherwise pass the
+ * rectangle the operator drew around the leader's label.
+ */
+export function buildMapCalibration(green: WhiteFrame, orange: WhiteFrame, targetName: string, calibratedAt: string, labelRect?: PixelRect): MapCalibration {
+  if (!targetName) throw new Error("Enter and save the character to follow before calibrating.");
+  if (green.width !== orange.width || green.height !== orange.height) throw new Error("Calibration planes differ in size.");
+  const pairs = findMapLabels(green, 80, labelRect);
+  const chosen = labelRect
+    ? pairs.find(p => p.label.x < labelRect.x + labelRect.width && labelRect.x < p.label.x + p.label.width && p.label.y < labelRect.y + labelRect.height && labelRect.y < p.label.y + p.label.height)
+    : pairs.length === 1 ? pairs[0] : undefined;
+  if (!chosen) throw new Error(labelRect ? "No party label with a map marker beneath it was found in the selection. Open the overlay map (Tab) with the leader on it."
+    : pairs.length ? `Found ${pairs.length} party labels on the overlay map. Calibrate while ${targetName} is the only other party member on it, or pass the rectangle around ${targetName}'s label.` : "No party label found on the overlay map. Open the overlay map (Tab) with the leader in the same area, then capture again.");
+  const pad = (r: PixelRect, by: number): PixelRect => { const x = Math.max(0, r.x - by), y = Math.max(0, r.y - by); return { x, y, width: Math.min(green.width, r.x + r.width + by) - x, height: Math.min(green.height, r.y + r.height + by) - y }; };
+  const { template: label, nameplate } = buildNameplateTemplate(green, pad(chosen.label, 2), LABEL_LIMITS);
+  // The player's marker is the same sprite in orange: look for the leader marker's shape near the view centre.
+  const markerBox = pad({ x: chosen.marker.x - 5, y: chosen.marker.y - 4, width: 11, height: 9 }, 2);
+  const { template: shape } = buildNameplateTemplate(green, markerBox, { ...ORIGIN_LIMITS, minThreshold: 60 });
+  // The overlay map is centred on the player: horizontally mid-view, a little above mid-height
+  // (measured at 0.4998 w, 0.4858 h). Anything orange elsewhere is scenery or the corner minimap.
+  const centre: PixelRect = { x: Math.round(green.width * .485), y: Math.round(green.height * .46), width: Math.round(green.width * .03), height: Math.round(green.height * .05) };
+  const crop = new Uint8Array(centre.width * centre.height);
+  for (let y = 0; y < centre.height; y++) crop.set(orange.pixels.subarray((centre.y + y) * orange.width + centre.x, (centre.y + y) * orange.width + centre.x + centre.width), y * centre.width);
+  const own = findNameplate({ width: centre.width, height: centre.height, pixels: crop }, { ...shape, threshold: 36 }, .55).best;
+  if (!own) throw new Error("Could not find your own marker at the centre of the overlay map. Open the overlay map (Tab) instead of the corner minimap, close side panels, and capture again.");
+  const ownBox = pad({ x: centre.x + own.x, y: centre.y + own.y, width: shape.width, height: shape.height }, 1);
+  const { template: originTemplate, nameplate: originRect } = buildNameplateTemplate(orange, ownBox, ORIGIN_LIMITS);
+  return parseMapCalibration({ version: 1, targetName, view: { width: green.width, height: green.height }, label,
+    markerOffset: { dx: chosen.marker.x - nameplate.x, dy: chosen.marker.y - nameplate.y }, originTemplate, originAnchor: { x: originRect.x, y: originRect.y }, calibratedAt });
+}
+
+function validTemplate(t: NameplateTemplate, limits: TemplateLimits, maxWidth: number, maxHeight: number): boolean {
+  return !!t && integer(t.width) && integer(t.height) && t.width >= 3 && t.height >= 3 && t.width <= maxWidth && t.height <= maxHeight && integer(t.threshold) && t.threshold >= limits.minThreshold && t.threshold <= limits.maxThreshold
+    && Array.isArray(t.mask) && t.mask.length === t.height && t.mask.every(row => typeof row === "string" && row.length === t.width && /^[.#]+$/.test(row)) && templatePixelCount(t) >= limits.minPixels;
+}
+export function parseMapCalibration(raw: unknown): MapCalibration {
+  const c = raw as MapCalibration | null, fail = () => new Error("Saved map calibration is invalid. Calibrate again.");
+  if (!c || c.version !== 1 || typeof c.targetName !== "string" || !c.targetName || c.targetName.length > 80 || typeof c.calibratedAt !== "string" || c.calibratedAt.length > 40) throw fail();
+  if (!c.view || !integer(c.view.width) || !integer(c.view.height) || c.view.width < 320 || c.view.height < 240 || c.view.width > 8192 || c.view.height > 8192) throw fail();
+  if (!validTemplate(c.label, LABEL_LIMITS, 404, 84) || !validTemplate(c.originTemplate, ORIGIN_LIMITS, 40, 40)) throw fail();
+  if (!c.markerOffset || !integer(c.markerOffset.dx) || !integer(c.markerOffset.dy) || Math.abs(c.markerOffset.dx) > 404 || c.markerOffset.dy < 0 || c.markerOffset.dy > 120) throw fail();
+  const a = c.originAnchor;
+  if (!a || !integer(a.x) || !integer(a.y) || a.x < ORIGIN_MARGIN || a.y < ORIGIN_MARGIN || a.x + c.originTemplate.width + ORIGIN_MARGIN > c.view.width || a.y + c.originTemplate.height + ORIGIN_MARGIN > c.view.height) throw fail();
+  return { version: 1, targetName: c.targetName, view: { width: c.view.width, height: c.view.height }, label: { ...c.label, mask: [...c.label.mask] }, markerOffset: { dx: c.markerOffset.dx, dy: c.markerOffset.dy },
+    originTemplate: { ...c.originTemplate, mask: [...c.originTemplate.mask] }, originAnchor: { x: a.x, y: a.y }, calibratedAt: c.calibratedAt };
+}
+export function mapCalibrationIssue(c: MapCalibration, targetName: string, view?: { width: number; height: number }): string | undefined {
+  if (c.targetName !== targetName) return `Map calibrated for ${c.targetName}; calibrate again for ${targetName || "the selected character"}.`;
+  if (view && (view.width !== c.view.width || view.height !== c.view.height)) return `Game view changed from ${c.view.width} × ${c.view.height} to ${view.width} × ${view.height}. Calibrate again.`;
+  return undefined;
+}
+
+export interface MapCaptureRequest { region: PixelRect; full: boolean; searched: "full" | "window"; channel: "green"; threshold: number; second: PixelRect & { channel: "orange"; threshold: number } }
+/** Chooses what to capture next and turns sparse marker pixels into observations. Holds no pixels. */
+export class MapMarkerTracker {
+  private last?: KeyPoint;
+  private misses = 0;
+  private lastFullAt = -Infinity;
+  private originSeenAt?: number;
+  private region?: PixelRect;
+  private fullRunnerUp = 0;
+  private lastLeader?: { at: number; x: number; y: number };
+  constructor(private readonly calibration: MapCalibration) {}
+  get origin(): KeyPoint { const c = this.calibration; return { x: c.originAnchor.x + Math.floor(c.originTemplate.width / 2), y: c.originAnchor.y + Math.floor(c.originTemplate.height / 2) }; }
+  nextRequest(now: number): MapCaptureRequest {
+    const c = this.calibration, view = c.view, a = c.originAnchor;
+    const second = { x: a.x - ORIGIN_MARGIN, y: a.y - ORIGIN_MARGIN, width: c.originTemplate.width + ORIGIN_MARGIN * 2, height: c.originTemplate.height + ORIGIN_MARGIN * 2, channel: "orange" as const, threshold: c.originTemplate.threshold };
+    const base = { channel: "green" as const, threshold: c.label.threshold, second };
+    if (!this.last || now - this.lastFullAt >= FULL_SEARCH_EVERY_MS) { this.lastFullAt = now; this.region = { x: 0, y: 0, width: view.width, height: view.height }; return { ...base, region: this.region, full: true, searched: "full" }; }
+    const x = Math.max(0, this.last.x - TRACK_MARGIN), y = Math.max(0, this.last.y - TRACK_MARGIN);
+    const right = Math.min(view.width, this.last.x + c.label.width + TRACK_MARGIN), bottom = Math.min(view.height, this.last.y + c.label.height + TRACK_MARGIN);
+    this.region = { x, y, width: right - x, height: bottom - y };
+    return { ...base, region: this.region, full: false, searched: "window" };
+  }
+  observe(points: KeyPoint[] | undefined, originPoints: KeyPoint[] | undefined, searched: "full" | "window", capturedAt: number, timing: { captureMs: number; matchMs: number }): MapObservation {
+    const c = this.calibration, search = points ? findTemplateSparse(points, c.label, MIN_NAMEPLATE_SCORE, { flank: LABEL_FLANK, bounds: this.region }) : { runnerUp: 0, candidates: 0 } as NameplateSearch, best = search.best;
+    if (best) { this.last = { x: best.x, y: best.y }; this.misses = 0; }
+    // An overflowed capture never ran a search: it says nothing about the label, so the track is kept.
+    else if (points && (++this.misses >= MAX_MISSES || searched === "full")) this.last = undefined;
+    // A window cannot see a rival label elsewhere on the map; the last full search could. Identity stays
+    // as ambiguous as that search found it until another full search clears it.
+    if (searched === "full" && points) this.fullRunnerUp = search.runnerUp;
+    const runnerUp = Math.max(search.runnerUp, this.fullRunnerUp);
+    const own = originPoints ? findTemplateSparse(originPoints, c.originTemplate, ORIGIN_MIN_SCORE).best : undefined;
+    const ownInPlace = !!own && Math.abs(own.x - c.originAnchor.x) <= ORIGIN_TOLERANCE && Math.abs(own.y - c.originAnchor.y) <= ORIGIN_TOLERANCE;
+    const origin = this.origin, leader = best ? { x: best.x + c.markerOffset.dx, y: best.y + c.markerOffset.dy } : undefined;
+    // Markers crawl a pixel or two per capture. A label that jumps means the whole map moved (a panel
+    // opened, the map was panned), and so does our own marker turning up somewhere else.
+    const jumped = !!leader && !!this.lastLeader && capturedAt - this.lastLeader.at <= LABEL_JUMP_WINDOW_MS && Math.hypot(leader.x - this.lastLeader.x, leader.y - this.lastLeader.y) > LABEL_JUMP_PX;
+    if (leader) this.lastLeader = { at: capturedAt, ...leader };
+    if (ownInPlace) this.originSeenAt = capturedAt;
+    else if (own || jumped) this.originSeenAt = undefined;
+    const dx = leader ? leader.x - origin.x : 0, dy = leader ? leader.y - origin.y : 0, distance = Math.hypot(dx, dy);
+    const margin = best ? best.score - runnerUp : 0, seenAgo = this.originSeenAt === undefined ? null : capturedAt - this.originSeenAt;
+    // The leader's marker covers ours when they stand on us; the map centre cannot have moved then, but only for a while.
+    const covered = !!leader && distance <= Math.max(c.originTemplate.width, c.originTemplate.height) && seenAgo !== null && seenAgo <= ORIGIN_COVERED_MAX_MS;
+    const originVerified = (seenAgo !== null && seenAgo <= ORIGIN_STICKY_MS) || covered;
+    return {
+      capturedAt, view: { ...c.view }, identity: { name: c.targetName, method: "map-label-template" }, leaderFound: !!best, origin, leader,
+      offset: leader ? { dx, dy, distance: Math.round(distance * 10) / 10 } : undefined,
+      confidence: best ? Math.round(best.score * Math.min(1, margin / .1) * 1000) / 1000 : 0, originVerified,
+      evidence: { score: Math.round((best?.score ?? 0) * 1000) / 1000, runnerUp: Math.round(runnerUp * 1000) / 1000, candidates: search.candidates, keyPixels: points?.length ?? 0,
+        originScore: Math.round((own?.score ?? 0) * 1000) / 1000, originSeenAgoMs: seenAgo === null ? null : Math.round(seenAgo), searched, overflow: !points },
+      timing,
+    };
+  }
+}
+
+/**
+ * Turns observations into movement clicks. It clicks only while it can see the leader's label with
+ * enough confidence and trusts the map centre: when either is missing it sends nothing, so the
+ * character finishes its last move and stands still. There is no blind pursuit.
+ */
+export class FollowSteering {
+  private moving = false;
+  private lastClickAt = -Infinity;
+  constructor(private readonly config: SteeringConfig) {}
+  decide(o: MapObservation | undefined, now: number): SteeringDecision {
+    if (!o) return { kind: "hold", reason: "No observation." };
+    if (!o.leaderFound || !o.leader || !o.offset) return { kind: "hold", reason: `${o.identity.name}'s map label is not visible.` };
+    if (o.confidence < this.config.confidence) return { kind: "hold", reason: `Label confidence ${o.confidence} is below ${this.config.confidence}.`, distance: o.offset.distance };
+    if (!o.originVerified) return { kind: "pause", reason: "Your own map marker is not at the calibrated map centre: a panel is open or the overlay map is hidden.", distance: o.offset.distance };
+    const d = o.offset.distance;
+    if (d <= (this.moving ? this.config.stopPx : this.config.resumePx)) { this.moving = false; return { kind: "near", reason: "Within following distance.", distance: d }; }
+    this.moving = true;
+    if (now - this.lastClickAt < this.config.clickIntervalMs) return { kind: "hold", reason: "Pacing movement clicks.", distance: d };
+    // Aim where the leader is on screen if the map scale is right; the clamp keeps clicks off our own feet and off the HUD.
+    const radius = Math.max(o.view.height * .06, Math.min(o.view.height * .26, d * this.config.mapScale));
+    let x = o.origin.x + o.offset.dx / d * radius, y = o.origin.y + o.offset.dy / d * radius;
+    // The map centre is only near the view centre; pull the target in so the input worker never has to refuse it.
+    const cx = o.view.width / 2, cy = o.view.height / 2, out = Math.hypot(x - cx, y - cy), limit = o.view.height * SAFE_DISC;
+    if (out > limit) { x = cx + (x - cx) / out * limit; y = cy + (y - cy) / out * limit; }
+    x = Math.max(0, Math.min(o.view.width - 1, Math.round(x))); y = Math.max(0, Math.min(o.view.height - 1, Math.round(y)));
+    return { kind: "move", x, y, distance: d, reason: `Move toward ${o.identity.name}: ${Math.round(d)} map px away.` };
+  }
+  /** Call only when a click was really emitted (or previewed in dry-run): refused input must retry at once. */
+  committed(now: number): void { this.lastClickAt = now; }
+}

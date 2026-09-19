@@ -1,13 +1,16 @@
 import { inflateSync } from "node:zlib";
-import type { WhiteFrame } from "../core/followerPerception.js";
+import { channelValue, type PlaneChannel, type WhiteFrame } from "../core/followerPerception.js";
 
 const SIGNATURE = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 
 /**
  * Decodes the PNGs the follower recorder writes (8-bit RGB or RGBA, non-interlaced) into the
- * same min(R,G,B) frame the live capture host produces. Not a general PNG decoder.
+ * same single-channel plane the live capture host produces. Not a general PNG decoder.
  */
-export function pngWhiteness(png: Buffer): WhiteFrame {
+export function pngWhiteness(png: Buffer): WhiteFrame { return pngPlane(png, "white"); }
+export function pngPlane(png: Buffer, channel: PlaneChannel): WhiteFrame { return pngPlanes(png, [channel])[0]; }
+/** Several channels from one decode. */
+export function pngPlanes(png: Buffer, planeChannels: readonly PlaneChannel[]): WhiteFrame[] {
   if (png.length < 33 || !png.subarray(0, 8).equals(SIGNATURE)) throw new Error("Not a PNG file.");
   let width = 0, height = 0, channels = 0;
   const data: Buffer[] = [];
@@ -27,7 +30,7 @@ export function pngWhiteness(png: Buffer): WhiteFrame {
   if (!channels || !data.length) throw new Error("PNG has no image data.");
   const stride = width * channels, raw = inflateSync(Buffer.concat(data));
   if (raw.length !== (stride + 1) * height) throw new Error("PNG image data has an unexpected size.");
-  const pixels = new Uint8Array(width * height), previous = new Uint8Array(stride), row = new Uint8Array(stride);
+  const planes = planeChannels.map(() => new Uint8Array(width * height)), previous = new Uint8Array(stride), row = new Uint8Array(stride);
   for (let y = 0; y < height; y++) {
     const filter = raw[y * (stride + 1)], source = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
     for (let i = 0; i < stride; i++) {
@@ -40,8 +43,8 @@ export function pngWhiteness(png: Buffer): WhiteFrame {
       else if (filter !== 0) throw new Error("Corrupt PNG filter.");
       row[i] = (source[i] + predicted) & 255;
     }
-    for (let x = 0, i = 0; x < width; x++, i += channels) pixels[y * width + x] = Math.min(row[i], row[i + 1], row[i + 2]);
+    for (let x = 0, i = 0; x < width; x++, i += channels) for (let p = 0; p < planes.length; p++) planes[p][y * width + x] = channelValue(row[i], row[i + 1], row[i + 2], planeChannels[p]);
     previous.set(row);
   }
-  return { width, height, pixels };
+  return planes.map(pixels => ({ width, height, pixels }));
 }

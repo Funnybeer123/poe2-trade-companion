@@ -48,6 +48,7 @@
     "assistive:sizes:lookup": "npx --yes tsx scripts/assistive-item-sizes.ts --lookup",
     "actions:daemon": "npx --yes tsx scripts/action-daemon.ts",
     "follower:replay": "npx --yes tsx scripts/follower-replay.ts",
+    "follower:live": "npx --yes tsx scripts/follower-live.ts",
     "map:triage": "npx --yes tsx scripts/map-triage.ts",
     "map:triage:run": "npx --yes tsx scripts/map-triage.ts --run",
     "vendor:cycle": "npx --yes tsx scripts/vendor-cycle.ts",

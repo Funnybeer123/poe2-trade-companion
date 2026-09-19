@@ -84,6 +84,12 @@ contextBridge.exposeInMainWorld("poe2", {
     observe: () => ipcRenderer.invoke("follower:observe"),
     stopObserving: () => ipcRenderer.invoke("follower:stop-observing"),
     record: (options: { seconds: number }) => ipcRenderer.invoke("follower:record", options),
+    driveStatus: () => ipcRenderer.invoke("follower:drive-status"),
+    driveConfigure: (settings: import("../shared/follower.js").FollowerDriveSettings) => ipcRenderer.invoke("follower:drive-configure", settings),
+    driveCalibrate: (selection?: Parameters<import("../shared/follower.js").FollowerBridge["driveCalibrate"]>[0]) => ipcRenderer.invoke("follower:drive-calibrate", selection),
+    driveClearCalibration: () => ipcRenderer.invoke("follower:drive-clear-calibration"),
+    driveStart: () => ipcRenderer.invoke("follower:drive-start"),
+    driveStop: () => ipcRenderer.invoke("follower:drive-stop"),
   },
   combat: {
     setGlobalDryRun: (enabled: boolean) => ipcRenderer.invoke("combat:global-dry-run", enabled),

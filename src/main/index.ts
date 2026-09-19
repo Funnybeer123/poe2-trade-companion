@@ -117,7 +117,7 @@ function assertBagIdle(fromVoice = false): void {
   if (bagTriageService?.status.running) throw new Error("Stop the current bag stage before starting another game action.");
   if (killSwitch.isLatched()) throw new Error("Emergency stop is latched. Rearm first.");
   if (!fromVoice && voiceActive()) throw new Error("Cancel the current voice transfer first.");
-  if (assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || combatService?.status.running) throw new Error("Stop the current game action before starting another.");
+  if (assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || combatService?.status.running || followerService?.driving()) throw new Error("Stop the current game action before starting another.");
 }
 
 function quotesFile(): string {
@@ -507,7 +507,7 @@ if (ownsInstance) void app.whenReady().then(() => {
       dataRoot: memoryRoot,
     } } : {}),
     emit: (event) => { if (event.kind === "log" || event.kind === "error") deckRuntime?.observe("script", event); sendRendererEvent(mainWindow, "stash-tabs:event", event); },
-    canRun: () => !killSwitch.isLatched() && !voiceActive() && !bagTriageService?.status.running && !assistiveService?.status.running && !stashSortService?.status.running && !scannerService?.status.running && !combatService?.status.running,
+    canRun: () => !killSwitch.isLatched() && !voiceActive() && !bagTriageService?.status.running && !assistiveService?.status.running && !stashSortService?.status.running && !scannerService?.status.running && !combatService?.status.running && !followerService?.driving(),
     onScriptStopped: (_kind, reason) => stashValuationService?.markStopped(reason),
   });
   stashValuationService = new StashValuationService(app.isPackaged ? memoryRoot : process.cwd());
@@ -521,7 +521,7 @@ if (ownsInstance) void app.whenReady().then(() => {
     },
     blocked: () => backgroundSmoke ? "Game actions are disabled during background UI smoke checks."
       : killSwitch.isLatched() ? "Rearm the emergency stop before starting a bag stage."
-      : voiceActive() || assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || combatService?.status.running
+      : voiceActive() || assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || combatService?.status.running || followerService?.driving()
         ? "Stop the current game action before starting a bag stage." : undefined,
   });
   ipcMain.handle("bag-triage:status", () => bagTriageService!.refresh());
@@ -552,7 +552,12 @@ if (ownsInstance) void app.whenReady().then(() => {
       }
     },
   });
-  followerService = installFollower(() => mainWindow, () => backgroundSmoke ? "Peer connections and game capture are disabled during background UI smoke checks." : killSwitch.isLatched() ? "Emergency stop is latched. Rearm before connecting or capturing." : undefined);
+  followerService = installFollower(() => mainWindow, () => backgroundSmoke ? "Peer connections and game capture are disabled during background UI smoke checks." : killSwitch.isLatched() ? "Emergency stop is latched. Rearm before connecting or capturing." : undefined, {
+    killSwitch, mode: buildMode, globalDryRun: () => combatGlobalDryRun,
+    blocked: () => (!emergencyStopRegistered && !emergencyStopMonitor?.ready) ? "The emergency stop is starting or unavailable. Wait a moment, or close conflicting apps and restart the companion."
+      : voiceActive() || assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || bagTriageService?.status.running || combatService?.status.running
+        ? "Paused while another game action is running" : undefined,
+  });
   const stopAllInput = () => {
     followerService?.stop("Emergency stop — rearm before connecting.");
     killSwitch.trip();
@@ -584,7 +589,7 @@ if (ownsInstance) void app.whenReady().then(() => {
     blocked: () => {
       if ((!emergencyStopRegistered && !emergencyStopMonitor?.ready) || !combatHotkeyRegistered) return "Combat hotkeys are starting or unavailable. Wait a moment, or close conflicting apps and restart the companion.";
       if (combatGlobalDryRun && !combatService?.status.config.dryRun) return "Global Dry-run is on. Use Preview only or turn off global Dry-run for live combat.";
-      if (voiceActive() || assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || bagTriageService?.status.running) return "Paused while another game action is running";
+      if (voiceActive() || assistiveService?.status.running || stashSortService?.status.running || scannerService?.status.running || stashTabAdminService?.status.running || bagTriageService?.status.running || followerService?.driving()) return "Paused while another game action is running";
       return undefined;
     },
   });

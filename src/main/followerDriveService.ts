@@ -1,0 +1,263 @@
+import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { FollowerInputSink, type FollowerFrameGuard } from "../adapters/followerInputSink.js";
+import { pngPlanes } from "../adapters/pngWhiteness.js";
+import { startWinHost } from "../adapters/winHost.js";
+import {
+  buildMapCalibration, decodeKeyPoints, FollowSteering, mapCalibrationIssue, MapMarkerTracker, parseMapCalibration,
+  type MapCalibration, type SteeringDecision,
+} from "../core/followerMapMarker.js";
+import { templatePixelCount, type PixelRect } from "../core/followerPerception.js";
+import { GameInputController } from "../core/gameInputController.js";
+import type { KillSwitch } from "../core/killSwitch.js";
+import { scenario } from "../core/scenarios.js";
+import type { QaActionTrace, RuntimeMode } from "../core/types.js";
+import type { FollowerCapture, FollowerDriveSettings, FollowerDriveStatus } from "../shared/follower.js";
+
+type Host = Pick<ReturnType<typeof startWinHost>, "send" | "close">;
+interface DriveOptions {
+  directory: string;
+  killSwitch: KillSwitch;
+  mode: RuntimeMode;
+  /** Live follower preferences: who to follow, how close, and the minimum confidence. */
+  follow: () => { targetName: string; followDistance: number; confidence: number };
+  blocked?: () => string | undefined;
+  globalDryRun?: () => boolean;
+  createCaptureHost?: () => Host;
+  createInputHost?: () => Host;
+  audit?: (traces: QaActionTrace[]) => void;
+  now?: () => number;
+  pollMs?: number;
+}
+const GAME_PROCESSES = ["pathofexile", "pathofexile_x64", "pathofexilesteam", "pathofexile_x64steam", "pathofexileegs", "pathofexile_x64egs"];
+const FRAME_MAX_AGE_MS = 120, MANUAL_PAUSE_MS = 1500, ACTIONS_PER_MINUTE = 600, MAP_PX_PER_FOLLOW_UNIT = 6;
+/** The fastest pacing the action cap can sustain: a shorter interval would always end in a rate-limit stop. */
+export const MIN_CLICK_INTERVAL_MS = Math.ceil(60_000 / ACTIONS_PER_MINUTE);
+const FOCUS = /Focus Path of Exile 2/, COVERED = /covered at the click point/;
+const MANUAL = /Manual mouse movement|Mouse button held|Modifier key held/, RETRY = /Stale capture|capture stale|Focus Path of Exile|focus or view changed/i;
+
+export function defaultDriveSettings(): FollowerDriveSettings { return { version: 1, dryRun: true, mapScale: 7, clickIntervalMs: 110 }; }
+export function parseDriveSettings(raw: unknown): FollowerDriveSettings {
+  const s = raw as FollowerDriveSettings | null;
+  if (!s || s.version !== 1 || typeof s.dryRun !== "boolean" || !Number.isFinite(s.mapScale) || s.mapScale < 2 || s.mapScale > 20 || !Number.isInteger(s.clickIntervalMs) || s.clickIntervalMs < MIN_CLICK_INTERVAL_MS || s.clickIntervalMs > 1000) throw new Error(`Invalid follow settings: map scale 2–20 and click interval ${MIN_CLICK_INTERVAL_MS}–1000 ms.`);
+  return { version: 1, dryRun: s.dryRun, mapScale: s.mapScale, clickIntervalMs: s.clickIntervalMs };
+}
+function percentile(values: number[], p: number): number | undefined {
+  if (!values.length) return undefined;
+  const sorted = [...values].sort((a, b) => a - b);
+  return Math.round(sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * p))] * 10) / 10;
+}
+
+/**
+ * Follows the leader's overlay-map marker. Perception decides; every click goes through
+ * GameInputController (kill switch, process allowlist, confidence gate, rate limit, dry-run, trace)
+ * and is re-checked natively against the capture it was decided from.
+ */
+export class FollowerDriveService {
+  private settings = defaultDriveSettings();
+  private calibration?: MapCalibration;
+  private calibrationError?: string;
+  private running = false;
+  private reason = "Calibrate on the overlay map, then start following.";
+  private captureHost?: Host;
+  private inputHost?: Host;
+  private timer?: ReturnType<typeof setTimeout>;
+  private generation = 0;
+  private observation?: FollowerDriveStatus["observation"];
+  private decision?: SteeringDecision;
+  private frame?: FollowerFrameGuard & { at: number };
+  private cycles: number[] = [];
+  private latencies: number[] = [];
+  private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0 };
+  private startedAt = 0;
+  private readonly calibrationFile: string;
+  private readonly settingsFile: string;
+  private readonly now: () => number;
+  constructor(private readonly options: DriveOptions) {
+    this.calibrationFile = path.join(options.directory, "map-calibration.json");
+    this.settingsFile = path.join(options.directory, "drive.json");
+    this.now = options.now ?? (() => performance.now());
+    try { if (existsSync(this.settingsFile)) this.settings = parseDriveSettings(JSON.parse(readFileSync(this.settingsFile, "utf8"))); } catch { this.reason = "Saved follow settings were invalid and have been reset."; }
+    try { if (existsSync(this.calibrationFile)) this.calibration = parseMapCalibration(JSON.parse(readFileSync(this.calibrationFile, "utf8"))); }
+    catch { this.calibrationError = "Saved map calibration is invalid. Calibrate again."; }
+  }
+  get isRunning(): boolean { return this.running; }
+  private dryRun(): boolean { return this.settings.dryRun || this.options.globalDryRun?.() === true; }
+  status(): FollowerDriveStatus {
+    const c = this.calibration, o = this.observation, elapsed = this.running ? (this.now() - this.startedAt) / 1000 : 0;
+    const cycleP95 = percentile(this.cycles, .95), inputP95 = percentile(this.latencies, .95);
+    return structuredClone({
+      running: this.running, reason: this.reason, settings: this.settings, dryRun: this.dryRun(),
+      calibration: c && { targetName: c.targetName, view: c.view, origin: new MapMarkerTracker(c).origin, markerOffset: c.markerOffset, labelPixels: templatePixelCount(c.label), labelMask: c.label.mask, calibratedAt: c.calibratedAt },
+      calibrationIssue: this.calibrationError ?? (c ? mapCalibrationIssue(c, this.options.follow().targetName) : undefined),
+      observation: o && { ...o, ageMs: Math.max(0, Math.round(this.now() - o.capturedAt)) },
+      decision: this.decision,
+      stats: this.counts.cycles ? {
+        ...this.counts, observationsPerSecond: elapsed > 0 ? Math.round(this.counts.cycles / elapsed * 10) / 10 : 0,
+        cycleMsP50: percentile(this.cycles, .5), cycleMsP95: cycleP95, captureToInputMsP50: percentile(this.latencies, .5), captureToInputMsP95: inputP95,
+        // A change can land just after a capture starts, so the worst case adds one whole cycle.
+        worstCaseReactionMsP95: cycleP95 !== undefined && inputP95 !== undefined ? Math.round((cycleP95 + inputP95) * 10) / 10 : undefined,
+      } : undefined,
+    });
+  }
+  configure(raw: unknown): FollowerDriveStatus {
+    const settings = parseDriveSettings(raw);
+    this.stop("Follow settings changed — press Start to resume.");
+    mkdirSync(this.options.directory, { recursive: true });
+    const temporary = `${this.settingsFile}.tmp`;
+    writeFileSync(temporary, JSON.stringify(settings, null, 2)); renameSync(temporary, this.settingsFile);
+    this.settings = settings;
+    return this.status();
+  }
+  stop(reason = "Following stopped."): FollowerDriveStatus {
+    this.generation++; this.running = false; this.reason = reason; this.observation = undefined; this.decision = undefined; this.frame = undefined;
+    clearTimeout(this.timer); this.timer = undefined;
+    const capture = this.captureHost, input = this.inputHost; this.captureHost = undefined; this.inputHost = undefined;
+    if (capture) void capture.close().catch(() => {});
+    // Ask for an explicit button release before the worker goes away; its own finally block is the backstop.
+    if (input) void input.send({ op: "release" }).catch(() => {}).then(() => input.close()).catch(() => {});
+    return this.status();
+  }
+  private createCaptureHost(): Host { return this.options.createCaptureHost?.() ?? startWinHost({ scriptName: "win-follower-host.ps1", requestTimeoutMs: 5000 }); }
+  private createInputHost(): Host { return this.options.createInputHost?.() ?? startWinHost({ scriptName: "win-follower-input-host.ps1", requestTimeoutMs: 5000 }); }
+  /**
+   * One full-view capture with the overlay map open. The label is found automatically when exactly
+   * one party member is on the map; otherwise pass the rectangle the operator drew around it.
+   */
+  async calibrate(raw?: unknown): Promise<FollowerDriveStatus & { capture: FollowerCapture }> {
+    const blocked = this.options.blocked?.();
+    if (blocked) throw new Error(blocked);
+    const label = (raw as { label?: PixelRect } | null | undefined)?.label, targetName = this.options.follow().targetName;
+    if (!targetName) throw new Error("Enter and save the character to follow before calibrating.");
+    this.stop("Calibrating on the overlay map…");
+    const generation = this.generation, host = this.captureHost = this.createCaptureHost(), deadline = this.now() + 15_000;
+    try {
+      // The button or terminal that asked for this has focus; give the operator time to switch to the game.
+      let reply = await host.send({ op: "preview" });
+      while (generation === this.generation && !reply.ok && FOCUS.test(String(reply.error)) && this.now() < deadline) {
+        this.reason = "Waiting for game focus — switch to Path of Exile 2.";
+        await new Promise(resolve => setTimeout(resolve, 250));
+        reply = await host.send({ op: "preview" });
+      }
+      if (generation !== this.generation) throw new Error("Calibration cancelled.");
+      if (!reply.ok || typeof reply.image !== "string") throw new Error(String(reply.error ?? "Capture failed."));
+      const [green, orange] = pngPlanes(Buffer.from(reply.image.slice(reply.image.indexOf(",") + 1), "base64"), ["green", "orange"]);
+      const calibration = buildMapCalibration(green, orange, targetName, new Date().toISOString(), label);
+      mkdirSync(this.options.directory, { recursive: true });
+      const temporary = `${this.calibrationFile}.tmp`;
+      writeFileSync(temporary, JSON.stringify(calibration)); renameSync(temporary, this.calibrationFile);
+      this.calibration = calibration; this.calibrationError = undefined;
+      this.reason = `Calibrated on ${targetName}'s map label. Start following.`;
+      return { ...this.status(), capture: { image: reply.image, width: green.width, height: green.height, capturedAt: calibration.calibratedAt } };
+    } catch (e) {
+      if (generation === this.generation) this.reason = e instanceof Error ? e.message : "Calibration failed.";
+      throw e;
+    } finally {
+      if (this.captureHost === host) { this.captureHost = undefined; await host.close().catch(() => {}); }
+    }
+  }
+  clearCalibration(): FollowerDriveStatus {
+    this.stop("Map calibration cleared.");
+    this.calibration = undefined; this.calibrationError = undefined;
+    rmSync(this.calibrationFile, { force: true });
+    return this.status();
+  }
+  private refusal(): string | undefined {
+    if (this.options.killSwitch.isLatched()) return "Emergency stop latched — rearm in the app.";
+    return this.options.blocked?.();
+  }
+  async start(): Promise<FollowerDriveStatus> {
+    if (this.running) return this.status();
+    const refused = this.refusal();
+    if (refused) throw new Error(refused);
+    const calibration = this.calibration;
+    if (!calibration) throw new Error(this.calibrationError ?? "Calibrate on the overlay map first.");
+    const follow = this.options.follow(), issue = mapCalibrationIssue(calibration, follow.targetName);
+    if (issue) throw new Error(issue);
+    this.stop();
+    const generation = this.generation, capture = this.captureHost = this.createCaptureHost(), input = this.inputHost = this.createInputHost();
+    const tracker = new MapMarkerTracker(calibration), stopPx = follow.followDistance * MAP_PX_PER_FOLLOW_UNIT;
+    const steering = new FollowSteering({ stopPx, resumePx: stopPx + MAP_PX_PER_FOLLOW_UNIT, clickIntervalMs: this.settings.clickIntervalMs, mapScale: this.settings.mapScale, confidence: follow.confidence });
+    const live = () => this.running && generation === this.generation;
+    // A run that started as a preview can never send input, whatever happens to the dry-run switches later.
+    const previewOnly = this.dryRun();
+    const sink = new FollowerInputSink(input, () => {
+      const frame = this.frame;
+      return live() && !this.refusal() && frame && this.now() - frame.at <= FRAME_MAX_AGE_MS ? frame : undefined;
+    }, FRAME_MAX_AGE_MS);
+    const controller = new GameInputController(sink, this.options.killSwitch, this.options.mode);
+    this.running = true; this.reason = "Starting capture and input workers…";
+    this.cycles = []; this.latencies = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0 }; this.startedAt = this.now();
+    let manualUntil = -Infinity, pauseReason = "";
+    const tick = async () => {
+      if (!live()) return;
+      const started = this.now();
+      let delay = this.options.pollMs ?? 8;
+      try {
+        const current = this.options.follow(), stop = this.refusal() ?? mapCalibrationIssue(calibration, current.targetName);
+        if (stop) { this.stop(stop); return; }
+        if (this.dryRun() !== previewOnly) { this.stop("Dry-run setting changed — press Start to resume."); return; }
+        const request = tracker.nextRequest(started);
+        const reply = await capture.send({ op: "key", ...request.region, full: request.full, channel: request.channel, threshold: request.threshold, second: request.second });
+        if (!live()) return;
+        this.frame = undefined;
+        if (!reply.ok) {
+          // An unfocused or covered game is not an observation, and nothing is clicked.
+          this.observation = undefined; this.decision = undefined; this.reason = String(reply.error ?? "Game capture unavailable."); delay = 100;
+        } else {
+          const view = { width: Number(reply.width), height: Number(reply.height) }, changed = mapCalibrationIssue(calibration, calibration.targetName, view);
+          if (changed) { this.stop(changed); return; }
+          const received = this.now(), process = String(reply.process ?? ""), allowed = GAME_PROCESSES.includes(process.toLowerCase());
+          const observation = tracker.observe(reply.overflow ? undefined : decodeKeyPoints(reply.points), reply.secondOverflow ? undefined : decodeKeyPoints(reply.secondPoints), request.searched, started, { captureMs: Number(reply.captureMs) || 0, matchMs: 0 });
+          observation.timing.matchMs = Math.round((this.now() - received) * 10) / 10;
+          this.observation = { ...observation, ageMs: 0 };
+          this.frame = { hwnd: String(reply.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(reply.capturedAtQpcMs), at: started };
+          const manual = this.now() < manualUntil;
+          const decision: SteeringDecision = manual ? { kind: "pause", reason: pauseReason } : steering.decide(observation, this.now());
+          this.decision = decision; this.reason = decision.reason;
+          this.counts.cycles++; this.cycles.push(this.now() - started); if (this.cycles.length > 600) this.cycles.shift();
+          if (decision.kind === "move") {
+            const policy = scenario({ id: "follow-map-marker", name: "Follow by overlay map", enabledModules: ["navigation"], dryRun: previewOnly || this.dryRun(), actionsPerMinute: ACTIONS_PER_MINUTE, confidenceThreshold: current.confidence, timingProfile: "tight" });
+            const evidence = JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, leader: observation.leader, origin: observation.origin, offset: observation.offset, evidence: observation.evidence });
+            const traces = await controller.execute({ module: "navigation", rule: "follow-map-marker", reason: decision.reason, intended: [{ kind: "click", x: decision.x, y: decision.y, button: "left" }], confidence: observation.confidence }, policy, process, evidence, allowed);
+            this.options.audit?.(traces);
+            // Long sessions must not retain every trace in memory.
+            controller.actionTraces.splice(0);
+            if (!live()) return;
+            const trace = traces[0];
+            if (trace?.result === "emitted") {
+              steering.committed(this.now()); this.counts.clicks++;
+              if (sink.lastInput) { this.latencies.push(sink.lastInput.captureToInputMs); if (this.latencies.length > 600) this.latencies.shift(); }
+            } else if (trace?.reason.includes("safety=dry-run")) { steering.committed(this.now()); this.counts.previewed++; this.reason = `Preview only: would ${decision.reason.charAt(0).toLowerCase()}${decision.reason.slice(1)}`; }
+            else if (trace?.reason.includes("safety=rate-limited")) { this.stop(`Action limit reached (${ACTIONS_PER_MINUTE}/minute).`); return; }
+            else if (trace?.result === "failed" && COVERED.test(trace.reason)) { this.counts.refused++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Another window covers the game at the click point — pausing."; }
+            else if (trace?.result === "failed" && MANUAL.test(trace.reason)) { this.counts.manualTakeovers++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Manual control detected — following resumes shortly."; }
+            else if (trace?.result === "failed" && RETRY.test(trace.reason)) { this.counts.refused++; this.reason = "A click was refused as stale or unfocused; retrying on a fresh capture."; }
+            else { this.stop(trace ? `Movement input stopped: ${trace.reason}` : "Movement input produced no trace."); return; }
+          }
+        }
+      } catch (e) {
+        if (generation === this.generation) this.stop(e instanceof Error ? e.message : "Follow worker failed.");
+      } finally {
+        // No overlapping captures, queued clicks, or catch-up bursts.
+        if (live()) this.timer = setTimeout(() => void tick(), Math.max(1, delay - (this.now() - started)));
+      }
+    };
+    try {
+      const [captureReady, inputReady] = await Promise.all([capture.send({ op: "ping" }), input.send({ op: "ping" })]);
+      if (!captureReady.ok || !inputReady.ok) throw new Error(String(captureReady.error ?? inputReady.error ?? "Follow workers failed to start."));
+      if (live()) void tick();
+    } catch (e) {
+      if (generation === this.generation) this.stop(e instanceof Error ? e.message : "Follow workers failed to start.");
+    }
+    return this.status();
+  }
+}
+
+export function driveAudit(root: string): (traces: QaActionTrace[]) => void {
+  return traces => {
+    if (!traces.length) return;
+    mkdirSync(root, { recursive: true });
+    appendFileSync(path.join(root, `follow-actions-${new Date().toISOString().slice(0, 10)}.jsonl`), traces.map(t => JSON.stringify(t)).join("\n") + "\n");
+  };
+}

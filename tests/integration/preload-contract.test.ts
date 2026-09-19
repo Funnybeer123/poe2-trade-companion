@@ -51,6 +51,16 @@ describe("preload API exposure", () => {
     expect(electron.invoke).toHaveBeenLastCalledWith("follower:stop");
     await bridge.follower!.demo();
     expect(electron.invoke).toHaveBeenLastCalledWith("follower:demo");
+    await bridge.follower!.record({ seconds: 20 });
+    expect(electron.invoke).toHaveBeenLastCalledWith("follower:record", { seconds: 20 });
+    await bridge.follower!.driveCalibrate();
+    expect(electron.invoke).toHaveBeenLastCalledWith("follower:drive-calibrate", undefined);
+    await bridge.follower!.driveConfigure({ version: 1, dryRun: true, mapScale: 7, clickIntervalMs: 110 });
+    expect(electron.invoke).toHaveBeenLastCalledWith("follower:drive-configure", { version: 1, dryRun: true, mapScale: 7, clickIntervalMs: 110 });
+    await bridge.follower!.driveStart();
+    expect(electron.invoke).toHaveBeenLastCalledWith("follower:drive-start");
+    await bridge.follower!.driveStop();
+    expect(electron.invoke).toHaveBeenLastCalledWith("follower:drive-stop");
     electron.invoke.mockClear();
     expect(Object.keys(bridge).sort()).toEqual(
       [

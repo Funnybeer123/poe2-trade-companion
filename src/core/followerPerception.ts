@@ -1,6 +1,19 @@
 /** Screen-space leader perception. Pure functions over captured pixels; nothing here emits OS input. */
 export interface PixelRect { x: number; y: number; width: number; height: number }
-/** One byte per pixel: min(R,G,B), high only for bright unsaturated pixels such as nameplate text. */
+/**
+ * Single-channel planes the capture host can produce. Each is high only for one kind of UI ink:
+ * white = min(R,G,B) for bright unsaturated text; green = G − max(R,B) for party map markers and
+ * labels; orange = min(R − G, G − B) for the player's own map marker.
+ * scripts/win-follower-host.ps1 implements the same formulas natively.
+ */
+export type PlaneChannel = "white" | "green" | "orange";
+export const PLANE_CHANNELS: readonly PlaneChannel[] = ["white", "green", "orange"];
+export function channelValue(r: number, g: number, b: number, channel: PlaneChannel): number {
+  if (channel === "white") return Math.min(r, g, b);
+  if (channel === "green") return Math.max(0, g - Math.max(r, b));
+  return Math.max(0, Math.min(r - g, g - b));
+}
+/** One byte per pixel of one PlaneChannel. */
 export interface WhiteFrame { width: number; height: number; pixels: Uint8Array }
 export interface NameplateTemplate { width: number; height: number; threshold: number; mask: string[] }
 export interface FollowerCalibration {
@@ -44,7 +57,7 @@ function templatePixels(t: NameplateTemplate): number[] {
 export function templatePixelCount(t: NameplateTemplate): number { return templatePixels(t).length; }
 
 /** Otsu's threshold over the selection, clamped so dim scenery can never count as text. */
-function textThreshold(values: Uint8Array): number {
+function textThreshold(values: Uint8Array, min: number, max: number): number {
   const histogram = new Array<number>(256).fill(0);
   for (const v of values) histogram[v]++;
   let total = 0; for (let i = 0; i < 256; i++) total += i * histogram[i];
@@ -56,21 +69,25 @@ function textThreshold(values: Uint8Array): number {
     const gap = belowSum / below - (total - belowSum) / above, variance = below * above * gap * gap;
     if (variance > best) { best = variance; threshold = i + 1; }
   }
-  return Math.max(110, Math.min(235, threshold));
+  return Math.max(min, Math.min(max, threshold));
 }
 
+/** Threshold clamp and minimum ink for a template. Defaults suit white nameplate text. */
+export interface TemplateLimits { minThreshold: number; maxThreshold: number; minPixels: number; minWidth: number; minHeight: number }
+export const NAMEPLATE_LIMITS: TemplateLimits = { minThreshold: 110, maxThreshold: 235, minPixels: 24, minWidth: 12, minHeight: 6 };
+
 /** Builds a binary text template from the operator's selection, trimmed to the text itself. */
-export function buildNameplateTemplate(frame: WhiteFrame, selection: PixelRect): { template: NameplateTemplate; nameplate: PixelRect } {
+export function buildNameplateTemplate(frame: WhiteFrame, selection: PixelRect, limits: TemplateLimits = NAMEPLATE_LIMITS): { template: NameplateTemplate; nameplate: PixelRect } {
   if (!validWhiteFrame(frame) || !validRect(selection, frame.width, frame.height)) throw new Error("Select the nameplate inside the captured game view.");
-  if (selection.width < 12 || selection.height < 6 || selection.width > 400 || selection.height > 80) throw new Error("Select only the leader's name text: 12–400 pixels wide and 6–80 pixels tall.");
+  if (selection.width < limits.minWidth || selection.height < limits.minHeight || selection.width > 400 || selection.height > 80) throw new Error(`Select only the leader's name text: ${limits.minWidth}–400 pixels wide and ${limits.minHeight}–80 pixels tall.`);
   const values = new Uint8Array(selection.width * selection.height);
   for (let y = 0; y < selection.height; y++) values.set(frame.pixels.subarray((selection.y + y) * frame.width + selection.x, (selection.y + y) * frame.width + selection.x + selection.width), y * selection.width);
-  const threshold = textThreshold(values);
+  const threshold = textThreshold(values, limits.minThreshold, limits.maxThreshold);
   let left = selection.width, right = -1, top = selection.height, bottom = -1, count = 0;
   for (let y = 0; y < selection.height; y++) for (let x = 0; x < selection.width; x++) if (values[y * selection.width + x] >= threshold) {
     count++; left = Math.min(left, x); right = Math.max(right, x); top = Math.min(top, y); bottom = Math.max(bottom, y);
   }
-  if (count < 24) throw new Error("No bright name text found in the selection. Capture again with the leader's nameplate visible.");
+  if (count < limits.minPixels) throw new Error("No bright name text found in the selection. Capture again with the leader's nameplate visible.");
   // A one-pixel dark border lets extra bright pixels around a candidate lower its score.
   left = Math.max(0, left - 1); top = Math.max(0, top - 1); right = Math.min(selection.width - 1, right + 1); bottom = Math.min(selection.height - 1, bottom + 1);
   const width = right - left + 1, height = bottom - top + 1;

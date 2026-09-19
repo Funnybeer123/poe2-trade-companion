@@ -69,4 +69,39 @@ describe("Follow & Loot screen", () => {
     expect(wrapper.text()).toContain("80 frames in C:\\data\\recordings\\r1");
     expect(wrapper.text()).toContain("never sent to the other PC");
   });
+  it("follows by the overlay map as a preview by default and shows decision, confidence, speed and input counts", async () => {
+    const status = { config: { ...defaultFollowerConfig(), targetName: "Main" }, connection: "stopped", reason: "Stopped", addresses: [], capability: "connection-preview" };
+    const settings = { version: 1, dryRun: true, mapScale: 7, clickIntervalMs: 110 };
+    const calibration = { targetName: "Main", view: { width: 2560, height: 1440 }, origin: { x: 1279, y: 700 }, markerOffset: { dx: 33, dy: 16 }, labelPixels: 260, labelMask: [".##.", "#..#"], calibratedAt: "2026-09-19T00:00:00.000Z" };
+    const idle = { running: false, reason: "Calibrate on the overlay map, then start following.", settings, dryRun: true };
+    let current: object = idle;
+    const running = (dryRun: boolean) => ({ running: true, reason: "Move toward Main: 69 map px away.", settings: { ...settings, dryRun }, dryRun, calibration, decision: { kind: "move", x: 1371, y: 337, distance: 69.1, reason: "Move toward Main: 69 map px away." },
+      observation: { capturedAt: 1, ageMs: 9, view: calibration.view, identity: { name: "Main", method: "map-label-template" }, leaderFound: true, origin: calibration.origin, leader: { x: 1296, y: 633 }, offset: { dx: 17, dy: -67, distance: 69.1 }, confidence: .97, originVerified: true,
+        evidence: { score: .97, runnerUp: 0, candidates: 1, keyPixels: 426, originScore: 1, originSeenAgoMs: 0, searched: "window", overflow: false }, timing: { captureMs: 12, matchMs: 1.1 } },
+      stats: { cycles: 300, clicks: dryRun ? 0 : 41, previewed: dryRun ? 41 : 0, refused: 1, manualTakeovers: 2, observationsPerSecond: 31.5, cycleMsP50: 22.1, cycleMsP95: 48.3, captureToInputMsP50: dryRun ? undefined : 38, captureToInputMsP95: dryRun ? undefined : 61 } });
+    const follower = { status: vi.fn(async () => status), perception: vi.fn(async () => ({ observing: false, reason: "Stopped", inputCapability: "none" })), driveStatus: vi.fn(async () => current),
+      driveCalibrate: vi.fn(async () => (current = { ...idle, calibration })), driveStart: vi.fn(async () => (current = running(true))), driveStop: vi.fn(async (): Promise<object> => (current = { ...idle, calibration })),
+      driveConfigure: vi.fn(async (next: typeof settings) => (current = { ...idle, calibration, settings: next, dryRun: next.dryRun })) };
+    window.poe2 = { follower } as unknown as Poe2Bridge;
+    const wrapper = mount(FollowerTool); wrappers.push(wrapper); await flushPromises();
+    const button = (text: string) => wrapper.findAll("button").find(b => b.text() === text)!;
+    expect(button("Start preview (no clicks)").attributes("disabled")).toBeDefined();
+    await button("Calibrate on overlay map").trigger("click"); await flushPromises();
+    expect(follower.driveCalibrate).toHaveBeenCalledWith();
+    expect(wrapper.text()).toContain("Calibrated on Main's map label at 2560 × 1440 · map centre 1279, 700");
+    expect(wrapper.find(".follower-mask").text()).toBe("██ \n█  █");
+    expect(wrapper.text()).toContain("Check that the captured label above reads Main");
+    await button("Start preview (no clicks)").trigger("click"); await flushPromises();
+    for (const expected of ["Main · 69.1 map px away", "move — Move toward Main", "97% · match 0.97", "Your marker is in place", "31.5 observations/s · cycle 22.1 / 48.3 ms", "0 clicks · 41 previewed · 1 refused · 2 manual takeovers"]) expect(wrapper.text()).toContain(expected);
+    expect(wrapper.text()).not.toContain("capture→click");
+    await button("Stop following").trigger("click"); await flushPromises();
+    await wrapper.find(".follower-drive-fields input[type=checkbox]").setValue(false);
+    await button("Save follow settings").trigger("click"); await flushPromises();
+    expect(follower.driveConfigure).toHaveBeenCalledWith({ version: 1, dryRun: false, mapScale: 7, clickIntervalMs: 110 });
+    follower.driveStart.mockImplementation(async () => (current = running(false)));
+    await button("Start following").trigger("click"); await flushPromises();
+    expect(wrapper.text()).toContain("41 clicks · 0 previewed");
+    expect(wrapper.text()).toContain("capture→click 38 / 61 ms");
+    expect(wrapper.text()).toContain("Ctrl+Shift+Esc stops everything");
+  });
 });
