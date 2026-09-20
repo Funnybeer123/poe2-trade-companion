@@ -1787,6 +1787,54 @@ describe("follow drive aim source (SYNTHETIC blue outline pixels for odometry an
     rig.service.stop();
     await expect.poll(() => ops(rig.map).at(-1), soon).toBe("closed");
   });
+  /**
+   * A solid map outline across the view between us and the leader, with gappy stubs on our side: every plan has
+   * to search all the ground it can reach, which is what the real dotted outlines make it do.
+   */
+  function sealedOff(): Point[] {
+    const next = ((seed: number) => () => (seed = seed * 48271 % 2147483647) / 2147483647)(7), points: Point[] = [];
+    for (let x = 0; x < W; x++) points.push({ x, y: ORIGIN.y - 30 }, { x, y: ORIGIN.y - 29 });
+    for (let i = 0; i < 40; i++) {
+      let x = 4 + Math.floor(next() * (W - 8)), y = ORIGIN.y - 14 + Math.floor(next() * 120);
+      const horizontal = next() < .5, length = 10 + Math.floor(next() * 80);
+      for (let k = 0; k < length; k++) {
+        if (k % 16 < 9 && Math.hypot(x - ORIGIN.x, y - ORIGIN.y) > 12) points.push({ x, y });
+        if (horizontal) x++; else y++;
+        if (x >= W || y >= H) break;
+      }
+    }
+    return points;
+  }
+  const terrainScans = (rig: Rig) => rig.map.filter(entry => entry.op === "terrain");
+  it("plans over and over at a bounded cost: one settled cell per grid cell, so no search and no heap can run away", async () => {
+    // A live 420 s run froze for 25-80 s at a time and reached 1.29 GB: costs kept in a Float32Array rounded UP,
+    // so the same relaxation fired again on every expansion and A*'s open list grew without end.
+    const rig = await calibrated({ clock: 520_000, mapHost: true });
+    goLive(rig);
+    rig.scene.blue = outlines();
+    rig.scene.walls = sealedOff();
+    await rig.service.start();
+    await expect.poll(() => rig.service.status().terrain, soon).toBeDefined();
+    const cells = 112 * 68;   // the 448 × 270 planning window, 4 px to a cell
+    const heapBefore = process.memoryUsage().heapUsed;
+    let plans = 0, worstSearched = 0, worstPlanMs = 0;
+    for (let i = 0; i < 40; i++) {
+      const from = terrainScans(rig).length;
+      rig.clock! += 250;      // one planning period
+      await expect.poll(() => terrainScans(rig).length, soon).toBeGreaterThan(from);
+      await cycles(rig, 2);
+      const terrain = rig.service.status().terrain!;
+      plans++; worstSearched = Math.max(worstSearched, terrain.searched); worstPlanMs = Math.max(worstPlanMs, terrain.planMs);
+    }
+    expect(plans).toBe(40);
+    // The scene really is searched (it is not being thrown out by the wall-fraction guard) …
+    expect(worstSearched).toBeGreaterThan(500);
+    // … and every plan settles a cell at most once: the structure that grew cannot grow again.
+    expect(worstSearched).toBeLessThanOrEqual(cells);
+    expect(worstPlanMs).toBeLessThan(120);
+    // Nothing of the 40 plans is kept: a runaway open list of ~160 M numbers was 1.3 GB.
+    expect(process.memoryUsage().heapUsed - heapBefore).toBeLessThan(64 * 1024 * 1024);
+  });
   it("reports 'direct' without a map host and without odometry, as in every other test of this file", async () => {
     const rig = await calibrated({ clock: 510_000 });
     goLive(rig);

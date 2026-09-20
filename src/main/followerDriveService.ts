@@ -359,7 +359,7 @@ export class FollowerDriveService {
           const planned = trusted && plan?.aim && !trailKnows && observation.offset!.distance > PLAN_NOT_WITHIN_PX ? plan.aim : undefined;
           const aim = planned ? { ...planned, via: "plan" as const } : trailAim;
           this.odometry = { tracked: moved.tracked, quality: moved.quality, trailPoints: trail.length, via: aim?.via ?? "direct" };
-          this.terrain = plan && { planned: !!plan.aim, pathPx: plan.pathPx, walls: plan.walls, bumps: plan.bumps, blockedAhead: plan.blockedAhead, planMs: plan.planMs };
+          this.terrain = plan && { planned: !!plan.aim, pathPx: plan.pathPx, walls: plan.walls, bumps: plan.bumps, blockedAhead: plan.blockedAhead, planMs: plan.planMs, searched: plan.searched };
           let decision: SteeringDecision = manual ? { kind: "pause", reason: pauseReason } : steering.decide(observation, this.now(), aim && aim.via !== "direct" ? aim : undefined, moved);
           if (decision.kind === "near") wasNear = true;
           this.counts.cycles++; this.cycles.push(this.now() - started); if (this.cycles.length > 600) this.cycles.shift();

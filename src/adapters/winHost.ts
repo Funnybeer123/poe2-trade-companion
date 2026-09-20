@@ -56,7 +56,11 @@ export function startWinHost(options: WinHostOptions = {}) {
   }
   const pending: PendingRequest[] = [];
   let closed = false;
-  let lastStderr = "";
+  // Kept as chunks and joined only when an error is built. Appending and slicing instead leaves every chunk
+  // reachable: a slice of a concatenation holds its parent, whose parent is the previous slice, and so on, so
+  // the "last 2000 characters" retains the whole history of the stream.
+  const stderrChunks: string[] = [];
+  const readStderr = () => stderrChunks.join("").slice(-2_000).trim();
   let bagShutdownTimer: NodeJS.Timeout | undefined;
 
   function stopChild(): void {
@@ -73,7 +77,8 @@ export function startWinHost(options: WinHostOptions = {}) {
 
   child.stderr.setEncoding("utf8");
   child.stderr.on("data", (chunk: string) => {
-    lastStderr = `${lastStderr}${chunk}`.slice(-2_000);
+    stderrChunks.push(chunk);
+    if (stderrChunks.length > 32) stderrChunks.splice(0, stderrChunks.length - 32);
   });
 
   function failAll(error: Error): void {
@@ -97,7 +102,7 @@ export function startWinHost(options: WinHostOptions = {}) {
   // A helper can exit before its final stdin write; never surface EPIPE as an
   // unhandled process error that skips journal/native shutdown cleanup.
   child.stdin.on("error", (error: Error) => {
-    failAll(new Error(`${error.message}${lastStderr.trim() ? `:${lastStderr.trim()}` : ""}`));
+    failAll(new Error(`${error.message}${readStderr() ? `:${readStderr()}` : ""}`));
     if (!closed) { closed = true; stopChild(); }
   });
   child.on("exit", (code, signal) => {
@@ -108,12 +113,12 @@ export function startWinHost(options: WinHostOptions = {}) {
       }
     }
     if (!closed) {
-      const detail = lastStderr.trim() ? `:${lastStderr.trim()}` : "";
+      const detail = readStderr() ? `:${readStderr()}` : "";
       failAll(new Error(`win-input-host-exited:${code ?? signal ?? "unknown"}${detail}`));
     }
   });
   rl.on("close", () => {
-    if (!closed) failAll(new Error(`win-input-host-output-closed${lastStderr.trim() ? `:${lastStderr.trim()}` : ""}`));
+    if (!closed) failAll(new Error(`win-input-host-output-closed${readStderr() ? `:${readStderr()}` : ""}`));
   });
 
   async function send(payload: Record<string, unknown>): Promise<WinReply> {

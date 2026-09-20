@@ -118,6 +118,28 @@ describe("terrain planner guards", () => {
     expect(plan.aim!.dx).toBeGreaterThan(0); expect(plan.aim!.dy).toBeLessThan(0);
     expect(plan.path.every(p => p.x >= WINDOW.x && p.y >= WINDOW.y && p.x <= WINDOW.x + WINDOW.width && p.y <= WINDOW.y + WINDOW.height)).toBe(true);
   });
+  it("searches a dotted outline field once through, not for ever: this scene froze a live run for 25 s and ate a gigabyte", () => {
+    // The gappy outlines the map draws over its building models, with the leader 516 px off. Kept as float32,
+    // a stored cost rounds UP, so the identical relaxation fired again every time its cell was expanded and the
+    // open list grew without end: 26 s of blocked event loop, 2.5 GB of RSS, then RangeError: Invalid array length.
+    const next = ((seed: number) => () => (seed = seed * 48271 % 2147483647) / 2147483647)(2), walls: KeyPoint[] = [];
+    while (walls.length < 15_000) {
+      let x = WINDOW.x + Math.floor(next() * WINDOW.width), y = WINDOW.y + Math.floor(next() * WINDOW.height);
+      const horizontal = next() < .5, length = 60 + Math.floor(next() * 400);
+      for (let i = 0; i < length && walls.length < 15_000; i++) {
+        if (i % 16 < 9) walls.push({ x, y });
+        if (horizontal) x++; else y++;
+        if (x >= WINDOW.x + WINDOW.width || y >= WINDOW.y + WINDOW.height) break;
+      }
+    }
+    const cells = Math.ceil(WINDOW.width / 4) * Math.ceil(WINDOW.height / 4), began = Date.now();
+    const plan = new TerrainPlanner().plan(walls, WINDOW, ORIGIN, { dx: 420, dy: -300 }, { x: 0, y: 0 }, 1, 0);
+    expect(Date.now() - began).toBeLessThan(2000);
+    // The invariant that bounds the search: a cell is settled at most once, so the open list cannot run away.
+    expect(plan.searched).toBeGreaterThan(1000);
+    expect(plan.searched).toBeLessThanOrEqual(cells);
+    expect(plan.planMs).toBeLessThan(500);
+  });
   it("forgets bumps from another odometry epoch and old ones", () => {
     const planner = new TerrainPlanner();
     for (let now = 0; now <= 1200; now += 110) { planner.noteMotion({ dx: 0, dy: 0 }, now); planner.noteClick({ dx: 0, dy: -1 }, { x: 0, y: 0 }, 1, now); }

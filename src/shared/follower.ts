@@ -41,7 +41,7 @@ export interface FollowerDriveStatus {
   /** The landscape read off the overlay map: whether a path to the leader was planned, its length, walls seen, and places remembered from bumping into them. */
   /** Space is being held to sprint right now. */
   sprinting?: boolean;
-  terrain?: { planned: boolean; pathPx: number; walls: number; bumps: number; blockedAhead: boolean; planMs: number };
+  terrain?: { planned: boolean; pathPx: number; walls: number; bumps: number; blockedAhead: boolean; planMs: number; searched: number };
   stats?: {
     cycles: number; clicks: number; previewed: number; refused: number; manualTakeovers: number; observationsPerSecond: number;
     /** Loot: scans run, labels in the latest scan, and pickup clicks sent (or previewed). */

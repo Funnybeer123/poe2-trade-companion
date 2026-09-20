@@ -19,6 +19,8 @@ const MAX_WALL_FRACTION = .3;
 /** How much farther from the leader (in cells) a map-edge exit may be than where we stand and still be worth walking to. */
 const EDGE_DETOUR_CELLS = 40, COMMIT_MS = 12_000, COMMIT_ARRIVED_CELLS = 6;
 const CELL = 4, LOOKAHEAD_PX = 56, MIN_AIM_PX = 20, CLEAR_START_CELLS = 1, NEAR_WALL_COST = 3;
+/** A plan runs on the tick loop, so the search is capped by the clock: the best route found by then is used and following keeps its pace. */
+const PLAN_BUDGET_MS = 120, BUDGET_EVERY = 1024;
 const BUMP_RADIUS_CELLS = 3, BUMP_AHEAD_PX = 14, BUMP_TTL_MS = 45_000, BUMP_MAX = 60, STUCK_MS = 1000, STUCK_CLICKS = 5, STUCK_TOLERANCE_PX = 2.5, MOTION_GAP_MS = 250;
 
 /** The part of the overlay map used for planning: the whole world view, clear of the HUD, party frames and quest tracker. */
@@ -39,6 +41,8 @@ export interface TerrainPlan {
   walls: number;
   bumps: number;
   planMs: number;
+  /** Cells the search settled. At most one per cell: a number above the grid size means the search is repeating itself. */
+  searched: number;
 }
 
 export class TerrainPlanner {
@@ -84,7 +88,7 @@ export class TerrainPlanner {
   plan(walls: KeyPoint[], window: PixelRect, origin: KeyPoint, leader: { dx: number; dy: number }, position: KeyPoint, epoch: number, now: number, clock: () => number = () => performance.now()): TerrainPlan {
     const began = clock(), cols = Math.ceil(window.width / CELL), rows = Math.ceil(window.height / CELL), size = cols * rows;
     this.bumps = this.bumps.filter(b => b.epoch === epoch && now - b.at <= BUMP_TTL_MS);
-    const empty: TerrainPlan = { blockedAhead: false, pathPx: 0, path: [], walls: walls.length, bumps: this.bumps.length, planMs: 0 };
+    const empty: TerrainPlan = { blockedAhead: false, pathPx: 0, path: [], walls: walls.length, bumps: this.bumps.length, planMs: 0, searched: 0 };
     const cell = (x: number, y: number) => ({ cx: Math.floor((x - window.x) / CELL), cy: Math.floor((y - window.y) / CELL) });
     const start = cell(origin.x, origin.y);
     if (start.cx < 1 || start.cy < 1 || start.cx >= cols - 1 || start.cy >= rows - 1) return empty;
@@ -114,26 +118,36 @@ export class TerrainPlanner {
     let blockedAhead = false;
     for (let s = CELL; s <= Math.min(reach, LOOKAHEAD_PX); s += CELL) { const c = cell(origin.x + ux * s, origin.y + uy * s); if (grid[c.cy * cols + c.cx] === 2) { blockedAhead = true; break; } }
     // A* over 8 neighbours, no corner cutting, with a penalty for hugging walls.
-    const cost = new Float32Array(size).fill(Infinity), from = new Int32Array(size).fill(-1), open: number[] = [], priority = new Float32Array(size);
+    // Costs are kept as doubles: stored in a Float32Array they round UP, so the identical relaxation stays
+    // cheaper than the value it just wrote, fires again every time the cell is expanded, and grows `open` without end.
+    const cost = new Float64Array(size).fill(Infinity), from = new Int32Array(size).fill(-1), settled = new Uint8Array(size);
+    // Each queued cell carries the priority it was queued with: cost[] is revised afterwards, and a heap ordered
+    // through a key that changes underneath it no longer returns its minimum.
+    const open: number[] = [], keys: number[] = [];
     const heuristic = (i: number) => { const dx = Math.abs(i % cols - goal.cx), dy = Math.abs(Math.floor(i / cols) - goal.cy); return Math.max(dx, dy) + .4142 * Math.min(dx, dy); };
-    const push = (i: number) => { open.push(i); let at = open.length - 1; while (at > 0) { const parent = (at - 1) >> 1; if (priority[open[parent]] <= priority[open[at]]) break; [open[parent], open[at]] = [open[at], open[parent]]; at = parent; } };
-    const pop = () => { const top = open[0], last = open.pop()!; if (open.length) { open[0] = last; let at = 0; for (;;) { const l = at * 2 + 1, r = l + 1; let m = at; if (l < open.length && priority[open[l]] < priority[open[m]]) m = l; if (r < open.length && priority[open[r]] < priority[open[m]]) m = r; if (m === at) break; [open[m], open[at]] = [open[at], open[m]]; at = m; } } return top; };
+    const push = (i: number, key: number) => { open.push(i); keys.push(key); let at = open.length - 1; while (at > 0) { const parent = (at - 1) >> 1; if (keys[parent] <= keys[at]) break; [open[parent], open[at]] = [open[at], open[parent]]; [keys[parent], keys[at]] = [keys[at], keys[parent]]; at = parent; } };
+    const pop = () => { const top = open[0], last = open.pop()!, lastKey = keys.pop()!; if (open.length) { open[0] = last; keys[0] = lastKey; let at = 0; for (;;) { const l = at * 2 + 1, r = l + 1; let m = at; if (l < open.length && keys[l] < keys[m]) m = l; if (r < open.length && keys[r] < keys[m]) m = r; if (m === at) break; [open[m], open[at]] = [open[at], open[m]]; [keys[m], keys[at]] = [keys[at], keys[m]]; at = m; } } return top; };
     const startIndex = start.cy * cols + start.cx, goalIndex = goal.cy * cols + goal.cx;
-    cost[startIndex] = 0; priority[startIndex] = heuristic(startIndex); push(startIndex);
-    let found = false;
+    cost[startIndex] = 0; push(startIndex, heuristic(startIndex));
+    let found = false, searched = 0;
     while (open.length) {
       const here = pop();
+      // A queued entry superseded by a cheaper one for the same cell: the cell is already settled at its best cost.
+      if (settled[here]) continue;
+      settled[here] = 1;
       if (here === goalIndex) { found = true; break; }
+      // Whatever shape the map is, one plan may never hold the tick loop: keep the best of what was searched.
+      if (++searched % BUDGET_EVERY === 0 && clock() - began > PLAN_BUDGET_MS) break;
       const hx = here % cols, hy = Math.floor(here / cols);
       for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
         if (!dx && !dy) continue;
         const nx = hx + dx, ny = hy + dy;
         if (nx < 0 || ny < 0 || nx >= cols || ny >= rows) continue;
         const next = ny * cols + nx;
-        if (grid[next] === 2 || (dx && dy && (grid[hy * cols + nx] === 2 || grid[ny * cols + hx] === 2))) continue;
+        if (settled[next] || grid[next] === 2 || (dx && dy && (grid[hy * cols + nx] === 2 || grid[ny * cols + hx] === 2))) continue;
         const stepCost = cost[here] + (dx && dy ? 1.4142 : 1) + (grid[next] === 1 ? NEAR_WALL_COST : 0);
         if (stepCost >= cost[next]) continue;
-        cost[next] = stepCost; from[next] = here; priority[next] = stepCost + heuristic(next); push(next);
+        cost[next] = stepCost; from[next] = here; push(next, stepCost + heuristic(next));
       }
     }
     // The line toward the leader may leave the mapped walkable area through a wall. Then head for the reachable place that
@@ -158,7 +172,7 @@ export class TerrainPlanner {
       const startToLeader = Math.hypot(start.cx - lx, start.cy - ly);
       // An edge exit is only worth taking if it does not lead away from the leader; a nearest spot only if it is nearer than here.
       endIndex = bestEdge !== -1 && Math.hypot(bestEdge % cols - lx, Math.floor(bestEdge / cols) - ly) < startToLeader + EDGE_DETOUR_CELLS ? bestEdge : bestAny !== -1 && bestAnyScore < startToLeader - 2 ? bestAny : -1;
-      if (endIndex === -1) return { ...empty, blockedAhead, planMs: Math.round((clock() - began) * 10) / 10 };
+      if (endIndex === -1) return { ...empty, blockedAhead, searched, planMs: Math.round((clock() - began) * 10) / 10 };
       this.committed = { x: position.x + (endIndex % cols - start.cx) * CELL, y: position.y + (Math.floor(endIndex / cols) - start.cy) * CELL, epoch, until: now + COMMIT_MS };
       }
     }
@@ -172,6 +186,6 @@ export class TerrainPlanner {
       const stepPx = Math.hypot(path[i].cx - path[i - 1].cx, path[i].cy - path[i - 1].cy) * CELL; pathPx += stepPx;
       if (along + stepPx <= LOOKAHEAD_PX) { along += stepPx; if (clear(path[0], path[i]) || along < MIN_AIM_PX) target = path[i]; }
     }
-    return { aim: { dx: (target.cx - start.cx) * CELL, dy: (target.cy - start.cy) * CELL }, blockedAhead, pathPx: Math.round(pathPx), path: path.map(p => ({ x: window.x + p.cx * CELL + CELL / 2, y: window.y + p.cy * CELL + CELL / 2 })), walls: walls.length, bumps: this.bumps.length, planMs: Math.round((clock() - began) * 10) / 10 };
+    return { aim: { dx: (target.cx - start.cx) * CELL, dy: (target.cy - start.cy) * CELL }, blockedAhead, pathPx: Math.round(pathPx), path: path.map(p => ({ x: window.x + p.cx * CELL + CELL / 2, y: window.y + p.cy * CELL + CELL / 2 })), walls: walls.length, bumps: this.bumps.length, searched, planMs: Math.round((clock() - began) * 10) / 10 };
   }
 }
