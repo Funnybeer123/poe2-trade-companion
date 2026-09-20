@@ -17,7 +17,7 @@ const perception = ref<FollowerPerceptionStatus>(), shot = ref<FollowerCapture>(
 const selection = ref<"nameplate" | "searchArea">("nameplate"), corner = ref<{ x: number; y: number }>();
 const regions = ref<{ nameplate?: PixelRect; searchArea?: PixelRect }>({});
 const observed = computed(() => perception.value?.observation);
-const drive = ref<FollowerDriveStatus>(), driveDraft = ref({ dryRun: true, mapScale: 7, clickIntervalMs: 110 }), driveBusy = ref(false), driveLoaded = ref(false);
+const drive = ref<FollowerDriveStatus>(), driveDraft = ref({ dryRun: true, mapScale: 7, clickIntervalMs: 110, sprint: false }), driveBusy = ref(false), driveLoaded = ref(false);
 const seen = computed(() => drive.value?.observation);
 let timer: ReturnType<typeof setTimeout> | undefined, disposed = false, revision = 0;
 async function refresh(): Promise<void> {
@@ -25,7 +25,7 @@ async function refresh(): Promise<void> {
   try {
     const next = await api?.status(); if (!disposed && version === revision && next) status.value = next;
     const watched = await api?.perception(); if (!disposed && watched) perception.value = watched;
-    const driving = await api?.driveStatus?.(); if (!disposed && driving) { drive.value = driving; if (!driveLoaded.value) { driveDraft.value = { dryRun: driving.settings.dryRun, mapScale: driving.settings.mapScale, clickIntervalMs: driving.settings.clickIntervalMs }; driveLoaded.value = true; } }
+    const driving = await api?.driveStatus?.(); if (!disposed && driving) { drive.value = driving; if (!driveLoaded.value) { driveDraft.value = { dryRun: driving.settings.dryRun, mapScale: driving.settings.mapScale, clickIntervalMs: driving.settings.clickIntervalMs, sprint: driving.settings.sprint === true }; driveLoaded.value = true; } }
   }
   catch (e) { if (!disposed) error.value = String(e); }
   if (!disposed) timer = setTimeout(() => void refresh(), perception.value?.observing || perception.value?.recording || drive.value?.running ? 250 : 1000);
@@ -169,6 +169,7 @@ function demo(): void {
         <label class="follower-check"><input v-model="driveDraft.dryRun" type="checkbox" />Preview only — decide and trace, but send no clicks</label>
         <label>Map scale · screen pixels per map pixel<input v-model.number="driveDraft.mapScale" type="number" min="2" max="20" step="0.5" /></label>
         <label>Minimum time between movement clicks · ms<input v-model.number="driveDraft.clickIntervalMs" type="number" min="100" max="1000" step="10" /></label>
+        <label class="follower-check"><input v-model="driveDraft.sprint" type="checkbox" />Sprint — hold space while well behind the leader</label>
         <div class="follower-actions"><button type="button" :disabled="!api" @click="driving('driveConfigure')">Save follow settings</button><small v-if="drive && drive.dryRun && !drive.settings.dryRun">The app-wide Dry-run switch is on, so no clicks are sent.</small></div>
       </fieldset>
       <dl v-if="drive?.running" class="follower-observation" aria-label="Follow state">

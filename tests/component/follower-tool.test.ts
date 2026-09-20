@@ -95,9 +95,14 @@ describe("Follow & Loot screen", () => {
     for (const expected of ["Main · 69.1 map px away", "move — Move toward Main", "97% · match 0.97", "Your marker is in place", "31.5 observations/s · cycle 22.1 / 48.3 ms", "0 clicks · 41 previewed · 1 refused · 2 manual takeovers"]) expect(wrapper.text()).toContain(expected);
     expect(wrapper.text()).not.toContain("capture→click");
     await button("Stop following").trigger("click"); await flushPromises();
-    await wrapper.find(".follower-drive-fields input[type=checkbox]").setValue(false);
+    const checks = wrapper.findAll(".follower-drive-fields input[type=checkbox]");
+    await checks[0].setValue(false);
     await button("Save follow settings").trigger("click"); await flushPromises();
-    expect(follower.driveConfigure).toHaveBeenCalledWith({ version: 1, dryRun: false, mapScale: 7, clickIntervalMs: 110 });
+    expect(follower.driveConfigure).toHaveBeenCalledWith({ version: 1, dryRun: false, mapScale: 7, clickIntervalMs: 110, sprint: false });
+    // Sprint is saved with the rest: configuring from the app used to drop it and quietly turn it off.
+    await checks[1].setValue(true);
+    await button("Save follow settings").trigger("click"); await flushPromises();
+    expect(follower.driveConfigure).toHaveBeenLastCalledWith({ version: 1, dryRun: false, mapScale: 7, clickIntervalMs: 110, sprint: true });
     follower.driveStart.mockImplementation(async () => (current = running(false)));
     await button("Start following").trigger("click"); await flushPromises();
     expect(wrapper.text()).toContain("41 clicks · 0 previewed");
