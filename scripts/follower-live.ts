@@ -1,9 +1,10 @@
 // Runs the follow loop from a terminal, so the game keeps focus (the Electron window would take it).
 // Dry-run unless --live is given. Ctrl+Shift+Esc is the emergency stop; moving the mouse or holding
 // a mouse button takes manual control. Always ends after --seconds.
-//   npm run follower:live -- --target <LeaderName> [--seconds 20] [--calibrate] [--live] [--loot] [--leash 7] [--sprint] [--distance 2] [--confidence 0.85] [--scale 7] [--interval 110] [--dir <folder>]
+//   npm run follower:live -- --target <LeaderName> [--seconds 20] [--calibrate] [--live] [--loot] [--leash 7] [--sprint] [--wait 0] [--distance 2] [--confidence 0.85] [--scale 7] [--interval 110] [--dir <folder>]
 import os from "node:os";
 import path from "node:path";
+import { startWinHost } from "../src/adapters/winHost.js";
 import { startEmergencyStopMonitor } from "../src/adapters/emergencyStopMonitor.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
 import { driveAudit, FollowerDriveService, MIN_CLICK_INTERVAL_MS } from "../src/main/followerDriveService.js";
@@ -31,7 +32,24 @@ let monitor: ReturnType<typeof startEmergencyStopMonitor> | undefined;
 try { monitor = startEmergencyStopMonitor(() => { killSwitch.trip(); finish("EMERGENCY STOP (Ctrl+Shift+Esc)."); }, () => { if (live && service.isRunning) { killSwitch.trip(); finish("Emergency-stop monitor failed; stopping live input.", 1); } }); }
 catch (e) { if (live) { console.error(`No emergency stop available, refusing live input: ${String(e)}`); process.exit(1); } }
 
+// Nothing can be captured unless the game is in front, and the operator is usually in another window: wait rather than fail.
+async function waitForGame(waitSeconds: number): Promise<void> {
+  if (waitSeconds <= 0) return;
+  const host = startWinHost({ scriptName: "win-follower-host.ps1", requestTimeoutMs: 10_000 }), deadline = Date.now() + waitSeconds * 1000;
+  try {
+    let said = false;
+    for (;;) {
+      const reply = await host.send({ op: "sample", x: 0, y: 0, width: 8, height: 8, full: false });
+      if (reply.ok) { if (said) console.log("Game is in front; starting."); return; }
+      if (Date.now() >= deadline) { console.error(`Gave up waiting for the game: ${String(reply.error)}`); process.exit(1); }
+      if (!said) { console.log(`Waiting up to ${waitSeconds} s for Path of Exile 2 to come to the front (${String(reply.error)})…`); said = true; }
+      await new Promise(resolve => setTimeout(resolve, 500));
+    }
+  } finally { await host.close().catch(() => {}); }
+}
+
 (async () => {
+  await waitForGame(number("--wait", 0, 0, 3600));
   service.configure({ version: 1, dryRun: !live, mapScale: number("--scale", 7, 2, 20), clickIntervalMs: number("--interval", 110, MIN_CLICK_INTERVAL_MS, 1000), sprint: args.includes("--sprint") });
   if (args.includes("--calibrate") || !service.status().calibration || service.status().calibrationIssue) {
     // --label x,y,width,height selects one label when several party members are on the map.
