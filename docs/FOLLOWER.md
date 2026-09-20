@@ -254,6 +254,29 @@ Changes after the first live runs:
   the height), scanned by a **second capture-only worker** about four times a
   second so marker tracking never waits for it. A real frame of a built-up area
   produced 56,264 wall pixels; the cap is 50,000 in the loop and 60,000 natively.
+
+### The cap that quietly cost the planner its route
+
+The note above — a built-up area producing 56,264 wall pixels against a 50,000 cap — was recorded but
+its consequence was not. An overflow makes the native scan return null, and the loop then discards the
+**whole** plan (`plan = undefined`), so a busy scene does not degrade into a coarser route: it loses the
+route entirely. Walls are exactly what pushes the count over the cap, so the planner failed precisely
+where it was needed most, and steering fell back to the straight line and walked into them.
+
+Measured across four live runs, the planner produced no plan at all **84–96 %** of the time, found no
+path in another 2–7 %, and steering actually used a plan in as little as **1 sample in 589**. The wall
+counts of the scans that did survive are hard-truncated at the cap (max 49,805, p99 49,104) — the
+signature of censoring, not of a distribution that happens to fit.
+
+Offline over 16 recorded frames with the real detector: 4 overflow, `tp-fail.png` at 67,294 exceeding
+even the 60,000 native ceiling, so raising the cap could not have fixed it.
+
+**Fix.** The terrain scan asks for one point per planner cell (`grid` on the native key-point scan,
+`TERRAIN_CELL_PX` = 4). This is lossless rather than a subsample: the planner buckets every wall pixel
+by `floor((x - window.x) / CELL)` and dilates it, so a point at its cell's top-left lands in the cell
+its pixels did, and the grid built is identical. Two tests pin that equivalence, one on the gappy
+dotted outlines where a naive stride would leak walls. Measured reduction 4.1–16x (56,264 → 7,312;
+113,022 → 9,123): worst case 18 % of the cap.
 - **Goal selection.** When the straight line toward the leader is walled off, the
   plan heads for the reachable place nearest to them: preferably where walkable
   ground runs off the edge of the view (if that is not more than 160 map px farther

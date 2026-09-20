@@ -8,7 +8,7 @@ import { CONFIRM_BAND, CONFIRM_CHANNEL, CONFIRM_POINT_CAP, CONFIRM_THRESHOLD, co
 import { findTravelButton, PARTY_BAND, PARTY_CHANNEL, PARTY_POINT_CAP, PARTY_THRESHOLD } from "../src/core/followerParty.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
 import type { QaActionTrace } from "../src/core/types.js";
-import { defaultDriveSettings, driveAudit, FollowerDriveService, parseDriveSettings } from "../src/main/followerDriveService.js";
+import { defaultDriveSettings, driveAudit, FollowerDriveService, MANUAL_HOLD_REASON, parseDriveSettings } from "../src/main/followerDriveService.js";
 
 // SYNTHETIC hosts. A scripted scene replaces the desktop and two plain objects replace the
 // PowerShell capture and input workers: nothing is spawned, nothing is captured, and no OS input
@@ -1829,7 +1829,7 @@ describe("follow drive aim source (SYNTHETIC blue outline pixels for odometry an
     // Open ground on the map scan: a plan exists. One trail point is no trail, so the plan is what is walked.
     await expect.poll(() => rig.service.status().terrain?.planned, soon).toBe(true);
     await expect.poll(() => rig.service.status().odometry, soon).toMatchObject({ tracked: true, quality: 1, trailPoints: 1, via: "plan" });
-    expect(rig.map[0]).toMatchObject({ op: "terrain", x: 64, y: 18, width: 448, height: 270, full: false, channel: "terrain" });
+    expect(rig.map[0]).toMatchObject({ op: "terrain", x: 64, y: 18, width: 448, height: 270, full: false, channel: "terrain", grid: 4 });   // grid: one point per planner cell, so a busy scene cannot overflow the cap and lose the plan
     expect(rig.service.status().terrain).toMatchObject({ planned: true, walls: 0, bumps: 0, blockedAhead: false });
     // The leader walks off to the right in 10 px steps while we stand still (the outline pixels do not slide): 7 trail points, 60 px of trail.
     for (let dx = 50; dx <= 100; dx += 10) { rig.scene.leader = { dx, dy: 0 }; await expect.poll(() => rig.service.status().observation?.offset?.dx, soon).toBe(dx); }
@@ -2298,3 +2298,74 @@ describe("follow drive settings", () => {
   });
 });
 
+/**
+ * Ctrl+Shift+M: the human takes this PC for as long as they want, then gives it back.
+ *
+ * The two mechanisms either side of this one are tested elsewhere: the reactive cursor guard resumes
+ * 1.5 s after the mouse rests, and the kill switch ends the run. What is asserted here is what neither
+ * of those does — input stops indefinitely while the loop KEEPS OBSERVING, so handing control back
+ * resumes from a live marker instead of re-acquiring from cold.
+ */
+describe("deliberate manual control", () => {
+  it("sends nothing while the human holds the PC, keeps watching throughout, and follows again when they hand it back", async () => {
+    const rig = await calibrated();
+    goLive(rig, { sprint: true });
+    await rig.service.start();
+    await cycles(rig, 4);
+    const before = stats(rig).clicks;
+    expect(before).toBeGreaterThan(0);
+
+    rig.service.setManualControl(true);
+    expect(rig.service.manualControlHeld).toBe(true);
+    const heldAt = stats(rig).clicks, cyclesAt = stats(rig).cycles, sprintsAt = sprintOps(rig).filter(e => e.start === true).length;
+    await cycles(rig, 10);
+    // Not one click, and not one renewal of the held sprint key, for as long as the hold lasts.
+    expect(stats(rig).clicks).toBe(heldAt);
+    expect(sprintOps(rig).filter(e => e.start === true).length).toBe(sprintsAt);
+    // Still perceiving: this is a pause, not a stop, which is the whole point of it.
+    expect(stats(rig).cycles).toBeGreaterThan(cyclesAt);
+    expect(rig.service.status().reason).toBe(MANUAL_HOLD_REASON);
+    expect(rig.service.isRunning).toBe(true);
+
+    rig.service.setManualControl(false);
+    expect(rig.service.manualControlHeld).toBe(false);
+    await expect.poll(() => stats(rig).clicks, soon).toBeGreaterThan(heldAt);
+  });
+
+  it("never opens a run already held, so a press left over from a previous run cannot silence the next one", async () => {
+    const rig = await calibrated();
+    goLive(rig);
+    rig.service.setManualControl(true);
+    await rig.service.start();
+    expect(rig.service.manualControlHeld).toBe(false);
+    await expect.poll(() => stats(rig).clicks, soon).toBeGreaterThan(0);
+  });
+});
+
+/**
+ * Instrumentation for telling "blocked" from "behind".
+ *
+ * Distance to the leader cannot do it: measured across three live runs, stalls where the distance never
+ * improved while clicking at 4-6 clicks/s reached 25.4 s in a run jammed on a door and 32.4 s in a run
+ * that was following perfectly well, so no threshold separates them. Whether the follower is moving at
+ * all should, and nothing recorded it. Nothing decides on these numbers yet — they exist to be measured.
+ */
+describe("own-movement instrumentation", () => {
+  it("reports zero while the outlines hold still, and a real speed once they slide", async () => {
+    const rig = await calibrated();
+    goLive(rig);
+    rig.scene.blue = outlines();
+    rig.scene.leader = FAR;
+    await rig.service.start();
+    // Standing still: the map outlines do not slide, so own displacement is exactly zero — and it is
+    // reported as 0, not as "unknown", which is the distinction the whole measurement rests on.
+    await expect.poll(() => rig.service.status().odometry?.movedPxPerSec, soon).toBe(0);
+    // Not 1: the first sample in the window has no previous frame to match against, so it is untracked.
+    // That is the point of reporting the share — a window that barely tracked cannot be read as "not moving".
+    expect(rig.service.status().odometry?.movedTracked).toBeGreaterThan(0.9);
+
+    // Sliding the outlines is the follower moving: the window has to show it.
+    rig.scene.onKey = () => { rig.scene.blue = rig.scene.blue!.map(p => ({ x: p.x - 2, y: p.y })); };
+    await expect.poll(() => rig.service.status().odometry?.movedPxPerSec ?? 0, soon).toBeGreaterThan(0);
+  });
+});

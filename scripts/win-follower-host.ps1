@@ -122,18 +122,47 @@ public static class FollowWin {
   // Client coordinates of every pixel in the rectangle whose channel value reaches the threshold,
   // as little-endian UInt16 x,y pairs. Null when there are more than the cap: not a UI marker.
   public static byte[] KeyPoints(Bitmap bitmap, int originX, int originY, Rectangle area, string channelName, int threshold, int cap) {
+    return KeyPoints(bitmap, originX, originY, area, channelName, threshold, cap, 1);
+  }
+  // `grid` > 1 emits one point per occupied grid x grid block, at the block's top-left in client
+  // coordinates, instead of every matching pixel.
+  //
+  // For the terrain plane this is LOSSLESS, not an approximation: TerrainPlanner buckets every wall
+  // pixel into a CELL-sized cell by floor((x - window.x) / CELL) and dilates it, so when grid == CELL
+  // over the same rectangle the emitted point lands in the very cell its pixels did, and the grid the
+  // planner builds is identical.
+  //
+  // It exists because the cap was silently costing the follower its route. An overflow returns null and
+  // the loop discards the WHOLE plan, so the planner failed exactly where walls were densest: measured
+  // over 16 recorded frames, 4 overflowed 50,000 (a built-up area 56,264, the worst 113,022) and live
+  // runs produced no plan 84-96% of the time, steering by straight line into walls. Per-cell points cut
+  // those frames 4.1-16x (56,264 -> 7,312; 113,022 -> 9,123), worst case 18% of the cap.
+  public static byte[] KeyPoints(Bitmap bitmap, int originX, int originY, Rectangle area, string channelName, int threshold, int cap, int grid) {
+    if (grid < 1 || grid > 64) throw new Exception("Invalid point grid");
     int channel = ChannelId(channelName);
     BitmapData data = bitmap.LockBits(new Rectangle(0, 0, bitmap.Width, bitmap.Height), ImageLockMode.ReadOnly, PixelFormat.Format32bppArgb);
     try {
       byte[] row = new byte[data.Stride];
       MemoryStream points = new MemoryStream();
       int found = 0;
+      // One flag per cell column, cleared whenever the scan crosses into the next band of rows: the
+      // scan is top-to-bottom, so a band is finished before the next begins and this needs no map.
+      bool[] taken = grid > 1 ? new bool[(area.Width + grid - 1) / grid] : null;
+      int band = -1;
       for (int y = area.Top; y < area.Bottom; y++) {
+        if (grid > 1) { int b = (y - area.Top) / grid; if (b != band) { band = b; Array.Clear(taken, 0, taken.Length); } }
         Marshal.Copy(IntPtr.Add(data.Scan0, (y - originY) * data.Stride), row, 0, data.Stride);
         for (int x = area.Left, i = (area.Left - originX) * 4; x < area.Right; x++, i += 4) {
           if (ChannelValue(row[i + 2], row[i + 1], row[i], channel) < threshold) continue;
+          int px = x, py = y;
+          if (grid > 1) {
+            int c = (x - area.Left) / grid;
+            if (taken[c]) continue;
+            taken[c] = true;
+            px = area.Left + c * grid; py = area.Top + band * grid;
+          }
           if (++found > cap) return null;
-          points.WriteByte((byte)(x & 255)); points.WriteByte((byte)(x >> 8)); points.WriteByte((byte)(y & 255)); points.WriteByte((byte)(y >> 8));
+          points.WriteByte((byte)(px & 255)); points.WriteByte((byte)(px >> 8)); points.WriteByte((byte)(py & 255)); points.WriteByte((byte)(py >> 8));
         }
       }
       return points.ToArray();
@@ -229,7 +258,8 @@ public static class FollowWin {
   // One capture of the union of both rectangles; only sparse marker pixels cross the pipe.
   public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold) { return Key(area, full, channel, threshold, second, secondChannel, secondThreshold, Rectangle.Empty, "blue", 255); }
   public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold, Rectangle third, string thirdChannel, int thirdThreshold) { return Key(area, full, channel, threshold, second, secondChannel, secondThreshold, third, thirdChannel, thirdThreshold, 6000); }
-  public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold, Rectangle third, string thirdChannel, int thirdThreshold, int cap) {
+  public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold, Rectangle third, string thirdChannel, int thirdThreshold, int cap) { return Key(area, full, channel, threshold, second, secondChannel, secondThreshold, third, thirdChannel, thirdThreshold, cap, 1); }
+  public static string Key(Rectangle area, bool full, string channel, int threshold, Rectangle second, string secondChannel, int secondThreshold, Rectangle third, string thirdChannel, int thirdThreshold, int cap, int grid) {
     long capturedAt = QpcMs(), started = Clock.ElapsedMilliseconds;
     if (cap < 100 || cap > 60000) throw new Exception("Invalid point cap");
     if (threshold < 10 || threshold > 255 || secondThreshold < 20 || secondThreshold > 255 || thirdThreshold < 20 || thirdThreshold > 255) throw new Exception("Invalid key threshold");
@@ -241,7 +271,7 @@ public static class FollowWin {
     if (!second.IsEmpty) { RequireInside(second, bounds); union = Rectangle.Union(area, second); }
     if (!third.IsEmpty) { RequireInside(third, bounds); union = Rectangle.Union(union, third); }
     Bitmap bitmap = Capture(bounds, union.X, union.Y, union.Width, union.Height);
-    byte[] first = KeyPoints(bitmap, union.X, union.Y, area, channel, threshold, cap);
+    byte[] first = KeyPoints(bitmap, union.X, union.Y, area, channel, threshold, cap, grid);
     byte[] other = second.IsEmpty ? new byte[0] : KeyPoints(bitmap, union.X, union.Y, second, secondChannel, secondThreshold, 2000);
     byte[] extra = third.IsEmpty ? new byte[0] : KeyPoints(bitmap, union.X, union.Y, third, thirdChannel, thirdThreshold, 8000);
     if (GetForegroundWindow() != window || Bounds(window) != bounds) throw new Exception("Game focus or view changed during capture");
@@ -281,7 +311,7 @@ while ($null -ne ($line = [Console]::ReadLine())) {
         $third = New-Object System.Drawing.Rectangle ([int]$command.third.x), ([int]$command.third.y), ([int]$command.third.width), ([int]$command.third.height)
         $thirdChannel = [string]$command.third.channel; $thirdThreshold = [int]$command.third.threshold
       }
-      $reply = [FollowWin]::Key($area, $command.full -eq $true, [string]$command.channel, [int]$command.threshold, $second, $secondChannel, $secondThreshold, $third, $thirdChannel, $thirdThreshold, $(if ($null -eq $command.cap) { 6000 } else { [int]$command.cap }))
+      $reply = [FollowWin]::Key($area, $command.full -eq $true, [string]$command.channel, [int]$command.threshold, $second, $secondChannel, $secondThreshold, $third, $thirdChannel, $thirdThreshold, $(if ($null -eq $command.cap) { 6000 } else { [int]$command.cap }), $(if ($null -eq $command.grid) { 1 } else { [int]$command.grid }))
     }
     else { throw 'Unknown follower capture operation' }
   } catch {

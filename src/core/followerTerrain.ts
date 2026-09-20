@@ -18,7 +18,9 @@ export const TERRAIN_CHANNEL = "terrain" as const, TERRAIN_THRESHOLD = 128, TERR
 const MAX_WALL_FRACTION = .3;
 /** How much farther from the leader (in cells) a map-edge exit may be than where we stand and still be worth walking to. */
 const EDGE_DETOUR_CELLS = 40, COMMIT_MS = 12_000, COMMIT_ARRIVED_CELLS = 6;
-const CELL = 4, LOOKAHEAD_PX = 56, MIN_AIM_PX = 20, CLEAR_START_CELLS = 1, NEAR_WALL_COST = 3;
+/** The planner grid. The terrain scan is asked for one point per cell of exactly this size, which makes that request lossless: a point lands in the cell its pixels did. */
+export const TERRAIN_CELL_PX = 4;
+const CELL = TERRAIN_CELL_PX, LOOKAHEAD_PX = 56, MIN_AIM_PX = 20, CLEAR_START_CELLS = 1, NEAR_WALL_COST = 3;
 /** A plan runs on the tick loop, so the search is capped by the clock: the best route found by then is used and following keeps its pace. */
 const PLAN_BUDGET_MS = 120, BUDGET_EVERY = 1024;
 const BUMP_RADIUS_CELLS = 3, BUMP_AHEAD_PX = 14, BUMP_TTL_MS = 45_000, BUMP_MAX = 60, STUCK_MS = 1000, STUCK_CLICKS = 5, STUCK_TOLERANCE_PX = 2.5, MOTION_GAP_MS = 250;

@@ -141,7 +141,7 @@ describe("loot planner (synthetic labels)", () => {
     const planner = new LootPlanner(), labels = [one(900, 500), one(1500, 300)];
     expect(planner.decide(labels, 1000)).toMatchObject({ kind: "loot", label: { centre: { x: 900, y: 500 } } });
     expect(planner.busy(1000)).toBe(false);
-    planner.committed(labels.length, 1000);
+    planner.committed(1000, labels[0].centre);
     expect(planner.busy(1000 + DEFAULT_LOOT_CONFIG.clickIntervalMs - 1)).toBe(true);
     expect(planner.decide(labels, 1200)).toMatchObject({ kind: "idle", reason: "Walking to the last loot click." });
     expect(planner.decide(labels, 1000 + DEFAULT_LOOT_CONFIG.clickIntervalMs).kind).toBe("loot");
@@ -153,17 +153,18 @@ describe("loot planner (synthetic labels)", () => {
   it("backs off after clicks that never reduce the labels, and tries again later", () => {
     const planner = new LootPlanner({ clickIntervalMs: 100, maxAttempts: 3, backoffMs: 5000 }), labels = [one(), one(1400, 600)];
     let now = 0;
-    for (let i = 0; i < 3; i++) { expect(planner.decide(labels, now).kind).toBe("loot"); planner.committed(labels.length, now); now += 100; }
+    for (let i = 0; i < 3; i++) { expect(planner.decide(labels, now).kind).toBe("loot"); planner.committed(now, labels[0].centre); now += 100; }
     expect(planner.decide(labels, now)).toMatchObject({ kind: "backoff", reason: expect.stringContaining("inventory full or out of reach") });
     expect(planner.decide(labels, now + 4999).kind).toBe("backoff");
     expect(planner.decide(labels, now + 5000).kind).toBe("loot");
   });
-  it("keeps going while pickups succeed: fewer labels after a click resets the count", () => {
+  it("keeps going while pickups succeed: the CLICKED label leaving the ground resets the count", () => {
     const planner = new LootPlanner({ clickIntervalMs: 100, maxAttempts: 2, backoffMs: 5000 });
-    let labels = [one(900, 500), one(1000, 520), one(1100, 540), one(1200, 560)], now = 0;
+    // Spaced well beyond SAME_LABEL_PX (120), so each is unambiguously a different label.
+    let labels = [one(900, 500), one(1300, 520), one(1700, 540), one(2100, 560)], now = 0;
     for (let picked = 0; picked < 4; picked++) {
       expect(planner.decide(labels, now).kind).toBe("loot");
-      planner.committed(labels.length, now); now += 100; labels = labels.slice(1);
+      planner.committed(now, labels[0].centre); now += 100; labels = labels.slice(1);
       // The first scan with fewer labels could be a missed detection: no click until the next one agrees.
       if (labels.length) { expect(planner.decide(labels, now)).toMatchObject({ kind: "idle", label: labels[0], reason: "Confirming a pickup." }); now += 100; }
     }
@@ -171,33 +172,41 @@ describe("loot planner (synthetic labels)", () => {
   });
   /** Scans every 100 ms with the given label counts, committing every loot decision; returns the decision kinds. */
   const run = (planner: LootPlanner, counts: number[], start = 0): string[] => counts.map((count, i) => {
-    const labels = Array.from({ length: count }, (_, n) => one(900 + n * 100, 500)), kind = planner.decide(labels, start + i * 100).kind;
-    if (kind === "loot") planner.committed(count, start + i * 100);
+    const labels = Array.from({ length: count }, (_, n) => one(900 + n * 400, 500)), kind = planner.decide(labels, start + i * 100).kind;
+    if (kind === "loot") planner.committed(start + i * 100, labels[0].centre);
     return kind;
   });
   it("still backs off when detection flickers: a single empty or lower scan is not a pickup", () => {
     const config = { clickIntervalMs: 100, maxAttempts: 3, backoffMs: 5000 };
     expect(run(new LootPlanner(config), [1, 1, 0, 1, 1, 1, 0, 1, 1])).toEqual(["loot", "loot", "idle", "loot", "backoff", "backoff", "idle", "backoff", "backoff"]);
-    expect(run(new LootPlanner(config), [3, 2, 3, 2, 3, 2, 3])).toEqual(["loot", "idle", "loot", "idle", "loot", "idle", "backoff"]);
+    // Other labels coming and going is NOT a pickup: the clicked one (labels[0]) never leaves, so the
+    // streak runs to maxAttempts instead of being reset by every dip in the total. Live, that reset is why
+    // 65 clicks went into 28 labels that never moved and the backoff never once engaged.
+    expect(run(new LootPlanner(config), [3, 2, 3, 2, 3, 2, 3])).toEqual(["loot", "loot", "loot", "backoff", "backoff", "backoff", "backoff"]);
     expect(run(new LootPlanner(config), [1, 0, 1, 0, 1, 0, 1])).toEqual(["loot", "idle", "loot", "idle", "loot", "idle", "backoff"]);
   });
-  it("forgets the streak once the view stays empty or a lower count is confirmed", () => {
+  it("keeps the streak across an empty view: walking past nothing is not evidence the bag has room", () => {
     const config = { clickIntervalMs: 100, maxAttempts: 2, backoffMs: 5000 };
-    expect(run(new LootPlanner(config), [1, 1, 0, 0, 1, 1, 1])).toEqual(["loot", "loot", "idle", "idle", "loot", "loot", "backoff"]);
-    expect(run(new LootPlanner(config), [3, 3, 2, 2, 2, 2])).toEqual(["loot", "loot", "idle", "loot", "loot", "backoff"]);
+    // An empty view only forgets WHICH label was clicked, because we may simply have walked away from it.
+    // It is not a pickup, so the streak survives and the backoff still arrives. Clearing it here was the
+    // second false reset: with a full bag, every gap between items wiped the evidence.
+    expect(run(new LootPlanner(config), [1, 1, 0, 0, 1, 1, 1])).toEqual(["loot", "loot", "idle", "idle", "backoff", "backoff", "backoff"]);
+    expect(run(new LootPlanner(config), [3, 3, 2, 2, 2, 2])).toEqual(["loot", "loot", "backoff", "backoff", "backoff", "backoff"]);
   });
   it("doubles the backoff each time until a pickup or an empty view, up to sixteen times", () => {
     const planner = new LootPlanner({ clickIntervalMs: 100, maxAttempts: 1, backoffMs: 1000 }), labels = [one()];
     let now = 0;
     for (const wait of [1000, 2000, 4000, 8000, 16000, 16000]) {
-      expect(planner.decide(labels, now).kind).toBe("loot"); planner.committed(1, now); now += 100;
+      expect(planner.decide(labels, now).kind).toBe("loot"); planner.committed(now, labels[0].centre); now += 100;
       expect(planner.decide(labels, now).kind).toBe("backoff");
       expect(planner.decide(labels, now + wait - 1).kind).toBe("backoff");
       now += wait;
     }
     expect(planner.decide([], now).kind).toBe("idle"); expect(planner.decide([], now + 100).kind).toBe("idle"); now += 200;
-    expect(planner.decide(labels, now).kind).toBe("loot"); planner.committed(1, now); now += 100;
+    expect(planner.decide(labels, now).kind).toBe("loot"); planner.committed(now, labels[0].centre); now += 100;
     expect(planner.decide(labels, now).kind).toBe("backoff");
-    expect(planner.decide(labels, now + 1000).kind).toBe("loot");
+    // Still the full 16 s: an empty view forgets the clicked label, not how many times looting has failed.
+    expect(planner.decide(labels, now + 1000).kind).toBe("backoff");
+    expect(planner.decide(labels, now + 16000).kind).toBe("loot");
   });
 });

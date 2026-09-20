@@ -1,12 +1,14 @@
 // Runs the follow loop from a terminal, so the game keeps focus (the Electron window would take it).
 // Dry-run unless --live is given. Ctrl+Shift+Esc is the emergency stop; moving the mouse or holding
-// a mouse button takes manual control. Always ends after --seconds.
+// a mouse button takes manual control briefly. Ctrl+Shift+H hands the PC over, Ctrl+Shift+M gives it back.
+// Always ends after --seconds.
 //   npm run follower:live -- --target <LeaderName> [--seconds 20] [--calibrate] [--live] [--loot] [--leash 7] [--sprint] [--wait 0] [--distance 2] [--confidence 0.85] [--scale 7] [--interval 110] [--dir <folder>]
 import os from "node:os";
 import { PerformanceObserver } from "node:perf_hooks";
 import path from "node:path";
 import { startWinHost } from "../src/adapters/winHost.js";
 import { startEmergencyStopMonitor } from "../src/adapters/emergencyStopMonitor.js";
+import { startManualControlMonitor } from "../src/adapters/manualControlMonitor.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
 import { driveAudit, FollowerDriveService, MIN_CLICK_INTERVAL_MS } from "../src/main/followerDriveService.js";
 
@@ -14,7 +16,10 @@ const args = process.argv.slice(2), option = (name: string) => { const i = args.
 const number = (name: string, fallback: number, min: number, max: number) => { const n = Number(option(name) ?? fallback); if (!Number.isFinite(n) || n < min || n > max) { console.error(`${name} must be between ${min} and ${max}.`); process.exit(2); } return n; };
 const targetName = option("--target");
 if (!targetName) { console.error("Usage: npm run follower:live -- --target <LeaderName> [--seconds 20] [--calibrate] [--live]"); process.exit(2); }
-const seconds = number("--seconds", 20, 3, 600), live = args.includes("--live");
+// Up to 4 hours: long enough for a levelling session without restarting. This is a backstop against an
+// unattended run, not an input guard - the kill switch, the takeover hotkey, the cursor guard and every
+// per-click check are unchanged and stop a run at any point inside it.
+const seconds = number("--seconds", 20, 3, 14_400), live = args.includes("--live");
 const directory = option("--dir") ?? path.join(os.homedir(), "AppData", "Roaming", "poe2-trade-companion", "follower-cli");
 const killSwitch = new KillSwitch();
 const service = new FollowerDriveService({
@@ -23,7 +28,7 @@ const service = new FollowerDriveService({
 });
 const finish = (reason: string, code = 0) => {
   const final = service.status();
-  service.stop(reason); monitor?.close();
+  service.stop(reason); monitor?.close(); takeover?.close();
   console.log(`\n${reason}`);
   console.log(JSON.stringify({ stats: final.stats, lastDecision: final.decision, lastObservation: final.observation && { leader: final.observation.leader, offset: final.observation.offset, confidence: final.observation.confidence, evidence: final.observation.evidence } }, null, 1));
   console.log(`Action traces: ${directory}`);
@@ -32,6 +37,20 @@ const finish = (reason: string, code = 0) => {
 let monitor: ReturnType<typeof startEmergencyStopMonitor> | undefined;
 try { monitor = startEmergencyStopMonitor(() => { killSwitch.trip(); finish("EMERGENCY STOP (Ctrl+Shift+Esc)."); }, () => { if (live && service.isRunning) { killSwitch.trip(); finish("Emergency-stop monitor failed; stopping live input.", 1); } }); }
 catch (e) { if (live) { console.error(`No emergency stop available, refusing live input: ${String(e)}`); process.exit(1); } }
+
+// Ctrl+Shift+H hands this PC over, Ctrl+Shift+M or +F gives it back. Idempotent chords, not a toggle:
+// the operator cannot see this status line, so a toggle makes every press a guess, and pressing to
+// resume stops a follower that was already following. Unlike the emergency stop neither is fatal:
+// the loop keeps watching while you play, so following picks up from a live marker instead of re-acquiring.
+let takeover: ReturnType<typeof startManualControlMonitor> | undefined;
+try {
+  takeover = startManualControlMonitor(
+    () => { service.setManualControl(true); console.log("\n>>> MANUAL CONTROL: the follower is yours. Ctrl+Shift+M gives it back.\n"); },
+    () => { service.setManualControl(false); console.log("\n<<< Following resumes.\n"); },
+    // Failing open would resume the follower under a hand that is still on the mouse, so a hold stands.
+    () => { if (service.manualControlHeld) console.error("Manual-control hotkey stopped; control stays yours. Ctrl+Shift+Esc still stops everything."); },
+  );
+} catch (e) { console.error(`Manual-control hotkey unavailable (Ctrl+Shift+Esc still stops): ${String(e)}`); }
 
 // Nothing can be captured unless the game is in front, and the operator is usually in another window: wait rather than fail.
 async function waitForGame(waitSeconds: number): Promise<void> {
@@ -61,7 +80,7 @@ async function waitForGame(waitSeconds: number): Promise<void> {
     console.log(`Calibrated: ${JSON.stringify(calibrated.calibration)}`);
   }
   if (live) { for (let i = 0; i < 20 && !monitor?.ready; i++) await new Promise(resolve => setTimeout(resolve, 100)); if (!monitor?.ready) { console.error("Emergency stop did not become ready; refusing live input."); process.exit(1); } }
-  console.log(`${live ? "LIVE INPUT" : "Dry-run (no input)"}: following ${targetName} for ${seconds} s. Ctrl+Shift+Esc stops; moving the mouse takes over.`);
+  console.log(`${live ? "LIVE INPUT" : "Dry-run (no input)"}: following ${targetName} for ${seconds} s. Ctrl+Shift+Esc stops; Ctrl+Shift+M resumes following, Ctrl+Shift+H holds it for you; moving the mouse takes over briefly.`);
   await service.start();
   const began = Date.now();
   // Two live runs stalled for tens of seconds with no status line and no action trace, so the whole process
@@ -87,7 +106,7 @@ async function waitForGame(waitSeconds: number): Promise<void> {
   const report = setInterval(() => {
     const s = service.status();
     if (!s.running) { clearInterval(report); clearInterval(beat); finish(`Stopped: ${s.reason}`, 1); return; }
-    console.log(`${((Date.now() - began) / 1000).toFixed(1).padStart(5)} s  ${(s.decision?.kind ?? "-").padEnd(5)} d=${String(s.observation?.offset?.distance ?? "-").padStart(5)} conf=${s.observation?.confidence ?? "-"} odo=${s.odometry ? `${s.odometry.tracked ? "ok" : "no"}:${s.odometry.quality}:${s.odometry.via}:${s.odometry.trailPoints}` : "-"} sprint=${s.sprinting ? "ON" : "off"}/${s.stats?.sprints ?? 0} plan=${s.terrain ? `${s.terrain.planned ? s.terrain.pathPx : "none"}/${s.terrain.walls}w/${s.terrain.bumps}b${s.terrain.blockedAhead ? "!" : ""}` : "-"} origin=${s.observation?.originVerified ? "ok" : "NO"}(${s.observation?.evidence.originScore ?? "-"}) ${s.observation?.evidence.searched ?? ""} obs/s=${s.stats?.observationsPerSecond ?? "-"} cycle p50/p95=${s.stats?.cycleMsP50 ?? "-"}/${s.stats?.cycleMsP95 ?? "-"} clicks=${s.stats?.clicks ?? 0} previewed=${s.stats?.previewed ?? 0} loot=${s.stats?.lootClicks ?? 0}/${s.stats?.lootLabels ?? 0}labels/${s.stats?.lootScans ?? 0}scans refused=${s.stats?.refused ?? 0} manual=${s.stats?.manualTakeovers ?? 0} input p50/p95=${s.stats?.captureToInputMsP50 ?? "-"}/${s.stats?.captureToInputMsP95 ?? "-"} lag=${worstLag}ms/${stalls}stalls gc=${Math.round(worstGc)}ms/${Math.round(gcMs)}total mem=${(() => { const m = process.memoryUsage(); const mb = (n: number) => Math.round(n / 1048576); return `rss${mb(m.rss)}/heap${mb(m.heapUsed)}/ext${mb(m.external)}/ab${mb(m.arrayBuffers)}`; })()}MB  ${s.reason}`);
+    console.log(`${((Date.now() - began) / 1000).toFixed(1).padStart(5)} s  ${(s.decision?.kind ?? "-").padEnd(5)} d=${String(s.observation?.offset?.distance ?? "-").padStart(5)} conf=${s.observation?.confidence ?? "-"} odo=${s.odometry ? `${s.odometry.tracked ? "ok" : "no"}:${s.odometry.quality}:${s.odometry.via}:${s.odometry.trailPoints}` : "-"} moved=${s.odometry?.movedPxPerSec ?? "-"}px/s/${s.odometry?.movedTracked ?? "-"}trk sprint=${s.sprinting ? "ON" : "off"}/${s.stats?.sprints ?? 0} plan=${s.terrain ? `${s.terrain.planned ? s.terrain.pathPx : "none"}/${s.terrain.walls}w/${s.terrain.bumps}b${s.terrain.blockedAhead ? "!" : ""}` : "-"} origin=${s.observation?.originVerified ? "ok" : "NO"}(${s.observation?.evidence.originScore ?? "-"}) ${s.observation?.evidence.searched ?? ""} obs/s=${s.stats?.observationsPerSecond ?? "-"} cycle p50/p95=${s.stats?.cycleMsP50 ?? "-"}/${s.stats?.cycleMsP95 ?? "-"} clicks=${s.stats?.clicks ?? 0} previewed=${s.stats?.previewed ?? 0} loot=${s.stats?.lootClicks ?? 0}/${s.stats?.lootLabels ?? 0}labels/${s.stats?.lootScans ?? 0}scans refused=${s.stats?.refused ?? 0} manual=${s.stats?.manualTakeovers ?? 0} input p50/p95=${s.stats?.captureToInputMsP50 ?? "-"}/${s.stats?.captureToInputMsP95 ?? "-"} lag=${worstLag}ms/${stalls}stalls gc=${Math.round(worstGc)}ms/${Math.round(gcMs)}total mem=${(() => { const m = process.memoryUsage(); const mb = (n: number) => Math.round(n / 1048576); return `rss${mb(m.rss)}/heap${mb(m.heapUsed)}/ext${mb(m.external)}/ab${mb(m.arrayBuffers)}`; })()}MB  ${s.reason}`);
     worstLag = 0; worstGc = 0;
     if (Date.now() - began >= seconds * 1000) { clearInterval(report); clearInterval(beat); finish("Time limit reached."); }
   }, 500);

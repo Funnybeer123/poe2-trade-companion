@@ -136,6 +136,12 @@ export function findLootLabels(runs: FlatRun[], view: { width: number; height: n
 }
 
 const CONFIRM_SCANS = 2, MAX_BACKOFF_DOUBLINGS = 4;
+/**
+ * How close a label has to be to where one was clicked to count as still being that same label.
+ * The view slides while the character walks, so this is generous: it is the same 120 px the drive
+ * service already uses to recognise a label across two scans.
+ */
+const SAME_LABEL_PX = 120;
 export interface LootConfig { clickIntervalMs: number; maxAttempts: number; backoffMs: number }
 export const DEFAULT_LOOT_CONFIG: LootConfig = { clickIntervalMs: 450, maxAttempts: 5, backoffMs: 6000 };
 /**
@@ -149,31 +155,51 @@ export const DEFAULT_LOOT_CONFIG: LootConfig = { clickIntervalMs: 450, maxAttemp
 export class LootPlanner {
   private lastClickAt = -Infinity;
   private fruitless = 0;
-  private labelsAtLastClick = Infinity;
+  /**
+   * Where the last click was aimed. Whether that ONE label is still on the ground is the honest test of
+   * a pickup; the label COUNT is not, and judging by the count is why looting used to click forever.
+   * The follower is moving, so labels enter and leave the view constantly: any drop in the total read as
+   * a successful pickup and reset `fruitless`, so across four live runs the backoff never once engaged
+   * while 65 clicks went into 28 labels that never left the ground (one spot took 9 clicks in 5 s).
+   */
+  private clickedAt?: { x: number; y: number };
+  private goneScans = 0;
   private backoffUntil = -Infinity;
-  private lowerScans = 0;
   private emptyScans = 0;
   private backoffs = 0;
   constructor(private readonly config: LootConfig = DEFAULT_LOOT_CONFIG) {}
   decide(labels: LootLabel[], now: number): LootDecision {
     if (!labels.length) {
-      if (++this.emptyScans >= CONFIRM_SCANS) { this.fruitless = 0; this.backoffs = 0; this.lowerScans = 0; this.labelsAtLastClick = Infinity; }
+      // Nothing in view says nothing about whether the last click worked - we may simply have walked away
+      // from it - so the clicked label is forgotten but the fruitless count is NOT cleared. Clearing it here
+      // was the second false reset: with a full bag, every gap between items wiped the evidence.
+      if (++this.emptyScans >= CONFIRM_SCANS) { this.clickedAt = undefined; this.goneScans = 0; }
       return { kind: "idle", reason: "No loot labels in view." };
     }
     this.emptyScans = 0;
-    if (this.labelsAtLastClick !== Infinity && labels.length < this.labelsAtLastClick) {
-      // A pickup stays picked up; a flicker is back on the next scan. Clicking now would overwrite the count being compared.
-      if (++this.lowerScans < CONFIRM_SCANS) return { kind: "idle", label: labels[0], reason: "Confirming a pickup." };
-      this.fruitless = 0; this.backoffs = 0; this.labelsAtLastClick = labels.length;
+    if (this.clickedAt) {
+      const still = labels.some(l => Math.hypot(l.centre.x - this.clickedAt!.x, l.centre.y - this.clickedAt!.y) <= SAME_LABEL_PX);
+      if (still) { this.goneScans = 0; }
+      else {
+        // A pickup stays picked up; a flicker is back on the next scan. Clicking now would overwrite what is being confirmed.
+        if (++this.goneScans < CONFIRM_SCANS) return { kind: "idle", label: labels[0], reason: "Confirming a pickup." };
+        this.fruitless = 0; this.backoffs = 0; this.clickedAt = undefined; this.goneScans = 0;
+      }
     }
-    this.lowerScans = 0;
     if (now < this.backoffUntil) return { kind: "backoff", reason: "Loot clicks are not picking anything up (inventory full or out of reach); waiting before trying again." };
     if (now - this.lastClickAt < this.config.clickIntervalMs) return { kind: "idle", label: labels[0], reason: "Walking to the last loot click." };
     if (this.fruitless >= this.config.maxAttempts) { this.fruitless = 0; this.backoffUntil = now + this.config.backoffMs * 2 ** Math.min(this.backoffs++, MAX_BACKOFF_DOUBLINGS); return { kind: "backoff", reason: "Loot clicks are not picking anything up (inventory full or out of reach); waiting before trying again." }; }
     return { kind: "loot", label: labels[0], reason: `Pick up the nearest of ${labels.length} loot label${labels.length === 1 ? "" : "s"}.` };
   }
-  /** Call only when the click was really emitted (or previewed in dry-run). */
-  committed(labelsInView: number, now: number): void { this.lastClickAt = now; this.fruitless++; this.labelsAtLastClick = labelsInView; }
+  /**
+   * Call only when the click was really emitted (or previewed in dry-run). `at` is where it was aimed,
+   * and is required: whether THAT label leaves the ground is the only honest evidence of a pickup, so a
+   * caller that cannot say where it clicked cannot have the streak judged for it.
+   */
+  committed(now: number, at: { x: number; y: number }): void {
+    this.lastClickAt = now; this.fruitless++;
+    this.clickedAt = { ...at }; this.goneScans = 0;
+  }
   /** True while the character should be left alone to reach the item it was sent to. */
   busy(now: number): boolean { return now - this.lastClickAt < this.config.clickIntervalMs; }
 }

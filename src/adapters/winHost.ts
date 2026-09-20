@@ -16,7 +16,7 @@ export interface WinHostOptions {
 }
 
 export function resolveWinHostScript(scriptName = "win-input-host.ps1"): string {
-  if (!["win-input-host.ps1", "win-combat-host.ps1", "win-price-helper.ps1", "win-emergency-stop.ps1", "win-bag-host.ps1", "win-follower-host.ps1", "win-follower-input-host.ps1"].includes(scriptName)) {
+  if (!["win-input-host.ps1", "win-combat-host.ps1", "win-price-helper.ps1", "win-emergency-stop.ps1", "win-manual-control.ps1", "win-bag-host.ps1", "win-follower-host.ps1", "win-follower-input-host.ps1"].includes(scriptName)) {
     throw new Error("Unsupported native helper script");
   }
   const here = path.dirname(fileURLToPath(import.meta.url));

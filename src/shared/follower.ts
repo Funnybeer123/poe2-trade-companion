@@ -37,7 +37,8 @@ export interface FollowerDriveStatus {
   observation?: MapObservation & { ageMs: number };
   decision?: SteeringDecision;
   /** Own-movement tracking from the map outlines, and whether steering is following the leader's trail or aiming straight at them. */
-  odometry?: { tracked: boolean; quality: number; trailPoints: number; via: "plan" | "trail" | "direct" };
+  /** `movedPxPerSec` is how fast the follower is actually moving over a 2 s window, with `movedTracked` the share of that window odometry tracked: instrumentation for telling "blocked" from "behind". */
+  odometry?: { tracked: boolean; quality: number; trailPoints: number; via: "plan" | "trail" | "direct"; movedPxPerSec?: number; movedTracked?: number };
   /** The landscape read off the overlay map: whether a path to the leader was planned, its length, walls seen, and places remembered from bumping into them. */
   /** Space is being held to sprint right now. */
   sprinting?: boolean;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { TERRAIN_POINT_CAP, TerrainPlanner, terrainWindow } from "../src/core/followerTerrain.js";
+import { TERRAIN_CELL_PX, TERRAIN_POINT_CAP, TerrainPlanner, terrainWindow } from "../src/core/followerTerrain.js";
 import type { KeyPoint } from "../src/core/followerMapMarker.js";
 
 // SIMULATED world. The map draws box outlines as wall pixels around a point character that stops dead at walls.
@@ -185,5 +185,59 @@ describe("terrain planner guards", () => {
   it("does not record a bump while the character is moving", () => {
     const planner = new TerrainPlanner();
     for (let now = 0; now <= 3000; now += 110) { planner.noteMotion({ dx: 0, dy: -5 }, now); expect(planner.noteClick({ dx: 0, dy: -1 }, { x: 0, y: -now / 20 }, 1, now)).toBe(false); }
+  });
+});
+
+/**
+ * Asking the capture host for one point per planner cell instead of every wall pixel.
+ *
+ * Why it exists: the terrain scan overflows its 50,000-point cap in busy scenes, and an overflow makes
+ * the host return null, which makes the loop discard the WHOLE plan. Measured over 16 recorded frames,
+ * 4 overflowed (a built-up area 56,264 points, the worst 113,022) and live runs produced no plan 84-96%
+ * of the time — so the planner failed exactly where walls were densest and the follower steered by
+ * straight line into them. Per-cell points cut those frames 4.1-16x, worst case 9,123.
+ *
+ * It is safe because it is lossless, and that is what these tests pin: the planner buckets every wall
+ * pixel by floor((x - window.x) / CELL), so a point at its cell's top-left lands in the same cell.
+ */
+describe("one terrain point per planner cell", () => {
+  /** Exactly what the native scan now emits for `grid`: the top-left of each occupied cell, in scan order. */
+  const perCell = (points: KeyPoint[]): KeyPoint[] => {
+    const seen = new Set<number>(), out: KeyPoint[] = [];
+    for (const p of points) {
+      const cx = Math.floor((p.x - WINDOW.x) / TERRAIN_CELL_PX), cy = Math.floor((p.y - WINDOW.y) / TERRAIN_CELL_PX);
+      const key = cy * 8192 + cx;
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ x: WINDOW.x + cx * TERRAIN_CELL_PX, y: WINDOW.y + cy * TERRAIN_CELL_PX });
+    }
+    return out;
+  };
+
+  it("plans exactly the same route from cell points as from every pixel, and from far fewer of them", () => {
+    // A building between us and the leader, so there is a real detour to get wrong.
+    const boxes = [{ x0: 40, y0: -120, x1: 150, y1: 120 }];
+    const raw = drawn(boxes, { x: 0, y: 0 }), cells = perCell(raw);
+    const offset = { dx: 260, dy: 0 };
+    const full = new TerrainPlanner().plan(raw, WINDOW, ORIGIN, offset, { x: 0, y: 0 }, 1, 1000);
+    const gridded = new TerrainPlanner().plan(cells, WINDOW, ORIGIN, offset, { x: 0, y: 0 }, 1, 1000);
+    expect(full.aim).toBeDefined();
+    expect(gridded.aim).toEqual(full.aim);
+    expect(gridded.pathPx).toBe(full.pathPx);
+    expect(gridded.blockedAhead).toBe(full.blockedAhead);
+    expect(cells.length).toBeLessThan(raw.length);
+  });
+
+  it("holds for the gappy dotted outlines the map really draws, which is where a coarser scan would leak", () => {
+    const raw = dottedOutlines(30_000), cells = perCell(raw);
+    const offset = { dx: 300, dy: 120 };
+    const full = new TerrainPlanner().plan(raw, WINDOW, ORIGIN, offset, { x: 0, y: 0 }, 1, 1000);
+    const gridded = new TerrainPlanner().plan(cells, WINDOW, ORIGIN, offset, { x: 0, y: 0 }, 1, 1000);
+    expect(gridded.aim).toEqual(full.aim);
+    expect(gridded.pathPx).toBe(full.pathPx);
+    expect(gridded.blockedAhead).toBe(full.blockedAhead);
+    // The point of the change: the same walls, comfortably inside the cap that used to bind.
+    expect(cells.length).toBeLessThan(raw.length / 3);
+    expect(cells.length).toBeLessThan(TERRAIN_POINT_CAP);
   });
 });

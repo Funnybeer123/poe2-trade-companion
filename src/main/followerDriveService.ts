@@ -10,7 +10,7 @@ import {
 import { CONFIRM_BAND, CONFIRM_CHANNEL, CONFIRM_POINT_CAP, CONFIRM_THRESHOLD, confirmDialog } from "../core/followerConfirm.js";
 import { decodeFlatRuns, decodeHueRuns, findLootLabels, LOOT_MIN_BRIGHTNESS, LOOT_MIN_CONFIDENCE, LOOT_MIN_RUN, lootArea, LootPlanner } from "../core/followerLoot.js";
 import { findTravelButton, PARTY_BAND, PARTY_CHANNEL, PARTY_POINT_CAP, PARTY_THRESHOLD } from "../core/followerParty.js";
-import { TERRAIN_CHANNEL, TERRAIN_POINT_CAP, TERRAIN_THRESHOLD, TerrainPlanner, terrainWindow, type TerrainPlan } from "../core/followerTerrain.js";
+import { TERRAIN_CELL_PX, TERRAIN_CHANNEL, TERRAIN_POINT_CAP, TERRAIN_THRESHOLD, TerrainPlanner, terrainWindow, type TerrainPlan } from "../core/followerTerrain.js";
 import { LeaderTrail, MapOdometry, ODOMETRY_CHANNEL, ODOMETRY_THRESHOLD, odometryWindow } from "../core/followerTrail.js";
 import { templatePixelCount, type PixelRect } from "../core/followerPerception.js";
 import { GameInputController } from "../core/gameInputController.js";
@@ -36,6 +36,8 @@ interface DriveOptions {
   pollMs?: number;
 }
 const GAME_PROCESSES = ["pathofexile", "pathofexile_x64", "pathofexilesteam", "pathofexile_x64steam", "pathofexileegs", "pathofexile_x64egs"];
+/** Shown while Ctrl+Shift+H holds the PC, so the status line says who has control and how to get it back. */
+export const MANUAL_HOLD_REASON = "You have manual control (Ctrl+Shift+M resumes following).";
 const FRAME_MAX_AGE_MS = 120, MANUAL_PAUSE_MS = 1500, ACTIONS_PER_MINUTE = 600, MAP_PX_PER_FOLLOW_UNIT = 6, LOOT_SCAN_MS = 250, PLAN_MS = 250, PLAN_KEEP_MS = 900, PLAN_NOT_WITHIN_PX = 35;
 /** Sprint (hold space) only while well behind the leader, with hysteresis so it does not flutter. */
 const SPRINT_START_PX = 70, SPRINT_STOP_PX = 40;
@@ -78,6 +80,17 @@ const PANEL_STUCK_MS = 2000, PANEL_ESCAPE_COOLDOWN_MS = 3000, PANEL_ESCAPE_ATTEM
  * pause a manual takeover already imposes — that pause, not this, sets the real pace when a hand is on the mouse.
  */
 const REFUSED_RETRY_MS = 1000;
+/**
+ * Instrumentation window for how far the follower has actually moved.
+ *
+ * Measured, not assumed: distance-to-the-leader cannot tell "blocked" from "slower than the leader".
+ * Across three runs, stalls where the distance never improved while clicking at 4-6 clicks/s ran to
+ * 25.4 s in a run jammed on a door and to 32.4 s in a run that was working fine, so no threshold on
+ * that signal separates the two. Whether we are moving at all should, and nothing recorded it — this
+ * window exists to find out before anything is built on it. Positions from different odometry epochs
+ * are unrelated, so an epoch change empties it.
+ */
+const MOVED_WINDOW_MS = 2000;
 const RELEASE_ATTEMPTS = 240, RELEASE_RETRY_MS = 250;
 /** How far behind the leader looting still happens, in leashes: beyond that, catching up is all that matters. */
 const LOOT_CHASE_LEASHES = 2;
@@ -132,6 +145,13 @@ export class FollowerDriveService {
   private resumes: number[] = [];
   private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0, panelEscapes: 0 };
   private sprinting = false;
+  /**
+   * The human has deliberately taken this PC (Ctrl+Shift+M) and holds it until they press again.
+   * Distinct from the reactive `manualUntil` pause, which expires 1.5 s after the cursor rests: this
+   * one never expires on its own, so the character can be played for as long as you like. It gates the
+   * same `manual` flag every other decision already respects, so there is one pause path, not two.
+   */
+  private manualHold = false;
   private startedAt = 0;
   /** Worker rebuilds this session, so a worker that cannot survive its first request does not restart forever. */
   private restarts = 0;
@@ -247,6 +267,21 @@ export class FollowerDriveService {
     if (this.options.killSwitch.isLatched()) return "Emergency stop latched — rearm in the app.";
     return this.options.blocked?.();
   }
+  /**
+   * Hand the PC to the human, or take it back. Deliberately not a `stop()`: the run keeps observing,
+   * so following resumes on the next tick with a live marker and an up-to-date trail rather than
+   * re-acquiring from cold. Held sprint is released by the next tick, because `wantSprint` reads the
+   * same `manual` flag, with the worker's 350 ms dead-man's switch behind it either way.
+   */
+  setManualControl(held: boolean): FollowerDriveStatus {
+    this.manualHold = held;
+    if (held) { this.decision = undefined; this.reason = MANUAL_HOLD_REASON; }
+    else if (this.running) this.reason = "Following resumes — control handed back.";
+    return this.status();
+  }
+  get manualControlHeld(): boolean {
+    return this.manualHold;
+  }
   async start(): Promise<FollowerDriveStatus> {
     if (this.running) return this.status();
     const refused = this.refusal();
@@ -268,7 +303,7 @@ export class FollowerDriveService {
     }, FRAME_MAX_AGE_MS);
     const controller = new GameInputController(sink, this.options.killSwitch, this.options.mode);
     this.running = true; this.reason = "Starting capture and input workers…";
-    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0, panelEscapes: 0 }; this.sprinting = false; this.startedAt = this.now();
+    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0, panelEscapes: 0 }; this.sprinting = false; this.manualHold = false; this.startedAt = this.now();
     let manualUntil = -Infinity, pauseReason = "", wasNear = false, lastLootScanAt = -Infinity, lootSeen: { x: number; y: number; at: number } | undefined;
     // Absence is measured from when we started watching, so a run never opens with a teleport. The travel button
     // may be clicked again only from `travelReadyAt`: the full cooldown after an attempt that reached the game,
@@ -281,6 +316,7 @@ export class FollowerDriveService {
     let originLostSince: number | undefined, escapeReadyAt = -Infinity, escapePressedAt = -Infinity, escapeAttempts = 0;
     let collecting: { at: number; labels: number } | undefined;
     const odometry = new MapOdometry(), trail = new LeaderTrail(), watch = { ...odometryWindow(tracker.origin, calibration.view), channel: ODOMETRY_CHANNEL, threshold: ODOMETRY_THRESHOLD };
+    const moves: Array<{ at: number; x: number; y: number; epoch: number; tracked: boolean }> = [];
     const terrain = new TerrainPlanner(), terrainArea = terrainWindow(tracker.origin, calibration.view);
     let plan: (TerrainPlan & { at: number }) | undefined, lastPlanAt = -Infinity, sprinting = false, planning = false;
     let planWanted: { origin: { x: number; y: number }; offset: { dx: number; dy: number; distance: number }; view: { width: number; height: number } } | undefined;
@@ -332,9 +368,20 @@ export class FollowerDriveService {
           this.observation = { ...observation, ageMs: 0 };
           this.frame = { hwnd: String(reply.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(reply.capturedAtQpcMs), at: started };
           const distance = observation.offset?.distance ?? Infinity;
-          const manual = this.now() < manualUntil;
+          const manual = this.manualHold || this.now() < manualUntil;
           // Our own movement from the slide of the map outlines, then the leader's path in that frame.
           const moved = odometry.update(reply.thirdOverflow || typeof reply.thirdPoints !== "string" ? undefined : decodeKeyPoints(reply.thirdPoints), started);
+          // Instrumentation only; nothing decides on this yet. See MOVED_WINDOW_MS.
+          moves.push({ at: started, x: odometry.position.x, y: odometry.position.y, epoch: odometry.epoch, tracked: moved.tracked });
+          while (moves.length > 1 && (started - moves[0].at > MOVED_WINDOW_MS || moves[0].epoch !== odometry.epoch)) moves.shift();
+          const movedSpan = moves.length > 1 ? started - moves[0].at : 0;
+          // Reported only over a window long enough to mean something, and with the share of it that
+          // odometry actually tracked: standing still and failing to track both hold `position` fixed,
+          // and a measurement that cannot tell them apart would be worse than none.
+          const movedPxPerSec = movedSpan >= 500
+            ? Math.round(Math.hypot(odometry.position.x - moves[0].x, odometry.position.y - moves[0].y) / (movedSpan / 1000) * 10) / 10
+            : undefined;
+          const movedTracked = movedSpan >= 500 ? Math.round(moves.filter(m => m.tracked).length / moves.length * 100) / 100 : undefined;
           const trusted = observation.leaderFound && !!observation.offset && observation.confidence >= current.confidence && observation.originVerified;
           if (trusted && moved.tracked) trail.record(odometry.position, observation.offset!, odometry.epoch);
           const trailAim = trusted ? trail.aim(odometry.position, observation.offset!, odometry.epoch) : undefined;
@@ -345,7 +392,7 @@ export class FollowerDriveService {
           planWanted = trusted && !manual && observation.offset!.distance > stopPx ? { origin: observation.origin, offset: observation.offset!, view } : undefined;
           if (planWanted && !planning && mapScanner && started - lastPlanAt >= PLAN_MS) {
             lastPlanAt = started; planning = true;
-            void mapScanner.send({ op: "terrain", ...terrainArea, full: false, channel: TERRAIN_CHANNEL, threshold: TERRAIN_THRESHOLD, cap: TERRAIN_POINT_CAP }).then(scanned => {
+            void mapScanner.send({ op: "terrain", ...terrainArea, full: false, channel: TERRAIN_CHANNEL, threshold: TERRAIN_THRESHOLD, cap: TERRAIN_POINT_CAP, grid: TERRAIN_CELL_PX }).then(scanned => {
               const wanted = planWanted;
               if (!live() || !wanted) { plan = undefined; return; }
               // Plan from where things are now, not where they were when the scan was asked for.
@@ -358,9 +405,9 @@ export class FollowerDriveService {
           const trailKnows = trailAim?.via === "trail" && !plan?.bumps;
           const planned = trusted && plan?.aim && !trailKnows && observation.offset!.distance > PLAN_NOT_WITHIN_PX ? plan.aim : undefined;
           const aim = planned ? { ...planned, via: "plan" as const } : trailAim;
-          this.odometry = { tracked: moved.tracked, quality: moved.quality, trailPoints: trail.length, via: aim?.via ?? "direct" };
+          this.odometry = { tracked: moved.tracked, quality: moved.quality, trailPoints: trail.length, via: aim?.via ?? "direct", movedPxPerSec, movedTracked };
           this.terrain = plan && { planned: !!plan.aim, pathPx: plan.pathPx, walls: plan.walls, bumps: plan.bumps, blockedAhead: plan.blockedAhead, planMs: plan.planMs, searched: plan.searched };
-          let decision: SteeringDecision = manual ? { kind: "pause", reason: pauseReason } : steering.decide(observation, this.now(), aim && aim.via !== "direct" ? aim : undefined, moved);
+          let decision: SteeringDecision = manual ? { kind: "pause", reason: this.manualHold ? MANUAL_HOLD_REASON : pauseReason } : steering.decide(observation, this.now(), aim && aim.via !== "direct" ? aim : undefined, moved);
           if (decision.kind === "near") wasNear = true;
           this.counts.cycles++; this.cycles.push(this.now() - started); if (this.cycles.length > 600) this.cycles.shift();
           const lootOn = current.lootEnabled === true && leashPx > 0;
@@ -427,7 +474,8 @@ export class FollowerDriveService {
             // position today; written as a guard it goes on holding if the block ever moves.
             && started > escapePressedAt
             // Read again rather than the cached `manual`: a refusal earlier in this same tick may just have started a pause.
-            && this.now() >= manualUntil) {
+            // The deliberate hold is read live for the same reason — it can be pressed part-way through a tick.
+            && !this.manualHold && this.now() >= manualUntil) {
             const missing = Math.round(started - originLostSince);
             // Phrased as an instruction so the dry-run preview ("would press Escape …") reads as one.
             const reason = `Press Escape to close a panel over the map centre: it has been unverifiable for ${(missing / 1000).toFixed(1)} s.`;
@@ -520,7 +568,7 @@ export class FollowerDriveService {
                 const outcome = await execute("loot", "pick-up-nearest-label", choice.reason, x, y, choice.label.confidence, process, allowed,
                   JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, label: choice.label, click: { x, y }, labelsInView: labels.length, leaderDistance: distance }), true, LOOT_MIN_CONFIDENCE);
                 if (outcome === "stopped") return;
-                if (outcome === "emitted" || outcome === "previewed") { loot.committed(labels.length, this.now()); collecting = { at: this.now(), labels: labels.length }; this.counts.lootClicks++; if (outcome === "emitted") this.counts.clicks++; else this.counts.previewed++; }
+                if (outcome === "emitted" || outcome === "previewed") { loot.committed(this.now(), { x, y }); collecting = { at: this.now(), labels: labels.length }; this.counts.lootClicks++; if (outcome === "emitted") this.counts.clicks++; else this.counts.previewed++; }
               }
               // Hold only for a label being acted on: a backoff or an empty scan must not interrupt following (or drop the sprint) four times a second.
               if (choice.label) decision = { kind: "hold", reason: choice.reason, distance };
