@@ -5,12 +5,14 @@ import { defaultCombatConfig, isSkillModule, type CombatModule } from "../../cor
 import ActionIcon from "../components/ActionIcon.vue";
 import { useCombatControls } from "../composables/useCombatControls";
 import { useDashboardActions } from "../composables/useDashboardActions";
+import { useFollowControls } from "../composables/useFollowControls";
 import { useGameActions } from "../composables/useGameActions";
 import { useRuntimeState } from "../composables/useRuntimeState";
 
 const runtime = useRuntimeState();
 const game = useGameActions();
 const combat = useCombatControls();
+const follow = useFollowControls();
 const operations = useDashboardActions();
 const { state, pending: combatPending, loading: combatLoading, error: combatError, readiness } = combat;
 const { scriptStatus, pending: operationPending, loading: operationLoading, error: operationError, voiceActive } = operations;
@@ -25,6 +27,16 @@ const combatStartReason = computed(() => {
   if (dryRun.value && !config.value.dryRun) return "Dry-run is on. Select Preview only in combat settings, or turn Dry-run off to start live combat.";
   if (!runtime.targetDetected.value && runtime.isNative.value) return "Open Path of Exile 2 to start combat.";
   return readiness.value;
+});
+const { state: followState, pending: followPending, loading: followLoading, error: followError, running: following, previewOnly: followPreview } = follow;
+const followStartReason = computed(() => {
+  // No native bridge is no input path at all, so this comes before every other reason.
+  if (!runtime.isNative.value) return "Open the desktop app to use the follower.";
+  if (runtime.killLatched.value) return "Re-arm input from the top bar to continue.";
+  // Following and a stash action would be two actors on one mouse, which is the thing never to allow.
+  if (otherActionActive.value) return "Finish the active stash action before starting the follower.";
+  if (!runtime.targetDetected.value) return "Open Path of Exile 2 to start following.";
+  return follow.readiness.value;
 });
 const combatMode = computed(() => state.value?.running ? (config.value.sigilSequence.enabled ? (config.value.dryRun ? "Preview armed" : "Armed") : state.value.config.dryRun ? "Previewing" : "Running") : "Paused");
 const modules = computed<{ id: CombatModule; title: string; subtitle: string }[]>(() => [
@@ -99,9 +111,36 @@ function moduleStatus(name: CombatModule): string {
       </div>
     </section>
 
-    <section class="card" style="padding: 20px; display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap;">
-      <div><h2 style="margin: 0 0 6px; font-size: 18px;">Follow &amp; Loot <span class="dashboard-badge">Preview</span></h2><p style="margin: 0; color: #a6b3c5; font-size: 13px;">Set up your second PC and preview following, loot detours, and map recovery.</p></div>
-      <RouterLink class="dashboard-text-link" to="/tools/follower">Open follower setup →</RouterLink>
+    <section class="card dashboard-follow" aria-labelledby="follow-quick-title">
+      <div class="dashboard-follow-head">
+        <div>
+          <h2 id="follow-quick-title">Follow &amp; Loot <span v-if="followPreview" class="dashboard-badge">Preview</span></h2>
+          <p>Follows the leader's overlay-map marker, detours for loot, and crosses areas after them.</p>
+        </div>
+        <div class="dashboard-combat-actions">
+          <RouterLink class="dashboard-text-link" to="/tools/follower"><ActionIcon name="settings" :size="16" />Calibrate &amp; configure</RouterLink>
+          <button
+            class="dashboard-button" :class="following ? 'secondary' : 'accent'"
+            :disabled="followPending || followLoading || !follow.available || (!following && Boolean(followStartReason))"
+            :title="following ? 'Stop following' : followStartReason"
+            @click="follow.toggle()"
+          >
+            <ActionIcon :name="following ? 'pause' : 'play'" :size="16" />{{ followPending ? 'Updating…' : following ? 'Stop following' : followPreview ? 'Start preview' : 'Start following' }}
+          </button>
+        </div>
+      </div>
+      <div class="dashboard-status-line">
+        <span v-if="followError" class="dashboard-error" role="alert">{{ followError }}</span>
+        <span v-else-if="followLoading">Loading follow settings…</span>
+        <span v-else-if="!following && followStartReason">{{ followStartReason }}</span>
+        <span v-else-if="following">
+          {{ followState?.reason }}
+          <template v-if="followState?.stats">
+            · {{ followState.stats.clicks }} clicks · {{ followState.stats.lootClicks }} loot · {{ followState.stats.observationsPerSecond }} obs/s
+          </template>
+        </span>
+        <span v-else>Ready. {{ followPreview ? 'Preview decides and traces but sends no clicks.' : 'Open the overlay map (Tab) on this PC before starting.' }}</span>
+      </div>
     </section>
 
     <section class="dashboard-stash" aria-labelledby="stash-quick-title">
@@ -211,6 +250,10 @@ function moduleStatus(name: CombatModule): string {
 .stash-quick-action strong { font-size: 12px; font-weight: 550; }
 .stash-quick-action small { font-size: 11px; color: var(--dash-muted); }
 .dashboard-status-line { display: flex; justify-content: space-between; gap: 20px; align-items: center; margin-top: 12px; font-size: 11px; color: var(--dash-muted); }
+.dashboard-follow { padding: 20px; }
+.dashboard-follow-head { display: flex; justify-content: space-between; align-items: center; gap: 16px; flex-wrap: wrap; }
+.dashboard-follow-head h2 { display: flex; align-items: center; gap: 10px; margin: 0 0 6px; font-size: 18px; font-weight: 600; letter-spacing: -.3px; }
+.dashboard-follow-head p { margin: 0; color: var(--dash-muted); font-size: 13px; }
 .dashboard-mode-note { font-size: 11px; color: var(--dash-muted); }
 .dashboard-running-operation { display: flex; align-items: center; gap: 14px; }
 .dashboard-workflow-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; }

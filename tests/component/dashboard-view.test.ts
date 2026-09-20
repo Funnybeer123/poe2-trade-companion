@@ -5,17 +5,20 @@ import { defineComponent, h, nextTick, ref, type Ref } from "vue";
 import { createMemoryHistory, createRouter } from "vue-router";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { defaultCombatConfig, type CombatStatus } from "../../src/core/combatAssist.js";
+import type { FollowerDriveStatus } from "../../src/shared/follower.js";
 
 const mocks = vi.hoisted(() => ({
   game: undefined as unknown, runtime: undefined as unknown,
   combat: undefined as unknown, operations: undefined as unknown,
   startAssistive: vi.fn(), sortStash: vi.fn(), runScript: vi.fn(), listen: vi.fn(),
   toggleModule: vi.fn(), startCombat: vi.fn(), stopCombat: vi.fn(), canRunScript: vi.fn(),
+  follow: undefined as unknown, toggleFollow: vi.fn(),
 }));
 vi.mock("../../src/renderer/composables/useGameActions", () => ({ useGameActions: () => mocks.game }));
 vi.mock("../../src/renderer/composables/useRuntimeState", () => ({ useRuntimeState: () => mocks.runtime }));
 vi.mock("../../src/renderer/composables/useCombatControls", () => ({ useCombatControls: () => mocks.combat }));
 vi.mock("../../src/renderer/composables/useDashboardActions", () => ({ useDashboardActions: () => mocks.operations }));
+vi.mock("../../src/renderer/composables/useFollowControls", () => ({ useFollowControls: () => mocks.follow }));
 
 import DashboardView from "../../src/renderer/views/DashboardView.vue";
 
@@ -23,6 +26,7 @@ let wrapper: VueWrapper;
 let combat: { state: Ref<CombatStatus | undefined>; available: boolean };
 let operations: { pending: Ref<boolean>; scriptStatus: Ref<{ running: boolean; phase: string }> };
 let runtime: { isNative: Ref<boolean> };
+let follow: { state: Ref<FollowerDriveStatus | undefined>; running: Ref<boolean>; previewOnly: Ref<boolean>; readiness: Ref<string>; available: boolean };
 
 async function render(): Promise<void> {
   const router = createRouter({ history: createMemoryHistory(), routes: [
@@ -65,6 +69,12 @@ beforeEach(() => {
     canRunScript: mocks.canRunScript, scriptBlockReason: () => "", voiceBlockReason: () => "",
     runScript: mocks.runScript, listenOnce: mocks.listen,
   };
+  mocks.follow = {
+    state: ref<FollowerDriveStatus>({ running: false, reason: "Calibrate on the overlay map, then start following.", settings: { version: 1, dryRun: false, mapScale: 7, clickIntervalMs: 110 }, dryRun: false, calibration: { targetName: "HarrisonBot", view: { width: 2560, height: 1440 }, origin: { x: 1279, y: 699 }, markerOffset: { dx: 0, dy: 0 }, labelPixels: 301, labelMask: ["#"], calibratedAt: "2026-09-20T00:00:00.000Z" } }),
+    available: true, loading: ref(false), pending: ref(false), error: ref(""), readiness: ref(""),
+    running: ref(false), previewOnly: ref(false), toggle: mocks.toggleFollow, start: vi.fn(), stop: vi.fn(),
+  };
+  follow = mocks.follow as typeof follow;
   combat = mocks.combat as typeof combat;
   operations = mocks.operations as typeof operations;
   runtime = mocks.runtime as typeof runtime;
@@ -177,5 +187,49 @@ describe("action dashboard", () => {
     expect(links).toEqual(expect.arrayContaining([
       "/tools/combat", "/tools/transfers", "/items#scans", "/tools/stash-tabs", "/tools/hotkeys",
     ]));
+  });
+});
+
+describe("follow & loot on the dashboard", () => {
+  const line = () => wrapper.get(".dashboard-follow .dashboard-status-line").text();
+
+  it("starts the follower from the homepage and reports what it is doing", async () => {
+    await render();
+    const start = button("Start following");
+    expect(start.attributes("disabled")).toBeUndefined();
+    await start.trigger("click");
+    expect(mocks.toggleFollow).toHaveBeenCalledTimes(1);
+
+    follow.running.value = true;
+    follow.state.value = { ...follow.state.value!, running: true, reason: "Move toward HarrisonBot: 79 map px away.",
+      stats: { cycles: 900, clicks: 229, previewed: 0, refused: 20, manualTakeovers: 2, observationsPerSecond: 14.5, lootScans: 451, lootLabels: 0, lootClicks: 3, sprints: 21 } };
+    await nextTick();
+    expect(button("Stop following").attributes("disabled")).toBeUndefined();
+    expect(line()).toContain("Move toward HarrisonBot: 79 map px away.");
+    expect(line()).toContain("229 clicks");
+    expect(line()).toContain("14.5 obs/s");
+  });
+
+  it("will not start without calibration, and says where to do it", async () => {
+    follow.state.value = { ...follow.state.value!, calibration: undefined };
+    follow.readiness.value = "Calibrate on the overlay map first, in follower setup.";
+    await render();
+    expect(button("Start following").attributes("disabled")).toBeDefined();
+    expect(line()).toBe("Calibrate on the overlay map first, in follower setup.");
+  });
+
+  // A preview decides and traces but sends no clicks: the button must not promise following.
+  it("calls it a preview while dry-run is on", async () => {
+    follow.previewOnly.value = true;
+    await render();
+    expect(button("Start preview").attributes("disabled")).toBeUndefined();
+    expect(wrapper.get(".dashboard-follow .dashboard-badge").text()).toBe("Preview");
+  });
+
+  it("refuses to start while a stash action is running, so two actors never share the mouse", async () => {
+    operations.scriptStatus.value = { running: true, phase: "Sorting" };
+    await render();
+    expect(button("Start following").attributes("disabled")).toBeDefined();
+    expect(line()).toBe("Finish the active stash action before starting the follower.");
   });
 });
