@@ -273,7 +273,23 @@ strongly coloured backdrop remains indistinguishable from a dim coloured fill. D
 ritual altar, and items your filter leaves unstyled all use the same near-black
 box with white text; nothing in the pixels tells them apart, and clicking a
 transition would leave the leader. Use an item filter that gives wanted items a
-coloured background or border. On seven saved real frames the detector found all
+coloured background or border: a catch-all `Show` block with `SetBackgroundColor`
+at the END of the filter styles everything earlier rules left alone, which is the
+whole answer to "pick up anything on the ground".
+
+Reading them anyway was tried and **rejected on measurement** (reverted in
+`fd13f85`). A near-black fill carries a few counts of noise, so its rows split at
+random columns under the 3-count run rule; a looser tolerance between two
+near-black pixels (6) fixes that and does find the measured "Stitched Gloves" box
+exactly (258 x 45 px at 1916, 221). It is not enough. Over six saved frames it
+found **one of seven** real dark item labels and **sixteen** boxes that were panel
+chrome, quest-tracker rows or plain shadow (one of them 943 px wide), and
+dropping the brightness floor to 0 pushed two of the six past the native
+4000-run cap, which discards the whole scan. The idea for telling a drop from
+furniture - furniture can only enter across the edge of the view, while an item
+appears in the middle of ground already seen and reported empty - is sound and
+survives in that commit, but it cannot rescue a detector that is wrong nine times
+in ten, and screen-fixed chrome does not move with the camera at all. On seven saved real frames the detector found all
 four coloured labels and nothing else (none of nine black item labels, four NPC
 and object labels, the Options panel, or the ritual tooltip).
 
