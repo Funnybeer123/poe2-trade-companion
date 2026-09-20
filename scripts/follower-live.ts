@@ -3,6 +3,7 @@
 // a mouse button takes manual control. Always ends after --seconds.
 //   npm run follower:live -- --target <LeaderName> [--seconds 20] [--calibrate] [--live] [--loot] [--leash 7] [--sprint] [--wait 0] [--distance 2] [--confidence 0.85] [--scale 7] [--interval 110] [--dir <folder>]
 import os from "node:os";
+import { PerformanceObserver } from "node:perf_hooks";
 import path from "node:path";
 import { startWinHost } from "../src/adapters/winHost.js";
 import { startEmergencyStopMonitor } from "../src/adapters/emergencyStopMonitor.js";
@@ -63,10 +64,31 @@ async function waitForGame(waitSeconds: number): Promise<void> {
   console.log(`${live ? "LIVE INPUT" : "Dry-run (no input)"}: following ${targetName} for ${seconds} s. Ctrl+Shift+Esc stops; moving the mouse takes over.`);
   await service.start();
   const began = Date.now();
+  // Two live runs stalled for tens of seconds with no status line and no action trace, so the whole process
+  // was held up rather than the loop merely running slow. A 100 ms heartbeat measures how late it is actually
+  // called: that is the event loop being blocked or starved, and it is the number to look at when it happens
+  // again. Reported as the worst lag since the previous status line.
+  // A stall is either this process being blocked or the machine descheduling it; a long garbage collection is
+  // the first thing to rule out, and it is the one the loop could plausibly cause by itself (every terrain plan
+  // allocates two typed arrays over ~121,000 cells, four times a second, and decodes tens of thousands of points).
+  let worstGc = 0, gcMs = 0;
+  try {
+    const gc = new PerformanceObserver(list => { for (const entry of list.getEntries()) { gcMs += entry.duration; if (entry.duration > worstGc) worstGc = entry.duration; if (entry.duration > 1000) console.log(`!! garbage collection took ${(entry.duration / 1000).toFixed(1)} s`); } });
+    gc.observe({ entryTypes: ["gc"] });
+  } catch { /* Measurement only: a runtime without GC entries still follows. */ }
+  let lastBeat = Date.now(), worstLag = 0, stalls = 0;
+  const beat = setInterval(() => {
+    const now = Date.now(), lag = now - lastBeat - 100;
+    lastBeat = now;
+    if (lag > worstLag) worstLag = lag;
+    if (lag > 1000) { stalls++; console.log(`!! event loop blocked for ${(lag / 1000).toFixed(1)} s at ${((now - began) / 1000).toFixed(1)} s`); }
+  }, 100);
+  beat.unref?.();
   const report = setInterval(() => {
     const s = service.status();
-    if (!s.running) { clearInterval(report); finish(`Stopped: ${s.reason}`, 1); return; }
-    console.log(`${((Date.now() - began) / 1000).toFixed(1).padStart(5)} s  ${(s.decision?.kind ?? "-").padEnd(5)} d=${String(s.observation?.offset?.distance ?? "-").padStart(5)} conf=${s.observation?.confidence ?? "-"} odo=${s.odometry ? `${s.odometry.tracked ? "ok" : "no"}:${s.odometry.quality}:${s.odometry.via}:${s.odometry.trailPoints}` : "-"} sprint=${s.sprinting ? "ON" : "off"}/${s.stats?.sprints ?? 0} plan=${s.terrain ? `${s.terrain.planned ? s.terrain.pathPx : "none"}/${s.terrain.walls}w/${s.terrain.bumps}b${s.terrain.blockedAhead ? "!" : ""}` : "-"} origin=${s.observation?.originVerified ? "ok" : "NO"}(${s.observation?.evidence.originScore ?? "-"}) ${s.observation?.evidence.searched ?? ""} obs/s=${s.stats?.observationsPerSecond ?? "-"} cycle p50/p95=${s.stats?.cycleMsP50 ?? "-"}/${s.stats?.cycleMsP95 ?? "-"} clicks=${s.stats?.clicks ?? 0} previewed=${s.stats?.previewed ?? 0} loot=${s.stats?.lootClicks ?? 0}/${s.stats?.lootLabels ?? 0}labels/${s.stats?.lootScans ?? 0}scans refused=${s.stats?.refused ?? 0} manual=${s.stats?.manualTakeovers ?? 0} input p50/p95=${s.stats?.captureToInputMsP50 ?? "-"}/${s.stats?.captureToInputMsP95 ?? "-"}  ${s.reason}`);
-    if (Date.now() - began >= seconds * 1000) { clearInterval(report); finish("Time limit reached."); }
+    if (!s.running) { clearInterval(report); clearInterval(beat); finish(`Stopped: ${s.reason}`, 1); return; }
+    console.log(`${((Date.now() - began) / 1000).toFixed(1).padStart(5)} s  ${(s.decision?.kind ?? "-").padEnd(5)} d=${String(s.observation?.offset?.distance ?? "-").padStart(5)} conf=${s.observation?.confidence ?? "-"} odo=${s.odometry ? `${s.odometry.tracked ? "ok" : "no"}:${s.odometry.quality}:${s.odometry.via}:${s.odometry.trailPoints}` : "-"} sprint=${s.sprinting ? "ON" : "off"}/${s.stats?.sprints ?? 0} plan=${s.terrain ? `${s.terrain.planned ? s.terrain.pathPx : "none"}/${s.terrain.walls}w/${s.terrain.bumps}b${s.terrain.blockedAhead ? "!" : ""}` : "-"} origin=${s.observation?.originVerified ? "ok" : "NO"}(${s.observation?.evidence.originScore ?? "-"}) ${s.observation?.evidence.searched ?? ""} obs/s=${s.stats?.observationsPerSecond ?? "-"} cycle p50/p95=${s.stats?.cycleMsP50 ?? "-"}/${s.stats?.cycleMsP95 ?? "-"} clicks=${s.stats?.clicks ?? 0} previewed=${s.stats?.previewed ?? 0} loot=${s.stats?.lootClicks ?? 0}/${s.stats?.lootLabels ?? 0}labels/${s.stats?.lootScans ?? 0}scans refused=${s.stats?.refused ?? 0} manual=${s.stats?.manualTakeovers ?? 0} input p50/p95=${s.stats?.captureToInputMsP50 ?? "-"}/${s.stats?.captureToInputMsP95 ?? "-"} lag=${worstLag}ms/${stalls}stalls gc=${Math.round(worstGc)}ms/${Math.round(gcMs)}total rss=${Math.round(process.memoryUsage().rss / 1048576)}MB  ${s.reason}`);
+    worstLag = 0; worstGc = 0;
+    if (Date.now() - began >= seconds * 1000) { clearInterval(report); clearInterval(beat); finish("Time limit reached."); }
   }, 500);
 })().catch(e => { console.error(String(e)); service.stop("Failed."); monitor?.close(); process.exit(1); });

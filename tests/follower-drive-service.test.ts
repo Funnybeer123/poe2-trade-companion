@@ -1207,6 +1207,23 @@ describe("follow drive stopping (synthetic hosts, no OS input)", () => {
     expect(died.attempts).toEqual([]);
     for (const rig of [blocked, retargeted, died]) await expect.poll(() => ops(rig.input).slice(-2), soon).toEqual(["release", "closed"]);
   });
+  it("presses Escape for a panel that only PARTLY covers the map marker, not just one that hides it outright", async () => {
+    // Measured live: Path of Exile 2's ritual "Favours" window left the orange marker matching at .627, displaced
+    // off the anchor and so unverified. The trigger required a score of exactly 0, so Escape never fired and the
+    // follower idled 50 s without a single click.
+    const rig = await calibrated({ clock: 500_000 });
+    goLive(rig);
+    await rig.service.start();
+    await cycles(rig, 2);
+    rig.scene.own = { dx: 18, dy: 0 };   // found, but not where the map centre should be: a panel over it
+    await cycles(rig, 2);
+    expect(rig.service.status().observation).toMatchObject({ originVerified: false });
+    expect(rig.service.status().observation!.evidence.originScore).toBeGreaterThan(0);
+    expect(rig.escapes).toEqual([]);
+    rig.clock! += 2000;   // PANEL_STUCK_MS
+    await expect.poll(() => rig.escapes.length, soon).toBe(1);
+    expect(rig.escapes[0]).toMatchObject({ op: "key", key: "escape", expectedHwnd: HWND });
+  });
   it("rebuilds a worker that stops answering and keeps following, rather than ending the run", async () => {
     // Live, one native op stalled past its deadline: the transport killed the worker and a 260 s run ended there.
     const rig = await calibrated();

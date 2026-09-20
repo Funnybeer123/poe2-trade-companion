@@ -385,14 +385,15 @@ export class FollowerDriveService {
           }
           // A movement click that lands on a waypoint opens its panel over the map centre, and from then on our
           // own marker cannot be found: nothing below this line will act, and the loop pauses for ever. Escape
-          // closes that panel. Only a marker that scored ZERO is taken for a covered one — a panel hides it
-          // outright — whereas a marker found somewhere else means the map itself has moved, which Escape cannot
-          // fix and where it would only open the game menu. Bounded for the same reason: spaced, capped, and
-          // given up on until a verified centre says the map is readable again.
+          // closes that panel. A marker that scored zero is not the only shape this takes: Path of Exile 2's
+          // ritual "Favours" window only PARTLY covers it, leaving a partial match displaced off the anchor,
+          // and requiring a zero score meant Escape never fired for it — measured live at originScore .627,
+          // 50 s idle, not one click. Unverifiable for long enough is the condition, however it reads.
+          // Bounded regardless: spaced, capped, and given up on until a verified centre says the map is readable.
           // Our own teleport confirmation covers the same pixels, so while that window is open answering it
           // above is the way out and Escape would cancel the travel; the clock keeps running underneath, so a
           // dialog that outlives its window is still escaped in the end.
-          if (originLostSince !== undefined && started - originLostSince >= PANEL_STUCK_MS && observation.evidence.originScore === 0
+          if (originLostSince !== undefined && started - originLostSince >= PANEL_STUCK_MS
             && started >= confirmUntil && escapeAttempts < PANEL_ESCAPE_ATTEMPTS && started - lastEscapeAt >= PANEL_ESCAPE_COOLDOWN_MS
             // Read again rather than the cached `manual`: a refusal earlier in this same tick may just have started a pause.
             && this.now() >= manualUntil) {
