@@ -64,9 +64,20 @@ const CONFIRM_WINDOW_MS = 4000, CONFIRM_SCAN_MS = 250;
  * the trigger, on top of the 1500 ms a hidden marker is already trusted for, so an effect washing the marker
  * out for a moment never reaches it. But Escape with nothing open OPENS the game menu, which is the very
  * problem it is meant to fix, so the presses are spaced and capped — at an EVEN cap, so a menu we opened
- * ourselves is closed again by the last attempt rather than left open.
+ * ourselves is closed again by the last attempt rather than left open. The cap used to be released only by a
+ * verified centre, which is precisely what a panel prevents: live, two presses spent it and the follower then
+ * had nothing left to try and idled 30 s to the end of the run. So the attempts also come back on their own
+ * this long after the last press that landed.
  */
-const PANEL_STUCK_MS = 2000, PANEL_ESCAPE_COOLDOWN_MS = 3000, PANEL_ESCAPE_ATTEMPTS = 2;
+const PANEL_STUCK_MS = 2000, PANEL_ESCAPE_COOLDOWN_MS = 3000, PANEL_ESCAPE_ATTEMPTS = 2, PANEL_ESCAPE_RESET_MS = 30_000;
+/**
+ * A refusal from the native worker (a hand on the mouse, a stale capture) means nothing reached the game, so it
+ * cannot be charged as an attempt: two refused travel clicks cost a full 10 s cooldown each and put a measured
+ * 23 s between the leader leaving and the teleport. All a refusal buys is this gap, which only has to outlast a
+ * tick (8 ms) and a scan (250 ms) so a retry cannot ride every cycle, and which is shorter than the 1500 ms
+ * pause a manual takeover already imposes — that pause, not this, sets the real pace when a hand is on the mouse.
+ */
+const REFUSED_RETRY_MS = 1000;
 const RELEASE_ATTEMPTS = 240, RELEASE_RETRY_MS = 250;
 /** How far behind the leader looting still happens, in leashes: beyond that, catching up is all that matters. */
 const LOOT_CHASE_LEASHES = 2;
@@ -76,6 +87,10 @@ const FOCUS = /Focus Path of Exile 2/, COVERED = /covered at the click point/;
 /** A worker that died or stopped answering, as the transport reports it: rebuildable, unlike a refusal. */
 const WORKER_LOST = /host-timeout|host-exited|host-output-closed|host-closed/, MAX_WORKER_RESTARTS = 5;
 const MANUAL = /Manual mouse movement|Mouse button held|Modifier key held|Space held/, RETRY = /Stale capture|capture stale|Focus Path of Exile|focus or view changed/i;
+/** What became of one executed decision. */
+type Outcome = "emitted" | "previewed" | "paused" | "retry" | "stopped";
+/** Whether it counted: it reached the game, or a dry run showed it, which is paced the same. A refusal reached nothing and may cost nothing. */
+const acted = (outcome: Outcome): boolean => outcome === "emitted" || outcome === "previewed";
 
 export function defaultDriveSettings(): FollowerDriveSettings { return { version: 1, dryRun: true, mapScale: 7, clickIntervalMs: 110 }; }
 export function parseDriveSettings(raw: unknown): FollowerDriveSettings {
@@ -255,12 +270,15 @@ export class FollowerDriveService {
     this.running = true; this.reason = "Starting capture and input workers…";
     this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0, panelEscapes: 0 }; this.sprinting = false; this.startedAt = this.now();
     let manualUntil = -Infinity, pauseReason = "", wasNear = false, lastLootScanAt = -Infinity, lootSeen: { x: number; y: number; at: number } | undefined;
-    // Absence is measured from when we started watching, so a run never opens with a teleport.
-    let lastLeaderAt = this.now(), lastTravelAt = -Infinity, lastTravelScanAt = -Infinity;
+    // Absence is measured from when we started watching, so a run never opens with a teleport. The travel button
+    // may be clicked again only from `travelReadyAt`: the full cooldown after an attempt that reached the game,
+    // the short retry gap after one the worker refused.
+    let lastLeaderAt = this.now(), travelReadyAt = -Infinity, lastTravelScanAt = -Infinity;
     // Open only by our own travel click, and closed again by the OK that answers it: one OK per travel attempt.
     let confirmUntil = -Infinity, lastConfirmScanAt = -Infinity;
-    // Since when the map centre has been unverifiable, and what has been spent trying to Escape a panel off it.
-    let originLostSince: number | undefined, lastEscapeAt = -Infinity, escapeAttempts = 0;
+    // Since when the map centre has been unverifiable, and what has been spent trying to Escape a panel off it:
+    // when the next attempt is allowed, when the last press that landed was made, and how many have landed.
+    let originLostSince: number | undefined, escapeReadyAt = -Infinity, escapePressedAt = -Infinity, escapeAttempts = 0;
     let collecting: { at: number; labels: number } | undefined;
     const odometry = new MapOdometry(), trail = new LeaderTrail(), watch = { ...odometryWindow(tracker.origin, calibration.view), channel: ODOMETRY_CHANNEL, threshold: ODOMETRY_THRESHOLD };
     const terrain = new TerrainPlanner(), terrainArea = terrainWindow(tracker.origin, calibration.view);
@@ -270,7 +288,7 @@ export class FollowerDriveService {
     const letGo = async () => { if (sprinting) { sprinting = false; this.sprinting = false; await sink.releaseSprint(); } };
     const loot = new LootPlanner(), leashPx = (follow.lootLeash ?? 0) * MAP_PX_PER_FOLLOW_UNIT;
     /** Runs one executed decision through the controller and says what became of it. */
-    const execute = async (module: "navigation" | "loot", rule: string, reason: string, x: number, y: number, confidence: number, process: string, allowed: boolean, evidence: string, lootEnabled: boolean, threshold: number, key?: "space" | "escape", mark?: string): Promise<"emitted" | "previewed" | "paused" | "retry" | "stopped"> => {
+    const execute = async (module: "navigation" | "loot", rule: string, reason: string, x: number, y: number, confidence: number, process: string, allowed: boolean, evidence: string, lootEnabled: boolean, threshold: number, key?: "space" | "escape", mark?: string): Promise<Outcome> => {
       const policy = scenario({ id: "follow-map-marker", name: "Follow by overlay map", enabledModules: lootEnabled ? ["navigation", "loot"] : ["navigation"], dryRun: previewOnly || this.dryRun(), actionsPerMinute: ACTIONS_PER_MINUTE, confidenceThreshold: threshold, timingProfile: "tight" });
       // The marker tells the input worker which part of the view this click is allowed in, or which of the two keys this is.
       const text = mark ?? (module === "loot" ? LOOT_CLICK : undefined);
@@ -351,7 +369,9 @@ export class FollowerDriveService {
           if (observation.leaderFound) lastLeaderAt = started;
           // A verified centre is the all-clear: it forgets both how long it has been gone and what was spent on it.
           if (observation.originVerified) { originLostSince = undefined; escapeAttempts = 0; }
-          else originLostSince ??= started;
+          // A panel the presses never closed must not silence the follower for the rest of the run, so the
+          // attempts come back on the clock too, long enough after the last press to be a fresh try and not a spree.
+          else { originLostSince ??= started; if (started - escapePressedAt >= PANEL_ESCAPE_RESET_MS) escapeAttempts = 0; }
           // Answering our own teleport confirmation. This sits ahead of every other click on purpose: the modal
           // covers the map centre, so `originVerified` is false and the steering below can only pause while it is
           // up — the loop would sit there with the dialog open and the teleport never made. Nothing else is
@@ -368,14 +388,16 @@ export class FollowerDriveService {
               const reason = `Confirm the teleport to ${current.targetName}.`;
               // Spent whatever becomes of the click: a refused OK is retried by the next travel attempt, not by this window.
               confirmUntil = -Infinity;
-              // The teleport is now under way, so the cooldown that covers the area load runs from here.
-              lastTravelAt = this.now();
               await letGo();
               this.frame = { hwnd: String(scan.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(scan.capturedAtQpcMs), at: scanAt };
               const outcome = await execute("navigation", "confirm-teleport", reason, dialog.ok.x, dialog.ok.y, 1, process, allowed,
                 JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, ok: dialog.ok }), lootOn, current.confidence, undefined, CONFIRM_CLICK);
               if (outcome === "stopped") return;
-              if (outcome === "emitted" || outcome === "previewed") {
+              // An OK that landed starts the teleport, so the cooldown covering the area load runs from here. A
+              // refused one left the dialog standing and sent nothing: the travel attempt that reopens the window
+              // and answers it again is a short gap away, not 10 s.
+              travelReadyAt = this.now() + (acted(outcome) ? TRAVEL_COOLDOWN_MS : REFUSED_RETRY_MS);
+              if (acted(outcome)) {
                 this.counts.confirms++;
                 if (outcome === "emitted") { this.counts.clicks++; this.reason = reason; } else this.counts.previewed++;
                 this.decision = { kind: "hold", reason: this.reason };
@@ -389,24 +411,35 @@ export class FollowerDriveService {
           // ritual "Favours" window only PARTLY covers it, leaving a partial match displaced off the anchor,
           // and requiring a zero score meant Escape never fired for it — measured live at originScore .627,
           // 50 s idle, not one click. Unverifiable for long enough is the condition, however it reads.
-          // Bounded regardless: spaced, capped, and given up on until a verified centre says the map is readable.
+          // Bounded regardless: spaced, capped, and given up on until a verified centre — or a long enough wait — says it is worth trying again.
           // Our own teleport confirmation covers the same pixels, so while that window is open answering it
           // above is the way out and Escape would cancel the travel; the clock keeps running underneath, so a
-          // dialog that outlives its window is still escaped in the end.
+          // dialog that outlives its window is still escaped in the end. And when the leader is gone at the same
+          // moment, Escape wins: the travel click below demands a verified centre of its own, so the two can
+          // never fire together, and the panel is the reason travel cannot run at all. Travel picks up again by
+          // itself on the first verified centre, with its own cooldown untouched by any of this.
           if (originLostSince !== undefined && started - originLostSince >= PANEL_STUCK_MS
-            && started >= confirmUntil && escapeAttempts < PANEL_ESCAPE_ATTEMPTS && started - lastEscapeAt >= PANEL_ESCAPE_COOLDOWN_MS
+            && started >= confirmUntil && escapeAttempts < PANEL_ESCAPE_ATTEMPTS && started >= escapeReadyAt
+            // Fresh evidence, never merely an elapsed clock: the capture this press is decided from must be NEWER
+            // than the last press that landed. A press that closed the panel cannot show up in anything captured
+            // before it, and a second Escape at a panel already gone OPENS the game menu — the failure this whole
+            // block exists to avoid. The tick only reaches here from a capture that succeeded, so this holds by
+            // position today; written as a guard it goes on holding if the block ever moves.
+            && started > escapePressedAt
             // Read again rather than the cached `manual`: a refusal earlier in this same tick may just have started a pause.
             && this.now() >= manualUntil) {
             const missing = Math.round(started - originLostSince);
             // Phrased as an instruction so the dry-run preview ("would press Escape …") reads as one.
             const reason = `Press Escape to close a panel over the map centre: it has been unverifiable for ${(missing / 1000).toFixed(1)} s.`;
-            // Every attempt costs the cooldown and one of the attempts, refused ones too: a refusal means focus or the view moved, which retrying at once cannot fix.
-            lastEscapeAt = this.now(); escapeAttempts++;
             await letGo();   // never a key press on top of a held key
             const outcome = await execute("navigation", "close-panel", reason, 0, 0, 1, process, allowed,
-              JSON.stringify({ capturedAtQpcMs: this.frame!.capturedAtQpcMs, hwnd: this.frame!.hwnd, unverifiedMs: missing, originScore: observation.evidence.originScore, attempt: escapeAttempts }), lootOn, current.confidence, "escape");
+              JSON.stringify({ capturedAtQpcMs: this.frame!.capturedAtQpcMs, hwnd: this.frame!.hwnd, unverifiedMs: missing, originScore: observation.evidence.originScore, attempt: escapeAttempts + 1 }), lootOn, current.confidence, "escape");
             if (outcome === "stopped") return;
-            if (outcome === "emitted" || outcome === "previewed") {
+            // Only a press that reached the game costs an attempt and the cooldown. A refusal pressed nothing:
+            // the panel and the evidence for it both still stand, so the next tick may try again after the gap.
+            escapeReadyAt = this.now() + (acted(outcome) ? PANEL_ESCAPE_COOLDOWN_MS : REFUSED_RETRY_MS);
+            if (acted(outcome)) {
+              escapeAttempts++; escapePressedAt = this.now();
               this.counts.panelEscapes++;
               if (outcome === "emitted") this.reason = reason; else this.counts.previewed++;
               // Whatever the panel was, this frame says nothing about where the leader is: steer from the next one.
@@ -420,7 +453,7 @@ export class FollowerDriveService {
           // picks them up again by itself. A verified map centre (no panel over the corner) and nobody at the
           // mouse are required, as for every other click.
           if (!observation.leaderFound && started - lastLeaderAt >= LEADER_GONE_MS && !manual && observation.originVerified && mapScanner
-            && started - lastTravelAt >= TRAVEL_COOLDOWN_MS && started - lastTravelScanAt >= TRAVEL_SCAN_MS) {
+            && started >= travelReadyAt && started - lastTravelScanAt >= TRAVEL_SCAN_MS) {
             lastTravelScanAt = started;
             // On the map worker: the marker capture is bound to a 120 ms freshness limit and must not carry this.
             const scanAt = this.now(), scan = await mapScanner.send({ op: "key", ...PARTY_BAND(view), full: false, channel: PARTY_CHANNEL, threshold: PARTY_THRESHOLD, cap: PARTY_POINT_CAP });
@@ -430,15 +463,17 @@ export class FollowerDriveService {
             if (button) {
               // Phrased as an instruction so the dry-run preview ("would travel to …") reads as one.
               const missing = Math.round(started - lastLeaderAt), reason = `Travel to ${current.targetName}: their map marker has been gone for ${(missing / 1000).toFixed(1)} s.`;
-              // Every attempt costs the cooldown, refused ones too: a refusal means focus or the view moved, which retrying at once cannot fix.
-              lastTravelAt = this.now();
               await letGo();
               // The click is bound to the party-band scan that found the button, not to the earlier marker capture.
               this.frame = { hwnd: String(scan.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(scan.capturedAtQpcMs), at: scanAt };
               const outcome = await execute("navigation", "travel-to-leader", reason, button.centre.x, button.centre.y, 1, process, allowed,
                 JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, button: button.centre, buttonPixels: button.pixels, leaderMissingMs: missing }), lootOn, current.confidence, undefined, PARTY_CLICK);
               if (outcome === "stopped") return;
-              if (outcome === "emitted" || outcome === "previewed") {
+              // Only a click that reached the game costs the cooldown that covers an area load. A refusal sent
+              // nothing, and charging it the full 10 s twice over was measured putting 23 s between the leader
+              // leaving and the teleport; it buys the short gap against spinning instead.
+              travelReadyAt = this.now() + (acted(outcome) ? TRAVEL_COOLDOWN_MS : REFUSED_RETRY_MS);
+              if (acted(outcome)) {
                 this.counts.teleports++;
                 // The game asks "are you sure?" straight away; a preview run shows that step too.
                 confirmUntil = this.now() + CONFIRM_WINDOW_MS; lastConfirmScanAt = -Infinity;

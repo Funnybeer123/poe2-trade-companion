@@ -292,9 +292,9 @@ async function calibrated(options: Parameters<typeof setup>[0] = {}): Promise<Ri
 const goLive = (rig: Rig, settings: { mapScale?: number; clickIntervalMs?: number; sprint?: boolean } = {}) => rig.service.configure({ version: 1, dryRun: false, mapScale: 7, clickIntervalMs: 100, ...settings });
 const soon = { timeout: 5000, interval: 4 };
 const ops = (log: Payload[]) => log.map(entry => String(entry.op));
-/** The counters, including `teleports` and `confirms`, which the service reports but the shared status type does not name. */
-const stats = (rig: Rig) => (rig.service.status().stats ?? { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0 }) as
-  Record<"cycles" | "clicks" | "previewed" | "refused" | "manualTakeovers" | "lootScans" | "lootLabels" | "lootClicks" | "sprints" | "teleports" | "confirms", number>;
+/** The counters, including `teleports`, `confirms` and `panelEscapes`, which the service reports but the shared status type does not name. */
+const stats = (rig: Rig) => (rig.service.status().stats ?? { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0, panelEscapes: 0 }) as
+  Record<"cycles" | "clicks" | "previewed" | "refused" | "manualTakeovers" | "lootScans" | "lootLabels" | "lootClicks" | "sprints" | "teleports" | "confirms" | "panelEscapes", number>;
 /** Advances the frozen clock by one loot-scan period (250 ms) and waits for the scan that earns. Everything the scan leads to happens in the same cycle. */
 async function nextScan(rig: Rig): Promise<void> {
   const from = stats(rig).lootScans;
@@ -1306,6 +1306,91 @@ describe("follow drive stop() keeps asking for a release (synthetic input host, 
   });
 });
 
+describe("follow drive escapes a panel over the map centre (SYNTHETIC key taps: an 'Escape' is an array entry, no OS input)", () => {
+  /** Live, then a panel over the map centre: our own marker matches 18 px off its anchor, so that capture leaves the centre unverified. */
+  async function covered(clock: number, dryRun = false): Promise<Rig> {
+    const rig = await calibrated({ clock });
+    rig.service.configure({ version: 1, dryRun, mapScale: 7, clickIntervalMs: 100 });
+    await rig.service.start();
+    await cycles(rig, 2);
+    rig.scene.own = { dx: 18, dy: 0 };
+    await expect.poll(() => rig.service.status().observation?.originVerified, soon).toBe(false);
+    return rig;
+  }
+  const keyCaptures = (rig: Rig) => ops(rig.capture).filter(op => op === "key").length;
+
+  it("never presses Escape while the map centre verifies, however long the run", async () => {
+    const rig = await calibrated({ clock: 800_000 });
+    goLive(rig);
+    await rig.service.start();
+    await expect.poll(() => stats(rig).clicks, soon).toBeGreaterThanOrEqual(1);
+    for (let step = 0; step < 5; step++) { rig.clock! += 2000; await cycles(rig, 3); }
+    expect(rig.escapes).toEqual([]);
+    expect(rig.traces.every(trace => trace.decisionRule !== "close-panel")).toBe(true);
+  });
+  it("spends neither an attempt nor the cooldown on a press the worker refused, and yields to the manual pause before trying again", async () => {
+    const rig = await covered(810_000);
+    rig.escapeRefusals.push("Manual mouse movement");
+    rig.clock! += 2000;   // PANEL_STUCK_MS
+    await expect.poll(() => rig.escapes.length, soon).toBe(1);
+    expect(stats(rig)).toMatchObject({ manualTakeovers: 1, panelEscapes: 0 });
+    // Nothing was pressed, so nothing was spent — but a hand on the mouse still holds the next attempt off for 1500 ms.
+    rig.clock! += 1499;
+    await cycles(rig, 3);
+    expect(rig.escapes).toHaveLength(1);
+    rig.clock! += 1;
+    await expect.poll(() => rig.escapes.length, soon).toBe(2);
+    // Both attempts are still there to spend: the refusal cost neither of them, nor the 3 s between presses.
+    rig.clock! += 3000;   // PANEL_ESCAPE_COOLDOWN_MS
+    await expect.poll(() => rig.escapes.length, soon).toBe(3);
+    expect(stats(rig)).toMatchObject({ panelEscapes: 2 });
+    rig.clock! += 3000;
+    await cycles(rig, 3);
+    expect(rig.escapes).toHaveLength(3);   // two presses landed: the cap, until a verified centre or the reset timer
+  });
+  it("gives the attempts back 30 s after the last press, so a panel they never closed cannot deadlock the run", async () => {
+    const rig = await covered(820_000);
+    rig.clock! += 2000;
+    await expect.poll(() => rig.escapes.length, soon).toBe(1);
+    rig.clock! += 3000;
+    await expect.poll(() => rig.escapes.length, soon).toBe(2);
+    // Live, this is where a run died: both attempts spent, and the counter reset only on a verified centre —
+    // which is the one thing a panel prevents. The follower idled the last 30 s of the run.
+    const pressed = rig.clock!;
+    rig.clock! = pressed + 29_999;   // PANEL_ESCAPE_RESET_MS, less a millisecond
+    await cycles(rig, 3);
+    expect(rig.escapes).toHaveLength(2);
+    expect(rig.service.status().observation?.originVerified).toBe(false);
+    rig.clock! = pressed + 30_000;
+    await expect.poll(() => rig.escapes.length, soon).toBe(3);
+  });
+  it("needs a capture taken since the last press before pressing again: the clock alone is not evidence", async () => {
+    const rig = await covered(830_000);
+    rig.clock! += 2000;
+    await expect.poll(() => rig.escapes.length, soon).toBe(1);
+    // The game loses focus straight after the press: time runs past the cooldown, but nothing is observed, so
+    // everything known about the centre predates a press that may already have closed the panel. Pressing on
+    // that would open the game menu instead.
+    rig.scene.captureError = "Focus Path of Exile 2 to continue";
+    const from = keyCaptures(rig);
+    rig.clock! += 4000;
+    await expect.poll(() => keyCaptures(rig), soon).toBeGreaterThan(from + 2);
+    expect(rig.escapes).toHaveLength(1);
+    // Focus back and the centre still covered: that capture is the fresh evidence the second press needs.
+    rig.scene.captureError = undefined;
+    await expect.poll(() => rig.escapes.length, soon).toBe(2);
+  });
+  it("previews the Escape in a dry run: the input worker receives nothing at all", async () => {
+    const rig = await covered(840_000, true);
+    rig.clock! += 2000;
+    await expect.poll(() => [...rig.reasons], soon).toContain("Preview only: would press Escape to close a panel over the map centre: it has been unverifiable for 2.0 s.");
+    expect(rig.escapes).toEqual([]);
+    expect(ops(rig.input)).toEqual(["ping"]);
+    expect(rig.traces.at(-1)).toMatchObject({ decisionRule: "close-panel", result: "blocked", input: { kind: "key", key: "escape", text: "tap" }, reason: expect.stringContaining("safety=dry-run") });
+    expect(stats(rig)).toMatchObject({ clicks: 0, panelEscapes: 1 });
+  });
+});
+
 describe("follow drive loot clicks (SYNTHETIC label runs and hosts: a 'click' is an array entry, no OS input)", () => {
   /** Leader 33 map px away with a stop distance of 30 (resume 36): steering says "near", so every moveclick in these tests is a loot click. */
   async function lootRig(clock: number, follow: Partial<Rig["follow"]> = {}): Promise<Rig> {
@@ -1785,6 +1870,45 @@ describe("follow drive travel to the leader (SYNTHETIC party-frame pixels and ho
     await expect.poll(() => stats(rig).teleports, soon).toBe(2);
     expect(clicksIn(rig, "party")).toHaveLength(2);
     expect(partyScans(rig)).toHaveLength(2);
+  });
+  it("charges no cooldown for a travel click the worker refused: nothing was sent, so only the manual pause holds the retry", async () => {
+    // Measured live: two travel clicks refused for manual control, each charged the full 10 s, put 23 s between
+    // the leader leaving and the teleport although the game had seen nothing at all.
+    const rig = await travelRig(650_000);
+    await rig.service.start();
+    await expect.poll(() => stats(rig).clicks, soon).toBe(1);
+    await leaderLeaves(rig);
+    rig.clock! += 2999;
+    await cycles(rig, 3);
+    rig.refusals.push("Manual mouse movement");
+    rig.clock! += 1;
+    await expect.poll(() => stats(rig).manualTakeovers, soon).toBe(1);
+    expect(clicksIn(rig, "party")).toHaveLength(1);
+    expect(stats(rig)).toMatchObject({ teleports: 0, clicks: 1 });
+    // The 1500 ms the takeover costs, not the 10 s an area load would.
+    rig.clock! += 1499;
+    await cycles(rig, 3);
+    expect(clicksIn(rig, "party")).toHaveLength(1);
+    rig.clock! += 1;
+    await expect.poll(() => stats(rig).teleports, soon).toBe(1);
+    expect(clicksIn(rig, "party")).toHaveLength(2);
+    expect(rig.traces.map(trace => trace.result).slice(-2)).toEqual(["failed", "emitted"]);
+  });
+  it("closes the panel first when the leader is gone and the map centre is covered at once, then travels once the centre verifies", async () => {
+    const rig = await travelRig(660_000);
+    await rig.service.start();
+    await expect.poll(() => stats(rig).clicks, soon).toBe(1);
+    rig.scene.own = { dx: 18, dy: 0 };   // a panel over the map centre
+    await leaderLeaves(rig);
+    rig.clock! += 3000;                  // LEADER_GONE_MS and PANEL_STUCK_MS both due
+    await expect.poll(() => rig.escapes.length, soon).toBe(1);
+    // Escape wins: the travel click needs a verified centre of its own, so the two recoveries never fight.
+    expect(partyScans(rig)).toEqual([]);
+    expect(clicksIn(rig, "party")).toEqual([]);
+    expect(stats(rig).teleports).toBe(0);
+    rig.scene.own = { dx: 0, dy: 0 };    // the panel is gone: travel takes over by itself, cooldown untouched
+    await expect.poll(() => stats(rig).teleports, soon).toBe(1);
+    expect(rig.escapes).toHaveLength(1);
   });
   it("sends nothing while the button is not in the band, and keeps looking at the scan pace until it is", async () => {
     const rig = await travelRig(630_000), band = PARTY_BAND(VIEW);
