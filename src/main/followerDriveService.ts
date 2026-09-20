@@ -303,12 +303,14 @@ export class FollowerDriveService {
           let decision: SteeringDecision = manual ? { kind: "pause", reason: pauseReason } : steering.decide(observation, this.now(), aim && aim.via !== "direct" ? aim : undefined, moved);
           if (decision.kind === "near") wasNear = true;
           this.counts.cycles++; this.cycles.push(this.now() - started); if (this.cycles.length > 600) this.cycles.shift();
-          // Loot while following, not only once caught up: items drop where the leader fights, so waiting to
-          // be inside the leash misses most of them. A trusted sighting and a verified map centre (so no panel
-          // is open) are still required, nobody may be at the mouse, and rejoining a leader who is getting
-          // away always comes first.
+          // Loot while following, not only once caught up: items drop where the leader fights, so waiting to be
+          // inside the leash misses most of them. Rejoining a leader who is getting away comes first, but with
+          // no leader in sight there is nothing to rejoin and standing on a pile of loot doing nothing is the
+          // worst of both: loot then too. A verified map centre (so no panel is open) and nobody at the mouse
+          // are always required.
           const lootOn = current.lootEnabled === true && leashPx > 0;
-          const canLoot = lootOn && !manual && observation.leaderFound && observation.confidence >= current.confidence && observation.originVerified && distance <= leashPx * LOOT_CHASE_LEASHES;
+          const seenLeader = observation.leaderFound && observation.confidence >= current.confidence;
+          const canLoot = lootOn && !manual && observation.originVerified && (!seenLeader || distance <= leashPx * LOOT_CHASE_LEASHES);
           if (canLoot && started - lastLootScanAt >= LOOT_SCAN_MS) {
             lastLootScanAt = started;
             const scanAt = this.now(), scan = await capture.send({ op: "runs", ...lootArea(view), minLength: LOOT_MIN_RUN, minBrightness: LOOT_MIN_BRIGHTNESS });
@@ -321,13 +323,16 @@ export class FollowerDriveService {
                 .filter(label => label.confidence >= LOOT_MIN_CONFIDENCE && Math.hypot(label.centre.x - observation.origin.x, label.centre.y - observation.origin.y) / scale <= leashPx);
               const choice = loot.decide(labels, this.now());
               this.counts.lootScans++; this.counts.lootLabels = labels.length;
-              // The camera scrolls while we run, so a label slides between the scan and the click. Seen twice, it is led by its own drift; seen once, it waits a scan.
+              // The camera scrolls while we run, so a label slides between the scan and the click. Seen twice, it is
+              // led by its own drift. A standing character's camera is not scrolling, so a first sighting is
+              // clicked at once: waiting a scan there would cost 250 ms on every item of a pile.
               const centre = choice.label?.centre, before = lootSeen, area = lootArea(view);
               lootSeen = centre && { ...centre, at: scanAt };
+              const still = moved.tracked && Math.hypot(moved.dx, moved.dy) * scale <= LOOT_STEADY_PX;
               const drift = centre && before && scanAt - before.at <= 2 * LOOT_SCAN_MS + 100 && Math.hypot(centre.x - before.x, centre.y - before.y) <= LOOT_SAME_LABEL_PX ? { x: (centre.x - before.x) / (scanAt - before.at), y: (centre.y - before.y) / (scanAt - before.at) } : undefined;
-              if (choice.kind === "loot" && choice.label && drift) {
-                const steady = Math.hypot(drift.x, drift.y) * (scanAt - before!.at) <= LOOT_STEADY_PX;
-                const x = steady ? centre!.x : Math.min(area.x + area.width - 1, Math.max(area.x, Math.round(centre!.x + drift.x * LOOT_LEAD_MS))), y = steady ? centre!.y : Math.min(area.y + area.height - 1, Math.max(area.y, Math.round(centre!.y + drift.y * LOOT_LEAD_MS)));
+              if (choice.kind === "loot" && choice.label && (drift || still)) {
+                const steady = !drift || Math.hypot(drift.x, drift.y) * (scanAt - before!.at) <= LOOT_STEADY_PX;
+                const x = steady ? centre!.x : Math.min(area.x + area.width - 1, Math.max(area.x, Math.round(centre!.x + drift!.x * LOOT_LEAD_MS))), y = steady ? centre!.y : Math.min(area.y + area.height - 1, Math.max(area.y, Math.round(centre!.y + drift!.y * LOOT_LEAD_MS)));
                 // Never click a label with the sprint key down.
                 await letGo();
                 // The click is bound to the scan that found the label, not to the earlier marker capture.
