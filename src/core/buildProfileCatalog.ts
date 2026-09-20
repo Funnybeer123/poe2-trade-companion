@@ -1,6 +1,7 @@
 import {
   createBuildProfile,
   importGearTargets,
+  updateBuildProfile,
   type BuildProfile,
   type BuildProfileMutationOptions,
   type CreateBuildProfileInput,
@@ -36,6 +37,28 @@ export interface LoadedBuildProfileCatalog {
   profiles: BuildProfile[];
   warnings: string[];
 }
+
+export interface CatalogProfileSyncResult {
+  profile: BuildProfile;
+  created: boolean;
+  addedTargetIds: string[];
+  updatedTargetIds: string[];
+  warnings: string[];
+}
+
+/**
+ * Sync policy for catalog-owned profiles (IDs that appear in the bundled
+ * fixture): the fixture is the source of truth for profile metadata and for
+ * gear targets matched by `searchKey`. New catalog keys are added; existing
+ * keys receive fixture searchKey / statRules / name / slot / itemClass
+ * updates. Extra targets on the same profile whose searchKeys are not in the
+ * fixture are treated as user customizations and kept. A user's `active`
+ * flag is preserved. Profiles that are not in the fixture are never touched.
+ * A changed catalog searchKey is a new target — identity is searchKey, not
+ * display name.
+ */
+export const BUILD_PROFILE_CATALOG_SYNC_POLICY =
+  "fixture-source-of-truth-for-catalog-owned-searchKeys";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -153,6 +176,41 @@ export function loadBuildProfileCatalog(
   const catalog = parseBuildProfileCatalog(value);
   const materialized = materializeCatalogProfiles(catalog, options);
   return { catalog, ...materialized };
+}
+
+export function syncCatalogOwnedProfile(
+  existing: BuildProfile | undefined,
+  incoming: BuildProfile,
+  options: BuildProfileMutationOptions = {},
+): CatalogProfileSyncResult {
+  if (!existing) {
+    return {
+      profile: incoming,
+      created: true,
+      addedTargetIds: incoming.gearTargets.map((target) => target.id),
+      updatedTargetIds: [],
+      warnings: [],
+    };
+  }
+  const imported = importGearTargets(existing, incoming.gearTargets, options);
+  return {
+    profile: updateBuildProfile(
+      imported.profile,
+      {
+        name: incoming.name,
+        ...(incoming.league !== undefined ? { league: incoming.league } : {}),
+        ...(incoming.sourceUrl !== undefined ? { sourceUrl: incoming.sourceUrl } : {}),
+        tags: incoming.tags,
+        preferences: incoming.preferences,
+        active: existing.active,
+      },
+      options,
+    ),
+    created: false,
+    addedTargetIds: imported.addedTargetIds,
+    updatedTargetIds: imported.updatedTargetIds,
+    warnings: imported.warnings,
+  };
 }
 
 export function loadBuildProfileCatalogFromJson(

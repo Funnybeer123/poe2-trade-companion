@@ -163,6 +163,8 @@ page.
 
 Local gear-target profiles. This is not a full character planner and it does not scrape third-party build sites.
 
+The bundled Forbidden Rites gear catalog (`fixtures/builds/forbidden-rites-gear-targets.json`) is re-imported on app start when its content hash differs from the last stored catalog revision. The fixture is the source of truth for catalog-owned profile IDs and their `searchKey` targets (new keys are added; changed stat rules replace the previous catalog copy). Extra targets you add on those profiles are kept. User-created profiles that are not in the fixture are never touched.
+
 1. Click **+ Create profile**, name it, set league/tags if you want, then **Save profile**.
 2. Or paste official trade2 search URLs / exported query JSON into **Trade targets** and import. Opaque search IDs are stored as provenance only; the app never fetches them.
 3. Add **Gear targets** (slot + item class) and optional **stat rules** (`exists`, `eq`, `gte`, `lte`, `between`, `contains`).

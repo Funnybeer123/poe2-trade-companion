@@ -425,7 +425,7 @@ export class ItemIntelligenceService {
       sourceText,
       { now: this.now() },
     );
-    if (result.addedProfileIds.length > 0) this.publishBuilds();
+    if (!result.unchanged) this.publishBuilds();
     return result;
   }
 
@@ -440,7 +440,7 @@ export class ItemIntelligenceService {
       resolved,
       { now: this.now() },
     );
-    if (result.addedProfileIds.length > 0) this.publishBuilds();
+    if (!result.unchanged) this.publishBuilds();
     return result;
   }
 
