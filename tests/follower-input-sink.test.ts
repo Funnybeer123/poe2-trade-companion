@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { CONFIRM_CLICK, FollowerInputSink, LOOT_CLICK, PARTY_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../src/adapters/followerInputSink.js";
+import { CONFIRM_CLICK, ESCAPE_TAP, FollowerInputSink, LOOT_CLICK, PARTY_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../src/adapters/followerInputSink.js";
 import { GameInputController } from "../src/core/gameInputController.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
 import { scenario } from "../src/core/scenarios.js";
@@ -222,5 +222,44 @@ describe("follower input sink sprint hold (SYNTHETIC host: a 'sprint' request is
     const dead = fakeHost(new Error("win-input-host-closed"));
     await expect(new FollowerInputSink(dead, () => FRAME).releaseSprint()).resolves.toBeUndefined();
     expect(dead.sent).toEqual([{ op: "sprint", hold: false }]);
+  });
+});
+describe("follower input sink Escape tap (SYNTHETIC host: an 'escape' request is an array entry, no key is pressed)", () => {
+  const TAP: InputAction = { kind: "key", key: "escape", text: ESCAPE_TAP };
+  it("sends one guarded key request carrying the capture it was decided from, and records no click timing", async () => {
+    const host = fakeHost(), sink = new FollowerInputSink(host, () => FRAME, 90);
+    await sink.emit(TAP);
+    expect(host.sent).toEqual([{ op: "key", key: "escape", expectedHwnd: "66051", viewWidth: 640, viewHeight: 360, capturedAtQpcMs: 5_000_123, maxAgeMs: 90 }]);
+    expect(sink.lastInput).toBeUndefined();
+  });
+  it("is a tap, not a hold: nothing is left pressed and the sprint state machine is never touched", async () => {
+    const host = fakeHost(), sink = new FollowerInputSink(host, () => FRAME);
+    await sink.emit(TAP);
+    await sink.emit(TAP);
+    // Two whole taps and not one 'sprint' request: no hold started, none renewed, none released.
+    expect(host.sent.map(entry => entry.op)).toEqual(["key", "key"]);
+    expect(host.sent.every(entry => !("hold" in entry) && !("start" in entry))).toBe(true);
+  });
+  it.each<[string, InputAction]>([
+    ["escape without the tap marker", { kind: "key", key: "escape" }],
+    ["escape with the sprint marker", { kind: "key", key: "escape", text: SPRINT_HOLD }],
+    ["escape with other text", { kind: "key", key: "escape", text: "escape" }],
+    ["escape with a modifier", { kind: "key", key: "escape", text: ESCAPE_TAP, modifier: "ctrl" }],
+    ["space with the tap marker", { kind: "key", key: "space", text: ESCAPE_TAP }],
+    ["another key with the tap marker", { kind: "key", key: "esc", text: ESCAPE_TAP }],
+    ["an inherited property name as the key", { kind: "key", key: "toString", text: ESCAPE_TAP }],
+    ["a click carrying the tap marker", { ...CLICK, text: ESCAPE_TAP }],
+  ])("rejects %s without contacting the host", async (_name, action) => {
+    const host = fakeHost(), sink = new FollowerInputSink(host, () => FRAME);
+    await expect(sink.emit(action)).rejects.toThrow("Invalid follow action");
+    expect(host.sent).toEqual([]);
+  });
+  it("is refused like any other action without a fresh capture, and throws the worker's refusal so the caller can classify it", async () => {
+    const host = fakeHost();
+    await expect(new FollowerInputSink(host, () => undefined).emit(TAP)).rejects.toThrow("Follow stopped or capture stale");
+    await expect(new FollowerInputSink(host, () => ({ ...FRAME, hwnd: "" })).emit(TAP)).rejects.toThrow("Capture stale: incomplete capture guard");
+    expect(host.sent).toEqual([]);
+    await expect(new FollowerInputSink(fakeHost({ ok: false, error: "Manual mouse movement" }), () => FRAME).emit(TAP)).rejects.toThrow("Manual mouse movement");
+    await expect(new FollowerInputSink(fakeHost({ ok: false }), () => FRAME).emit(TAP)).rejects.toThrow("Escape input failed");
   });
 });

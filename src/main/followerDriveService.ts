@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { CONFIRM_CLICK, FollowerInputSink, LOOT_CLICK, PARTY_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../adapters/followerInputSink.js";
+import { CONFIRM_CLICK, ESCAPE_TAP, FollowerInputSink, LOOT_CLICK, PARTY_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../adapters/followerInputSink.js";
 import { pngPlanes } from "../adapters/pngWhiteness.js";
 import { startWinHost } from "../adapters/winHost.js";
 import {
@@ -16,7 +16,7 @@ import { templatePixelCount, type PixelRect } from "../core/followerPerception.j
 import { GameInputController } from "../core/gameInputController.js";
 import type { KillSwitch } from "../core/killSwitch.js";
 import { scenario } from "../core/scenarios.js";
-import type { QaActionTrace, RuntimeMode } from "../core/types.js";
+import type { InputAction, QaActionTrace, RuntimeMode } from "../core/types.js";
 import type { FollowerCapture, FollowerDriveSettings, FollowerDriveStatus } from "../shared/follower.js";
 
 type Host = Pick<ReturnType<typeof startWinHost>, "send" | "close">;
@@ -57,6 +57,16 @@ const LEADER_GONE_MS = 3000, TRAVEL_COOLDOWN_MS = 10_000, TRAVEL_SCAN_MS = 250;
  * itself means a travel click that went nowhere cannot wedge the loop.
  */
 const CONFIRM_WINDOW_MS = 4000, CONFIRM_SCAN_MS = 250;
+/**
+ * A movement click that lands on a waypoint (or any other clickable thing that opens a panel) puts that panel
+ * over the map centre: our own marker is then unfindable, every guard that needs a verified centre is false,
+ * and steering can do nothing but pause — indefinitely. Escape closes such a panel. This long unverified is
+ * the trigger, on top of the 1500 ms a hidden marker is already trusted for, so an effect washing the marker
+ * out for a moment never reaches it. But Escape with nothing open OPENS the game menu, which is the very
+ * problem it is meant to fix, so the presses are spaced and capped — at an EVEN cap, so a menu we opened
+ * ourselves is closed again by the last attempt rather than left open.
+ */
+const PANEL_STUCK_MS = 2000, PANEL_ESCAPE_COOLDOWN_MS = 3000, PANEL_ESCAPE_ATTEMPTS = 2;
 const RELEASE_ATTEMPTS = 240, RELEASE_RETRY_MS = 250;
 /** How far behind the leader looting still happens, in leashes: beyond that, catching up is all that matters. */
 const LOOT_CHASE_LEASHES = 2;
@@ -103,7 +113,7 @@ export class FollowerDriveService {
   private latencies: number[] = [];
   /** Capture-to-click times of the first click after standing near the leader: the reaction to them moving off. */
   private resumes: number[] = [];
-  private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0 };
+  private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0, panelEscapes: 0 };
   private sprinting = false;
   private startedAt = 0;
   private readonly calibrationFile: string;
@@ -239,12 +249,14 @@ export class FollowerDriveService {
     }, FRAME_MAX_AGE_MS);
     const controller = new GameInputController(sink, this.options.killSwitch, this.options.mode);
     this.running = true; this.reason = "Starting capture and input workers…";
-    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0 }; this.sprinting = false; this.startedAt = this.now();
+    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0, panelEscapes: 0 }; this.sprinting = false; this.startedAt = this.now();
     let manualUntil = -Infinity, pauseReason = "", wasNear = false, lastLootScanAt = -Infinity, lootSeen: { x: number; y: number; at: number } | undefined;
     // Absence is measured from when we started watching, so a run never opens with a teleport.
     let lastLeaderAt = this.now(), lastTravelAt = -Infinity, lastTravelScanAt = -Infinity;
     // Open only by our own travel click, and closed again by the OK that answers it: one OK per travel attempt.
     let confirmUntil = -Infinity, lastConfirmScanAt = -Infinity;
+    // Since when the map centre has been unverifiable, and what has been spent trying to Escape a panel off it.
+    let originLostSince: number | undefined, lastEscapeAt = -Infinity, escapeAttempts = 0;
     let collecting: { at: number; labels: number } | undefined;
     const odometry = new MapOdometry(), trail = new LeaderTrail(), watch = { ...odometryWindow(tracker.origin, calibration.view), channel: ODOMETRY_CHANNEL, threshold: ODOMETRY_THRESHOLD };
     const terrain = new TerrainPlanner(), terrainArea = terrainWindow(tracker.origin, calibration.view);
@@ -254,11 +266,12 @@ export class FollowerDriveService {
     const letGo = async () => { if (sprinting) { sprinting = false; this.sprinting = false; await sink.releaseSprint(); } };
     const loot = new LootPlanner(), leashPx = (follow.lootLeash ?? 0) * MAP_PX_PER_FOLLOW_UNIT;
     /** Runs one executed decision through the controller and says what became of it. */
-    const execute = async (module: "navigation" | "loot", rule: string, reason: string, x: number, y: number, confidence: number, process: string, allowed: boolean, evidence: string, lootEnabled: boolean, threshold: number, sprint = false, mark?: string): Promise<"emitted" | "previewed" | "paused" | "retry" | "stopped"> => {
+    const execute = async (module: "navigation" | "loot", rule: string, reason: string, x: number, y: number, confidence: number, process: string, allowed: boolean, evidence: string, lootEnabled: boolean, threshold: number, key?: "space" | "escape", mark?: string): Promise<"emitted" | "previewed" | "paused" | "retry" | "stopped"> => {
       const policy = scenario({ id: "follow-map-marker", name: "Follow by overlay map", enabledModules: lootEnabled ? ["navigation", "loot"] : ["navigation"], dryRun: previewOnly || this.dryRun(), actionsPerMinute: ACTIONS_PER_MINUTE, confidenceThreshold: threshold, timingProfile: "tight" });
-      // The marker tells the input worker which part of the view this click is allowed in.
+      // The marker tells the input worker which part of the view this click is allowed in, or which of the two keys this is.
       const text = mark ?? (module === "loot" ? LOOT_CLICK : undefined);
-      const traces = await controller.execute({ module, rule, reason, intended: [sprint ? { kind: "key", key: "space", text: SPRINT_HOLD } : { kind: "click", x, y, button: "left", ...(text ? { text } : {}) }], confidence }, policy, process, evidence, allowed);
+      const intended: InputAction = key ? { kind: "key", key, text: key === "escape" ? ESCAPE_TAP : SPRINT_HOLD } : { kind: "click", x, y, button: "left", ...(text ? { text } : {}) };
+      const traces = await controller.execute({ module, rule, reason, intended: [intended], confidence }, policy, process, evidence, allowed);
       this.options.audit?.(traces);
       // Long sessions must not retain every trace in memory.
       controller.actionTraces.splice(0);
@@ -332,6 +345,9 @@ export class FollowerDriveService {
           const seenLeader = observation.leaderFound && observation.confidence >= current.confidence;
           // Any sighting at all, even one too ambiguous to follow, means the leader is still in this area.
           if (observation.leaderFound) lastLeaderAt = started;
+          // A verified centre is the all-clear: it forgets both how long it has been gone and what was spent on it.
+          if (observation.originVerified) { originLostSince = undefined; escapeAttempts = 0; }
+          else originLostSince ??= started;
           // Answering our own teleport confirmation. This sits ahead of every other click on purpose: the modal
           // covers the map centre, so `originVerified` is false and the steering below can only pause while it is
           // up — the loop would sit there with the dialog open and the teleport never made. Nothing else is
@@ -353,7 +369,7 @@ export class FollowerDriveService {
               await letGo();
               this.frame = { hwnd: String(scan.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(scan.capturedAtQpcMs), at: scanAt };
               const outcome = await execute("navigation", "confirm-teleport", reason, dialog.ok.x, dialog.ok.y, 1, process, allowed,
-                JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, ok: dialog.ok }), lootOn, current.confidence, false, CONFIRM_CLICK);
+                JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, ok: dialog.ok }), lootOn, current.confidence, undefined, CONFIRM_CLICK);
               if (outcome === "stopped") return;
               if (outcome === "emitted" || outcome === "previewed") {
                 this.counts.confirms++;
@@ -361,6 +377,36 @@ export class FollowerDriveService {
                 this.decision = { kind: "hold", reason: this.reason };
                 return;
               }
+            }
+          }
+          // A movement click that lands on a waypoint opens its panel over the map centre, and from then on our
+          // own marker cannot be found: nothing below this line will act, and the loop pauses for ever. Escape
+          // closes that panel. Only a marker that scored ZERO is taken for a covered one — a panel hides it
+          // outright — whereas a marker found somewhere else means the map itself has moved, which Escape cannot
+          // fix and where it would only open the game menu. Bounded for the same reason: spaced, capped, and
+          // given up on until a verified centre says the map is readable again.
+          // Our own teleport confirmation covers the same pixels, so while that window is open answering it
+          // above is the way out and Escape would cancel the travel; the clock keeps running underneath, so a
+          // dialog that outlives its window is still escaped in the end.
+          if (originLostSince !== undefined && started - originLostSince >= PANEL_STUCK_MS && observation.evidence.originScore === 0
+            && started >= confirmUntil && escapeAttempts < PANEL_ESCAPE_ATTEMPTS && started - lastEscapeAt >= PANEL_ESCAPE_COOLDOWN_MS
+            // Read again rather than the cached `manual`: a refusal earlier in this same tick may just have started a pause.
+            && this.now() >= manualUntil) {
+            const missing = Math.round(started - originLostSince);
+            // Phrased as an instruction so the dry-run preview ("would press Escape …") reads as one.
+            const reason = `Press Escape to close a panel over the map centre: it has been unverifiable for ${(missing / 1000).toFixed(1)} s.`;
+            // Every attempt costs the cooldown and one of the attempts, refused ones too: a refusal means focus or the view moved, which retrying at once cannot fix.
+            lastEscapeAt = this.now(); escapeAttempts++;
+            await letGo();   // never a key press on top of a held key
+            const outcome = await execute("navigation", "close-panel", reason, 0, 0, 1, process, allowed,
+              JSON.stringify({ capturedAtQpcMs: this.frame!.capturedAtQpcMs, hwnd: this.frame!.hwnd, unverifiedMs: missing, originScore: observation.evidence.originScore, attempt: escapeAttempts }), lootOn, current.confidence, "escape");
+            if (outcome === "stopped") return;
+            if (outcome === "emitted" || outcome === "previewed") {
+              this.counts.panelEscapes++;
+              if (outcome === "emitted") this.reason = reason; else this.counts.previewed++;
+              // Whatever the panel was, this frame says nothing about where the leader is: steer from the next one.
+              this.decision = { kind: "hold", reason: this.reason };
+              return;
             }
           }
           // Stairs, a portal or an area transition end the leader's marker without ending the party frame: its
@@ -385,7 +431,7 @@ export class FollowerDriveService {
               // The click is bound to the party-band scan that found the button, not to the earlier marker capture.
               this.frame = { hwnd: String(scan.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(scan.capturedAtQpcMs), at: scanAt };
               const outcome = await execute("navigation", "travel-to-leader", reason, button.centre.x, button.centre.y, 1, process, allowed,
-                JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, button: button.centre, buttonPixels: button.pixels, leaderMissingMs: missing }), lootOn, current.confidence, false, PARTY_CLICK);
+                JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, button: button.centre, buttonPixels: button.pixels, leaderMissingMs: missing }), lootOn, current.confidence, undefined, PARTY_CLICK);
               if (outcome === "stopped") return;
               if (outcome === "emitted" || outcome === "previewed") {
                 this.counts.teleports++;
@@ -459,7 +505,7 @@ export class FollowerDriveService {
             if (outcome === "emitted") terrain.noteClick({ dx: decision.x - observation.origin.x, dy: decision.y - observation.origin.y }, odometry.position, odometry.epoch, this.now());
             // Start sprinting only on the back of an accepted movement click, so the cursor is already where we are heading.
             if (outcome === "emitted" && wantSprint && !sprinting) {
-              const started = await execute("navigation", "sprint-to-catch-up", `Sprint: ${Math.round(distance)} map px behind.`, decision.x, decision.y, observation.confidence, process, allowed, evidence, lootOn, current.confidence, true);
+              const started = await execute("navigation", "sprint-to-catch-up", `Sprint: ${Math.round(distance)} map px behind.`, decision.x, decision.y, observation.confidence, process, allowed, evidence, lootOn, current.confidence, "space");
               if (started === "stopped") return;
               if (started === "emitted") { sprinting = true; this.sprinting = true; this.counts.sprints++; }
             }

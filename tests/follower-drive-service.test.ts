@@ -155,6 +155,8 @@ interface Rig {
   refusals: Array<string | Error>;
   latencies: number[];
   capturePing: Payload | Error; inputPing: Payload | Error; releaseFails: boolean;
+  /** Every guarded Escape tap the synthetic input host received, and refusals to hand back for them, in order. */
+  escapes: Payload[]; escapeRefusals: string[];
   created: { capture: number; input: number };
   newestCaptureQpc: number;
   traces: QaActionTrace[];
@@ -180,7 +182,7 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
     service: undefined as unknown as FollowerDriveService, directory: options.directory ?? temporary(), killSwitch: options.killSwitch ?? new KillSwitch(),
     scene: { leader: FAR, own: { dx: 0, dy: 0 }, process: GAME, hwnd: HWND, view: { width: W, height: H }, ...options.scene },
     follow: { targetName: "Main", followDistance: 2, confidence: .85 }, globalDryRun: false, clock: options.clock,
-    capture: [], input: [], attempts: [], refusals: [], latencies: [37], capturePing: { ok: true }, inputPing: { ok: true }, releaseFails: false,
+    capture: [], input: [], attempts: [], refusals: [], latencies: [37], capturePing: { ok: true }, inputPing: { ok: true }, releaseFails: false, escapes: [], escapeRefusals: [],
     created: { capture: 0, input: 0 }, newestCaptureQpc: 5_000_000, traces: [], reasons: new Set(),
     map: [], scanQpc: [], partyQpc: [], confirmQpc: [], sprintRefusals: [], releaseRefusals: 0, releasedAt: [],
   };
@@ -237,6 +239,8 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
             rig.sprintRefusals.shift();
             return { ok: false, error: refusal.error };
           }
+          // A guarded Escape tap: no cursor movement and no click, so it is recorded on its own.
+          if (payload.op === "key") { rig.escapes.push(payload); const refusal = rig.escapeRefusals.shift(); return refusal ? { ok: false, error: refusal } : { ok: true }; }
           if (payload.op !== "moveclick") return { ok: false, error: "Unknown follower input operation" };
           rig.attempts.push({ payload, clock: now(), newestCaptureQpc: rig.newestCaptureQpc });
           const refusal = rig.refusals.shift();

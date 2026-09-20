@@ -164,6 +164,35 @@ public static class FollowInput {
     } catch { ReleaseSprint(); throw; }
   }
   static void NoteHuman(FollowInputPoint cursor) { placed = false; humanSeen = true; humanAt = cursor; humanSince = QpcMs(); }
+  // Escape is a TAP, not a hold like Space: 0x1B is VK_ESCAPE and 0x01 its set-1 make code, and the pair below goes
+  // out as one batch, so no watchdog is needed and nothing is left pressed if this worker dies between calls.
+  public static FollowInputEvent Escape(bool down) {
+    FollowInputEvent input = new FollowInputEvent(); input.Type = 1; input.Data.Key.Vk = 0x1B; input.Data.Key.Scan = 0x01; input.Data.Key.Flags = down ? 0u : 2u; return input;
+  }
+  // The one key this worker may tap, to dismiss a panel covering the map centre. Every guard a click has applies, and
+  // any refusal lets go of sprint. No cursor is moved or read: a key needs no pointer, so none is taken from the human.
+  public static void KeyTap(string key, string expectedHwnd, int viewWidth, int viewHeight, long capturedAtQpcMs, int maxAgeMs) {
+    try {
+      // Exact, and first: this op must never become a general key-injection primitive.
+      if (key != "escape") throw new Exception("Only the escape key may be tapped");
+      FollowClickCheck check = Check(viewWidth / 2, viewHeight / 2, viewWidth, viewHeight, QpcMs() - capturedAtQpcMs, maxAgeMs, "move");
+      if (!check.Ok) throw new Exception(check.Error);
+      IntPtr window = GetForegroundWindow();
+      if (window == IntPtr.Zero || !Allowed(ProcessName(window))) throw new Exception("Focus Path of Exile 2 to continue");
+      if (window.ToInt64().ToString() != expectedHwnd) throw new Exception("Game window changed");
+      Rectangle bounds = Bounds(window);
+      if (bounds.Width != viewWidth || bounds.Height != viewHeight) throw new Exception("Game view changed");
+      ThrowIfHumanInput();
+      if (humanSeen) throw new Exception("Manual mouse movement");
+      // The key state also reports a human's own press, and our up would cut it short.
+      if (Down(0x1B)) throw new Exception("Escape held - manual control");
+      int size = Marshal.SizeOf(typeof(FollowInputEvent));
+      uint sent = SendInput(2, new [] { Escape(true), Escape(false) }, size);
+      // Windows took only the down: send the up alone rather than leave the key held.
+      if (sent == 1) { for (int attempt = 0; attempt < 3; attempt++) { if (SendInput(1, new [] { Escape(false) }, size) == 1) break; Thread.Sleep(5); } throw new Exception("Windows split the escape tap"); }
+      if (sent != 2) throw new Exception("Windows rejected escape input");
+    } catch { ReleaseSprint(); throw; }
+  }
   // Any refusal means the follower is not in control, so the held key goes up with it, not a watchdog period later.
   public static void MoveClick(int x, int y, string expectedHwnd, int viewWidth, int viewHeight, long capturedAtQpcMs, int maxAgeMs, string area) {
     try { GuardedClick(x, y, expectedHwnd, viewWidth, viewHeight, capturedAtQpcMs, maxAgeMs, area); } catch { ReleaseSprint(); throw; }
@@ -226,6 +255,12 @@ try { while ($null -ne ($line = [Console]::ReadLine())) {
     elseif ($command.op -eq 'moveclick') {
       $started = [FollowInput]::QpcMs()
       [FollowInput]::MoveClick([int]$command.x, [int]$command.y, [string]$command.expectedHwnd, [int]$command.viewWidth, [int]$command.viewHeight, [long]$command.capturedAtQpcMs, [int]$command.maxAgeMs, $(if ($null -eq $command.area) { 'move' } else { [string]$command.area }))
+      $done = [FollowInput]::QpcMs()
+      $reply = @{ ok = $true; inputMs = ($done - $started); captureToInputMs = ($done - [long]$command.capturedAtQpcMs) }
+    }
+    elseif ($command.op -eq 'key') {
+      $started = [FollowInput]::QpcMs()
+      [FollowInput]::KeyTap([string]$command.key, [string]$command.expectedHwnd, [int]$command.viewWidth, [int]$command.viewHeight, [long]$command.capturedAtQpcMs, [int]$command.maxAgeMs)
       $done = [FollowInput]::QpcMs()
       $reply = @{ ok = $true; inputMs = ($done - $started); captureToInputMs = ($done - [long]$command.capturedAtQpcMs) }
     } else { throw 'Unknown follower input operation' }

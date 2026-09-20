@@ -164,6 +164,63 @@ describe("follower input host: teleport confirmation OK button", () => {
   });
 });
 
+describe("follower input host: guarded escape tap", () => {
+  // KeyTap sits immediately before MoveClick's comment, so this slice is exactly its body.
+  const keyTap = () => between("public static void KeyTap(", "// Any refusal means the follower is not in control");
+
+  it("sends Escape's own virtual key and scan code, as a keyboard event shaped like the sprint key's", () => {
+    expect(source).toContain("public static FollowInputEvent Escape(bool down) {");
+    expect(source).toContain("input.Type = 1; input.Data.Key.Vk = 0x1B; input.Data.Key.Scan = 0x01; input.Data.Key.Flags = down ? 0u : 2u;");
+    // The whole worker can name exactly two keys: sprint's space and this one.
+    expect(source.match(/input\.Data\.Key\.Vk = 0x[0-9A-F]+/g)).toEqual(["input.Data.Key.Vk = 0x20", "input.Data.Key.Vk = 0x1B"]);
+    expect(source).not.toMatch(/Escape\(bool down\)[^\n]*Mouse/); // a key event carries no cursor or wheel data
+  });
+
+  it("taps: down and up leave in one SendInput call, and escape goes down in exactly one place", () => {
+    expect(keyTap()).toContain("uint sent = SendInput(2, new [] { Escape(true), Escape(false) }, size);");
+    expect(source.match(/Escape\(true\)/g)).toHaveLength(1);
+    // Nothing can stay held: a batch Windows split sends the up on its own and still reports a refusal.
+    expect(keyTap()).toContain('if (SendInput(1, new [] { Escape(false) }, size) == 1) break;');
+    expect(keyTap()).toContain('throw new Exception("Windows split the escape tap")');
+    expect(keyTap()).toContain('if (sent != 2) throw new Exception("Windows rejected escape input");');
+    expect(source.match(/Escape\(false\)/g)).toHaveLength(2); // the batch's up and that recovery, nowhere else
+  });
+
+  it("runs the same Check() a click runs, and every window, view and human guard, before sending", () => {
+    const at = order(keyTap(),
+      'if (key != "escape") throw new Exception("Only the escape key may be tapped");',
+      'FollowClickCheck check = Check(viewWidth / 2, viewHeight / 2, viewWidth, viewHeight, QpcMs() - capturedAtQpcMs, maxAgeMs, "move");',
+      "if (!check.Ok) throw new Exception(check.Error);",
+      'throw new Exception("Focus Path of Exile 2 to continue")',
+      'window.ToInt64().ToString() != expectedHwnd',
+      'bounds.Width != viewWidth || bounds.Height != viewHeight',
+      "ThrowIfHumanInput();",
+      'if (humanSeen) throw new Exception("Manual mouse movement");',
+      'if (Down(0x1B)) throw new Exception("Escape held - manual control");',
+      "SendInput(2,");
+    expect(at).toEqual([...at].sort((a, b) => a - b));
+    // The same guard fields a moveclick takes, and any refusal lets go of sprint like the others do.
+    expect(source).toContain("public static void KeyTap(string key, string expectedHwnd, int viewWidth, int viewHeight, long capturedAtQpcMs, int maxAgeMs)");
+    expect(keyTap()).toMatch(/\} catch \{ ReleaseSprint\(\); throw; \}\s*\}\s*$/);
+  });
+
+  it("accepts only escape, exactly, and refuses every other key name", () => {
+    const body = keyTap();
+    expect(body.match(/"escape"/g)).toHaveLength(1); // one comparison, one accepted name
+    expect(body).not.toMatch(/StartsWith|Contains|IndexOf|ToLower|OrdinalIgnoreCase|switch/); // "Escape" and "escape " fall through to the refusal
+    expect(source.match(/\bKeyTap\(/g)).toHaveLength(2); // declared once, reachable from one op
+    expect(source).toContain("elseif ($command.op -eq 'key') {");
+    expect(source).toContain("[FollowInput]::KeyTap([string]$command.key, [string]$command.expectedHwnd, [int]$command.viewWidth, [int]$command.viewHeight, [long]$command.capturedAtQpcMs, [int]$command.maxAgeMs)");
+    // No key name reaches the host any other way: the dispatcher's only other key is sprint's own op.
+    expect(source.match(/\$command\.key\b/g)).toHaveLength(1);
+  });
+
+  it("moves and reads no cursor on this path: a key needs no pointer", () => {
+    expect(keyTap()).not.toMatch(/SetCursorPos|GetCursorPos|WindowFromPoint|GetAncestor|Button\(|FollowInputPoint/);
+    expect(source.match(/SetCursorPos\(/g)).toHaveLength(2); // still only the click path: the import and its one call
+  });
+});
+
 describe("follower input host: synthetic native checks", () => {
   it("cover the lapsed renew and a refused click without sending input", () => {
     expect(synthetic).toContain("[FollowInput]::Sprint('0', 2560, 1440, [FollowInput]::QpcMs(), 120, $false) } 'Sprint lapsed'");
@@ -182,5 +239,16 @@ describe("follower input host: synthetic native checks", () => {
     const clicks = synthetic.split("\n").filter(line => line.includes("::MoveClick("));
     expect(clicks).toHaveLength(3);
     for (const line of clicks) expect(line.trimStart(), line).toMatch(/^ExpectRefusal \{/);
+  });
+  it("check the escape event and every tap refusal that can be decided before an OS call", () => {
+    expect(synthetic).toContain("$escapeDown.Data.Key.Vk -ne 0x1B -or $escapeDown.Data.Key.Scan -ne 0x01");
+    for (const key of ["'space'", "'Escape'", "'escape '", "''", "$null"]) expect(synthetic).toContain(`[FollowInput]::KeyTap(${key}, '0', 2560, 1440, [FollowInput]::QpcMs(), 120) } 'Only the escape key may be tapped'`);
+    expect(synthetic).toContain("[FollowInput]::KeyTap('escape', '0', 2560, 1440, [FollowInput]::QpcMs() - 1000, 120) } 'Stale capture'");
+    // An accepted tap would press a key in whatever window is focused, so every native KeyTap here is a refusal.
+    const taps = synthetic.split("\n").filter(line => line.includes("::KeyTap("));
+    expect(taps).toHaveLength(8);
+    for (const line of taps) expect(line.trimStart(), line).toMatch(/^ExpectRefusal \{/);
+    expect(synthetic).toContain("An escape tap must not move the cursor or touch a mouse button");
+    expect(synthetic).toContain("There must be exactly one place that presses escape");
   });
 });

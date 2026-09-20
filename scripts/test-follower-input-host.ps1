@@ -65,6 +65,9 @@ Expect 420 500 400 1000 0 120 'Click outside the safe movement area'
 if (-not [FollowInput]::Release()) { throw 'Nothing held: release must report success and must not throw' }
 $spaceDown = [FollowInput]::Space($true); $spaceUp = [FollowInput]::Space($false)
 if ($spaceDown.Type -ne 1 -or $spaceDown.Data.Key.Vk -ne 0x20 -or $spaceDown.Data.Key.Scan -ne 0x39 -or $spaceDown.Data.Key.Flags -ne 0 -or $spaceUp.Data.Key.Flags -ne 2) { throw 'Sprint must be the space key, down then up' }
+$escapeDown = [FollowInput]::Escape($true); $escapeUp = [FollowInput]::Escape($false)
+if ($escapeDown.Type -ne 1 -or $escapeDown.Data.Key.Vk -ne 0x1B -or $escapeDown.Data.Key.Scan -ne 0x01 -or $escapeDown.Data.Key.Flags -ne 0 -or $escapeUp.Data.Key.Flags -ne 2) { throw 'The tap must be the escape key, down then up' }
+if ($escapeUp.Data.Key.Vk -ne 0x1B -or $escapeUp.Data.Key.Scan -ne 0x01) { throw 'The escape up must name the same key as the down' }
 if (-not [FollowInput]::ReleaseSprint()) { throw 'Nothing held: releasing sprint must report success and send nothing' }
 if ([FollowInput]::SprintRenewMs -gt 500) { throw 'The sprint hold must lapse quickly when it is not renewed' }
 # The refusals below are all decided before any window, cursor or key is touched, and nothing is held to release.
@@ -81,6 +84,17 @@ ExpectRefusal { [FollowInput]::MoveClick(1280, 720, '0', 2560, 1440, [FollowInpu
 # Same for the confirmation's OK button: an accepted click cannot run here, so the refusal at CANCEL's own
 # coordinates is what is checked natively, with the rectangle itself covered by ExpectConfirm above.
 ExpectRefusal { [FollowInput]::MoveClick(948, 764, '0', 2560, 1440, [FollowInput]::QpcMs(), 120, 'confirm') } 'Click outside the confirm dialog area'
+# The escape tap: only the key name and the shared Check() can be exercised here. An accepted tap cannot be tested
+# natively - it would press a key in whatever window is focused - so the name refusal and the same staleness and view
+# refusals a click gets are what run, and the source checks below cover the batch and the guard order.
+ExpectRefusal { [FollowInput]::KeyTap('space', '0', 2560, 1440, [FollowInput]::QpcMs(), 120) } 'Only the escape key may be tapped'
+ExpectRefusal { [FollowInput]::KeyTap('Escape', '0', 2560, 1440, [FollowInput]::QpcMs(), 120) } 'Only the escape key may be tapped'
+ExpectRefusal { [FollowInput]::KeyTap('escape ', '0', 2560, 1440, [FollowInput]::QpcMs(), 120) } 'Only the escape key may be tapped'
+ExpectRefusal { [FollowInput]::KeyTap('', '0', 2560, 1440, [FollowInput]::QpcMs(), 120) } 'Only the escape key may be tapped'
+ExpectRefusal { [FollowInput]::KeyTap($null, '0', 2560, 1440, [FollowInput]::QpcMs(), 120) } 'Only the escape key may be tapped'
+ExpectRefusal { [FollowInput]::KeyTap('escape', '0', 2560, 1440, [FollowInput]::QpcMs() - 1000, 120) } 'Stale capture'
+ExpectRefusal { [FollowInput]::KeyTap('escape', '0', 100, 100, [FollowInput]::QpcMs(), 120) } 'Invalid game view'
+ExpectRefusal { [FollowInput]::KeyTap('escape', '0', 2560, 1440, [FollowInput]::QpcMs(), 5000) } 'Invalid freshness limit'
 if (-not [FollowInput]::HumanStillActive($true, 5000)) { throw 'A cursor that moved again is still under manual control' }
 if (-not [FollowInput]::HumanStillActive($false, 999)) { throw 'A cursor must rest for a full second before following resumes' }
 if ([FollowInput]::HumanStillActive($false, 1000)) { throw 'A rested cursor hands control back' }
@@ -98,6 +112,16 @@ if ($source -notmatch '(?s)if \(area == "party"\) \{.*?if \(area != "move"\) \{ 
 # The confirm box: tight around OK, and structurally unable to hold CANCEL at 0.3703w since it starts at 0.61w.
 if ($source -notmatch 'if \(x < Math\.Round\(viewWidth \* 0\.61\) \|\| y < Math\.Round\(viewHeight \* 0\.49\) \|\| x >= Math\.Round\(viewWidth \* 0\.745\) \|\| y >= Math\.Round\(viewHeight \* 0\.57\)\)') { throw 'The confirm area must be the measured box around the OK button' }
 if ($source -notmatch '(?s)if \(area == "confirm"\) \{.*?if \(area != "move"\) \{ result\.Error = "Unknown click area"') { throw 'The confirm area must be matched by exact name, before unknown areas are refused' }
+# The escape tap: one batch, one place that presses it, the key name refused first, and no pointer touched.
+$keyTap = [regex]::Match($source, '(?s)public static void KeyTap\(.*?\} catch \{ ReleaseSprint\(\); throw; \}').Value
+if (-not $keyTap) { throw 'The escape tap must be guarded and release sprint on any refusal' }
+if ($keyTap -notmatch 'SendInput\(2, new \[\] \{ Escape\(true\), Escape\(false\) \}, size\)') { throw 'An escape tap must be one down/up batch' }
+if ([regex]::Matches($source, 'Escape\(true\)').Count -ne 1) { throw 'There must be exactly one place that presses escape' }
+if ($keyTap -notmatch '(?s)if \(key != "escape"\) throw new Exception\("Only the escape key may be tapped"\);.*?FollowClickCheck check = Check\(') { throw 'Any other key must be refused before anything else is checked' }
+if ($keyTap -notmatch '(?s)FollowClickCheck check = Check\(.*?ThrowIfHumanInput\(\);.*?SendInput\(2,') { throw 'The escape tap must run the same checks a click runs before sending' }
+if ($keyTap -match 'SetCursorPos|GetCursorPos|WindowFromPoint|Button\(') { throw 'An escape tap must not move the cursor or touch a mouse button' }
+if ($source -notmatch '\[FollowInput\]::KeyTap\(\[string\]\$command\.key, \[string\]\$command\.expectedHwnd, \[int\]\$command\.viewWidth, \[int\]\$command\.viewHeight, \[long\]\$command\.capturedAtQpcMs, \[int\]\$command\.maxAgeMs\)') { throw 'The key op must pass the same guard fields a moveclick passes' }
+if ([regex]::Matches($source, '\bKeyTap\(').Count -ne 2) { throw 'KeyTap must be declared once and called from one op' }
 foreach ($forbidden in @('CopyFromScreen', 'BitBlt', 'keybd_event', 'SetWindowsHookEx', 'SetForegroundWindow', 'PostMessage')) {
   if ($source -match "\b$forbidden\b") { throw "Movement host must not reference $forbidden" }
 }

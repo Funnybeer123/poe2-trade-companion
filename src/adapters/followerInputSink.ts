@@ -15,6 +15,10 @@ export const CONFIRM_CLICK = "confirm";
 const AREAS = new Map([[LOOT_CLICK, "loot"], [PARTY_CLICK, "party"], [CONFIRM_CLICK, "confirm"]]);
 /** Marks a key action as starting the sprint hold. Renewing and releasing it are not new input and have their own methods. */
 export const SPRINT_HOLD = "hold";
+/** Marks a key action as one Escape: pressed and released in the same request, so nothing is left held and the sprint hold is untouched. */
+export const ESCAPE_TAP = "tap";
+/** The whole set of key actions, and the marker each key must carry. A Map, so no inherited property name passes for a key, and so no key accepts another's marker. */
+const KEYS = new Map([["space", SPRINT_HOLD], ["escape", ESCAPE_TAP]]);
 /** One guarded left-click per action: no queue, no focus changes, no keys, nothing held after it returns. */
 export class FollowerInputSink implements InputSink {
   /** Native timings of the most recent accepted click: host time and capture-start to click-complete. */
@@ -25,8 +29,10 @@ export class FollowerInputSink implements InputSink {
     if (!frame) throw new Error("Follow stopped or capture stale");
     if (!frame.hwnd || !Number.isFinite(frame.capturedAtQpcMs) || !Number.isInteger(frame.viewWidth) || !Number.isInteger(frame.viewHeight)) throw new Error("Capture stale: incomplete capture guard");
     if (action.kind === "key") {
-      if (action.key !== "space" || action.text !== SPRINT_HOLD) throw new Error("Invalid follow action");
-      await this.holdSprint(frame, true);
+      const marker = KEYS.get(action.key ?? "");
+      if (!marker || action.text !== marker || action.modifier) throw new Error("Invalid follow action");
+      if (action.key === "escape") await this.tapEscape(frame);
+      else await this.holdSprint(frame, true);
       return;
     }
     const area = action.text === undefined ? "move" : AREAS.get(action.text);
@@ -35,6 +41,11 @@ export class FollowerInputSink implements InputSink {
     const result = await this.host.send({ op: "moveclick", x: action.x, y: action.y, expectedHwnd: frame.hwnd, viewWidth: frame.viewWidth, viewHeight: frame.viewHeight, capturedAtQpcMs: frame.capturedAtQpcMs, maxAgeMs: this.maxAgeMs, area });
     if (!result.ok) throw new Error(String(result.error ?? "Follow input failed"));
     this.lastInput = { inputMs: Number(result.inputMs) || 0, captureToInputMs: Number(result.captureToInputMs) || 0 };
+  }
+  /** One Escape, down and up inside the worker's own op: no dead-man's switch, nothing to renew, and no click timing to record. */
+  private async tapEscape(frame: FollowerFrameGuard): Promise<void> {
+    const result = await this.host.send({ op: "key", key: "escape", expectedHwnd: frame.hwnd, viewWidth: frame.viewWidth, viewHeight: frame.viewHeight, capturedAtQpcMs: frame.capturedAtQpcMs, maxAgeMs: this.maxAgeMs });
+    if (!result.ok) throw new Error(String(result.error ?? "Escape input failed"));
   }
   private async holdSprint(frame: FollowerFrameGuard, start: boolean): Promise<void> {
     const result = await this.host.send({ op: "sprint", hold: true, start, expectedHwnd: frame.hwnd, viewWidth: frame.viewWidth, viewHeight: frame.viewHeight, capturedAtQpcMs: frame.capturedAtQpcMs, maxAgeMs: this.maxAgeMs });
