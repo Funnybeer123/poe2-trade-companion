@@ -1,5 +1,9 @@
 # Follow & Combat continuation prompt
 
+> **Superseded in part.** The "Agent C brief" below is replaced by `docs/COMBAT_FOLLOWER_HANDOFF.md` on branch
+> `feat/combat-while-following`: the follower PC has no combat calibration, and the arbitration it asks for can be
+> done without touching the follower tick. The Shared sections and Agent F's brief still stand.
+
 Two strands of work, meant to run **in parallel as two agents**:
 
 - **Agent F — Follow & Loot.** Keep improving what already works live.
