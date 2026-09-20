@@ -73,6 +73,8 @@ const LOOT_CHASE_LEASHES = 2;
 /** The fastest pacing the action cap can sustain: a shorter interval would always end in a rate-limit stop. */
 export const MIN_CLICK_INTERVAL_MS = Math.ceil(60_000 / ACTIONS_PER_MINUTE);
 const FOCUS = /Focus Path of Exile 2/, COVERED = /covered at the click point/;
+/** A worker that died or stopped answering, as the transport reports it: rebuildable, unlike a refusal. */
+const WORKER_LOST = /host-timeout|host-exited|host-output-closed|host-closed/, MAX_WORKER_RESTARTS = 5;
 const MANUAL = /Manual mouse movement|Mouse button held|Modifier key held|Space held/, RETRY = /Stale capture|capture stale|Focus Path of Exile|focus or view changed/i;
 
 export function defaultDriveSettings(): FollowerDriveSettings { return { version: 1, dryRun: true, mapScale: 7, clickIntervalMs: 110 }; }
@@ -116,6 +118,8 @@ export class FollowerDriveService {
   private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0, panelEscapes: 0 };
   private sprinting = false;
   private startedAt = 0;
+  /** Worker rebuilds this session, so a worker that cannot survive its first request does not restart forever. */
+  private restarts = 0;
   private readonly calibrationFile: string;
   private readonly settingsFile: string;
   private readonly now: () => number;
@@ -519,7 +523,19 @@ export class FollowerDriveService {
             } else if (outcome === "previewed") { steering.committed(this.now()); this.counts.previewed++; }
           }        }
       } catch (e) {
-        if (generation === this.generation) this.stop(e instanceof Error ? e.message : "Follow worker failed.");
+        if (generation !== this.generation) return;
+        const failure = e instanceof Error ? e.message : "Follow worker failed.";
+        // A worker that stops answering takes the whole session down with it, and one did: a native op stalled
+        // past its deadline, the transport killed the worker, and a 260 s run ended on the spot. Losing a worker
+        // is not a reason to stop following, so it is rebuilt and the run carries on. Bounded, because a worker
+        // that cannot survive its first request would otherwise restart forever.
+        if (WORKER_LOST.test(failure) && this.restarts < MAX_WORKER_RESTARTS) {
+          this.restarts++;
+          this.stop(`A follow worker stopped answering (${failure}); restarting it — attempt ${this.restarts} of ${MAX_WORKER_RESTARTS}.`);
+          void this.start().catch(() => {});
+          return;
+        }
+        this.stop(failure);
       } finally {
         // No overlapping captures, queued clicks, or catch-up bursts.
         if (live()) this.timer = setTimeout(() => void tick(), Math.max(1, delay - (this.now() - started)));

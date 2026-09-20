@@ -1201,10 +1201,26 @@ describe("follow drive stopping (synthetic hosts, no OS input)", () => {
     goLive(died);
     died.scene.onKey = () => { throw new Error("win-input-host-exited:1"); };
     await died.service.start();
+    // A worker that cannot survive even its first request is rebuilt a bounded number of times, then the run ends.
     await expect.poll(() => died.service.status().running, soon).toBe(false);
     expect(died.service.status().reason).toBe("win-input-host-exited:1");
     expect(died.attempts).toEqual([]);
     for (const rig of [blocked, retargeted, died]) await expect.poll(() => ops(rig.input).slice(-2), soon).toEqual(["release", "closed"]);
+  });
+  it("rebuilds a worker that stops answering and keeps following, rather than ending the run", async () => {
+    // Live, one native op stalled past its deadline: the transport killed the worker and a 260 s run ended there.
+    const rig = await calibrated();
+    goLive(rig);
+    await rig.service.start();
+    await expect.poll(() => rig.attempts.length, soon).toBeGreaterThanOrEqual(1);
+    const hosts = rig.created.capture, attempts = rig.attempts.length;
+    let stalled = false;
+    rig.scene.onKey = () => { if (!stalled) { stalled = true; throw new Error("win-input-host-timeout:key"); } };
+    await expect.poll(() => rig.created.capture, soon).toBeGreaterThan(hosts);
+    expect(rig.service.status().running).toBe(true);
+    // And it is following again, not merely alive: by the time this is read the reason has usually moved on
+    // from the restart to the next movement decision, which is the point.
+    await expect.poll(() => rig.attempts.length, soon).toBeGreaterThan(attempts);
   });
   it.each([[{ value: undefined }, "Capture worker returned no marker pixels."], [{ value: "AAA=" }, "Capture worker returned malformed marker pixels."]])("stops on a broken capture reply instead of guessing (%j)", async (corruptPoints, reason) => {
     const rig = await calibrated();
