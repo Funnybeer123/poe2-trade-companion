@@ -82,6 +82,15 @@ public static class FollowInput {
       if (x < 0 || y < Math.Round(viewHeight * 0.16) || x >= Math.Round(viewWidth * 0.035) || y >= Math.Round(viewHeight * 0.50)) { result.Error = "Click outside the party frame area"; return result; }
       result.Ok = true; return result;
     }
+    if (area == "confirm") {
+      // The teleport confirmation's OK button, measured at x 1595..1870, y 728..800 on a 2560x1440 client, centre
+      // (1732, 764) = 0.6766w, 0.5306h, which is what confirmDialog() in src/core/followerConfirm.ts aims at. The box
+      // adds about 1.3% of width and 1.5% of height around that button for UI-scale drift and nothing more. CANCEL is
+      // the other button, left of centre at 0.3703w: demanding x >= 0.61w puts it outside at every view size, whatever
+      // the dialog's own scale, and leaves 0.24 of the width - 613 px at 2560 - between the two.
+      if (x < Math.Round(viewWidth * 0.61) || y < Math.Round(viewHeight * 0.49) || x >= Math.Round(viewWidth * 0.745) || y >= Math.Round(viewHeight * 0.57)) { result.Error = "Click outside the confirm dialog area"; return result; }
+      result.Ok = true; return result;
+    }
     if (area != "move") { result.Error = "Unknown click area"; return result; }
     // Movement clicks stay inside the client and inside a central disc, clear of the HUD, panels and screen edges.
     double dx = x - viewWidth / 2.0, dy = y - viewHeight / 2.0, limit = viewHeight * 0.30;

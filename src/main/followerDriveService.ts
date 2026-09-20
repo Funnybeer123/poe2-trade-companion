@@ -1,12 +1,13 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { FollowerInputSink, LOOT_CLICK, PARTY_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../adapters/followerInputSink.js";
+import { CONFIRM_CLICK, FollowerInputSink, LOOT_CLICK, PARTY_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../adapters/followerInputSink.js";
 import { pngPlanes } from "../adapters/pngWhiteness.js";
 import { startWinHost } from "../adapters/winHost.js";
 import {
   buildMapCalibration, decodeKeyPoints, FollowSteering, mapCalibrationIssue, MapMarkerTracker, parseMapCalibration,
   type MapCalibration, type SteeringDecision,
 } from "../core/followerMapMarker.js";
+import { CONFIRM_BAND, CONFIRM_CHANNEL, CONFIRM_POINT_CAP, CONFIRM_THRESHOLD, confirmDialog } from "../core/followerConfirm.js";
 import { decodeFlatRuns, decodeHueRuns, findLootLabels, LOOT_MIN_BRIGHTNESS, LOOT_MIN_CONFIDENCE, LOOT_MIN_RUN, lootArea, LootPlanner } from "../core/followerLoot.js";
 import { findTravelButton, PARTY_BAND, PARTY_CHANNEL, PARTY_POINT_CAP, PARTY_THRESHOLD } from "../core/followerParty.js";
 import { TERRAIN_CHANNEL, TERRAIN_POINT_CAP, TERRAIN_THRESHOLD, TerrainPlanner, terrainWindow, type TerrainPlan } from "../core/followerTerrain.js";
@@ -48,6 +49,14 @@ const LOOT_COLLECT_MS = 3000;
  * is long enough for the new area to load, after which the tracker finds them again by itself.
  */
 const LEADER_GONE_MS = 3000, TRAVEL_COOLDOWN_MS = 10_000, TRAVEL_SCAN_MS = 250;
+/**
+ * Clicking the travel button only asks the question: the game puts up a modal confirmation, and the teleport
+ * happens on its OK. The modal is drawn over the middle of the screen, our own map marker included, so every
+ * ordinary guard (a verified map centre, a leader in sight) is false for as long as it is up. Answering it is
+ * therefore its own step, bounded by this window: the dialog appears at once, and a window that expires by
+ * itself means a travel click that went nowhere cannot wedge the loop.
+ */
+const CONFIRM_WINDOW_MS = 4000, CONFIRM_SCAN_MS = 250;
 const RELEASE_ATTEMPTS = 240, RELEASE_RETRY_MS = 250;
 /** How far behind the leader looting still happens, in leashes: beyond that, catching up is all that matters. */
 const LOOT_CHASE_LEASHES = 2;
@@ -94,7 +103,7 @@ export class FollowerDriveService {
   private latencies: number[] = [];
   /** Capture-to-click times of the first click after standing near the leader: the reaction to them moving off. */
   private resumes: number[] = [];
-  private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0 };
+  private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0 };
   private sprinting = false;
   private startedAt = 0;
   private readonly calibrationFile: string;
@@ -230,10 +239,12 @@ export class FollowerDriveService {
     }, FRAME_MAX_AGE_MS);
     const controller = new GameInputController(sink, this.options.killSwitch, this.options.mode);
     this.running = true; this.reason = "Starting capture and input workers…";
-    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0 }; this.sprinting = false; this.startedAt = this.now();
+    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0 }; this.sprinting = false; this.startedAt = this.now();
     let manualUntil = -Infinity, pauseReason = "", wasNear = false, lastLootScanAt = -Infinity, lootSeen: { x: number; y: number; at: number } | undefined;
     // Absence is measured from when we started watching, so a run never opens with a teleport.
     let lastLeaderAt = this.now(), lastTravelAt = -Infinity, lastTravelScanAt = -Infinity;
+    // Open only by our own travel click, and closed again by the OK that answers it: one OK per travel attempt.
+    let confirmUntil = -Infinity, lastConfirmScanAt = -Infinity;
     let collecting: { at: number; labels: number } | undefined;
     const odometry = new MapOdometry(), trail = new LeaderTrail(), watch = { ...odometryWindow(tracker.origin, calibration.view), channel: ODOMETRY_CHANNEL, threshold: ODOMETRY_THRESHOLD };
     const terrain = new TerrainPlanner(), terrainArea = terrainWindow(tracker.origin, calibration.view);
@@ -321,6 +332,37 @@ export class FollowerDriveService {
           const seenLeader = observation.leaderFound && observation.confidence >= current.confidence;
           // Any sighting at all, even one too ambiguous to follow, means the leader is still in this area.
           if (observation.leaderFound) lastLeaderAt = started;
+          // Answering our own teleport confirmation. This sits ahead of every other click on purpose: the modal
+          // covers the map centre, so `originVerified` is false and the steering below can only pause while it is
+          // up — the loop would sit there with the dialog open and the teleport never made. Nothing else is
+          // relaxed: this clicks one measured OK point inside a window only our own travel click opens.
+          if (started < confirmUntil && mapScanner && !manual && started - lastConfirmScanAt >= CONFIRM_SCAN_MS) {
+            lastConfirmScanAt = started;
+            const scanAt = this.now(), scan = await mapScanner.send({ op: "key", ...CONFIRM_BAND(view), full: false, channel: CONFIRM_CHANNEL, threshold: CONFIRM_THRESHOLD, cap: CONFIRM_POINT_CAP });
+            if (!live()) return;
+            // A capture that overflowed its cap, or one with no points at all, is a lit scene: never read as a dark modal.
+            const tooBright = scan.overflow === true || typeof scan.points !== "string";
+            const dialog = scan.ok && Number(scan.width) === view.width && Number(scan.height) === view.height
+              ? confirmDialog(tooBright ? [] : decodeKeyPoints(scan.points), view, tooBright) : undefined;
+            if (dialog) {
+              const reason = `Confirm the teleport to ${current.targetName}.`;
+              // Spent whatever becomes of the click: a refused OK is retried by the next travel attempt, not by this window.
+              confirmUntil = -Infinity;
+              // The teleport is now under way, so the cooldown that covers the area load runs from here.
+              lastTravelAt = this.now();
+              await letGo();
+              this.frame = { hwnd: String(scan.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(scan.capturedAtQpcMs), at: scanAt };
+              const outcome = await execute("navigation", "confirm-teleport", reason, dialog.ok.x, dialog.ok.y, 1, process, allowed,
+                JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, ok: dialog.ok }), lootOn, current.confidence, false, CONFIRM_CLICK);
+              if (outcome === "stopped") return;
+              if (outcome === "emitted" || outcome === "previewed") {
+                this.counts.confirms++;
+                if (outcome === "emitted") { this.counts.clicks++; this.reason = reason; } else this.counts.previewed++;
+                this.decision = { kind: "hold", reason: this.reason };
+                return;
+              }
+            }
+          }
           // Stairs, a portal or an area transition end the leader's marker without ending the party frame: its
           // travel button is drawn from identical pixels whether they are here or elsewhere, so only a sustained
           // absence of the marker says they have left. Clicking that button teleports us to them, and the tracker
@@ -347,6 +389,8 @@ export class FollowerDriveService {
               if (outcome === "stopped") return;
               if (outcome === "emitted" || outcome === "previewed") {
                 this.counts.teleports++;
+                // The game asks "are you sure?" straight away; a preview run shows that step too.
+                confirmUntil = this.now() + CONFIRM_WINDOW_MS; lastConfirmScanAt = -Infinity;
                 if (outcome === "emitted") { this.counts.clicks++; this.reason = reason; } else this.counts.previewed++;
                 // A new area is loading: decide nothing more from this frame, and let the cooldown cover the load.
                 this.decision = { kind: "hold", reason: this.reason };

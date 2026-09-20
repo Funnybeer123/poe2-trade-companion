@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FollowerInputSink, LOOT_CLICK, PARTY_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../src/adapters/followerInputSink.js";
+import { CONFIRM_CLICK, FollowerInputSink, LOOT_CLICK, PARTY_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../src/adapters/followerInputSink.js";
 import { GameInputController } from "../src/core/gameInputController.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
 import { scenario } from "../src/core/scenarios.js";
@@ -155,6 +155,24 @@ describe("follower input sink travel-to-leader clicks (SYNTHETIC host, no OS inp
     await expect(new FollowerInputSink(host, () => undefined).emit(party)).rejects.toThrow("Follow stopped or capture stale");
     expect(host.sent).toEqual([]);
     await expect(new FollowerInputSink(fakeHost({ ok: false, error: "Click outside the party frame" }), () => FRAME).emit(party)).rejects.toThrow("Click outside the party frame");
+  });
+});
+
+describe("follower input sink teleport-confirmation clicks (SYNTHETIC host, no OS input)", () => {
+  const OK: InputAction = { kind: "click", x: 433, y: 191, button: "left", text: CONFIRM_CLICK };
+  it("marks the confirmation's OK so the input worker allows that button, and still refuses any other text", async () => {
+    const host = fakeHost(), sink = new FollowerInputSink(host, () => FRAME);
+    await sink.emit(OK);
+    expect(host.sent).toEqual([{ op: "moveclick", x: 433, y: 191, expectedHwnd: "66051", viewWidth: 640, viewHeight: 360, capturedAtQpcMs: 5_000_123, maxAgeMs: 120, area: "confirm" }]);
+    // A closed set of markers: near misses, free text, and inherited property names are all refused before the host is contacted.
+    for (const text of ["confirm-teleport", "ok", "OK", "Confirm", "cancel", "", "toString", "constructor"]) await expect(sink.emit({ ...CLICK, text })).rejects.toThrow("Invalid follow action");
+    expect(host.sent).toHaveLength(1);
+  });
+  it("is refused like any other click when the guard has no fresh capture, and reports the worker's refusal", async () => {
+    const host = fakeHost();
+    await expect(new FollowerInputSink(host, () => undefined).emit(OK)).rejects.toThrow("Follow stopped or capture stale");
+    expect(host.sent).toEqual([]);
+    await expect(new FollowerInputSink(fakeHost({ ok: false, error: "Click outside the confirmation button" }), () => FRAME).emit(OK)).rejects.toThrow("Click outside the confirmation button");
   });
 });
 

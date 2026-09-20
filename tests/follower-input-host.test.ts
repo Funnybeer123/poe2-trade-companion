@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import { resolveWinHostScript } from "../src/adapters/winHost.js";
+import { confirmOk } from "../src/core/followerConfirm.js";
 
 // Static checks on the native worker's source: it is never started here, so no input is sent.
 const source = readFileSync(resolveWinHostScript("win-follower-input-host.ps1"), "utf8");
@@ -12,6 +13,11 @@ const between = (from: string, to: string) => {
 };
 const sprint = () => between("public static void Sprint(", "static void NoteHuman(");
 const order = (text: string, ...parts: string[]) => parts.map(part => { const at = text.indexOf(part); expect(at, part).toBeGreaterThanOrEqual(0); return at; });
+// The bounds every rectangle check below uses come out of the source, so a changed constant changes what is asserted.
+const fraction = (text: string, pattern: RegExp) => { const found = text.match(pattern); expect(found, String(pattern)).not.toBeNull(); return Number(found![1]); };
+// .NET Math.Round is half to even; the host rounds these same fractions.
+const round = (n: number) => { const floor = Math.floor(n), rest = n - floor; return rest > .5 ? floor + 1 : rest < .5 ? floor : floor % 2 ? floor + 1 : floor; };
+const VIEWS: [number, number][] = [[2560, 1440], [1920, 1080], [3440, 1440], [1280, 800], [320, 240]];
 
 describe("follower input host: sprint hold", () => {
   it("takes a start flag from the sprint op", () => {
@@ -64,17 +70,12 @@ describe("follower input host: movement click refusals", () => {
 describe("follower input host: party-frame travel button", () => {
   // Measured on real 2560x1440 frames: the blue swirl occupies x 11..38, y 322..349 for the first party member.
   const BUTTON = { left: 11, top: 322, right: 38, bottom: 349 };
-  const VIEWS: [number, number][] = [[2560, 1440], [1920, 1080], [3440, 1440], [1280, 800], [320, 240]];
-  const party = () => between('if (area == "party") {', 'if (area != "move")');
-  const fraction = (text: string, pattern: RegExp) => { const found = text.match(pattern); expect(found, String(pattern)).not.toBeNull(); return Number(found![1]); };
-  // The bounds the checks below use come out of the source, so a changed constant changes what is asserted.
+  const party = () => between('if (area == "party") {', 'if (area == "confirm")');
   const rect = () => ({
     top: fraction(party(), /y < Math\.Round\(viewHeight \* (0\.\d+)\)/),
     right: fraction(party(), /x >= Math\.Round\(viewWidth \* (0\.\d+)\)/),
     bottom: fraction(party(), /y >= Math\.Round\(viewHeight \* (0\.\d+)\)/),
   });
-  // .NET Math.Round is half to even; the host rounds these same fractions.
-  const round = (n: number) => { const floor = Math.floor(n), rest = n - floor; return rest > .5 ? floor + 1 : rest < .5 ? floor : floor % 2 ? floor + 1 : floor; };
   const box = (width: number, height: number) => { const r = rect(); return { minX: 0, maxX: round(width * r.right) - 1, minY: round(height * r.top), maxY: round(height * r.bottom) - 1 }; };
   const accepts = (x: number, y: number, width = 2560, height = 1440) => { const b = box(width, height); return x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY; };
 
@@ -109,6 +110,60 @@ describe("follower input host: party-frame travel button", () => {
   });
 });
 
+describe("follower input host: teleport confirmation OK button", () => {
+  // Measured on the real 2560x1440 capture of the dialog: OK spans x 1595..1870, y 728..800, centre (1732, 764).
+  // CANCEL is the other button, left of centre at (948, 764), and clicking it would cancel the teleport.
+  const OK = { left: 1595, top: 728, right: 1870, bottom: 800 }, CANCEL = { x: 948 / 2560, y: 764 / 1440 };
+  const confirm = () => between('if (area == "confirm") {', 'if (area != "move")');
+  const rect = () => ({
+    left: fraction(confirm(), /x < Math\.Round\(viewWidth \* (0\.\d+)\)/),
+    top: fraction(confirm(), /y < Math\.Round\(viewHeight \* (0\.\d+)\)/),
+    right: fraction(confirm(), /x >= Math\.Round\(viewWidth \* (0\.\d+)\)/),
+    bottom: fraction(confirm(), /y >= Math\.Round\(viewHeight \* (0\.\d+)\)/),
+  });
+  const box = (width: number, height: number) => { const r = rect(); return { minX: round(width * r.left), maxX: round(width * r.right) - 1, minY: round(height * r.top), maxY: round(height * r.bottom) - 1 }; };
+  const accepts = (x: number, y: number, width = 2560, height = 1440) => { const b = box(width, height); return x >= b.minX && x <= b.maxX && y >= b.minY && y <= b.maxY; };
+
+  it("is a tight box around the measured OK button, refused by name outside it", () => {
+    expect(rect()).toEqual({ left: .61, top: .49, right: .745, bottom: .57 });
+    expect(box(2560, 1440)).toEqual({ minX: 1562, maxX: 1906, minY: 706, maxY: 820 });
+    expect(confirm()).toContain('result.Error = "Click outside the confirm dialog area"');
+    for (const [x, y] of [[OK.left, OK.top], [OK.right, OK.bottom], [OK.left, OK.bottom], [OK.right, OK.top], [1732, 764]]) expect(accepts(x, y), `${x},${y}`).toBe(true);
+    // Tight: at most a button's own height of margin on any side of the measured button.
+    const b = box(2560, 1440), height = OK.bottom - OK.top;
+    for (const margin of [OK.left - b.minX, b.maxX - OK.right, OK.top - b.minY, b.maxY - OK.bottom]) { expect(margin).toBeGreaterThan(8); expect(margin).toBeLessThan(height); }
+  });
+
+  it("cannot contain CANCEL at any view size, because it starts right of it", () => {
+    // Structural, not arithmetic: the box begins at a fraction of width larger than CANCEL's own.
+    expect(rect().left).toBeGreaterThan(CANCEL.x);
+    for (const [width, height] of VIEWS) {
+      const b = box(width, height), cancel = { x: round(width * CANCEL.x), y: round(height * CANCEL.y) }, where = `${width}x${height}`;
+      expect(accepts(cancel.x, cancel.y, width, height), where).toBe(false);
+      expect(b.minX - cancel.x, where).toBeGreaterThan(width * .2); // and never within a fifth of the view of it
+    }
+    for (const [x, y] of [[948, 764], [1280, 720], [1732, 900], [1732, 600], [2048, 764], [25, 336]]) expect(accepts(x, y), `${x},${y}`).toBe(false);
+  });
+
+  it("permits exactly the point the detector aims at, and nothing the party frame owns", () => {
+    const partyRight = fraction(between('if (area == "party") {', 'if (area == "confirm")'), /x >= Math\.Round\(viewWidth \* (0\.\d+)\)/);
+    expect(rect().left).toBeGreaterThan(partyRight);
+    for (const [width, height] of VIEWS) {
+      const ok = confirmOk({ width, height }), where = `${width}x${height}`;
+      expect(accepts(ok.x, ok.y, width, height), where).toBe(true);
+      expect(box(width, height).minX, where).toBeGreaterThan(round(width * partyRight) - 1); // clear of the party box
+    }
+  });
+
+  it("refuses an unknown area, and matches only the exact string confirm", () => {
+    const [loot, party, confirmAt, unknown] = order(between("public static FollowClickCheck Check(int x, int y, int viewWidth, int viewHeight, long ageMs, int maxAgeMs, string area)", "// Pure manual-takeover rule"), 'if (area == "loot")', 'if (area == "party") {', 'if (area == "confirm") {', '"Unknown click area"');
+    expect([loot, party, confirmAt, unknown]).toEqual([loot, party, confirmAt, unknown].sort((a, b) => a - b));
+    expect(source).toContain('if (area != "move") { result.Error = "Unknown click area"; return result; }');
+    expect(confirm()).not.toMatch(/StartsWith|Contains|IndexOf/); // "confirmation" falls through to the refusal
+    expect(confirm()).not.toMatch(/SendInput|SetCursorPos/); // an area check decides nothing but ok or the error
+  });
+});
+
 describe("follower input host: synthetic native checks", () => {
   it("cover the lapsed renew and a refused click without sending input", () => {
     expect(synthetic).toContain("[FollowInput]::Sprint('0', 2560, 1440, [FollowInput]::QpcMs(), 120, $false) } 'Sprint lapsed'");
@@ -117,11 +172,15 @@ describe("follower input host: synthetic native checks", () => {
     expect(synthetic).not.toMatch(/::Sprint\([^)]*\$true\)/);
     expect(synthetic).toContain("Space may go down only on a start, and never over a human hold");
   });
-  it("check the party rectangle without ever running a click that could be accepted", () => {
+  it("check the party and confirm rectangles without ever running a click that could be accepted", () => {
     expect(synthetic).toContain("ExpectParty 25 336 $null");
     expect(synthetic).toContain("[FollowInput]::QpcMs(), 120, 'party') } 'Click outside the party frame area'");
+    // An accepted click of either kind would move the cursor and press the button, so only refusals run natively.
+    expect(synthetic).toContain("ExpectConfirm 1732 764 $null");
+    expect(synthetic).toContain("ExpectConfirm 948 764 'Click outside the confirm dialog area'");
+    expect(synthetic).toContain("[FollowInput]::MoveClick(948, 764, '0', 2560, 1440, [FollowInput]::QpcMs(), 120, 'confirm') } 'Click outside the confirm dialog area'");
     const clicks = synthetic.split("\n").filter(line => line.includes("::MoveClick("));
-    expect(clicks).toHaveLength(2);
+    expect(clicks).toHaveLength(3);
     for (const line of clicks) expect(line.trimStart(), line).toMatch(/^ExpectRefusal \{/);
   });
 });

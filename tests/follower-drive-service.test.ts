@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { deflateSync } from "node:zlib";
 import { parseMapCalibration } from "../src/core/followerMapMarker.js";
+import { CONFIRM_BAND, CONFIRM_CHANNEL, CONFIRM_POINT_CAP, CONFIRM_THRESHOLD, confirmDialog, confirmOk } from "../src/core/followerConfirm.js";
 import { findTravelButton, PARTY_BAND, PARTY_CHANNEL, PARTY_POINT_CAP, PARTY_THRESHOLD } from "../src/core/followerParty.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
 import type { QaActionTrace } from "../src/core/types.js";
@@ -59,6 +60,8 @@ interface Scene {
   walls?: Point[];
   /** Blue party-frame pixels the injected map host reports for the party-band 'key' scan (none: the corner is covered). */
   party?: Point[];
+  /** Bright pixels the injected map host reports for the confirm-band 'key' scan. Undefined is ordinary play: far too bright, so the scan overflows its cap. */
+  confirm?: Point[];
 }
 type Rect = { x: number; y: number; width: number; height: number };
 interface LootRect extends Rect { padding?: number; colour?: Rgb }
@@ -163,6 +166,8 @@ interface Rig {
   scanQpc: number[];
   /** capturedAtQpcMs of every party-band 'key' reply from the map host. */
   partyQpc: number[];
+  /** capturedAtQpcMs of every confirm-band 'key' reply from the map host. */
+  confirmQpc: number[];
   /** Refusals for 'sprint' hold requests: the first one is used up by the next request with the same `start` flag. Letting go is never refused. */
   sprintRefusals: Array<{ start: boolean; error: string }>;
   /** How many 'release' requests are answered { ok: false } (a key is still held) before one succeeds, and when each one was asked (real time). */
@@ -177,7 +182,7 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
     follow: { targetName: "Main", followDistance: 2, confidence: .85 }, globalDryRun: false, clock: options.clock,
     capture: [], input: [], attempts: [], refusals: [], latencies: [37], capturePing: { ok: true }, inputPing: { ok: true }, releaseFails: false,
     created: { capture: 0, input: 0 }, newestCaptureQpc: 5_000_000, traces: [], reasons: new Set(),
-    map: [], scanQpc: [], partyQpc: [], sprintRefusals: [], releaseRefusals: 0, releasedAt: [],
+    map: [], scanQpc: [], partyQpc: [], confirmQpc: [], sprintRefusals: [], releaseRefusals: 0, releasedAt: [],
   };
   const now = () => rig.clock ?? performance.now();
   rig.service = new FollowerDriveService({
@@ -248,10 +253,20 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
         send: async (payload: Payload) => {
           rig.map.push(payload);
           const scene = rig.scene;
-          // The party frame is read by the same 'key' op as the markers, on this second worker.
+          // The party frame and the teleport confirmation are read by the same 'key' op as the markers, on this
+          // second worker, and are told apart by the channel each one asks for.
           if (payload.op === "key") {
-            rig.newestCaptureQpc += 9; rig.partyQpc.push(rig.newestCaptureQpc);
-            return { ok: true, hwnd: scene.hwnd, process: scene.process, ...scene.view, captureMs: 4, capturedAtQpcMs: rig.newestCaptureQpc, overflow: false, points: encodePoints(scene.party ?? [], payload as unknown as Rect) };
+            rig.newestCaptureQpc += 9;
+            const rect = payload as unknown as Rect, reply = { ok: true, hwnd: scene.hwnd, process: scene.process, ...scene.view, captureMs: 4, capturedAtQpcMs: rig.newestCaptureQpc };
+            if (payload.channel === CONFIRM_CHANNEL) {
+              rig.confirmQpc.push(rig.newestCaptureQpc);
+              const inside = (scene.confirm ?? []).filter(p => p.x >= rect.x && p.y >= rect.y && p.x < rect.x + rect.width && p.y < rect.y + rect.height);
+              // No confirm scene at all is ordinary play: the worker gives up at the cap and says so.
+              const overflow = !scene.confirm || inside.length > Number(payload.cap);
+              return { ...reply, overflow, points: overflow ? "" : encodePoints(inside, rect) };
+            }
+            rig.partyQpc.push(rig.newestCaptureQpc);
+            return { ...reply, overflow: false, points: encodePoints(scene.party ?? [], rect) };
           }
           if (payload.op !== "terrain") return { ok: false, error: "Unknown follower capture operation" };
           return { ok: true, hwnd: scene.hwnd, process: scene.process, ...scene.view, captureMs: 5, capturedAtQpcMs: rig.newestCaptureQpc, overflow: false, points: encodePoints(scene.walls ?? [], payload as unknown as Rect) };
@@ -273,9 +288,9 @@ async function calibrated(options: Parameters<typeof setup>[0] = {}): Promise<Ri
 const goLive = (rig: Rig, settings: { mapScale?: number; clickIntervalMs?: number; sprint?: boolean } = {}) => rig.service.configure({ version: 1, dryRun: false, mapScale: 7, clickIntervalMs: 100, ...settings });
 const soon = { timeout: 5000, interval: 4 };
 const ops = (log: Payload[]) => log.map(entry => String(entry.op));
-/** The counters, including `teleports`, which the service reports but the shared status type does not name. */
-const stats = (rig: Rig) => (rig.service.status().stats ?? { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0 }) as
-  Record<"cycles" | "clicks" | "previewed" | "refused" | "manualTakeovers" | "lootScans" | "lootLabels" | "lootClicks" | "sprints" | "teleports", number>;
+/** The counters, including `teleports` and `confirms`, which the service reports but the shared status type does not name. */
+const stats = (rig: Rig) => (rig.service.status().stats ?? { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0, confirms: 0 }) as
+  Record<"cycles" | "clicks" | "previewed" | "refused" | "manualTakeovers" | "lootScans" | "lootLabels" | "lootClicks" | "sprints" | "teleports" | "confirms", number>;
 /** Advances the frozen clock by one loot-scan period (250 ms) and waits for the scan that earns. Everything the scan leads to happens in the same cycle. */
 async function nextScan(rig: Rig): Promise<void> {
   const from = stats(rig).lootScans;
@@ -283,7 +298,7 @@ async function nextScan(rig: Rig): Promise<void> {
   await expect.poll(() => stats(rig).lootScans, soon).toBe(from + 1);
 }
 const sprintOps = (rig: Rig) => rig.input.filter(entry => entry.op === "sprint");
-const clicksIn = (rig: Rig, area: "move" | "loot" | "party") => rig.attempts.filter(attempt => attempt.payload.area === area);
+const clicksIn = (rig: Rig, area: "move" | "loot" | "party" | "confirm") => rig.attempts.filter(attempt => attempt.payload.area === area);
 /** Waits until the loop has completed `count` more observe-decide cycles. */
 async function cycles(rig: Rig, count = 8): Promise<void> {
   const from = stats(rig).cycles;
@@ -1668,7 +1683,8 @@ describe("follow drive travel to the leader (SYNTHETIC party-frame pixels and ho
     for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) points.push({ x: left + x, y: top + y });
     return points;
   }
-  const partyScans = (rig: Rig) => rig.map.filter(entry => entry.op === "key");
+  // Both party-frame and confirm-band scans are 'key' on the map host; the channel says which is which.
+  const partyScans = (rig: Rig) => rig.map.filter(entry => entry.op === "key" && entry.channel === PARTY_CHANNEL);
   /** Live, with the map host that carries the party scan, the button on screen, and the leader far away on the map. */
   async function travelRig(clock: number): Promise<Rig> {
     const rig = await calibrated({ clock, mapHost: true });
@@ -1768,6 +1784,141 @@ describe("follow drive travel to the leader (SYNTHETIC party-frame pixels and ho
     expect(stats(rig)).toMatchObject({ clicks: 0, previewed: 2, teleports: 1 });
     expect(rig.traces.at(-1)).toMatchObject({ decisionRule: "travel-to-leader", result: "blocked", input: { text: "party" }, reason: expect.stringContaining("safety=dry-run") });
     expect(rig.service.status()).toMatchObject({ running: true, reason: "Preview only: would travel to Main: their map marker has been gone for 3.0 s.", decision: { kind: "hold" } });
+  });
+
+  describe("confirming the teleport (SYNTHETIC dialog pixels: the modal is an array of points, no OS input)", () => {
+    /** A deterministic 1-in-`step` scatter of bright pixels over the whole confirm band. */
+    function bandPixels(step: number, view = VIEW): Point[] {
+      const band = CONFIRM_BAND(view), points: Point[] = [];
+      for (let y = band.y; y < band.y + band.height; y++) for (let x = band.x; x < band.x + band.width; x++) if ((x * 7 + y * 13) % step === 0) points.push({ x, y });
+      return points;
+    }
+    /** The dimmed modal: a few hundred points of text and button borders. */
+    const DIALOG = bandPixels(100);
+    /** The same band in ordinary play, bright enough that the scan gives up at its cap. */
+    const LIT = bandPixels(3);
+    const OK = confirmOk(VIEW);
+    const confirmScans = (rig: Rig) => rig.map.filter(entry => entry.op === "key" && entry.channel === CONFIRM_CHANNEL);
+    /** Live, the leader gone, one travel click already sent: the game is about to ask "are you sure?". */
+    async function travelled(clock: number): Promise<Rig> {
+      const rig = await travelRig(clock);
+      await rig.service.start();
+      await expect.poll(() => stats(rig).clicks, soon).toBe(1);
+      await leaderLeaves(rig);
+      rig.clock! += 3000;
+      await expect.poll(() => stats(rig).teleports, soon).toBe(1);
+      return rig;
+    }
+    it("clicks OK on its own teleport confirmation, bound to the confirm-band scan that found it", async () => {
+      const rig = await travelled(700_000);
+      expect(confirmDialog(DIALOG, VIEW)).toEqual({ ok: OK });
+      rig.scene.confirm = DIALOG;
+      rig.clock! += 250;
+      await expect.poll(() => stats(rig).confirms, soon).toBe(1);
+      // The band is read on the SECOND worker, like the party frame, so the marker capture keeps its 120 ms budget.
+      expect(confirmScans(rig).at(-1)).toEqual({ op: "key", ...CONFIRM_BAND(VIEW), full: false, channel: CONFIRM_CHANNEL, threshold: CONFIRM_THRESHOLD, cap: CONFIRM_POINT_CAP });
+      expect(clicksIn(rig, "confirm").map(attempt => attempt.payload)).toEqual([
+        { op: "moveclick", ...OK, expectedHwnd: HWND, viewWidth: W, viewHeight: H, capturedAtQpcMs: rig.confirmQpc.at(-1), maxAgeMs: 120, area: "confirm" },
+      ]);
+      // OK is the right-hand button; CANCEL is its mirror image left of centre and is never a target.
+      expect(OK.x).toBeGreaterThan(W / 2);
+      const trace = rig.traces.at(-1)!;
+      expect(trace).toMatchObject({ module: "navigation", decisionRule: "confirm-teleport", result: "emitted", confidence: 1, processName: GAME, reason: expect.stringContaining("Confirm the teleport to Main."), input: { kind: "click", ...OK, button: "left", text: "confirm" } });
+      expect(JSON.parse(trace.evidenceHash)).toMatchObject({ hwnd: HWND, capturedAtQpcMs: rig.confirmQpc.at(-1), ok: OK });
+      expect(stats(rig)).toMatchObject({ confirms: 1, teleports: 1, clicks: 3 });
+      await expect.poll(() => [...rig.reasons], soon).toContain("Confirm the teleport to Main.");
+    });
+    it("never answers a confirmation it did not ask for: with no travel click of ours, the band is not even scanned", async () => {
+      const rig = await travelRig(710_000);
+      rig.scene.confirm = DIALOG;
+      await rig.service.start();
+      await expect.poll(() => stats(rig).clicks, soon).toBe(1);
+      // Four whole confirm windows with the leader in sight and the dialog on screen the entire time.
+      for (let step = 0; step < 4; step++) { rig.clock! += 4000; await cycles(rig, 3); }
+      expect(confirmScans(rig)).toEqual([]);
+      expect(clicksIn(rig, "confirm")).toEqual([]);
+      expect(stats(rig).confirms).toBe(0);
+      expect(rig.traces.every(trace => trace.decisionRule !== "confirm-teleport")).toBe(true);
+    });
+    it("clicks nothing while the band is lit, and gives up by itself when no dialog ever appears", async () => {
+      const rig = await travelled(720_000);
+      rig.scene.confirm = LIT;
+      expect(LIT.length).toBeGreaterThan(CONFIRM_POINT_CAP);
+      for (let step = 0; step < 4; step++) { rig.clock! += 250; await expect.poll(() => confirmScans(rig).length, soon).toBeGreaterThanOrEqual(step + 1); }
+      expect(clicksIn(rig, "confirm")).toEqual([]);
+      expect(stats(rig).confirms).toBe(0);
+      // Past the window the state is gone, so a travel that went nowhere cannot wedge the loop — and a dialog
+      // turning up late is not ours to answer.
+      rig.clock! += 4000;
+      await cycles(rig, 4);
+      const scans = confirmScans(rig).length;
+      rig.scene.confirm = DIALOG;
+      rig.clock! += 250;
+      await cycles(rig, 4);
+      expect(confirmScans(rig)).toHaveLength(scans);
+      expect(clicksIn(rig, "confirm")).toEqual([]);
+      expect(stats(rig).confirms).toBe(0);
+    });
+    it("clicks OK once per travel attempt, however long the dialog stays up", async () => {
+      const rig = await travelled(730_000);
+      rig.scene.confirm = DIALOG;
+      rig.clock! += 250;
+      await expect.poll(() => stats(rig).confirms, soon).toBe(1);
+      const scans = confirmScans(rig).length;
+      // Still on screen six seconds later (a slow teleport, a dropped click): the window is spent all the same,
+      // and the post-teleport cooldown keeps the travel button from being clicked again meanwhile.
+      for (let step = 0; step < 6; step++) { rig.clock! += 1000; await cycles(rig, 3); }
+      expect(confirmScans(rig)).toHaveLength(scans);
+      expect(clicksIn(rig, "confirm")).toHaveLength(1);
+      expect(stats(rig)).toMatchObject({ confirms: 1, teleports: 1 });
+    });
+    it("confirms with the map centre covered, where ordinary movement and looting are shut down", async () => {
+      const rig = await travelled(740_000);
+      const moves = clicksIn(rig, "move").length;
+      // What the modal actually does: it covers the map centre, so our own marker is gone and every guard that
+      // depends on a verified centre turns false. The confirm step has to survive exactly that.
+      rig.scene.own = null; rig.scene.confirm = DIALOG;
+      rig.clock! += 1501;
+      await expect.poll(() => stats(rig).confirms, soon).toBe(1);
+      expect(rig.service.status().observation?.originVerified).toBe(false);
+      expect(clicksIn(rig, "confirm")).toHaveLength(1);
+      expect(clicksIn(rig, "move")).toHaveLength(moves);
+      expect(rig.traces.at(-1)).toMatchObject({ decisionRule: "confirm-teleport", result: "emitted", input: { ...OK, text: "confirm" } });
+    });
+    it("scans and clicks nothing while manual control is detected, and answers the same dialog once the pause lapses", async () => {
+      const rig = await travelled(750_000);
+      // The operator takes the mouse just as the leader reappears: the movement click is refused natively.
+      rig.refusals.push("Manual mouse movement");
+      rig.scene.leader = FAR;
+      await expect.poll(() => stats(rig).manualTakeovers, soon).toBe(1);
+      expect(rig.service.status().reason).toBe("Manual control detected — following resumes shortly.");
+      const scans = confirmScans(rig).length;
+      rig.scene.confirm = DIALOG;
+      rig.clock! += 500;
+      await cycles(rig, 4);
+      expect(confirmScans(rig)).toHaveLength(scans);
+      expect(clicksIn(rig, "confirm")).toEqual([]);
+      rig.clock! += 1500;
+      await expect.poll(() => stats(rig).confirms, soon).toBe(1);
+      expect(clicksIn(rig, "confirm")).toHaveLength(1);
+    });
+    it("previews the OK in a dry run: the input worker receives nothing at all", async () => {
+      const rig = await travelRig(760_000);
+      rig.service.configure({ version: 1, dryRun: true, mapScale: 7, clickIntervalMs: 100 });
+      await rig.service.start();
+      await expect.poll(() => stats(rig).previewed, soon).toBe(1);
+      await leaderLeaves(rig);
+      rig.clock! += 3000;
+      await expect.poll(() => stats(rig).teleports, soon).toBe(1);
+      rig.scene.confirm = DIALOG;
+      rig.clock! += 250;
+      await expect.poll(() => stats(rig).confirms, soon).toBe(1);
+      expect(rig.attempts).toEqual([]);
+      expect(ops(rig.input)).toEqual(["ping"]);
+      expect(stats(rig)).toMatchObject({ clicks: 0, previewed: 3, teleports: 1, confirms: 1 });
+      expect(rig.traces.at(-1)).toMatchObject({ decisionRule: "confirm-teleport", result: "blocked", input: { text: "confirm" }, reason: expect.stringContaining("safety=dry-run") });
+      await expect.poll(() => [...rig.reasons], soon).toContain("Preview only: would confirm the teleport to Main.");
+    });
   });
 });
 

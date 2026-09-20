@@ -43,6 +43,19 @@ ExpectParty 25 720 'Click outside the party frame area'    # below the frame, to
 ExpectParty 90 336 'Click outside the party frame area'    # right of the measured-clear column
 ExpectParty -1 336 'Click outside the party frame area'
 ExpectParty 1280 720 'Click outside the party frame area'  # the party area cannot reach the movement disc
+function ExpectConfirm($x, $y, $error) { $check = [FollowInput]::Check($x, $y, 2560, 1440, 10, 120, 'confirm'); if ($null -eq $error) { if (-not $check.Ok) { throw "Confirm click $x,$y should be accepted: $($check.Error)" } } elseif ($check.Ok -or $check.Error -ne $error) { throw "Confirm click $x,$y expected '$error' but got ok=$($check.Ok) '$($check.Error)'" } }
+ExpectConfirm 1732 764 $null                           # the OK button's centre, measured at x 1595..1870, y 728..800
+ExpectConfirm 1595 728 $null
+ExpectConfirm 1870 800 $null
+ExpectConfirm 948 764 'Click outside the confirm dialog area'   # CANCEL: the one click this area exists to make impossible
+ExpectConfirm 1280 720 'Click outside the confirm dialog area'  # the view centre, under the dialog's text
+ExpectConfirm 1732 900 'Click outside the confirm dialog area'
+ExpectConfirm 1732 600 'Click outside the confirm dialog area'
+ExpectConfirm 2048 764 'Click outside the confirm dialog area'
+ExpectConfirm 25 336 'Click outside the confirm dialog area'    # never the party frame
+if (([FollowInput]::Check(1732, 764, 2560, 1440, 10, 120, 'move')).Error -ne 'Click outside the safe movement area') { throw 'The OK button is 454 px out: a movement click must not reach it' }
+if (([FollowInput]::Check(1732, 764, 2560, 1440, 10, 120, 'party')).Error -ne 'Click outside the party frame area') { throw 'A party click must not borrow the confirm area' }
+if (([FollowInput]::Check(1732, 764, 2560, 1440, 10, 120, 'confirmation')).Error -ne 'Unknown click area') { throw 'Only the exact area name confirm may click OK' }
 if (([FollowInput]::Check(25, 336, 2560, 1440, 10, 120, 'move')).Error -ne 'Click outside the safe movement area') { throw 'A movement click must not borrow the party area' }
 if (([FollowInput]::Check(25, 336, 2560, 1440, 10, 120, 'loot')).Error -ne 'Click outside the loot area') { throw 'A loot click must not borrow the party area' }
 if (([FollowInput]::Check(25, 336, 2560, 1440, 10, 120, 'partyframe')).Error -ne 'Unknown click area') { throw 'Only the exact area name party may click the travel button' }
@@ -65,6 +78,9 @@ ExpectRefusal { [FollowInput]::MoveClick(1280, 720, '0', 2560, 1440, [FollowInpu
 # An accepted party click cannot be tested here: it would move the cursor and press the button. A refused one is the
 # most that can run natively, and the rectangle itself is covered by ExpectParty above and the source checks below.
 ExpectRefusal { [FollowInput]::MoveClick(1280, 720, '0', 2560, 1440, [FollowInput]::QpcMs(), 120, 'party') } 'Click outside the party frame area'
+# Same for the confirmation's OK button: an accepted click cannot run here, so the refusal at CANCEL's own
+# coordinates is what is checked natively, with the rectangle itself covered by ExpectConfirm above.
+ExpectRefusal { [FollowInput]::MoveClick(948, 764, '0', 2560, 1440, [FollowInput]::QpcMs(), 120, 'confirm') } 'Click outside the confirm dialog area'
 if (-not [FollowInput]::HumanStillActive($true, 5000)) { throw 'A cursor that moved again is still under manual control' }
 if (-not [FollowInput]::HumanStillActive($false, 999)) { throw 'A cursor must rest for a full second before following resumes' }
 if ([FollowInput]::HumanStillActive($false, 1000)) { throw 'A rested cursor hands control back' }
@@ -79,6 +95,9 @@ if ($source -notmatch 'GetAncestor\(WindowFromPoint\(cursor\), 2\) != window') {
 # The party box: tight enough that a mis-aimed click reaches nothing else, and checked before the unknown-area refusal.
 if ($source -notmatch 'if \(x < 0 \|\| y < Math\.Round\(viewHeight \* 0\.16\) \|\| x >= Math\.Round\(viewWidth \* 0\.035\) \|\| y >= Math\.Round\(viewHeight \* 0\.50\)\)') { throw 'The party area must be the measured top-left rectangle' }
 if ($source -notmatch '(?s)if \(area == "party"\) \{.*?if \(area != "move"\) \{ result\.Error = "Unknown click area"') { throw 'The party area must be matched by exact name, before unknown areas are refused' }
+# The confirm box: tight around OK, and structurally unable to hold CANCEL at 0.3703w since it starts at 0.61w.
+if ($source -notmatch 'if \(x < Math\.Round\(viewWidth \* 0\.61\) \|\| y < Math\.Round\(viewHeight \* 0\.49\) \|\| x >= Math\.Round\(viewWidth \* 0\.745\) \|\| y >= Math\.Round\(viewHeight \* 0\.57\)\)') { throw 'The confirm area must be the measured box around the OK button' }
+if ($source -notmatch '(?s)if \(area == "confirm"\) \{.*?if \(area != "move"\) \{ result\.Error = "Unknown click area"') { throw 'The confirm area must be matched by exact name, before unknown areas are refused' }
 foreach ($forbidden in @('CopyFromScreen', 'BitBlt', 'keybd_event', 'SetWindowsHookEx', 'SetForegroundWindow', 'PostMessage')) {
   if ($source -match "\b$forbidden\b") { throw "Movement host must not reference $forbidden" }
 }
