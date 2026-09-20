@@ -39,6 +39,8 @@ const FRAME_MAX_AGE_MS = 120, MANUAL_PAUSE_MS = 1500, ACTIONS_PER_MINUTE = 600, 
 const SPRINT_START_PX = 70, SPRINT_STOP_PX = 40;
 // A loot click lands this long after the scan that found the label; a label seen sliding across two scans is led by that much.
 const LOOT_LEAD_MS = 70, LOOT_SAME_LABEL_PX = 120, LOOT_STEADY_PX = 4;
+/** How long the character is left alone to walk to an item it clicked, before following wins again. */
+const LOOT_COLLECT_MS = 3000;
 const RELEASE_ATTEMPTS = 240, RELEASE_RETRY_MS = 250;
 /** How far behind the leader looting still happens, in leashes: beyond that, catching up is all that matters. */
 const LOOT_CHASE_LEASHES = 2;
@@ -223,6 +225,7 @@ export class FollowerDriveService {
     this.running = true; this.reason = "Starting capture and input workers…";
     this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0 }; this.sprinting = false; this.startedAt = this.now();
     let manualUntil = -Infinity, pauseReason = "", wasNear = false, lastLootScanAt = -Infinity, lootSeen: { x: number; y: number; at: number } | undefined;
+    let collecting: { at: number; labels: number } | undefined;
     const odometry = new MapOdometry(), trail = new LeaderTrail(), watch = { ...odometryWindow(tracker.origin, calibration.view), channel: ODOMETRY_CHANNEL, threshold: ODOMETRY_THRESHOLD };
     const terrain = new TerrainPlanner(), terrainArea = terrainWindow(tracker.origin, calibration.view);
     let plan: (TerrainPlan & { at: number }) | undefined, lastPlanAt = -Infinity, sprinting = false, planning = false;
@@ -330,6 +333,7 @@ export class FollowerDriveService {
               lootSeen = centre && { ...centre, at: scanAt };
               const still = moved.tracked && Math.hypot(moved.dx, moved.dy) * scale <= LOOT_STEADY_PX;
               const drift = centre && before && scanAt - before.at <= 2 * LOOT_SCAN_MS + 100 && Math.hypot(centre.x - before.x, centre.y - before.y) <= LOOT_SAME_LABEL_PX ? { x: (centre.x - before.x) / (scanAt - before.at), y: (centre.y - before.y) / (scanAt - before.at) } : undefined;
+              if (collecting && labels.length < collecting.labels) collecting = undefined;   // one fewer label: it was picked up
               if (choice.kind === "loot" && choice.label && (drift || still)) {
                 const steady = !drift || Math.hypot(drift.x, drift.y) * (scanAt - before!.at) <= LOOT_STEADY_PX;
                 const x = steady ? centre!.x : Math.min(area.x + area.width - 1, Math.max(area.x, Math.round(centre!.x + drift!.x * LOOT_LEAD_MS))), y = steady ? centre!.y : Math.min(area.y + area.height - 1, Math.max(area.y, Math.round(centre!.y + drift!.y * LOOT_LEAD_MS)));
@@ -340,14 +344,17 @@ export class FollowerDriveService {
                 const outcome = await execute("loot", "pick-up-nearest-label", choice.reason, x, y, choice.label.confidence, process, allowed,
                   JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, label: choice.label, click: { x, y }, labelsInView: labels.length, leaderDistance: distance }), true, LOOT_MIN_CONFIDENCE);
                 if (outcome === "stopped") return;
-                if (outcome === "emitted" || outcome === "previewed") { loot.committed(labels.length, this.now()); this.counts.lootClicks++; if (outcome === "emitted") this.counts.clicks++; else this.counts.previewed++; }
+                if (outcome === "emitted" || outcome === "previewed") { loot.committed(labels.length, this.now()); collecting = { at: this.now(), labels: labels.length }; this.counts.lootClicks++; if (outcome === "emitted") this.counts.clicks++; else this.counts.previewed++; }
               }
               // Hold only for a label being acted on: a backoff or an empty scan must not interrupt following (or drop the sprint) four times a second.
               if (choice.label) decision = { kind: "hold", reason: choice.reason, distance };
             }
           }
-          // While the character walks to an item, do not pull it back toward the leader.
-          else if (canLoot && loot.busy(this.now()) && decision.kind === "move") decision = { kind: "hold", reason: "Walking to a loot pickup.", distance };
+          // Walking to an item takes longer than the gap between movement clicks, so pulling back toward the
+          // leader after one loot click's pacing interval cancelled the walk and the item was never picked up.
+          // Movement stays off until the label count drops (it was collected) or the walk has plainly failed.
+          if (collecting && this.now() - collecting.at > LOOT_COLLECT_MS) collecting = undefined;
+          if (canLoot && collecting && decision.kind === "move") decision = { kind: "hold", reason: "Walking to a loot pickup.", distance };
           this.decision = decision; this.reason = decision.reason;
           // Sprint while far behind and actually heading somewhere; let go for loot, manual control, arrival, or anything unsure.
           const heading = decision.kind === "move" || (decision.kind === "hold" && decision.reason === "Pacing movement clicks.");

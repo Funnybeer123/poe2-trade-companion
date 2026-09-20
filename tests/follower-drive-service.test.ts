@@ -1406,6 +1406,31 @@ describe("follow drive loot clicks (SYNTHETIC label runs and hosts: a 'click' is
     expect(clicksIn(rig, "move")).toHaveLength(6);
     expect([...rig.reasons]).not.toContain("No loot labels in view.");
   });
+  it("leaves the character alone to walk to an item it clicked, and follows again the moment the item is gone", async () => {
+    // Walking to an item takes longer than the gap between movement clicks, so a movement click sent while it
+    // walks cancels the walk and the item is never picked up. That was the live failure.
+    const rig = await lootRig(360_000, { followDistance: 2 }), label: LootRect = { x: ORIGIN.x + 100, y: ORIGIN.y - 73, width: 81, height: 21 };
+    rig.scene.leader = { dx: 40, dy: 0 };   // well beyond the stop distance: movement clicks are due every tick
+    rig.scene.loot = [label];
+    await rig.service.start();
+    await expect.poll(() => stats(rig).lootScans, soon).toBe(1);
+    await nextScan(rig);
+    expect(clicksIn(rig, "loot")).toHaveLength(1);
+    const moves = clicksIn(rig, "move").length;
+    for (let scan = 0; scan < 4; scan++) {
+      await nextScan(rig);
+      expect(clicksIn(rig, "move").length).toBe(moves);
+      expect(rig.service.status().decision?.kind).toBe("hold");
+    }
+    // Between scans the hold is the walk itself, not the planner talking about the label.
+    await cycles(rig, 2);
+    expect(rig.service.status().decision).toMatchObject({ kind: "hold", reason: "Walking to a loot pickup." });
+    // Picked up: one fewer label, and the leader is worth chasing again on the very next scan.
+    rig.scene.loot = [];
+    await nextScan(rig);
+    await cycles(rig, 3);
+    expect(clicksIn(rig, "move").length).toBeGreaterThan(moves);
+  });
   it("keeps sending movement clicks while loot is backing off after five fruitless pickups", async () => {
     const rig = await lootRig(350_000, { followDistance: 2 });
     rig.scene.leader = { dx: 40, dy: 0 };
@@ -1417,6 +1442,11 @@ describe("follow drive loot clicks (SYNTHETIC label runs and hosts: a 'click' is
     expect(stats(rig)).toMatchObject({ lootScans: 12, lootClicks: 5 });
     expect(clicksIn(rig, "loot")).toHaveLength(5);
     const moves = clicksIn(rig, "move").length;
+    // A clicked item is left alone for up to 3 s to be walked to. The inventory is full, so nothing is
+    // collected, the wait lapses, and following wins again.
+    expect(rig.service.status().decision).toMatchObject({ kind: "hold", reason: "Walking to a loot pickup." });
+    rig.clock! += 3000;
+    await cycles(rig, 3);
     for (let step = 1; step <= 3; step++) {
       await nextScan(rig);
       expect(clicksIn(rig, "move").length).toBeGreaterThanOrEqual(moves + step);
