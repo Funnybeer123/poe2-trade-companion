@@ -10,6 +10,7 @@ export * from "./scanRules.js";
 export * from "./ruleDiagnostics.js";
 export * from "./searchRegex.js";
 export * from "./buildProfiles.js";
+export * from "./buildProfileCatalog.js";
 export * from "./gearTargetMatcher.js";
 export * from "./tradeQueryImport.js";
 export * from "./legacyImports.js";

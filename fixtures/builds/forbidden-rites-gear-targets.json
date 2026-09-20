@@ -1,0 +1,1931 @@
+{
+  "schemaVersion": 1,
+  "kind": "poe2-build-profile-catalog",
+  "league": "Forbidden Rites",
+  "patch": "0.5.5b",
+  "curatedAt": "2026-09-20",
+  "tradeBaseUrl": "https://www.pathofexile.com/trade2/search/poe2/Forbidden%20Rites",
+  "notes": [
+    "Compatible with createBuildProfile / GearTarget in src/core/buildProfiles.ts.",
+    "statRules.stat strings are matched token-wise against item mod text (see gearTargetMatcher).",
+    "Asking-price estimates only; not affiliated with Grinding Gear Games.",
+    "Hard cap for light-radius profile: 150% increased Light Radius."
+  ],
+  "avoidUniques": [
+    {
+      "name": "Veil of the Night",
+      "reason": "-40% light radius"
+    },
+    {
+      "name": "Forbidden Gaze",
+      "reason": "-25% light radius"
+    },
+    {
+      "name": "Darkray Vectors",
+      "reason": "-25% light radius"
+    },
+    {
+      "name": "Palm of the Dreamer",
+      "reason": "-23% light radius"
+    },
+    {
+      "name": "Black Sun Crest",
+      "reason": "-20% light radius"
+    },
+    {
+      "name": "Gloomform",
+      "reason": "-20% light radius"
+    },
+    {
+      "name": "The Deepest Tower",
+      "reason": "-10% light radius"
+    },
+    {
+      "name": "Grip of Kulemak",
+      "reason": "-20\u201330% light radius"
+    }
+  ],
+  "profiles": [
+    {
+      "id": "fr-light-radius-150",
+      "name": "Max Light Radius (150% cap)",
+      "league": "Forbidden Rites",
+      "sourceUrl": "https://www.poe2wiki.net/wiki/Light_Radius",
+      "tags": [
+        "utility",
+        "light-radius",
+        "forbidden-rites"
+      ],
+      "active": true,
+      "preferences": {
+        "exactMatchBoost": 25,
+        "nearMatchBoost": 10,
+        "preferredSlots": [
+          "helmet",
+          "amulet",
+          "ring",
+          "weapon",
+          "offhand"
+        ],
+        "preferredTags": [
+          "light-radius"
+        ]
+      },
+      "gearTargets": [
+        {
+          "searchKey": "unique:cornathaum",
+          "name": "Cornathaum",
+          "slot": "helmet",
+          "itemClass": "Helmets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "primary"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Cornathaum",
+              "type": "Heavy Crown"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Cornathaum",
+            "raw": {
+              "baseType": "Heavy Crown",
+              "quantityWanted": 1,
+              "note": "30% increased Light Radius; also rarity + XP"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 3,
+              "value": 30
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:eventide-petals",
+          "name": "Eventide Petals",
+          "slot": "amulet",
+          "itemClass": "Amulets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "primary"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Eventide Petals",
+              "type": "Veridical Chain"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Eventide Petals",
+            "raw": {
+              "baseType": "Veridical Chain",
+              "quantityWanted": 1,
+              "note": "Prefer top roll 50% (range 30-50)"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "between",
+              "required": true,
+              "weight": 5,
+              "min": 45,
+              "max": 50
+            },
+            {
+              "stat": "increased Light Radius",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:gifts-from-above",
+          "name": "Gifts from Above",
+          "slot": "ring",
+          "itemClass": "Rings",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "primary"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Gifts from Above",
+              "type": "Prismatic Ring"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Gifts from Above",
+            "raw": {
+              "baseType": "Prismatic Ring",
+              "quantityWanted": 2,
+              "note": "Buy two; prefer 30% roll (range 20-30)"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "between",
+              "required": true,
+              "weight": 4,
+              "min": 28,
+              "max": 30
+            },
+            {
+              "stat": "increased Light Radius",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 20
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:the-sentry",
+          "name": "The Sentry",
+          "slot": "weapon",
+          "itemClass": "Quarterstaves",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "2h-path"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "The Sentry",
+              "type": "Gothic Quarterstaff"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/The Sentry",
+            "raw": {
+              "baseType": "Gothic Quarterstaff",
+              "quantityWanted": 1,
+              "note": "30% 2h path"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 3,
+              "value": 30
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:guiding-palm-of-the-heart",
+          "name": "Guiding Palm of the Heart",
+          "slot": "weapon",
+          "itemClass": "Sceptres",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "1h-path"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Guiding Palm of the Heart",
+              "type": "Shrine Sceptre"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Guiding Palm of the Heart",
+            "raw": {
+              "baseType": "Shrine Sceptre",
+              "quantityWanted": 1,
+              "note": "25% fire; 1h+focus path"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 3,
+              "value": 25
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:guiding-palm-of-the-eye",
+          "name": "Guiding Palm of the Eye",
+          "slot": "weapon",
+          "itemClass": "Sceptres",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "1h-path"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Guiding Palm of the Eye",
+              "type": "Shrine Sceptre"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Guiding Palm of the Eye",
+            "raw": {
+              "baseType": "Shrine Sceptre",
+              "quantityWanted": 1,
+              "note": "25% cold"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 3,
+              "value": 25
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:guiding-palm-of-the-mind",
+          "name": "Guiding Palm of the Mind",
+          "slot": "weapon",
+          "itemClass": "Sceptres",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "1h-path"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Guiding Palm of the Mind",
+              "type": "Shrine Sceptre"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Guiding Palm of the Mind",
+            "raw": {
+              "baseType": "Shrine Sceptre",
+              "quantityWanted": 1,
+              "note": "25% lightning"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 3,
+              "value": 25
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:threaded-light",
+          "name": "Threaded Light",
+          "slot": "offhand",
+          "itemClass": "Foci",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "1h-path"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Threaded Light",
+              "type": "Woven Focus"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Threaded Light",
+            "raw": {
+              "baseType": "Woven Focus",
+              "quantityWanted": 1,
+              "note": "20% focus"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 3,
+              "value": 20
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:radiant-grief",
+          "name": "Radiant Grief",
+          "slot": "helmet",
+          "itemClass": "Helmets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "swap"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Radiant Grief",
+              "type": "Lace Hood"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Radiant Grief",
+            "raw": {
+              "baseType": "Lace Hood",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 2,
+              "value": 30
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:corona-of-the-red-sun",
+          "name": "Corona of the Red Sun",
+          "slot": "helmet",
+          "itemClass": "Helmets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "swap"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Corona of the Red Sun",
+              "type": "Warrior Greathelm"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Corona of the Red Sun",
+            "raw": {
+              "baseType": "Warrior Greathelm",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 2,
+              "value": 25
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:solus-ipse",
+          "name": "Solus Ipse",
+          "slot": "helmet",
+          "itemClass": "Helmets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "swap"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Solus Ipse",
+              "type": "Grand Visage"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Solus Ipse",
+            "raw": {
+              "baseType": "Grand Visage",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 2,
+              "value": 25
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:beacon-of-azis",
+          "name": "Beacon of Azis",
+          "slot": "amulet",
+          "itemClass": "Amulets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "swap"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Beacon of Azis",
+              "type": "Solar Amulet"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Beacon of Azis",
+            "raw": {
+              "baseType": "Solar Amulet",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 2,
+              "value": 30
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:igniferis",
+          "name": "Igniferis",
+          "slot": "amulet",
+          "itemClass": "Amulets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "swap"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Igniferis",
+              "type": "Crimson Amulet"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Igniferis",
+            "raw": {
+              "baseType": "Crimson Amulet",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 2,
+              "value": 25
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:sire-of-shards",
+          "name": "Sire of Shards",
+          "slot": "weapon",
+          "itemClass": "Staves",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "swap"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Sire of Shards",
+              "type": "Chiming Staff"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Sire of Shards",
+            "raw": {
+              "baseType": "Chiming Staff",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "eq",
+              "required": true,
+              "weight": 2,
+              "value": 20
+            }
+          ]
+        },
+        {
+          "searchKey": "unique:shyaba",
+          "name": "Shyaba",
+          "slot": "weapon",
+          "itemClass": "Two Hand Maces",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "light-radius",
+            "swap"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Shyaba",
+              "type": "Temple Maul"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Shyaba",
+            "raw": {
+              "baseType": "Temple Maul",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "between",
+              "required": true,
+              "weight": 2,
+              "min": 15,
+              "max": 25
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:ring:rare-of-the-hearth-(15%-light-radius)",
+          "name": "Rare of the Hearth (15% Light Radius)",
+          "slot": "ring",
+          "itemClass": "Rings",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "light-radius",
+            "fallback"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/ring"
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 15
+            },
+            {
+              "stat": "mana regeneration",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:helmet:rare-of-radiance-(15%-light-radius)",
+          "name": "Rare of Radiance (15% Light Radius)",
+          "slot": "helmet",
+          "itemClass": "Helmets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "light-radius",
+            "fallback"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/helmet"
+          },
+          "statRules": [
+            {
+              "stat": "increased Light Radius",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 15
+            },
+            {
+              "stat": "accuracy",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fr-universal-chase-rares",
+      "name": "Universal chase rares (Forbidden Rites)",
+      "league": "Forbidden Rites",
+      "tags": [
+        "meta",
+        "rare",
+        "universal"
+      ],
+      "active": true,
+      "preferences": {
+        "exactMatchBoost": 18,
+        "nearMatchBoost": 8,
+        "preferredSlots": [
+          "boots",
+          "ring",
+          "amulet",
+          "body"
+        ]
+      },
+      "gearTargets": [
+        {
+          "searchKey": "rare:boots:meta-boots-(ms-+-life-+-dual-res)",
+          "name": "Meta boots (MS + life + dual res)",
+          "slot": "boots",
+          "itemClass": "Boots",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/boots"
+          },
+          "statRules": [
+            {
+              "stat": "Movement Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 30
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 80
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:ring:life-+-resistance-ring",
+          "name": "Life + resistance ring",
+          "slot": "ring",
+          "itemClass": "Rings",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/ring"
+          },
+          "statRules": [
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 40
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "all Elemental Resistances",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 10
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:body:life-body-(post-es-nerf)",
+          "name": "Life body (post-ES-nerf)",
+          "slot": "body",
+          "itemClass": "Body Armours",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "life"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/body"
+          },
+          "statRules": [
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 150
+            },
+            {
+              "stat": "maximum Mana",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 30
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fr-hollow-form-whirling-assault",
+      "name": "Hollow Form Whirling Assault Martial Artist",
+      "league": "Forbidden Rites",
+      "sourceUrl": "https://maxroll.gg/poe2/build-guides/hollow-form-whirling-assault-martial-artist-build-guide",
+      "tags": [
+        "meta",
+        "s-tier",
+        "martial-artist",
+        "mapping"
+      ],
+      "active": true,
+      "gearTargets": [
+        {
+          "searchKey": "unique:lochtonial-caress",
+          "name": "Lochtonial Caress",
+          "slot": "gloves",
+          "itemClass": "Gloves",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta",
+            "cheap"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Lochtonial Caress",
+              "type": "Tempered Mitts"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Lochtonial Caress",
+            "raw": {
+              "baseType": "Tempered Mitts",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "unique:ingenuity",
+          "name": "Ingenuity",
+          "slot": "belt",
+          "itemClass": "Belts",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta",
+            "budget"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Ingenuity",
+              "type": "Utility Belt"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Ingenuity",
+            "raw": {
+              "baseType": "Utility Belt",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "unique:headhunter",
+          "name": "Headhunter",
+          "slot": "belt",
+          "itemClass": "Belts",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta",
+            "expensive"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Headhunter",
+              "type": "Heavy Belt"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Headhunter",
+            "raw": {
+              "baseType": "Heavy Belt",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "unique:mageblood",
+          "name": "Mageblood",
+          "slot": "belt",
+          "itemClass": "Belts",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta",
+            "chase"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Mageblood",
+              "type": "Utility Belt"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Mageblood",
+            "raw": {
+              "baseType": "Utility Belt",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        }
+      ]
+    },
+    {
+      "id": "fr-twister-deadeye",
+      "name": "Twister Spirit Walker / Deadeye",
+      "league": "Forbidden Rites",
+      "sourceUrl": "https://maxroll.gg/poe2/build-guides/twister-deadeye-build-guide",
+      "tags": [
+        "meta",
+        "s-tier",
+        "deadeye",
+        "mapping"
+      ],
+      "active": true,
+      "gearTargets": [
+        {
+          "searchKey": "unique:skysliver",
+          "name": "Skysliver",
+          "slot": "weapon",
+          "itemClass": "Spears",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Skysliver",
+              "type": "Winged Spear"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Skysliver",
+            "raw": {
+              "baseType": "Winged Spear",
+              "quantityWanted": 1,
+              "note": "Fast spear upgrade path"
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "unique:tangletongue",
+          "name": "Tangletongue",
+          "slot": "weapon",
+          "itemClass": "Spears",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Tangletongue",
+              "type": "Forked Spear"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Tangletongue",
+            "raw": {
+              "baseType": "Forked Spear",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "unique:the-ordained",
+          "name": "The Ordained",
+          "slot": "weapon",
+          "itemClass": "Spears",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "The Ordained",
+              "type": "Grand Spear"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/The Ordained",
+            "raw": {
+              "baseType": "Grand Spear",
+              "quantityWanted": 1,
+              "note": "Crit spear endgame"
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "unique:wake-of-destruction",
+          "name": "Wake of Destruction",
+          "slot": "boots",
+          "itemClass": "Boots",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Wake of Destruction",
+              "type": "Secured Leggings"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Wake of Destruction",
+            "raw": {
+              "baseType": "Secured Leggings",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "rare:amulet:spirit-amulet-(twister)",
+          "name": "Spirit amulet (Twister)",
+          "slot": "amulet",
+          "itemClass": "Amulets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "meta",
+            "spirit"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "type": "Solar Amulet"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/amulet"
+          },
+          "statRules": [
+            {
+              "stat": "Spirit",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 60
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 80
+            },
+            {
+              "stat": "all Elemental Resistances",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 12
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fr-spark-coc-comet-infernalist",
+      "name": "Spark CoC Comet Infernalist",
+      "league": "Forbidden Rites",
+      "sourceUrl": "https://mobalytics.gg/poe-2/builds/coc-spark-comet-recoup-infernalist-by-ignatius",
+      "tags": [
+        "meta",
+        "s-tier",
+        "infernalist",
+        "caster"
+      ],
+      "active": true,
+      "gearTargets": [
+        {
+          "searchKey": "unique:sacrosanctum",
+          "name": "Sacrosanctum",
+          "slot": "body",
+          "itemClass": "Body Armours",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Sacrosanctum",
+              "type": "Corvus Mantle"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Sacrosanctum",
+            "raw": {
+              "baseType": "Corvus Mantle",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "unique:maligaros-virtuosity",
+          "name": "Maligaro's Virtuosity",
+          "slot": "gloves",
+          "itemClass": "Gloves",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Maligaro's Virtuosity",
+              "type": "Fine Bracers"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Maligaro's Virtuosity",
+            "raw": {
+              "baseType": "Fine Bracers",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "unique:cowards-legacy",
+          "name": "Coward's Legacy",
+          "slot": "belt",
+          "itemClass": "Belts",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Coward's Legacy",
+              "type": "Mail Belt"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Coward's Legacy",
+            "raw": {
+              "baseType": "Mail Belt",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "rare:weapon:archmage-/-spark-wand",
+          "name": "Archmage / Spark wand",
+          "slot": "weapon",
+          "itemClass": "Wands",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "meta",
+            "caster"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/weapon"
+          },
+          "statRules": [
+            {
+              "stat": "Spell Damage",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 70
+            },
+            {
+              "stat": "Cast Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 15
+            },
+            {
+              "stat": "Level of all Lightning Spell Skills",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 3
+            },
+            {
+              "stat": "maximum Mana",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 80
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:offhand:caster-focus",
+          "name": "Caster focus",
+          "slot": "offhand",
+          "itemClass": "Foci",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "meta",
+            "caster"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/offhand"
+          },
+          "statRules": [
+            {
+              "stat": "Spell Damage",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 60
+            },
+            {
+              "stat": "maximum Mana",
+              "operator": "gte",
+              "required": true,
+              "weight": 2,
+              "value": 80
+            },
+            {
+              "stat": "Cast Speed",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 12
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "id": "fr-companion-huntress",
+      "name": "Companion Huntress / Spirit Walker Monkey",
+      "league": "Forbidden Rites",
+      "sourceUrl": "https://www.aoeah.com/news/4769--poe-2-best-055-builds-tier-list-forbidden-rites-league",
+      "tags": [
+        "meta",
+        "huntress",
+        "companion"
+      ],
+      "active": true,
+      "gearTargets": [
+        {
+          "searchKey": "unique:headhunter",
+          "name": "Headhunter",
+          "slot": "belt",
+          "itemClass": "Belts",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta",
+            "expensive"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Headhunter",
+              "type": "Heavy Belt"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Headhunter",
+            "raw": {
+              "baseType": "Heavy Belt",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "exchange:uncut-spirit-gem-20",
+          "name": "Uncut Spirit Gem (Level 20)",
+          "slot": "gem",
+          "league": "Forbidden Rites",
+          "tags": [
+            "exchange",
+            "meta",
+            "gem"
+          ],
+          "statRules": [
+            {
+              "stat": "Level",
+              "operator": "eq",
+              "required": true,
+              "weight": 2,
+              "value": 20
+            }
+          ],
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "exchange/uncut-spirit-20"
+          }
+        },
+        {
+          "searchKey": "exchange:uncut-skill-gem-20",
+          "name": "Uncut Skill Gem (Level 20)",
+          "slot": "gem",
+          "league": "Forbidden Rites",
+          "tags": [
+            "exchange",
+            "meta",
+            "gem"
+          ],
+          "statRules": [
+            {
+              "stat": "Level",
+              "operator": "eq",
+              "required": true,
+              "weight": 2,
+              "value": 20
+            }
+          ],
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "exchange/uncut-skill-20"
+          }
+        },
+        {
+          "searchKey": "exchange:perfect-jewellers",
+          "name": "Perfect Jeweller's Orb",
+          "slot": "craft",
+          "league": "Forbidden Rites",
+          "tags": [
+            "exchange",
+            "meta",
+            "craft"
+          ],
+          "statRules": [],
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "exchange/perfect-jewellers"
+          }
+        }
+      ]
+    },
+    {
+      "id": "fr-ice-shot-deadeye",
+      "name": "Ice Shot Deadeye",
+      "league": "Forbidden Rites",
+      "sourceUrl": "https://nexttier.pro/guide/poe2-ice-shot-deadeye-build-guide",
+      "tags": [
+        "meta",
+        "deadeye",
+        "bow",
+        "mapping"
+      ],
+      "active": true,
+      "gearTargets": [
+        {
+          "searchKey": "unique:headhunter",
+          "name": "Headhunter",
+          "slot": "belt",
+          "itemClass": "Belts",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta",
+            "expensive"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Headhunter",
+              "type": "Heavy Belt"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Headhunter",
+            "raw": {
+              "baseType": "Heavy Belt",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "unique:hyrris-ire",
+          "name": "Hyrri's Ire",
+          "slot": "body",
+          "itemClass": "Body Armours",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Hyrri's Ire",
+              "type": "Armoured Vest"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Hyrri's Ire",
+            "raw": {
+              "baseType": "Armoured Vest",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "unique:cadiros-gambit",
+          "name": "Cadiro's Gambit",
+          "slot": "quiver",
+          "itemClass": "Quivers",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Cadiro's Gambit",
+              "type": "Primed Quiver"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Cadiro's Gambit",
+            "raw": {
+              "baseType": "Primed Quiver",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "unique:heart-of-the-well",
+          "name": "Heart of the Well",
+          "slot": "jewel",
+          "itemClass": "Jewels",
+          "league": "Forbidden Rites",
+          "tags": [
+            "unique",
+            "meta"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              },
+              "name": "Heart of the Well",
+              "type": "Diamond"
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "trade-query",
+            "sourceKey": "forbidden-rites/Heart of the Well",
+            "raw": {
+              "baseType": "Diamond",
+              "quantityWanted": 1,
+              "note": null
+            }
+          },
+          "statRules": []
+        },
+        {
+          "searchKey": "rare:weapon:ice-shot-/-projectile-bow",
+          "name": "Ice Shot / Projectile bow",
+          "slot": "weapon",
+          "itemClass": "Bows",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "meta",
+            "bow"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/weapon"
+          },
+          "statRules": [
+            {
+              "stat": "increased Physical Damage",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 100
+            },
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 20
+            },
+            {
+              "stat": "Additional Arrow",
+              "operator": "exists",
+              "required": true,
+              "weight": 5
+            },
+            {
+              "stat": "Level of all Projectile Skills",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 2
+            },
+            {
+              "stat": "Lightning damage",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:quiver:onslaught-/-elemental-quiver",
+          "name": "Onslaught / elemental quiver",
+          "slot": "quiver",
+          "itemClass": "Quivers",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "meta",
+            "quiver"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/quiver"
+          },
+          "statRules": [
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 12
+            },
+            {
+              "stat": "Onslaught",
+              "operator": "exists",
+              "required": false,
+              "weight": 4
+            },
+            {
+              "stat": "Lightning damage",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

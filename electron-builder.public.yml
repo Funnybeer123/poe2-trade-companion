@@ -4,6 +4,7 @@ files:
   - dist/**
   - dist-electron/**
   - fixtures/market/quotes.json
+  - fixtures/builds/forbidden-rites-gear-targets.json
 extraMetadata:
   poe2BuildMode: public-companion
 win:
