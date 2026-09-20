@@ -1,3 +1,4 @@
+export * from "./buildProfileCatalog.js";
 export * from "./database.js";
 export * from "./exporter.js";
 export * from "./json.js";

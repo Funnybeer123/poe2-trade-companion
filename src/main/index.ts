@@ -45,7 +45,12 @@ import {
   saveVoiceTransferConfig,
 } from "./voiceTransferSettings.js";
 import { ITEM_INTELLIGENCE_IPC_VERSION, type ParsedItemEvaluation } from "../shared/ipc.js";
-import { openLocalPersistence, type LocalPersistenceDatabase } from "./persistence/index.js";
+import {
+  FORBIDDEN_RITES_GEAR_CATALOG_RELATIVE_PATH,
+  resolveBuildProfileCatalogPath,
+  openLocalPersistence,
+  type LocalPersistenceDatabase,
+} from "./persistence/index.js";
 import { ItemIntelligenceService } from "./itemIntelligenceService.js";
 import { PriceFeedService, type PriceFeedConfig } from "./priceFeedService.js";
 import { registerItemIntelligenceIpc } from "./itemIntelligenceIpc.js";
@@ -94,6 +99,13 @@ function sizeDatabaseFile(): string {
     path.join(app.getAppPath(), "fixtures", "item-sizes", "item-sizes.json"),
   ];
   return candidates.find((file) => existsSync(file)) ?? candidates[0];
+}
+
+function forbiddenRitesCatalogFile(): string {
+  return resolveBuildProfileCatalogPath(FORBIDDEN_RITES_GEAR_CATALOG_RELATIVE_PATH, [
+    process.cwd(),
+    app.getAppPath(),
+  ]);
 }
 
 async function evaluateItemText(
@@ -353,6 +365,7 @@ app.whenReady().then(() => {
       }
     },
   });
+  itemIntelligenceService.seedBundledBuildProfileCatalog(forbiddenRitesCatalogFile());
   priceFeedService = new PriceFeedService({
     configDir: memoryRoot,
     getPriceTable: () => itemIntelligenceService!.getPriceTable(),

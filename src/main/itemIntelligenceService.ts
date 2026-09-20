@@ -5,6 +5,10 @@ import {
   validateBuildProfile,
   type BuildProfile,
 } from "../core/buildProfiles.js";
+import {
+  FORBIDDEN_RITES_GEAR_CATALOG_RELATIVE_PATH,
+  type AvoidUnique,
+} from "../core/buildProfileCatalog.js";
 import { validateRuleRegex, type ScanHistoryItem } from "../core/scanRules.js";
 import {
   buildSearchRegex,
@@ -55,7 +59,12 @@ import {
 import {
   exportIntelligenceData,
   importLegacyData,
+  FORBIDDEN_RITES_CATALOG_SETTING_KEY,
+  resolveBuildProfileCatalogPath,
+  seedBuildProfileCatalogFromJson,
+  seedForbiddenRitesGearCatalog,
   type LocalPersistenceDatabase,
+  type SeedBuildProfileCatalogResult,
 } from "./persistence/index.js";
 
 const MAX_RULES_PER_SET = 1_000;
@@ -405,6 +414,52 @@ export class ItemIntelligenceService {
         ...imported.warnings,
       ],
     };
+  }
+
+  importBuildProfileCatalog(sourceText: string): SeedBuildProfileCatalogResult {
+    if (typeof sourceText !== "string" || !sourceText.trim()) {
+      throw new Error("build-profile-catalog-source-text-required");
+    }
+    const result = seedBuildProfileCatalogFromJson(
+      this.options.persistence,
+      sourceText,
+      { now: this.now() },
+    );
+    if (result.addedProfileIds.length > 0) this.publishBuilds();
+    return result;
+  }
+
+  seedBundledBuildProfileCatalog(
+    filePath?: string,
+  ): SeedBuildProfileCatalogResult {
+    const resolved =
+      filePath ??
+      resolveBuildProfileCatalogPath(FORBIDDEN_RITES_GEAR_CATALOG_RELATIVE_PATH);
+    const result = seedForbiddenRitesGearCatalog(
+      this.options.persistence,
+      resolved,
+      { now: this.now() },
+    );
+    if (result.addedProfileIds.length > 0) this.publishBuilds();
+    return result;
+  }
+
+  listCatalogAvoidUniques(): AvoidUnique[] {
+    const stored = this.options.persistence.settings.get(
+      FORBIDDEN_RITES_CATALOG_SETTING_KEY,
+    );
+    const value = stored?.value;
+    if (
+      typeof value === "object" &&
+      value !== null &&
+      Array.isArray((value as { avoidUniques?: unknown }).avoidUniques)
+    ) {
+      return (value as { avoidUniques: AvoidUnique[] }).avoidUniques.filter(
+        (entry) =>
+          typeof entry?.name === "string" && typeof entry?.reason === "string",
+      );
+    }
+    return [];
   }
 
   importLegacy(request: LegacyImportRequest): LegacyImportResult {

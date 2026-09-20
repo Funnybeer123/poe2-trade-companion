@@ -6,6 +6,7 @@ files:
   - dist/**
   - dist-electron/**
   - fixtures/market/quotes.json
+  - fixtures/builds/forbidden-rites-gear-targets.json
   - scripts/win-input-host.ps1
 extraMetadata:
   poe2BuildMode: authorized-qa
