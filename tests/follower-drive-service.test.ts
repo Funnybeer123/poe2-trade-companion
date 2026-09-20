@@ -1827,10 +1827,11 @@ describe("follow drive aim source (SYNTHETIC blue outline pixels for odometry an
       plans++; worstSearched = Math.max(worstSearched, terrain.searched); worstPlanMs = Math.max(worstPlanMs, terrain.planMs);
     }
     expect(plans).toBe(40);
-    // The scene really is searched (it is not being thrown out by the wall-fraction guard) …
+    // The scene really is searched rather than thrown out by the wall-fraction guard, and each plan settles
+    // a cell at most once: the structure that grew cannot grow again.
     expect(worstSearched).toBeGreaterThan(500);
-    // … and every plan settles a cell at most once: the structure that grew cannot grow again.
     expect(worstSearched).toBeLessThanOrEqual(cells);
+    // Under the search's own 120 ms clock budget, so a plan can never hold the 50 ms tick loop for long.
     expect(worstPlanMs).toBeLessThan(120);
     // Nothing of the 40 plans is kept: a runaway open list of ~160 M numbers was 1.3 GB.
     expect(process.memoryUsage().heapUsed - heapBefore).toBeLessThan(64 * 1024 * 1024);

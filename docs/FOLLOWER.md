@@ -190,6 +190,49 @@ overlay map already draws and plans before moving:
   bright scene, speckle) means the map is being misread: no plan. No path (leader sealed
   off on the map) also means no plan. Without a plan steering falls back to the
   leader's trail, then to the straight line with reactive wall-following.
+### The gigabyte and the freezes: an A* that never terminated
+
+Four live runs froze for tens of seconds at a time - 38.8 s, 79.1 s, 32.0 s,
+53.3 s in one 420 s run - with resident memory at 1.29 GB, while no single
+garbage collection took more than 81 ms. It was one call to `TerrainPlanner.plan`
+that did not terminate.
+
+Costs were held in a `Float32Array` while each relaxation was computed as a
+double: `stepCost` was compared against `cost[next]` as a double, then stored
+as its float32 rounding. Whenever that rounding rounds **up**, the stored value
+is strictly greater than the value just compared, so the identical relaxation
+passes the same test the next time its cell is expanded, and pushes onto the open
+list again. Measured on the reproducing scene: 99.9 % of 20 million pushes stored
+the same float32 value they had just compared against, one cell was expanded
+579,829 times, and the open list - a plain array - reached 10 million entries in
+1.8 seconds on its way to about 160 million, which is the gigabyte. The only exit
+was V8's array-length limit, and the `RangeError` was swallowed by the plan's own
+`catch`, so the loop simply tried again 250 ms later. Hence four separate freezes
+rather than one stop.
+
+It was shape-dependent, which is why short runs looked fine: an empty window, a
+speckled one and a densely walled one all planned in 6-37 ms. The gappy dotted
+outlines the map draws over its building models are what triggered it.
+
+Three changes, all in `plan`: costs are doubles; a `settled` array makes a cell
+expandable once, which is what bounds the search; and each queued entry carries
+the priority it was queued with, because a heap ordered through a key that is
+revised underneath it no longer returns its minimum. A clock budget caps any
+remaining pathological case at 120 ms and keeps the best route found by then, and
+`TerrainPlan.searched` reports how many cells were settled so a search that
+repeats itself is visible rather than silent.
+
+Measured after: the reproducing scene plans in under 500 ms with
+`searched <= cells`, and a 420 s live run held resident memory flat at 193-202 MB
+with no block longer than 1.1 s.
+
+A separate leak was fixed in the same commit and was **not** this: the worker
+transport kept stderr as `(lastStderr + chunk).slice(-2000)`, and a sliced string
+in V8 holds its parent, so "the last 2000 characters" kept the whole stream
+reachable. Real, worth fixing, and not what caused the freezes - a probe pushed
+3.3 GB of replies through the transport across 60,000 requests and 21 host
+rebuilds with the heap flat at 7 MB.
+
 - Priority of where to aim: the trail the leader actually walked, while following
   it has not bumped into anything; otherwise the terrain plan (cold start, new
   odometry epoch, or after a bump); then straight at the leader, which is also

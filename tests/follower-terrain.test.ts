@@ -12,6 +12,20 @@ function drawn(boxes: Box[], me: KeyPoint): KeyPoint[] {
   for (const b of boxes) { for (let x = b.x0; x <= b.x1; x++) { add(x, b.y0); add(x, b.y1); } for (let y = b.y0; y <= b.y1; y++) { add(b.x0, y); add(b.x1, y); } }
   return points;
 }
+/** The gappy outlines the map draws over its building models: long runs of wall pixels with a hole every 16. */
+function dottedOutlines(count: number): KeyPoint[] {
+  const next = ((seed: number) => () => (seed = seed * 48271 % 2147483647) / 2147483647)(2), points: KeyPoint[] = [];
+  while (points.length < count) {
+    let x = WINDOW.x + Math.floor(next() * WINDOW.width), y = WINDOW.y + Math.floor(next() * WINDOW.height);
+    const horizontal = next() < .5, length = 60 + Math.floor(next() * 400);
+    for (let i = 0; i < length && points.length < count; i++) {
+      if (i % 16 < 9) points.push({ x, y });
+      if (horizontal) x++; else y++;
+      if (x >= WINDOW.x + WINDOW.width || y >= WINDOW.y + WINDOW.height) break;
+    }
+  }
+  return points;
+}
 /** Walks toward the planner's aim (or straight at the leader when it has none) at 48 map px/s, clicking every 110 ms. */
 function simulate(solid: Box[], visible: Box[], start: KeyPoint, leader: KeyPoint, seconds: number) {
   const planner = new TerrainPlanner(), inside = (x: number, y: number) => solid.some(w => x > w.x0 && x < w.x1 && y > w.y0 && y < w.y1);
@@ -119,26 +133,23 @@ describe("terrain planner guards", () => {
     expect(plan.path.every(p => p.x >= WINDOW.x && p.y >= WINDOW.y && p.x <= WINDOW.x + WINDOW.width && p.y <= WINDOW.y + WINDOW.height)).toBe(true);
   });
   it("searches a dotted outline field once through, not for ever: this scene froze a live run for 25 s and ate a gigabyte", () => {
-    // The gappy outlines the map draws over its building models, with the leader 516 px off. Kept as float32,
-    // a stored cost rounds UP, so the identical relaxation fired again every time its cell was expanded and the
-    // open list grew without end: 26 s of blocked event loop, 2.5 GB of RSS, then RangeError: Invalid array length.
-    const next = ((seed: number) => () => (seed = seed * 48271 % 2147483647) / 2147483647)(2), walls: KeyPoint[] = [];
-    while (walls.length < 15_000) {
-      let x = WINDOW.x + Math.floor(next() * WINDOW.width), y = WINDOW.y + Math.floor(next() * WINDOW.height);
-      const horizontal = next() < .5, length = 60 + Math.floor(next() * 400);
-      for (let i = 0; i < length && walls.length < 15_000; i++) {
-        if (i % 16 < 9) walls.push({ x, y });
-        if (horizontal) x++; else y++;
-        if (x >= WINDOW.x + WINDOW.width || y >= WINDOW.y + WINDOW.height) break;
-      }
-    }
+    // Kept as float32, a stored cost rounds UP, so the identical relaxation fired again every time its cell was
+    // expanded and the open list grew without end: 26 s of blocked event loop, 2.5 GB of RSS, then RangeError.
     const cells = Math.ceil(WINDOW.width / 4) * Math.ceil(WINDOW.height / 4), began = Date.now();
-    const plan = new TerrainPlanner().plan(walls, WINDOW, ORIGIN, { dx: 420, dy: -300 }, { x: 0, y: 0 }, 1, 0);
+    const plan = new TerrainPlanner().plan(dottedOutlines(15_000), WINDOW, ORIGIN, { dx: 420, dy: -300 }, { x: 0, y: 0 }, 1, 0);
     expect(Date.now() - began).toBeLessThan(2000);
     // The invariant that bounds the search: a cell is settled at most once, so the open list cannot run away.
     expect(plan.searched).toBeGreaterThan(1000);
     expect(plan.searched).toBeLessThanOrEqual(cells);
     expect(plan.planMs).toBeLessThan(500);
+    expect(plan.aim).toBeDefined();
+  });
+  it("gives up on its own clock rather than hold the tick loop, and steers with what it searched", () => {
+    // A clock that jumps 200 ms a call, so the budget check at the 1024th settled cell stops the search.
+    let call = 0; const clock = () => call++ * 200;
+    const plan = new TerrainPlanner().plan(dottedOutlines(15_000), WINDOW, ORIGIN, { dx: 420, dy: -300 }, { x: 0, y: 0 }, 1, 0, clock);
+    expect(plan.searched).toBe(1024);
+    expect(plan.aim).toBeDefined();
   });
   it("forgets bumps from another odometry epoch and old ones", () => {
     const planner = new TerrainPlanner();
