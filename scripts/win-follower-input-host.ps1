@@ -72,6 +72,16 @@ public static class FollowInput {
       if (x < Math.Round(viewWidth * 0.10) || y < Math.Round(viewHeight * 0.05) || x >= Math.Round(viewWidth * 0.80) || y >= Math.Round(viewHeight * 0.80)) { result.Error = "Click outside the loot area"; return result; }
       result.Ok = true; return result;
     }
+    if (area == "party") {
+      // The party frame's "travel to party member" swirl, measured at x 11..38, y 322..349 on a 2560x1440 client for
+      // the first member. The box is deliberately tight, so a mis-aimed click can reach nothing else in the UI:
+      // 3.5% of width is the column measured clear of everything else (x 0..90 at 2560) and is a third of the way to
+      // the loot area's 10% edge, nowhere near the movement disc, which starts at w/2 - 0.30h; 16%..50% of height
+      // leaves 6 points of headroom above the first entry (22.4%) for UI-scale drift and 371 px below its button at
+      // 1440p for a few more members stacking downward, while staying well above the chat panel and the flask row.
+      if (x < 0 || y < Math.Round(viewHeight * 0.16) || x >= Math.Round(viewWidth * 0.035) || y >= Math.Round(viewHeight * 0.50)) { result.Error = "Click outside the party frame area"; return result; }
+      result.Ok = true; return result;
+    }
     if (area != "move") { result.Error = "Unknown click area"; return result; }
     // Movement clicks stay inside the client and inside a central disc, clear of the HUD, panels and screen edges.
     double dx = x - viewWidth / 2.0, dy = y - viewHeight / 2.0, limit = viewHeight * 0.30;

@@ -318,8 +318,18 @@ Requirements and limits:
 
 - Mouse movement (`use_wasd_to_move=false`) with left-click bound to move; the
   overlay map open rather than the corner minimap; the leader in the same area.
-- It cannot follow through doors, portals, waypoints, or area transitions, or open
-  the map itself. Round obstacles it has the leader's trail and reactive
+- It follows through doors, portals and area transitions by teleporting: when the
+  leader's marker has been absent for 3 s while our own map centre is still
+  verified, it looks for the party frame's blue "travel to party member" swirl and
+  clicks it, at most once every 10 s. The swirl was measured at x 11..38, y 322..349
+  (28 x 28 px, centre 25,336) on a 2560 x 1440 frame: the existing `blue` channel
+  (B - R) at threshold 60 gives 423 points bounded exactly to it, and nothing else
+  in the band. It is scanned on the second capture worker, never on the marker
+  capture that a click's 120 ms freshness is bound to. The button is present whether
+  or not the leader is in our area, so it is never itself the signal that they left.
+  The click needs its own tight native area, `party`: x below 3.5 % of width and
+  y between 16 % and 50 % of height, which cannot reach the movement disc or the
+  loot rectangle. It cannot open the map itself. Round obstacles it has the leader's trail and reactive
   wall-following (above), not a planner: a maze, or a cold start far behind several
   buildings, can still defeat it. A click can land on an item label, NPC, or object and interact
   with it; if that opens a panel the map centre check pauses following.

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { FollowerInputSink, LOOT_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../src/adapters/followerInputSink.js";
+import { FollowerInputSink, LOOT_CLICK, PARTY_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../src/adapters/followerInputSink.js";
 import { GameInputController } from "../src/core/gameInputController.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
 import { scenario } from "../src/core/scenarios.js";
@@ -138,6 +138,23 @@ describe("follower input sink loot clicks (SYNTHETIC host, no OS input)", () => 
     expect(sent).toEqual([{ op: "moveclick", x: 789, y: 185, expectedHwnd: "66051", viewWidth: 2560, viewHeight: 1440, capturedAtQpcMs: 9_000, maxAgeMs: 120, area: "loot" }]);
     await expect(sink.emit({ kind: "click", x: 789, y: 185, button: "left", text: "anywhere" })).rejects.toThrow("Invalid follow action");
     expect(sent).toHaveLength(1);
+  });
+});
+
+describe("follower input sink travel-to-leader clicks (SYNTHETIC host, no OS input)", () => {
+  it("marks the party frame's travel button so the input worker allows that corner, and still refuses any other text", async () => {
+    const host = fakeHost(), sink = new FollowerInputSink(host, () => FRAME);
+    await sink.emit({ kind: "click", x: 25, y: 336, button: "left", text: PARTY_CLICK });
+    expect(host.sent).toEqual([{ op: "moveclick", x: 25, y: 336, expectedHwnd: "66051", viewWidth: 640, viewHeight: 360, capturedAtQpcMs: 5_000_123, maxAgeMs: 120, area: "party" }]);
+    // The marker is one of a closed set: neither the area name of another kind of click nor free text passes.
+    for (const text of ["move", "travel", "Party", ""]) await expect(sink.emit({ ...CLICK, text })).rejects.toThrow("Invalid follow action");
+    expect(host.sent).toHaveLength(1);
+  });
+  it("is refused like any other click when the guard has no fresh capture, and reports the worker's refusal", async () => {
+    const host = fakeHost(), party: InputAction = { kind: "click", x: 25, y: 336, button: "left", text: PARTY_CLICK };
+    await expect(new FollowerInputSink(host, () => undefined).emit(party)).rejects.toThrow("Follow stopped or capture stale");
+    expect(host.sent).toEqual([]);
+    await expect(new FollowerInputSink(fakeHost({ ok: false, error: "Click outside the party frame" }), () => FRAME).emit(party)).rejects.toThrow("Click outside the party frame");
   });
 });
 

@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { deflateSync } from "node:zlib";
 import { parseMapCalibration } from "../src/core/followerMapMarker.js";
+import { findTravelButton, PARTY_BAND, PARTY_CHANNEL, PARTY_POINT_CAP, PARTY_THRESHOLD } from "../src/core/followerParty.js";
 import { KillSwitch } from "../src/core/killSwitch.js";
 import type { QaActionTrace } from "../src/core/types.js";
 import { defaultDriveSettings, driveAudit, FollowerDriveService, parseDriveSettings } from "../src/main/followerDriveService.js";
@@ -56,6 +57,8 @@ interface Scene {
   blue?: Point[];
   /** Terrain pixels the injected map host reports for op 'terrain' (none: open ground). */
   walls?: Point[];
+  /** Blue party-frame pixels the injected map host reports for the party-band 'key' scan (none: the corner is covered). */
+  party?: Point[];
 }
 type Rect = { x: number; y: number; width: number; height: number };
 interface LootRect extends Rect { padding?: number; colour?: Rgb }
@@ -158,6 +161,8 @@ interface Rig {
   map: Payload[];
   /** capturedAtQpcMs of every 'runs' reply. */
   scanQpc: number[];
+  /** capturedAtQpcMs of every party-band 'key' reply from the map host. */
+  partyQpc: number[];
   /** Refusals for 'sprint' hold requests: the first one is used up by the next request with the same `start` flag. Letting go is never refused. */
   sprintRefusals: Array<{ start: boolean; error: string }>;
   /** How many 'release' requests are answered { ok: false } (a key is still held) before one succeeds, and when each one was asked (real time). */
@@ -172,7 +177,7 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
     follow: { targetName: "Main", followDistance: 2, confidence: .85 }, globalDryRun: false, clock: options.clock,
     capture: [], input: [], attempts: [], refusals: [], latencies: [37], capturePing: { ok: true }, inputPing: { ok: true }, releaseFails: false,
     created: { capture: 0, input: 0 }, newestCaptureQpc: 5_000_000, traces: [], reasons: new Set(),
-    map: [], scanQpc: [], sprintRefusals: [], releaseRefusals: 0, releasedAt: [],
+    map: [], scanQpc: [], partyQpc: [], sprintRefusals: [], releaseRefusals: 0, releasedAt: [],
   };
   const now = () => rig.clock ?? performance.now();
   rig.service = new FollowerDriveService({
@@ -242,8 +247,13 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
       createMapHost: () => ({
         send: async (payload: Payload) => {
           rig.map.push(payload);
-          if (payload.op !== "terrain") return { ok: false, error: "Unknown follower capture operation" };
           const scene = rig.scene;
+          // The party frame is read by the same 'key' op as the markers, on this second worker.
+          if (payload.op === "key") {
+            rig.newestCaptureQpc += 9; rig.partyQpc.push(rig.newestCaptureQpc);
+            return { ok: true, hwnd: scene.hwnd, process: scene.process, ...scene.view, captureMs: 4, capturedAtQpcMs: rig.newestCaptureQpc, overflow: false, points: encodePoints(scene.party ?? [], payload as unknown as Rect) };
+          }
+          if (payload.op !== "terrain") return { ok: false, error: "Unknown follower capture operation" };
           return { ok: true, hwnd: scene.hwnd, process: scene.process, ...scene.view, captureMs: 5, capturedAtQpcMs: rig.newestCaptureQpc, overflow: false, points: encodePoints(scene.walls ?? [], payload as unknown as Rect) };
         },
         close: async () => { rig.map.push({ op: "closed" }); },
@@ -263,7 +273,9 @@ async function calibrated(options: Parameters<typeof setup>[0] = {}): Promise<Ri
 const goLive = (rig: Rig, settings: { mapScale?: number; clickIntervalMs?: number; sprint?: boolean } = {}) => rig.service.configure({ version: 1, dryRun: false, mapScale: 7, clickIntervalMs: 100, ...settings });
 const soon = { timeout: 5000, interval: 4 };
 const ops = (log: Payload[]) => log.map(entry => String(entry.op));
-const stats = (rig: Rig) => rig.service.status().stats ?? { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0 };
+/** The counters, including `teleports`, which the service reports but the shared status type does not name. */
+const stats = (rig: Rig) => (rig.service.status().stats ?? { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0 }) as
+  Record<"cycles" | "clicks" | "previewed" | "refused" | "manualTakeovers" | "lootScans" | "lootLabels" | "lootClicks" | "sprints" | "teleports", number>;
 /** Advances the frozen clock by one loot-scan period (250 ms) and waits for the scan that earns. Everything the scan leads to happens in the same cycle. */
 async function nextScan(rig: Rig): Promise<void> {
   const from = stats(rig).lootScans;
@@ -271,7 +283,7 @@ async function nextScan(rig: Rig): Promise<void> {
   await expect.poll(() => stats(rig).lootScans, soon).toBe(from + 1);
 }
 const sprintOps = (rig: Rig) => rig.input.filter(entry => entry.op === "sprint");
-const clicksIn = (rig: Rig, area: "move" | "loot") => rig.attempts.filter(attempt => attempt.payload.area === area);
+const clicksIn = (rig: Rig, area: "move" | "loot" | "party") => rig.attempts.filter(attempt => attempt.payload.area === area);
 /** Waits until the loop has completed `count` more observe-decide cycles. */
 async function cycles(rig: Rig, count = 8): Promise<void> {
   const from = stats(rig).cycles;
@@ -1645,6 +1657,117 @@ describe("follow drive aim source (SYNTHETIC blue outline pixels for odometry an
     await cycles(rig);
     expect(rig.service.status()).toMatchObject({ odometry: { tracked: false, trailPoints: 0, via: "direct" }, terrain: undefined });
     expect(rig.map).toEqual([]);
+  });
+});
+
+describe("follow drive travel to the leader (SYNTHETIC party-frame pixels and hosts: a 'click' is an array entry, no OS input)", () => {
+  const VIEW = { width: W, height: H };
+  /** The party frame's travel button: a solid blue swirl measured at 2560 × 1440 as 28 × 28 px at (11, 322), scaled to this view. */
+  function travelButton(view = VIEW): Point[] {
+    const scale = view.height / 1440, size = Math.max(4, Math.round(28 * scale)), left = Math.round(11 * scale), top = Math.round(322 * scale), points: Point[] = [];
+    for (let y = 0; y < size; y++) for (let x = 0; x < size; x++) points.push({ x: left + x, y: top + y });
+    return points;
+  }
+  const partyScans = (rig: Rig) => rig.map.filter(entry => entry.op === "key");
+  /** Live, with the map host that carries the party scan, the button on screen, and the leader far away on the map. */
+  async function travelRig(clock: number): Promise<Rig> {
+    const rig = await calibrated({ clock, mapHost: true });
+    goLive(rig);
+    rig.scene.party = travelButton();
+    return rig;
+  }
+  /** Takes the leader off the map and waits for the tracker to say so; the frozen clock has not moved. */
+  async function leaderLeaves(rig: Rig): Promise<void> {
+    rig.scene.leader = undefined;
+    await expect.poll(() => rig.service.status().observation?.leaderFound, soon).toBe(false);
+  }
+  it("clicks the party frame's travel button once the leader's marker has been gone for 3 s, bound to the party scan that found it", async () => {
+    const rig = await travelRig(600_000);
+    await rig.service.start();
+    await expect.poll(() => stats(rig).clicks, soon).toBe(1);   // an ordinary movement click: the leader is still on the map
+    await leaderLeaves(rig);
+    // A marker missing for a moment is a dropped frame, not an area transition: nothing is even scanned yet.
+    rig.clock! += 2999;
+    await cycles(rig, 3);
+    expect(partyScans(rig)).toEqual([]);
+    expect(clicksIn(rig, "party")).toEqual([]);
+    rig.clock! += 1;
+    await expect.poll(() => stats(rig).teleports, soon).toBe(1);
+    const button = findTravelButton(travelButton(), VIEW);
+    expect(button).toBeDefined();
+    // The scan is the party band on the SECOND worker, so the marker capture keeps its 120 ms freshness budget.
+    expect(partyScans(rig)).toEqual([{ op: "key", ...PARTY_BAND(VIEW), full: false, channel: PARTY_CHANNEL, threshold: PARTY_THRESHOLD, cap: PARTY_POINT_CAP }]);
+    expect(clicksIn(rig, "party").map(attempt => attempt.payload)).toEqual([
+      { op: "moveclick", ...button!.centre, expectedHwnd: HWND, viewWidth: W, viewHeight: H, capturedAtQpcMs: rig.partyQpc.at(-1), maxAgeMs: 120, area: "party" },
+    ]);
+    const trace = rig.traces.at(-1)!;
+    expect(trace).toMatchObject({ module: "navigation", decisionRule: "travel-to-leader", result: "emitted", confidence: 1, processName: GAME, input: { kind: "click", ...button!.centre, button: "left", text: "party" } });
+    expect(JSON.parse(trace.evidenceHash)).toMatchObject({ hwnd: HWND, capturedAtQpcMs: rig.partyQpc.at(-1), button: button!.centre, leaderMissingMs: 3000 });
+    expect(rig.service.status()).toMatchObject({ running: true, reason: "Travel to Main: their map marker has been gone for 3.0 s.", decision: { kind: "hold" }, stats: { teleports: 1, clicks: 2 } });
+  });
+  it("never travels while the leader is on the map: the button is always drawn, so it says nothing about where they are", async () => {
+    const rig = await travelRig(610_000);
+    await rig.service.start();
+    await expect.poll(() => stats(rig).clicks, soon).toBe(1);
+    // Four times the absence period with the leader in sight the whole while.
+    for (let step = 0; step < 4; step++) { rig.clock! += 3000; await cycles(rig, 3); }
+    expect(partyScans(rig)).toEqual([]);
+    expect(clicksIn(rig, "party")).toEqual([]);
+    expect(stats(rig).teleports).toBe(0);
+    expect(rig.traces.every(trace => trace.decisionRule !== "travel-to-leader")).toBe(true);
+  });
+  it("travels at most once per 10 s, scanning for nothing in between: the new area needs that long to load", async () => {
+    const rig = await travelRig(620_000);
+    await rig.service.start();
+    await expect.poll(() => stats(rig).clicks, soon).toBe(1);
+    await leaderLeaves(rig);
+    rig.clock! += 3000;
+    await expect.poll(() => stats(rig).teleports, soon).toBe(1);
+    rig.clock! += 9999;
+    await cycles(rig, 5);
+    expect(partyScans(rig)).toHaveLength(1);
+    expect(stats(rig).teleports).toBe(1);
+    // Still no leader after the cooldown: the first click missed, or they moved on again.
+    rig.clock! += 1;
+    await expect.poll(() => stats(rig).teleports, soon).toBe(2);
+    expect(clicksIn(rig, "party")).toHaveLength(2);
+    expect(partyScans(rig)).toHaveLength(2);
+  });
+  it("sends nothing while the button is not in the band, and keeps looking at the scan pace until it is", async () => {
+    const rig = await travelRig(630_000), band = PARTY_BAND(VIEW);
+    // A panel over the corner: a few stray blue pixels, not the button.
+    rig.scene.party = [{ x: band.x + 2, y: band.y + 3 }, { x: band.x + 5, y: band.y + 9 }, { x: band.x + 6, y: band.y + 10 }];
+    expect(findTravelButton(rig.scene.party, VIEW)).toBeUndefined();
+    await rig.service.start();
+    await expect.poll(() => stats(rig).clicks, soon).toBe(1);
+    await leaderLeaves(rig);
+    rig.clock! += 3000;
+    await expect.poll(() => partyScans(rig).length, soon).toBe(1);
+    await cycles(rig, 5);
+    expect(clicksIn(rig, "party")).toEqual([]);
+    expect(stats(rig).teleports).toBe(0);
+    // Paced, not run every cycle; and a scan that finds nothing costs no cooldown, because the panel may close.
+    expect(partyScans(rig)).toHaveLength(1);
+    rig.clock! += 250;
+    await expect.poll(() => partyScans(rig).length, soon).toBe(2);
+    rig.scene.party = travelButton();
+    rig.clock! += 250;
+    await expect.poll(() => stats(rig).teleports, soon).toBe(1);
+    expect(clicksIn(rig, "party")).toHaveLength(1);
+  });
+  it("previews the travel click in a dry run: the input worker receives nothing at all", async () => {
+    const rig = await travelRig(640_000);
+    rig.service.configure({ version: 1, dryRun: true, mapScale: 7, clickIntervalMs: 100 });
+    await rig.service.start();
+    await expect.poll(() => stats(rig).previewed, soon).toBe(1);
+    await leaderLeaves(rig);
+    rig.clock! += 3000;
+    await expect.poll(() => stats(rig).teleports, soon).toBe(1);
+    expect(rig.attempts).toEqual([]);
+    expect(ops(rig.input)).toEqual(["ping"]);
+    expect(stats(rig)).toMatchObject({ clicks: 0, previewed: 2, teleports: 1 });
+    expect(rig.traces.at(-1)).toMatchObject({ decisionRule: "travel-to-leader", result: "blocked", input: { text: "party" }, reason: expect.stringContaining("safety=dry-run") });
+    expect(rig.service.status()).toMatchObject({ running: true, reason: "Preview only: would travel to Main: their map marker has been gone for 3.0 s.", decision: { kind: "hold" } });
   });
 });
 

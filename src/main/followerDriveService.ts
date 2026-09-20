@@ -1,6 +1,6 @@
 import { appendFileSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { FollowerInputSink, LOOT_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../adapters/followerInputSink.js";
+import { FollowerInputSink, LOOT_CLICK, PARTY_CLICK, SPRINT_HOLD, type FollowerFrameGuard } from "../adapters/followerInputSink.js";
 import { pngPlanes } from "../adapters/pngWhiteness.js";
 import { startWinHost } from "../adapters/winHost.js";
 import {
@@ -8,6 +8,7 @@ import {
   type MapCalibration, type SteeringDecision,
 } from "../core/followerMapMarker.js";
 import { decodeFlatRuns, decodeHueRuns, findLootLabels, LOOT_MIN_BRIGHTNESS, LOOT_MIN_CONFIDENCE, LOOT_MIN_RUN, lootArea, LootPlanner } from "../core/followerLoot.js";
+import { findTravelButton, PARTY_BAND, PARTY_CHANNEL, PARTY_POINT_CAP, PARTY_THRESHOLD } from "../core/followerParty.js";
 import { TERRAIN_CHANNEL, TERRAIN_POINT_CAP, TERRAIN_THRESHOLD, TerrainPlanner, terrainWindow, type TerrainPlan } from "../core/followerTerrain.js";
 import { LeaderTrail, MapOdometry, ODOMETRY_CHANNEL, ODOMETRY_THRESHOLD, odometryWindow } from "../core/followerTrail.js";
 import { templatePixelCount, type PixelRect } from "../core/followerPerception.js";
@@ -41,6 +42,12 @@ const SPRINT_START_PX = 70, SPRINT_STOP_PX = 40;
 const LOOT_LEAD_MS = 70, LOOT_SAME_LABEL_PX = 120, LOOT_STEADY_PX = 4;
 /** How long the character is left alone to walk to an item it clicked, before following wins again. */
 const LOOT_COLLECT_MS = 3000;
+/**
+ * The leader's marker gone for this long is them having left the area (stairs, a portal, a transition),
+ * not a lost frame. One click on the party frame's travel button then teleports us to them; the cooldown
+ * is long enough for the new area to load, after which the tracker finds them again by itself.
+ */
+const LEADER_GONE_MS = 3000, TRAVEL_COOLDOWN_MS = 10_000, TRAVEL_SCAN_MS = 250;
 const RELEASE_ATTEMPTS = 240, RELEASE_RETRY_MS = 250;
 /** How far behind the leader looting still happens, in leashes: beyond that, catching up is all that matters. */
 const LOOT_CHASE_LEASHES = 2;
@@ -87,7 +94,7 @@ export class FollowerDriveService {
   private latencies: number[] = [];
   /** Capture-to-click times of the first click after standing near the leader: the reaction to them moving off. */
   private resumes: number[] = [];
-  private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0 };
+  private counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0 };
   private sprinting = false;
   private startedAt = 0;
   private readonly calibrationFile: string;
@@ -223,8 +230,10 @@ export class FollowerDriveService {
     }, FRAME_MAX_AGE_MS);
     const controller = new GameInputController(sink, this.options.killSwitch, this.options.mode);
     this.running = true; this.reason = "Starting capture and input workers…";
-    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0 }; this.sprinting = false; this.startedAt = this.now();
+    this.cycles = []; this.latencies = []; this.resumes = []; this.counts = { cycles: 0, clicks: 0, previewed: 0, refused: 0, manualTakeovers: 0, lootScans: 0, lootLabels: 0, lootClicks: 0, sprints: 0, teleports: 0 }; this.sprinting = false; this.startedAt = this.now();
     let manualUntil = -Infinity, pauseReason = "", wasNear = false, lastLootScanAt = -Infinity, lootSeen: { x: number; y: number; at: number } | undefined;
+    // Absence is measured from when we started watching, so a run never opens with a teleport.
+    let lastLeaderAt = this.now(), lastTravelAt = -Infinity, lastTravelScanAt = -Infinity;
     let collecting: { at: number; labels: number } | undefined;
     const odometry = new MapOdometry(), trail = new LeaderTrail(), watch = { ...odometryWindow(tracker.origin, calibration.view), channel: ODOMETRY_CHANNEL, threshold: ODOMETRY_THRESHOLD };
     const terrain = new TerrainPlanner(), terrainArea = terrainWindow(tracker.origin, calibration.view);
@@ -234,9 +243,11 @@ export class FollowerDriveService {
     const letGo = async () => { if (sprinting) { sprinting = false; this.sprinting = false; await sink.releaseSprint(); } };
     const loot = new LootPlanner(), leashPx = (follow.lootLeash ?? 0) * MAP_PX_PER_FOLLOW_UNIT;
     /** Runs one executed decision through the controller and says what became of it. */
-    const execute = async (module: "navigation" | "loot", rule: string, reason: string, x: number, y: number, confidence: number, process: string, allowed: boolean, evidence: string, lootEnabled: boolean, threshold: number, sprint = false): Promise<"emitted" | "previewed" | "paused" | "retry" | "stopped"> => {
+    const execute = async (module: "navigation" | "loot", rule: string, reason: string, x: number, y: number, confidence: number, process: string, allowed: boolean, evidence: string, lootEnabled: boolean, threshold: number, sprint = false, mark?: string): Promise<"emitted" | "previewed" | "paused" | "retry" | "stopped"> => {
       const policy = scenario({ id: "follow-map-marker", name: "Follow by overlay map", enabledModules: lootEnabled ? ["navigation", "loot"] : ["navigation"], dryRun: previewOnly || this.dryRun(), actionsPerMinute: ACTIONS_PER_MINUTE, confidenceThreshold: threshold, timingProfile: "tight" });
-      const traces = await controller.execute({ module, rule, reason, intended: [sprint ? { kind: "key", key: "space", text: SPRINT_HOLD } : { kind: "click", x, y, button: "left", ...(module === "loot" ? { text: LOOT_CLICK } : {}) }], confidence }, policy, process, evidence, allowed);
+      // The marker tells the input worker which part of the view this click is allowed in.
+      const text = mark ?? (module === "loot" ? LOOT_CLICK : undefined);
+      const traces = await controller.execute({ module, rule, reason, intended: [sprint ? { kind: "key", key: "space", text: SPRINT_HOLD } : { kind: "click", x, y, button: "left", ...(text ? { text } : {}) }], confidence }, policy, process, evidence, allowed);
       this.options.audit?.(traces);
       // Long sessions must not retain every trace in memory.
       controller.actionTraces.splice(0);
@@ -306,13 +317,48 @@ export class FollowerDriveService {
           let decision: SteeringDecision = manual ? { kind: "pause", reason: pauseReason } : steering.decide(observation, this.now(), aim && aim.via !== "direct" ? aim : undefined, moved);
           if (decision.kind === "near") wasNear = true;
           this.counts.cycles++; this.cycles.push(this.now() - started); if (this.cycles.length > 600) this.cycles.shift();
+          const lootOn = current.lootEnabled === true && leashPx > 0;
+          const seenLeader = observation.leaderFound && observation.confidence >= current.confidence;
+          // Any sighting at all, even one too ambiguous to follow, means the leader is still in this area.
+          if (observation.leaderFound) lastLeaderAt = started;
+          // Stairs, a portal or an area transition end the leader's marker without ending the party frame: its
+          // travel button is drawn from identical pixels whether they are here or elsewhere, so only a sustained
+          // absence of the marker says they have left. Clicking that button teleports us to them, and the tracker
+          // picks them up again by itself. A verified map centre (no panel over the corner) and nobody at the
+          // mouse are required, as for every other click.
+          if (!observation.leaderFound && started - lastLeaderAt >= LEADER_GONE_MS && !manual && observation.originVerified && mapScanner
+            && started - lastTravelAt >= TRAVEL_COOLDOWN_MS && started - lastTravelScanAt >= TRAVEL_SCAN_MS) {
+            lastTravelScanAt = started;
+            // On the map worker: the marker capture is bound to a 120 ms freshness limit and must not carry this.
+            const scanAt = this.now(), scan = await mapScanner.send({ op: "key", ...PARTY_BAND(view), full: false, channel: PARTY_CHANNEL, threshold: PARTY_THRESHOLD, cap: PARTY_POINT_CAP });
+            if (!live()) return;
+            const button = scan.ok && !scan.overflow && typeof scan.points === "string" && Number(scan.width) === view.width && Number(scan.height) === view.height
+              ? findTravelButton(decodeKeyPoints(scan.points), view) : undefined;
+            if (button) {
+              // Phrased as an instruction so the dry-run preview ("would travel to …") reads as one.
+              const missing = Math.round(started - lastLeaderAt), reason = `Travel to ${current.targetName}: their map marker has been gone for ${(missing / 1000).toFixed(1)} s.`;
+              // Every attempt costs the cooldown, refused ones too: a refusal means focus or the view moved, which retrying at once cannot fix.
+              lastTravelAt = this.now();
+              await letGo();
+              // The click is bound to the party-band scan that found the button, not to the earlier marker capture.
+              this.frame = { hwnd: String(scan.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(scan.capturedAtQpcMs), at: scanAt };
+              const outcome = await execute("navigation", "travel-to-leader", reason, button.centre.x, button.centre.y, 1, process, allowed,
+                JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, button: button.centre, buttonPixels: button.pixels, leaderMissingMs: missing }), lootOn, current.confidence, false, PARTY_CLICK);
+              if (outcome === "stopped") return;
+              if (outcome === "emitted" || outcome === "previewed") {
+                this.counts.teleports++;
+                if (outcome === "emitted") { this.counts.clicks++; this.reason = reason; } else this.counts.previewed++;
+                // A new area is loading: decide nothing more from this frame, and let the cooldown cover the load.
+                this.decision = { kind: "hold", reason: this.reason };
+                return;
+              }
+            }
+          }
           // Loot while following, not only once caught up: items drop where the leader fights, so waiting to be
           // inside the leash misses most of them. Rejoining a leader who is getting away comes first, but with
           // no leader in sight there is nothing to rejoin and standing on a pile of loot doing nothing is the
           // worst of both: loot then too. A verified map centre (so no panel is open) and nobody at the mouse
           // are always required.
-          const lootOn = current.lootEnabled === true && leashPx > 0;
-          const seenLeader = observation.leaderFound && observation.confidence >= current.confidence;
           const canLoot = lootOn && !manual && observation.originVerified && (!seenLeader || distance <= leashPx * LOOT_CHASE_LEASHES);
           if (canLoot && started - lastLootScanAt >= LOOT_SCAN_MS) {
             lastLootScanAt = started;
