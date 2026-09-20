@@ -167,6 +167,7 @@ export function loadBuildProfileCatalogFromJson(
       `Build profile catalog JSON is invalid: ${
         error instanceof Error ? error.message : String(error)
       }`,
+      { cause: error },
     );
   }
   return loadBuildProfileCatalog(parsed, options);
