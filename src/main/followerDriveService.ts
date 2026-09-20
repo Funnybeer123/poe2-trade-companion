@@ -7,7 +7,6 @@ import {
   buildMapCalibration, decodeKeyPoints, FollowSteering, mapCalibrationIssue, MapMarkerTracker, parseMapCalibration,
   type MapCalibration, type SteeringDecision,
 } from "../core/followerMapMarker.js";
-import { DropWatch } from "../core/followerDrops.js";
 import { decodeFlatRuns, decodeHueRuns, findLootLabels, LOOT_MIN_BRIGHTNESS, LOOT_MIN_CONFIDENCE, LOOT_MIN_RUN, lootArea, LootPlanner } from "../core/followerLoot.js";
 import { TERRAIN_CHANNEL, TERRAIN_POINT_CAP, TERRAIN_THRESHOLD, TerrainPlanner, terrainWindow, type TerrainPlan } from "../core/followerTerrain.js";
 import { LeaderTrail, MapOdometry, ODOMETRY_CHANNEL, ODOMETRY_THRESHOLD, odometryWindow } from "../core/followerTrail.js";
@@ -53,8 +52,7 @@ export function parseDriveSettings(raw: unknown): FollowerDriveSettings {
   const s = raw as FollowerDriveSettings | null;
   if (!s || s.version !== 1 || typeof s.dryRun !== "boolean" || !Number.isFinite(s.mapScale) || s.mapScale < 2 || s.mapScale > 20 || !Number.isInteger(s.clickIntervalMs) || s.clickIntervalMs < MIN_CLICK_INTERVAL_MS || s.clickIntervalMs > 1000) throw new Error(`Invalid follow settings: map scale 2–20 and click interval ${MIN_CLICK_INTERVAL_MS}–1000 ms.`);
   if (s.sprint !== undefined && typeof s.sprint !== "boolean") throw new Error("Invalid follow settings: sprint must be on or off.");
-  if (s.darkLoot !== undefined && typeof s.darkLoot !== "boolean") throw new Error("Invalid follow settings: unstyled loot must be on or off.");
-  return { version: 1, dryRun: s.dryRun, mapScale: s.mapScale, clickIntervalMs: s.clickIntervalMs, ...(s.sprint ? { sprint: true } : {}), ...(s.darkLoot ? { darkLoot: true } : {}) };
+  return { version: 1, dryRun: s.dryRun, mapScale: s.mapScale, clickIntervalMs: s.clickIntervalMs, ...(s.sprint ? { sprint: true } : {}) };
 }
 function percentile(values: number[], p: number): number | undefined {
   if (!values.length) return undefined;
@@ -83,7 +81,6 @@ export class FollowerDriveService {
   private frame?: FollowerFrameGuard & { at: number };
   private odometry?: FollowerDriveStatus["odometry"];
   private terrain?: FollowerDriveStatus["terrain"];
-  private drops?: FollowerDriveStatus["drops"];
   private cycles: number[] = [];
   private latencies: number[] = [];
   /** Capture-to-click times of the first click after standing near the leader: the reaction to them moving off. */
@@ -112,7 +109,7 @@ export class FollowerDriveService {
       calibration: c && { targetName: c.targetName, view: c.view, origin: new MapMarkerTracker(c).origin, markerOffset: c.markerOffset, labelPixels: templatePixelCount(c.label), labelMask: c.label.mask, calibratedAt: c.calibratedAt },
       calibrationIssue: this.calibrationError ?? (c ? mapCalibrationIssue(c, this.options.follow().targetName) : undefined),
       observation: o && { ...o, ageMs: Math.max(0, Math.round(this.now() - o.capturedAt)) },
-      decision: this.decision, odometry: this.running ? this.odometry : undefined, terrain: this.running ? this.terrain : undefined, drops: this.running ? this.drops : undefined, sprinting: this.running && this.sprinting,
+      decision: this.decision, odometry: this.running ? this.odometry : undefined, terrain: this.running ? this.terrain : undefined, sprinting: this.running && this.sprinting,
       stats: this.counts.cycles ? {
         ...this.counts, observationsPerSecond: elapsed > 0 ? Math.round(this.counts.cycles / elapsed * 10) / 10 : 0,
         cycleMsP50: percentile(this.cycles, .5), cycleMsP95: cycleP95, captureToInputMsP50: percentile(this.latencies, .5), captureToInputMsP95: inputP95,
@@ -233,8 +230,6 @@ export class FollowerDriveService {
     const mapScanner = this.mapHost = this.createMapHost();
     const letGo = async () => { if (sprinting) { sprinting = false; this.sprinting = false; await sink.releaseSprint(); } };
     const loot = new LootPlanner(), leashPx = (follow.lootLeash ?? 0) * MAP_PX_PER_FOLLOW_UNIT;
-    // Unstyled labels are the same near-black box a door or an area transition draws, so only ones watched to drop in view are ever clicked.
-    const darkLoot = this.settings.darkLoot === true, drops = new DropWatch();
     /** Runs one executed decision through the controller and says what became of it. */
     const execute = async (module: "navigation" | "loot", rule: string, reason: string, x: number, y: number, confidence: number, process: string, allowed: boolean, evidence: string, lootEnabled: boolean, threshold: number, sprint = false): Promise<"emitted" | "previewed" | "paused" | "retry" | "stopped"> => {
       const policy = scenario({ id: "follow-map-marker", name: "Follow by overlay map", enabledModules: lootEnabled ? ["navigation", "loot"] : ["navigation"], dryRun: previewOnly || this.dryRun(), actionsPerMinute: ACTIONS_PER_MINUTE, confidenceThreshold: threshold, timingProfile: "tight" });
@@ -316,18 +311,14 @@ export class FollowerDriveService {
           const canLoot = lootOn && !manual && observation.leaderFound && observation.confidence >= current.confidence && observation.originVerified && distance <= leashPx * LOOT_CHASE_LEASHES;
           if (canLoot && started - lastLootScanAt >= LOOT_SCAN_MS) {
             lastLootScanAt = started;
-            // A near-black label only shows up with the brightness floor down, which also lets every dark run through.
-            const scanAt = this.now(), scan = await capture.send({ op: "runs", ...lootArea(view), minLength: LOOT_MIN_RUN, minBrightness: darkLoot ? 0 : LOOT_MIN_BRIGHTNESS });
+            const scanAt = this.now(), scan = await capture.send({ op: "runs", ...lootArea(view), minLength: LOOT_MIN_RUN, minBrightness: LOOT_MIN_BRIGHTNESS });
             if (!live()) return;
             if (scan.ok && !scan.overflow && Number(scan.width) === view.width && Number(scan.height) === view.height) {
               // The leash bounds the detour, so it is measured from the character: a label across the screen is
               // not worth leaving the leader for, however near to them it lies.
               const scale = this.settings.mapScale;
-              const found = findLootLabels(decodeFlatRuns(scan.runs), view, observation.origin, scan.hueOverflow || typeof scan.hueRuns !== "string" ? [] : decodeHueRuns(scan.hueRuns), { dark: darkLoot });
-              // Every label is watched, before any filter: one drifting back inside a filter would read as a fresh drop.
-              this.drops = darkLoot ? drops.observe(found, view, odometry.position, odometry.epoch, moved.tracked, scale, scanAt) : undefined;
-              const labels = found.filter(label => label.confidence >= LOOT_MIN_CONFIDENCE && Math.hypot(label.centre.x - observation.origin.x, label.centre.y - observation.origin.y) / scale <= leashPx
-                && (!label.dark || drops.dropped(label)));
+              const labels = findLootLabels(decodeFlatRuns(scan.runs), view, observation.origin, scan.hueOverflow || typeof scan.hueRuns !== "string" ? [] : decodeHueRuns(scan.hueRuns))
+                .filter(label => label.confidence >= LOOT_MIN_CONFIDENCE && Math.hypot(label.centre.x - observation.origin.x, label.centre.y - observation.origin.y) / scale <= leashPx);
               const choice = loot.decide(labels, this.now());
               this.counts.lootScans++; this.counts.lootLabels = labels.length;
               // The camera scrolls while we run, so a label slides between the scan and the click. Seen twice, it is led by its own drift; seen once, it waits a scan.

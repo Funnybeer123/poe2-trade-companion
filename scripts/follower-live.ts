@@ -1,7 +1,7 @@
 // Runs the follow loop from a terminal, so the game keeps focus (the Electron window would take it).
 // Dry-run unless --live is given. Ctrl+Shift+Esc is the emergency stop; moving the mouse or holding
 // a mouse button takes manual control. Always ends after --seconds.
-//   npm run follower:live -- --target <LeaderName> [--seconds 20] [--calibrate] [--live] [--loot] [--leash 7] [--sprint] [--dark] [--distance 2] [--confidence 0.85] [--scale 7] [--interval 110] [--dir <folder>]
+//   npm run follower:live -- --target <LeaderName> [--seconds 20] [--calibrate] [--live] [--loot] [--leash 7] [--sprint] [--distance 2] [--confidence 0.85] [--scale 7] [--interval 110] [--dir <folder>]
 import os from "node:os";
 import path from "node:path";
 import { startEmergencyStopMonitor } from "../src/adapters/emergencyStopMonitor.js";
@@ -32,7 +32,7 @@ try { monitor = startEmergencyStopMonitor(() => { killSwitch.trip(); finish("EME
 catch (e) { if (live) { console.error(`No emergency stop available, refusing live input: ${String(e)}`); process.exit(1); } }
 
 (async () => {
-  service.configure({ version: 1, dryRun: !live, mapScale: number("--scale", 7, 2, 20), clickIntervalMs: number("--interval", 110, MIN_CLICK_INTERVAL_MS, 1000), sprint: args.includes("--sprint"), darkLoot: args.includes("--dark") });
+  service.configure({ version: 1, dryRun: !live, mapScale: number("--scale", 7, 2, 20), clickIntervalMs: number("--interval", 110, MIN_CLICK_INTERVAL_MS, 1000), sprint: args.includes("--sprint") });
   if (args.includes("--calibrate") || !service.status().calibration || service.status().calibrationIssue) {
     // --label x,y,width,height selects one label when several party members are on the map.
     const box = option("--label")?.split(",").map(Number);

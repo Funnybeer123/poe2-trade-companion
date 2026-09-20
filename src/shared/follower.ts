@@ -25,7 +25,7 @@ export interface FollowerPerceptionStatus {
   recording?: { directory: string; frames: number; remainingMs: number };
   lastRecording?: { directory: string; frames: number };
 }
-export interface FollowerDriveSettings { version: 1; dryRun: boolean; mapScale: number; clickIntervalMs: number; /** Hold space to sprint while well behind the leader. */ sprint?: boolean; /** Also pick up unstyled (near-black) labels, which doors and NPCs share: only ones seen to drop in view are clicked. */ darkLoot?: boolean }
+export interface FollowerDriveSettings { version: 1; dryRun: boolean; mapScale: number; clickIntervalMs: number; /** Hold space to sprint while well behind the leader. */ sprint?: boolean }
 export interface FollowerDriveStatus {
   running: boolean;
   reason: string;
@@ -42,7 +42,6 @@ export interface FollowerDriveStatus {
   /** Space is being held to sprint right now. */
   sprinting?: boolean;
   terrain?: { planned: boolean; pathPx: number; walls: number; bumps: number; blockedAhead: boolean; planMs: number };
-  drops?: { labels: number; dropped: number; furniture: number; unknown: number; tracks: number };
   stats?: {
     cycles: number; clicks: number; previewed: number; refused: number; manualTakeovers: number; observationsPerSecond: number;
     /** Loot: scans run, labels in the latest scan, and pickup clicks sent (or previewed). */
