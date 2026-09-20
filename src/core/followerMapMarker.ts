@@ -57,7 +57,7 @@ export type SteeringDecision =
 
 export const LABEL_LIMITS: TemplateLimits = { minThreshold: 60, maxThreshold: 200, minPixels: 24, minWidth: 12, minHeight: 6 };
 export const ORIGIN_LIMITS: TemplateLimits = { minThreshold: 30, maxThreshold: 200, minPixels: 10, minWidth: 5, minHeight: 5 };
-const TRACK_MARGIN = 96, FULL_SEARCH_EVERY_MS = 1000, ORIGIN_MARGIN = 20, ORIGIN_TOLERANCE = 5, ORIGIN_MIN_SCORE = .5, ORIGIN_STICKY_MS = 1500, ORIGIN_COVERED_MAX_MS = 10_000, MAX_MISSES = 3;
+const TRACK_MARGIN = 96, FULL_SEARCH_EVERY_MS = 1000, ORIGIN_MARGIN = 20, ORIGIN_TOLERANCE = 14, ORIGIN_MIN_SCORE = .5, ORIGIN_STICKY_MS = 1500, ORIGIN_COVERED_MAX_MS = 10_000, MAX_MISSES = 3;
 const LABEL_FLANK = 6, LABEL_JUMP_PX = 30, LABEL_JUMP_WINDOW_MS = 250;
 const MARKER_MIN_SCORE = .75, MARKER_TRUST = .95, MARKER_CONTINUITY_MS = 700, MARKER_CONTINUITY_PX = 40;
 /** Blocked: we moved less than this many map pixels over STUCK_MS despite STUCK_CLICKS committed clicks. */
@@ -266,6 +266,11 @@ export class MapMarkerTracker {
     if (searched === "full" && points) this.fullRunnerUp = search.runnerUp;
     const runnerUp = Math.max(search.runnerUp, this.fullRunnerUp);
     const own = originPoints ? findTemplateSparse(originPoints, c.originTemplate, ORIGIN_MIN_SCORE).best : undefined;
+    // Where the map draws our own marker drifts by about ten pixels between sessions and areas: a live run sat
+    // blocked with it 11 px from the calibrated anchor, matching at .93, and called that "displaced". What this
+    // check is for is a marker that is GONE (a panel over it, the map closed) or one that turns up somewhere
+    // else entirely, and the search window is only ORIGIN_MARGIN wide, so a tolerance near the template's own
+    // size keeps both of those while surviving the drift.
     const ownInPlace = !!own && Math.abs(own.x - c.originAnchor.x) <= ORIGIN_TOLERANCE && Math.abs(own.y - c.originAnchor.y) <= ORIGIN_TOLERANCE;
     const origin = this.origin, leader = best ? { x: best.x + c.markerOffset.dx, y: best.y + c.markerOffset.dy } : undefined;
     // Markers crawl a pixel or two per capture. A label that jumps means the whole map moved (a panel

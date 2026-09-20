@@ -489,9 +489,15 @@ describe("map marker tracker (synthetic key pixels)", () => {
       expect(seen, `own marker displaced ${dx},${dy}`).toMatchObject({ originVerified: true, origin: centre, evidence: { originScore: 1, originSeenAgoMs: 0 } });
     }
   });
-  it("does not verify the origin when the orange marker is displaced more than 5 px or was never seen", () => {
+  it("verifies the origin through the ten-odd pixels the map drifts, and not when it is somewhere else or was never seen", () => {
     const c = calibrated(), centre = mapCentre(VIEW);
-    for (const [dx, dy] of [[6, 0], [-6, 0], [0, 6], [0, -6], [12, 9], [-18, -18]]) {
+    // Measured live: the marker sat 11 px from the calibrated anchor, matching at .93, and every action that
+    // needs a verified map centre was switched off. That much drift is normal between sessions and areas.
+    for (const [dx, dy] of [[11, 0], [-11, 0], [0, 11], [0, -11], [9, 9]]) {
+      const seen = step(new MapMarkerTracker(c), mapScene([leaderAt(200, 100)], { x: centre.x + dx, y: centre.y + dy }), 0).seen;
+      expect(seen, `own marker drifted ${dx},${dy}`).toMatchObject({ leaderFound: true, originVerified: true });
+    }
+    for (const [dx, dy] of [[15, 0], [-15, 0], [0, 15], [0, -15], [12, 19], [-18, -18]]) {
       const seen = step(new MapMarkerTracker(c), mapScene([leaderAt(200, 100)], { x: centre.x + dx, y: centre.y + dy }), 0).seen;
       // The marker is seen (it scores) but it is not in place, so the map centre cannot be trusted.
       expect(seen, `own marker displaced ${dx},${dy}`).toMatchObject({ leaderFound: true, originVerified: false, evidence: { originScore: 1, originSeenAgoMs: null } });
@@ -500,7 +506,7 @@ describe("map marker tracker (synthetic key pixels)", () => {
     expect(step(new MapMarkerTracker(c), mapScene([leaderAt(200, 100)], { x: 420, y: 175 }), 0).seen.originVerified).toBe(false);
   });
   it("trusts a hidden origin for 1500 ms, withdraws a displaced one at once, and restores either when the marker is back in place", () => {
-    const c = calibrated(), centre = mapCentre(VIEW), absent = mapScene([leaderAt(200, 100)], null), shifted = mapScene([leaderAt(200, 100)], { x: centre.x + 9, y: centre.y });
+    const c = calibrated(), centre = mapCentre(VIEW), absent = mapScene([leaderAt(200, 100)], null), shifted = mapScene([leaderAt(200, 100)], { x: centre.x + 18, y: centre.y });
     const hiddenTracker = new MapMarkerTracker(c);
     expect(step(hiddenTracker, mapScene([leaderAt(200, 100)]), 100).seen.originVerified).toBe(true);
     // Effects can wash the marker out for a moment: absence alone is tolerated briefly.

@@ -913,7 +913,7 @@ describe("follow drive never clicks without a trusted sighting (synthetic hosts,
   it("pauses while the orange marker is displaced or hidden: a hidden one keeps the last good sighting for 1500 ms, a displaced one for no time at all", async () => {
     const rig = await calibrated({ clock: 70_000 });
     goLive(rig);
-    rig.scene.own = { dx: 14, dy: 0 };
+    rig.scene.own = { dx: 18, dy: 0 };   // past the drift the map itself shows, so the centre really has moved
     await rig.service.start();
     await cycles(rig);
     expect(rig.service.status()).toMatchObject({ decision: { kind: "pause" }, observation: { leaderFound: true, confidence: 1, originVerified: false, evidence: { originSeenAgoMs: null } } });
@@ -940,7 +940,7 @@ describe("follow drive never clicks without a trusted sighting (synthetic hosts,
     rig.scene.own = { dx: 0, dy: 0 };
     await expect.poll(() => stats(rig).clicks, soon).toBe(3);
     // Displaced mid-run: the marker seen somewhere else says the map moved, so that sighting is withdrawn at once, not 1500 ms later.
-    rig.scene.own = { dx: 14, dy: 0 };
+    rig.scene.own = { dx: 18, dy: 0 };   // past the drift the map itself shows, so the centre really has moved
     await expect.poll(() => rig.service.status().decision?.kind, soon).toBe("pause");
     expect(rig.service.status().observation).toMatchObject({ leaderFound: true, originVerified: false, evidence: { originScore: 1, originSeenAgoMs: null } });
     rig.clock! += 100; // a click would be due, well inside 1500 ms of the last good sighting
