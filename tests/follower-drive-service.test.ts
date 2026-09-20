@@ -174,10 +174,34 @@ interface Rig {
   sprintRefusals: Array<{ start: boolean; error: string }>;
   /** How many 'release' requests are answered { ok: false } (a key is still held) before one succeeds, and when each one was asked (real time). */
   releaseRefusals: number; releasedAt: number[];
+  /** Injected worker round-trip costs; see `Latency`. Undefined everywhere except the freshness measurements. */
+  latency?: Latency;
 }
+/**
+ * What one worker round trip costs the loop, in milliseconds of the service clock: a floor plus a cubed-uniform
+ * tail, so most requests cost about the floor and a few cost several times it — the shape the live percentiles
+ * show (cycle 28.5 / 52 ms against capture→click 58 / 117 ms).
+ */
+type Cost = readonly [floor: number, tail: number];
+/**
+ * With `latency` set the rig stops being instantaneous and starts charging the loop for every worker request,
+ * on a frozen clock that only these costs advance. Three things then become true at once, and together they
+ * reproduce a stale refusal with no game in the room:
+ *
+ * - `capturedAtQpcMs` is the clock at the moment the worker took the capture, so the QPC domain the native
+ *   freshness guard reads and the service clock are the same domain, exactly as they are live (both are QPC);
+ * - the synthetic input host applies that guard itself, as `GuardedClick` does in
+ *   `scripts/win-follower-input-host.ps1`: a capture older than `maxAgeMs` when the click finally goes out is
+ *   refused with the worker's own words, however fresh it was when the click was decided;
+ * - `captureToInputMs` is then the real age of that capture rather than a scripted number.
+ *
+ * `key` is the marker capture AND the decode that follows it, because the service's own `cycleMs` measures
+ * exactly that span; `runs` likewise covers the loot scan and the label detection it feeds.
+ */
+interface Latency { key?: Cost; runs?: Cost; input?: Cost; sprint?: Cost; map?: Cost }
 const rigs: Rig[] = [], directories: string[] = [];
 const temporary = () => { const d = mkdtempSync(path.join(tmpdir(), "poe-follower-drive-")); directories.push(d); return d; };
-function setup(options: { directory?: string; clock?: number; scene?: Partial<Scene>; killSwitch?: KillSwitch; mapHost?: boolean } = {}): Rig {
+function setup(options: { directory?: string; clock?: number; scene?: Partial<Scene>; killSwitch?: KillSwitch; mapHost?: boolean; latency?: Latency } = {}): Rig {
   const rig: Rig = {
     service: undefined as unknown as FollowerDriveService, directory: options.directory ?? temporary(), killSwitch: options.killSwitch ?? new KillSwitch(),
     scene: { leader: FAR, own: { dx: 0, dy: 0 }, process: GAME, hwnd: HWND, view: { width: W, height: H }, ...options.scene },
@@ -185,8 +209,28 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
     capture: [], input: [], attempts: [], refusals: [], latencies: [37], capturePing: { ok: true }, inputPing: { ok: true }, releaseFails: false, escapes: [], escapeRefusals: [],
     created: { capture: 0, input: 0 }, newestCaptureQpc: 5_000_000, traces: [], reasons: new Set(),
     map: [], scanQpc: [], partyQpc: [], confirmQpc: [], sprintRefusals: [], releaseRefusals: 0, releasedAt: [],
+    latency: options.latency,
   };
   const now = () => rig.clock ?? performance.now();
+  // One deterministic stream for every cost in the run, so the same scenario always produces the same
+  // refusals: the whole measurement is a function of the injected costs, never of how fast the test host is.
+  let seed = 20_260_919;
+  const dice = () => (seed = seed * 48_271 % 2_147_483_647) / 2_147_483_647;
+  /** Charges one round trip to the service clock and returns what it cost. Without `latency` nothing costs anything. */
+  const spend = (cost?: Cost): number => {
+    if (!cost || rig.latency === undefined || rig.clock === undefined) return 0;
+    const ms = cost[0] + Math.round(cost[1] * dice() ** 3);
+    rig.clock += ms;
+    return ms;
+  };
+  /** The capture instant the reply will carry: the clock as the worker enters its handler, before the capture itself. */
+  const capturedAt = (): number => { if (rig.latency && rig.clock !== undefined) rig.newestCaptureQpc = rig.clock; else rig.newestCaptureQpc += 9; return rig.newestCaptureQpc; };
+  /**
+   * The native worker's own freshness rule, applied after the round trip this request cost: `GuardedClick`
+   * and `Sprint` both re-check the capture's age when the input actually goes out, not when it was decided.
+   */
+  const stale = (payload: Payload): boolean => rig.latency !== undefined && rig.clock !== undefined
+    && Number.isFinite(Number(payload.capturedAtQpcMs)) && rig.clock - Number(payload.capturedAtQpcMs) > Number(payload.maxAgeMs);
   rig.service = new FollowerDriveService({
     directory: rig.directory, killSwitch: rig.killSwitch, mode: "authorized-qa", pollMs: 2, now,
     follow: () => ({ ...rig.follow }), blocked: () => rig.blocked, globalDryRun: () => rig.globalDryRun, audit: traces => { rig.traces.push(...traces); },
@@ -202,18 +246,18 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
           if (payload.op === "preview") await scene.previewGate;
           if (payload.op === "preview") return { ...shared, pixels: "", image: `data:image/png;base64,${png(scene).toString("base64")}` };
           if (payload.op === "runs") {
-            rig.newestCaptureQpc += 9; rig.scanQpc.push(rig.newestCaptureQpc);
+            const at = capturedAt(); rig.scanQpc.push(at); spend(rig.latency?.runs);
             const scanned = { x: Number(payload.x), y: Number(payload.y), width: Number(payload.width), height: Number(payload.height) };
-            return { ...shared, capturedAtQpcMs: rig.newestCaptureQpc, overflow: false, runs: flatRuns(scene, scanned, Number(payload.minLength), Number(payload.minBrightness)) };
+            return { ...shared, capturedAtQpcMs: at, overflow: false, runs: flatRuns(scene, scanned, Number(payload.minLength), Number(payload.minBrightness)) };
           }
           if (payload.op !== "key") return { ok: false, error: "Unknown follower capture operation" };
           rig.reasons.add(rig.service.status().reason);
           scene.onKey?.();
           const second = payload.second as { x: number; y: number; width: number; height: number; channel: string; threshold: number };
           const area = payload.full === true ? { x: 0, y: 0, ...scene.view } : { x: Number(payload.x), y: Number(payload.y), width: Number(payload.width), height: Number(payload.height) };
-          rig.newestCaptureQpc += 9;
+          const at = capturedAt(); spend(rig.latency?.key);
           return {
-            ...shared, capturedAtQpcMs: rig.newestCaptureQpc,
+            ...shared, capturedAtQpcMs: at,
             overflow: !!scene.overflow, points: scene.corruptPoints ? scene.corruptPoints.value : scene.overflow ? "" : keyPoints(scene, area, payload.channel, Number(payload.threshold)),
             secondOverflow: false, secondPoints: keyPoints(scene, second, second.channel, second.threshold),
             ...(scene.blue ? { thirdOverflow: false, thirdPoints: encodePoints(scene.blue, payload.third as Rect) } : {}),
@@ -231,13 +275,16 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
           if (payload.op === "release") {
             if (rig.releaseFails) throw new Error("win-input-host-closed");
             rig.releasedAt.push(performance.now());
+            spend(rig.latency?.sprint);
             return rig.releaseRefusals-- > 0 ? { ok: false, error: "Space is still held" } : { ok: true };
           }
           if (payload.op === "sprint") {
             const refusal = rig.sprintRefusals[0];
-            if (payload.hold !== true || !refusal || refusal.start !== payload.start) return { ok: true };
+            const scripted = payload.hold === true && refusal && refusal.start === payload.start;
+            if (payload.hold === true) spend(rig.latency?.sprint);
+            if (!scripted) return payload.hold === true && stale(payload) ? { ok: false, error: "Stale capture" } : { ok: true };
             rig.sprintRefusals.shift();
-            return { ok: false, error: refusal.error };
+            return { ok: false, error: refusal!.error };
           }
           // A guarded Escape tap: no cursor movement and no click, so it is recorded on its own.
           if (payload.op === "key") { rig.escapes.push(payload); const refusal = rig.escapeRefusals.shift(); return refusal ? { ok: false, error: refusal } : { ok: true }; }
@@ -246,7 +293,9 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
           const refusal = rig.refusals.shift();
           if (refusal instanceof Error) throw refusal;
           if (refusal) return { ok: false, error: refusal };
-          return { ok: true, inputMs: 21, captureToInputMs: rig.latencies.length > 1 ? rig.latencies.shift() : rig.latencies[0] };
+          spend(rig.latency?.input);
+          if (stale(payload)) return { ok: false, error: "Stale capture" };
+          return { ok: true, inputMs: 21, captureToInputMs: rig.latency ? rig.clock! - Number(payload.capturedAtQpcMs) : rig.latencies.length > 1 ? rig.latencies.shift() : rig.latencies[0] };
         },
         close: async () => { rig.input.push({ op: "closed" }); },
       };
@@ -260,7 +309,7 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
           // The party frame and the teleport confirmation are read by the same 'key' op as the markers, on this
           // second worker, and are told apart by the channel each one asks for.
           if (payload.op === "key") {
-            rig.newestCaptureQpc += 9;
+            capturedAt(); spend(rig.latency?.map);
             const rect = payload as unknown as Rect, reply = { ok: true, hwnd: scene.hwnd, process: scene.process, ...scene.view, captureMs: 4, capturedAtQpcMs: rig.newestCaptureQpc };
             if (payload.channel === CONFIRM_CHANNEL) {
               rig.confirmQpc.push(rig.newestCaptureQpc);
@@ -273,6 +322,9 @@ function setup(options: { directory?: string; clock?: number; scene?: Partial<Sc
             return { ...reply, overflow: false, points: encodePoints(scene.party ?? [], rect) };
           }
           if (payload.op !== "terrain") return { ok: false, error: "Unknown follower capture operation" };
+          // The scan itself is asynchronous, but decoding its pixels and running A* share the one JS thread,
+          // so the cost is charged where it lands: inside whatever the loop happens to be doing.
+          spend(rig.latency?.map);
           return { ok: true, hwnd: scene.hwnd, process: scene.process, ...scene.view, captureMs: 5, capturedAtQpcMs: rig.newestCaptureQpc, overflow: false, points: encodePoints(scene.walls ?? [], payload as unknown as Rect) };
         },
         close: async () => { rig.map.push({ op: "closed" }); },
@@ -2132,6 +2184,62 @@ describe("follow drive travel to the leader (SYNTHETIC party-frame pixels and ho
   });
 });
 
+describe("follow drive click freshness under injected worker latency (synthetic hosts, no OS input)", () => {
+  /**
+   * Worker round trips fitted to the 420 s live run this work started from: it measured cycle 28.5 / 52 ms
+   * and capture→click 58 / 117 ms against the 120 ms limit, and 237 of its 1,696 movement clicks came back
+   * refused as stale. Nothing here is about pixels — the refusals are an ordering problem inside one tick,
+   * and an ordering problem can be reproduced, and fixed, without the game.
+   */
+  const LIVE: Latency = { key: [24, 32], runs: [9, 20], input: [23, 49], sprint: [5, 12], map: [12, 40] };
+  /**
+   * A leader circling at a steady 108 map px. Far enough to sprint the whole way, and — the point — actually
+   * moving, so the leader's offset changes every capture and reactive wall-following never decides we are
+   * stuck against something and stops clicking mid-measurement.
+   */
+  function orbit(rig: Rig): void {
+    let angle = 0;
+    rig.scene.onKey = () => { angle += .02; rig.scene.leader = { dx: Math.round(108 * Math.cos(angle)), dy: Math.round(108 * Math.sin(angle)) }; };
+  }
+  interface Measured { attempts: number; refused: number; share: number; clicks: number; lootScans: number; sprints: number; cycleMsP50?: number; cycleMsP95?: number; captureToInputMsP50?: number; captureToInputMsP95?: number }
+  async function measure(options: { loot?: boolean; sprint?: boolean; attempts?: number } = {}): Promise<Measured> {
+    const rig = await calibrated({ clock: 600_000, latency: LIVE });
+    orbit(rig);
+    if (options.loot) rig.follow = { ...rig.follow, lootEnabled: true, lootLeash: 30 };
+    goLive(rig, { sprint: options.sprint === true, clickIntervalMs: 110 });
+    await rig.service.start();
+    const target = options.attempts ?? 200;
+    // Every decision the service makes runs off the injected clock, so the run is a pure function of the
+    // costs above: real time only decides how long the test waits, never what the loop does.
+    await expect.poll(() => stats(rig).clicks + stats(rig).refused, { timeout: 60_000, interval: 5 }).toBeGreaterThanOrEqual(target);
+    rig.service.stop();
+    const final = stats(rig), percentiles = rig.service.status().stats!;
+    const attempts = final.clicks + final.refused;
+    return {
+      attempts, refused: final.refused, clicks: final.clicks, lootScans: final.lootScans, sprints: final.sprints,
+      share: Math.round(final.refused / attempts * 1000) / 10,
+      cycleMsP50: percentiles.cycleMsP50, cycleMsP95: percentiles.cycleMsP95,
+      captureToInputMsP50: percentiles.captureToInputMsP50, captureToInputMsP95: percentiles.captureToInputMsP95,
+    };
+  }
+  it("MEASURE: refusals with loot scanning and sprint on", async () => {
+    const m = await measure({ loot: true, sprint: true });
+    console.log("loot+sprint", JSON.stringify(m));
+  }, 70_000);
+  it("MEASURE: refusals with sprint only", async () => {
+    const m = await measure({ sprint: true });
+    console.log("sprint only", JSON.stringify(m));
+  }, 70_000);
+  it("MEASURE: refusals with loot only", async () => {
+    const m = await measure({ loot: true });
+    console.log("loot only", JSON.stringify(m));
+  }, 70_000);
+  it("MEASURE: refusals with neither", async () => {
+    const m = await measure({});
+    console.log("neither", JSON.stringify(m));
+  }, 70_000);
+});
+
 describe("follow drive settings", () => {
   const valid = { version: 1, dryRun: false, mapScale: 9.5, clickIntervalMs: 140 } as const;
   it("defaults to dry-run and accepts only complete settings inside the limits", () => {
@@ -2189,3 +2297,4 @@ describe("follow drive settings", () => {
     expect(lines).toEqual(rig.traces.slice(0, 2));
   });
 });
+
