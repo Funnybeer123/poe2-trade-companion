@@ -31,6 +31,8 @@ export const NORMAL_STASH_CELLS = { cols: 12, rows: 12 } as const;
 export const QUAD_STASH_CELLS = { cols: 24, rows: 24 } as const;
 export const BAG_CELLS = { cols: 12, rows: 5 } as const;
 export const VENTOR_BAG_CELLS = { cols: 12, rows: 5 } as const;
+/** Maps unique tab: T1–T16 strip on top, 12×8 waystone wells below. */
+export const MAPS_STASH_CELLS = { cols: 12, rows: 8 } as const;
 
 export interface NpcMark {
   id: string;
@@ -50,6 +52,7 @@ export interface CalibrationProfile {
   bagOpenChrome?: ChromeMark;
   stashGrid?: GridMark;
   quadStashGrid?: GridMark;
+  mapsStashGrid?: GridMark;
   activeStashTab?: StashTabKind;
   bagGrid?: GridMark;
   ventorBagGrid?: GridMark;
@@ -109,6 +112,46 @@ export function stampStashPanel(
     stashGrid: grids.stashGrid,
     quadStashGrid: grids.quadStashGrid,
   };
+}
+
+/** Unique Maps tab — fixed 12×8 wells; the drawn box is the outer rectangle. */
+export function applyMapsStashPanel(box: ClientBox, patch?: PackedPatch): GridMark {
+  return { x: box.x, y: box.y, w: box.w, h: box.h, ...MAPS_STASH_CELLS, ...(patch ? { patch } : {}) };
+}
+
+export function nudgeGridMark(mark: GridMark, dx: number, dy: number): GridMark {
+  return { ...mark, x: Math.round(mark.x + dx), y: Math.round(mark.y + dy) };
+}
+
+/** While Maps is the draw tool, hide stash/bag/search/diagnostic overlays. */
+export function mapsCalibrationHidesOthers(tool: string): boolean {
+  return tool === "maps-grid";
+}
+
+/** Juice correction view: Maps 12×8 wells + bag only (regular stash lattice would overlap). */
+export function juiceCalibrationFocus(tool: string): boolean {
+  return tool === "juice-grids";
+}
+
+/** Saved Maps lattice stays visible so it can be corrected; hide it only while drawing a new box. */
+export function showMapsCalibrationMark(tool: string, hasMark: boolean, drawing: boolean): boolean {
+  if (!hasMark) return false;
+  if (tool !== "maps-grid") return true;
+  return !drawing;
+}
+
+export function stampMapsStashPanel(
+  profile: CalibrationProfile,
+  box: ClientBox,
+  patch?: PackedPatch,
+): CalibrationProfile {
+  return { ...profile, mapsStashGrid: applyMapsStashPanel(box, patch) };
+}
+
+export function mapsStashGrid(profile?: CalibrationProfile): GridMark | undefined {
+  const mark = profile?.mapsStashGrid;
+  if (!mark || mark.w < 8 || mark.h < 8) return undefined;
+  return applyMapsStashPanel(mark, mark.patch);
 }
 
 export interface ResolvedStashGrids {

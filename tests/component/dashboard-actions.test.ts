@@ -92,7 +92,7 @@ describe("dashboard action controls", () => {
   });
 
   it.each([
-    ["gear-sort", "sort-gear"], ["craft", "craft-gear"],
+    ["gear-sort", "sort-gear"], ["craft", "craft-gear"], ["juice-maps", "juice-maps"],
     ["shop-scan", "shop-scan"], ["shop-list", "shop-buckets"],
   ] as Array<[DashboardScriptAction, string]>)("maps %s to the saved preview mode", async (action, kind) => {
     await start();

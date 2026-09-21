@@ -14,6 +14,7 @@ import {
   type SelectedMonitor,
 } from "../core/screenLayout.js";
 import {
+  applyMapsStashPanel,
   applyStashPanel,
   clientBoxesMatch,
   packNpcPatch,
@@ -23,6 +24,8 @@ import {
   type ClientBox,
   type GridMark,
 } from "../core/calibrationProfile.js";
+import { planJuiceGridOverlay } from "../core/gridLattice.js";
+import { GridOverlayWindow } from "./gridOverlayWindow.js";
 import {
   buildTransferDiagnostic,
   type DiagnosticCorrection,
@@ -282,6 +285,37 @@ async function captureFrame(monitor?: SelectedMonitor): Promise<{
   }
 }
 
+let gridOverlay: GridOverlayWindow | undefined;
+
+export function hideJuiceGridOverlay(): void {
+  gridOverlay?.hide();
+}
+
+export function juiceGridOverlayVisible(): boolean {
+  return gridOverlay?.isVisible() === true;
+}
+
+export async function toggleJuiceGridOverlay(): Promise<{ visible: boolean }> {
+  if (gridOverlay?.isVisible()) {
+    hideJuiceGridOverlay();
+    return { visible: false };
+  }
+  const shot = await captureFrame();
+  const profile = readMergedProfile();
+  const plan = planJuiceGridOverlay(profile, shot.client);
+  if (plan.grids.length === 0) {
+    throw new Error("No Maps or bag grid saved — draw Maps 12×8 and Bag first.");
+  }
+  gridOverlay ??= new GridOverlayWindow();
+  gridOverlay.show(plan);
+  return { visible: true };
+}
+
+export function disposeJuiceGridOverlay(): void {
+  gridOverlay?.dispose();
+  gridOverlay = undefined;
+}
+
 export function registerCalibrationIpc(): void {
   ipcMain.handle("cal:profile", () => readMergedProfile());
   ipcMain.handle("cal:save", (_event, profile: CalibrationProfile) => persistProfile(profile));
@@ -297,6 +331,7 @@ export function registerCalibrationIpc(): void {
   });
   ipcMain.handle("cal:target", async () => findPoeTarget());
   ipcMain.handle("cal:capture", async (_event, profile?: CalibrationProfile) => {
+    hideJuiceGridOverlay();
     const shot = await captureFrame();
     return {
       preview: shot.preview,
@@ -308,6 +343,7 @@ export function registerCalibrationIpc(): void {
   });
   ipcMain.handle("cal:look", async (_event, profile: CalibrationProfile) => {
     const started = Date.now();
+    hideJuiceGridOverlay();
     const shot = await captureFrame();
     const facts = perceiveUi(
       shot.gray,
@@ -334,6 +370,7 @@ export function registerCalibrationIpc(): void {
         Boolean(payload.bmpPath) &&
         existsSync(payload.bmpPath!) &&
         Boolean(payload.screen?.width && payload.screen?.height);
+      if (!reuse) hideJuiceGridOverlay();
       const shot = reuse ? undefined : await captureFrame();
       const bmpPath = reuse ? payload.bmpPath! : shot!.bmpPath;
       const client = reuse ? payload.screen! : shot!.client;
@@ -386,6 +423,7 @@ export function registerCalibrationIpc(): void {
         stashPanel?: ClientBox;
         stashGrid?: GridMark;
         quadStashGrid?: GridMark;
+        mapsStashGrid?: GridMark;
         activeStashTab?: "normal" | "quad";
         bagGrid?: GridMark;
         ventorBagGrid?: GridMark;
@@ -415,6 +453,9 @@ export function registerCalibrationIpc(): void {
           next.quadStashGrid = { ...patched, ...QUAD_STASH_CELLS };
         }
       }
+      if (payload.mapsStashGrid) {
+        next.mapsStashGrid = withGridPatch(gray, payload.screen, applyMapsStashPanel(payload.mapsStashGrid));
+      }
       if (payload.activeStashTab) next.activeStashTab = payload.activeStashTab;
       if (payload.bagGrid) next.bagGrid = withGridPatch(gray, payload.screen, payload.bagGrid);
       if (payload.ventorBagGrid) next.ventorBagGrid = withGridPatch(gray, payload.screen, payload.ventorBagGrid);
@@ -442,6 +483,34 @@ export function registerCalibrationIpc(): void {
       return persistProfile(next);
     },
   );
+  ipcMain.handle("cal:overlay-grids", async () => {
+    hideJuiceGridOverlay();
+    const shot = await captureFrame();
+    const profile = readMergedProfile();
+    const plan = planJuiceGridOverlay(profile, shot.client);
+    if (plan.grids.length === 0) {
+      throw new Error("No Maps or bag grid saved — draw Maps 12×8 and Bag first.");
+    }
+    gridOverlay ??= new GridOverlayWindow();
+    gridOverlay.show(plan);
+    return {
+      ok: true,
+      preview: shot.preview,
+      screen: shot.client,
+      bmpPath: shot.bmpPath,
+      target: shot.target,
+      grids: plan.grids.map((grid) => grid.label),
+      clickCount: plan.clicks.length,
+    };
+  });
+  ipcMain.handle("cal:hide-grids", () => {
+    hideJuiceGridOverlay();
+    return { ok: true };
+  });
+  ipcMain.handle("cal:toggle-grids", async () => {
+    const next = await toggleJuiceGridOverlay();
+    return { ok: true, ...next };
+  });
   ipcMain.handle("cal:walk-npc", async () => ({
     ok: false,
     error: "direct-calibration-input-disabled-use-audited-transfer-controls",

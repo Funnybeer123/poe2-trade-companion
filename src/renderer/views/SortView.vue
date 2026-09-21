@@ -92,6 +92,10 @@ async function runCraft(): Promise<void> {
   await runScriptKind(dryRun.value ? "craft-gear-dry" : "craft-gear");
 }
 
+async function runJuiceMaps(): Promise<void> {
+  await runScriptKind(dryRun.value ? "juice-maps-dry" : "juice-maps");
+}
+
 async function stopScript(): Promise<void> {
   if (!api) return;
   await (api as unknown as { stopScript(): Promise<boolean> }).stopScript();
@@ -220,6 +224,40 @@ const readiness = computed(() => [
           @click="runCraft"
         >
           {{ dryRun ? "Preview crafting" : "Craft gear" }}
+        </button>
+        <button
+          type="button"
+          class="button danger"
+          :disabled="!status.running"
+          @click="stopScript"
+        >
+          Stop
+        </button>
+      </div>
+    </section>
+
+    <section v-if="available" class="card sort-run" aria-labelledby="juice-run-title">
+      <div class="section-heading">
+        <div>
+          <span class="eyebrow">Maps</span>
+          <h2 id="juice-run-title">Juice T15 maps</h2>
+        </div>
+      </div>
+      <p class="muted">
+        One Ctrl+C sweep of the open Maps tab. Alchemy or Regal from that scan,
+        then three Exalts on every uncorrupted T15 and one Vaal. No second
+        scans. Currency stacks must be in the bag.
+        The Maps unique tab uses its own 12×8 grid (below T1–T16) — draw it under Tools → Calibration → Maps.
+        {{ dryRun ? "Dry-run copies the tab and prints each stone's next orb without applying currency." : "Live mode applies orbs from the bag onto the open stash tab." }}
+      </p>
+      <div class="button-row">
+        <button
+          type="button"
+          class="button primary"
+          :disabled="status.running"
+          @click="runJuiceMaps"
+        >
+          {{ dryRun ? "Preview T15 juice" : "Juice T15 maps" }}
         </button>
         <button
           type="button"

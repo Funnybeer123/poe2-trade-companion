@@ -220,6 +220,10 @@ async function runAction(name: string, key: number): Promise<void> {
     else if (name === "vendor") await actionVendor();
     else if (name === "identify") await actionIdentify();
     else if (name === "vendor-cycle") await actionVendorCycle();
+    else if (name === "grids") {
+      log({ action: "grids", phase: "hint", message: "Ctrl+Alt+G in the companion app toggles the Maps/bag overlay. Showing juice:grids until Numpad 0." });
+      await spawnScript(["scripts/show-juice-grids.ts"], "grids");
+    }
     else log({ action: name, phase: "error", message: `no handler for action "${name}"` });
   } catch (error) {
     log({ action: name, phase: "error", message: error instanceof Error ? error.message : String(error) });

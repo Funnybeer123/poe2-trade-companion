@@ -22,8 +22,30 @@
 .stage img { display: block; width: 100%; height: auto; }
 .stage .placeholder { padding: 2rem; color: var(--text-muted); }
 .box { position: absolute; border: 2px solid var(--gold); color: var(--gold); font-size: 11px; padding: 0 4px; pointer-events: none; }
-.box.bag { border-color: #7ec8e3; color: #7ec8e3; }
+.box.bag { border-color: #f5c14a; color: #f5c14a; }
+.box.maps { border-color: #ff6b8a; color: #ff6b8a; }
 .box.grid { border-style: dashed; }
+.box.lattice {
+  background-color: transparent;
+  background-image:
+    linear-gradient(to right, currentColor 1px, transparent 1px),
+    linear-gradient(to bottom, currentColor 1px, transparent 1px);
+  background-size: calc(100% / var(--cols, 12)) 100%, 100% calc(100% / var(--rows, 12));
+  background-repeat: repeat;
+}
+.grid-dot {
+  position: absolute;
+  width: 6px;
+  height: 6px;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  border: 1.5px solid currentColor;
+  background: transparent;
+  box-shadow: none;
+  opacity: 0.7;
+}
+.grid-dot.maps { background: transparent; border-color: #ff6b8a; }
+.grid-dot.bag { background: transparent; border-color: #f5c14a; }
 .box.search { border-color: #7ee3b0; color: #7ee3b0; }
 .box.draft { border-color: #fff; color: #fff; }
 .box.nameplate { border-color: #e24b4b; color: #e24b4b; }

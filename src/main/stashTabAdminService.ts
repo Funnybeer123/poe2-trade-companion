@@ -77,6 +77,8 @@ const SCRIPT_ARGS: Record<StashTabScriptKind, string[]> = {
   // Merchant listings: keep Chaos/Divine only, delist every other currency.
   "shop-currency-sweep-dry": ["scripts/shop.ts", "--currency-sweep", "--current", "--max-actions=144"],
   "shop-currency-sweep": ["scripts/shop.ts", "--currency-sweep", "--current", "--live", "--max-actions=144"],
+  "juice-maps-dry": ["scripts/juice-maps.ts", "--current"],
+  "juice-maps": ["scripts/juice-maps.ts", "--current", "--live"],
 };
 
 export class StashTabAdminService {
@@ -117,11 +119,12 @@ export class StashTabAdminService {
       shell: !worker,
       windowsHide: true,
       stdio: ["ignore", "pipe", "pipe"],
-      // Live crafting is double-gated: the script demands this env var on top
-      // of --live, so only the explicit craft-gear kind can ever arm it.
+      // Live crafting / juicing are double-gated: the script demands this env
+      // var on top of --live, so only the explicit live kind can ever arm it.
       env: {
         ...process.env,
         ...(kind === "craft-gear" ? { POE2_CRAFT_LIVE: "1" } : {}),
+        ...(kind === "juice-maps" ? { POE2_JUICE_LIVE: "1" } : {}),
         ...(this.options.marketConfigDir
           ? { POE2_MARKET_CONFIG_DIR: this.options.marketConfigDir } : {}),
         ...(this.options.templateDir ? { POE2_TEMPLATE_DIR: this.options.templateDir } : {}),

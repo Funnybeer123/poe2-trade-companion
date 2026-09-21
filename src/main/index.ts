@@ -29,7 +29,7 @@ import {
   type VoiceTransferState,
   type VoiceTransferStatus,
 } from "../core/voiceTransfer.js";
-import { readMergedProfile, registerCalibrationIpc } from "./calibrationIpc.js";
+import { disposeJuiceGridOverlay, readMergedProfile, registerCalibrationIpc, toggleJuiceGridOverlay } from "./calibrationIpc.js";
 import { AssistiveRunService, type AssistiveRunRequest } from "./assistiveRunService.js";
 import {
   findCompanionRepoRoot,
@@ -531,6 +531,11 @@ if (ownsInstance) void app.whenReady().then(() => {
   if (!backgroundSmoke) bagTriageService.setCleanupHotkey(globalShortcut.register("CommandOrControl+Alt+V", () => {
     bagTriageService?.startCleanupFromHotkey();
   }));
+  if (!backgroundSmoke) {
+    globalShortcut.register("CommandOrControl+Alt+G", () => {
+      void toggleJuiceGridOverlay().catch(() => undefined);
+    });
+  }
   voiceService = new VoiceTransferService({
     mode: buildMode,
     recognizer: new WindowsSpeechRecognizer(),
@@ -900,6 +905,7 @@ app.on("window-all-closed", () => {
   priceFeedService = undefined;
   dryRunOverlay?.dispose();
   dryRunOverlay = undefined;
+  disposeJuiceGridOverlay();
   localPersistence?.close();
   localPersistence = undefined;
   globalShortcut.unregisterAll();

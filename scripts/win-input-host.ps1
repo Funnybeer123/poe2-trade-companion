@@ -37,6 +37,78 @@ function Get-PoeWindow {
   } | Select-Object -First 1
 }
 
+function Test-WaystoneCopyComplete([string]$text) {
+  if ([string]::IsNullOrEmpty($text)) { return $false }
+  if ($text -match '(?m)^\s*(?:Twice\s+)?Corrupted\s*$') { return $true }
+  if ($text -match '(?m)^\s*Unidentified\s*$') { return $true }
+  if ($text -match 'Can be used in a Map Device') { return $true }
+  return $false
+}
+
+function Test-CurrencyCopyComplete([string]$text) {
+  if ([string]::IsNullOrEmpty($text)) { return $false }
+  if ($text -notmatch 'Item Class:\s*(?:Stackable\s+)?Currency') { return $false }
+  if ($text -match 'Stack Size:') { return $true }
+  return $false
+}
+
+function Test-HeldWaystone([string]$text) {
+  if ([string]::IsNullOrEmpty($text)) { return $false }
+  return $text -match 'Item Class:\s*Waystones'
+}
+
+function Test-HeldExpectedOrb([string]$text, [string]$expect) {
+  if ([string]::IsNullOrEmpty($text)) { return $false }
+  if (Test-HeldWaystone $text) { return $false }
+  if ($text -notmatch 'Item Class:\s*(?:Stackable\s+)?Currency') { return $false }
+  if ($expect -and $text -notmatch [regex]::Escape($expect)) { return $false }
+  return $true
+}
+
+function Test-ItemTextCorrupted([string]$text) {
+  if ([string]::IsNullOrEmpty($text)) { return $false }
+  return $text -match '(?m)^\s*(?:Twice\s+)?Corrupted\s*$'
+}
+
+function Test-WaystoneTier15([string]$text) {
+  if (-not (Test-HeldWaystone $text)) { return $false }
+  return $text -match 'Tier 15' -or $text -match 'Waystone Tier:\s*15'
+}
+
+function Copy-HoveredItemText([int]$x, [int]$y, [int]$hoverMs, [int]$waitMs, [string]$sentinel, [bool]$fast) {
+  if ($hoverMs -le 0) { $hoverMs = 50 }
+  if ($waitMs -le 0) { $waitMs = 160 }
+  if (-not $sentinel) { $sentinel = "poe2-copy-sentinel" }
+  [void][AssistiveWin]::SetCursorPos($x, $y)
+  Start-Sleep -Milliseconds $hoverMs
+  try { Set-Clipboard -Value $sentinel -ErrorAction SilentlyContinue } catch {}
+  [AssistiveWin]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 8
+  [AssistiveWin]::keybd_event(0x43, 0, 0, [UIntPtr]::Zero)
+  Start-Sleep -Milliseconds 8
+  [AssistiveWin]::keybd_event(0x43, 0, 2, [UIntPtr]::Zero)
+  [AssistiveWin]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
+  $text = $sentinel
+  $stable = ""
+  $stableHits = 0
+  $deadline = [DateTime]::UtcNow.AddMilliseconds($waitMs)
+  while ([DateTime]::UtcNow -lt $deadline) {
+    if ($fast) { Start-Sleep -Milliseconds 10 } else { Start-Sleep -Milliseconds 16 }
+    $got = $sentinel
+    try { $got = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch { $got = $sentinel }
+    if ($null -eq $got) { $got = "" }
+    if ($got -eq $sentinel -or $got -eq "") { continue }
+    $text = $got
+    if ($fast) { break }
+    if ($got -eq $stable) { $stableHits += 1 } else { $stable = $got; $stableHits = 1 }
+    if ((Test-WaystoneCopyComplete $got) -and $stableHits -ge 1) { break }
+    if ((Test-CurrencyCopyComplete $got) -and $stableHits -ge 1) { break }
+    if ($stableHits -ge 2 -and $got.Length -gt 80) { break }
+  }
+  if ($text -eq $sentinel) { return "" }
+  return [string]$text
+}
+
 function Get-ClientScreenRect([IntPtr]$hwnd) {
   $client = New-Object AssistRect
   [void][AssistiveWin]::GetClientRect($hwnd, [ref]$client)
@@ -765,7 +837,10 @@ while ($true) {
       Emit @{ ok = $false; error = "missing-points" }
       continue
     }
-    $hover = if ($cmd.hoverMs) { [int]$cmd.hoverMs } else { 120 }
+    $hover = if ($cmd.hoverMs) { [int]$cmd.hoverMs } else { 55 }
+    $waitMs = if ($cmd.copyWaitMs) { [int]$cmd.copyWaitMs } else { 160 }
+    $fast = $true
+    if ($null -ne $cmd.fast) { $fast = [bool]$cmd.fast }
     $sentinel = [string]$cmd.sentinel
     if (-not $sentinel) { $sentinel = "poe2-copysweep-sentinel" }
     $orig = ""
@@ -773,24 +848,7 @@ while ($true) {
     if ($null -eq $orig) { $orig = "" }
     $texts = New-Object System.Collections.ArrayList
     foreach ($p in $points) {
-      [void][AssistiveWin]::SetCursorPos([int]$p.x, [int]$p.y)
-      Start-Sleep -Milliseconds $hover
-      try { Set-Clipboard -Value $sentinel -ErrorAction SilentlyContinue } catch {}
-      [AssistiveWin]::keybd_event(0x11, 0, 0, [UIntPtr]::Zero)
-      Start-Sleep -Milliseconds 15
-      [AssistiveWin]::keybd_event(0x43, 0, 0, [UIntPtr]::Zero)
-      Start-Sleep -Milliseconds 15
-      [AssistiveWin]::keybd_event(0x43, 0, 2, [UIntPtr]::Zero)
-      [AssistiveWin]::keybd_event(0x11, 0, 2, [UIntPtr]::Zero)
-      $text = $sentinel
-      $deadline = [DateTime]::UtcNow.AddMilliseconds(220)
-      while ([DateTime]::UtcNow -lt $deadline) {
-        Start-Sleep -Milliseconds 15
-        try { $text = Get-Clipboard -Raw -ErrorAction SilentlyContinue } catch { $text = $sentinel }
-        if ($null -eq $text) { $text = "" }
-        if ($text -ne $sentinel) { break }
-      }
-      if ($text -eq $sentinel) { $text = "" }
+      $text = Copy-HoveredItemText ([int]$p.x) ([int]$p.y) $hover $waitMs $sentinel $fast
       [void]$texts.Add([string]$text)
     }
     try { Set-Clipboard -Value $orig -ErrorAction SilentlyContinue } catch {}
@@ -929,9 +987,16 @@ while ($true) {
     }
     [void][AssistiveWin]::SetCursorPos($x, $y)
     Start-Sleep -Milliseconds 16
+    $shift = [bool]$cmd.shift
+    if ($shift) {
+      [AssistiveWin]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero)
+    }
     [AssistiveWin]::mouse_event(0x0008, 0, 0, 0, [UIntPtr]::Zero)
     Start-Sleep -Milliseconds 8
     [AssistiveWin]::mouse_event(0x0010, 0, 0, 0, [UIntPtr]::Zero)
+    if ($shift) {
+      [AssistiveWin]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero)
+    }
     Emit @{ ok = $true; focused = $focused; x = $x; y = $y }
     continue
   }
@@ -965,6 +1030,286 @@ while ($true) {
       [AssistiveWin]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero)
     }
     Emit @{ ok = $true; focused = $focused; x = $x; y = $y }
+    continue
+  }
+  if ($op -eq "shiftburst") {
+    $x = [int]$cmd.x
+    $y = [int]$cmd.y
+    $count = [int]$cmd.count
+    if ($count -lt 1) { $count = 1 }
+    if ($count -gt 8) { $count = 8 }
+    $gap = [int]$cmd.gapMs
+    if ($gap -lt 80) { $gap = 200 }
+    $pad = 8
+    $pickupX = $cmd.pickupX
+    $pickupY = $cmd.pickupY
+    $hasPickup = $null -ne $pickupX -and $null -ne $pickupY
+    if ($hasPickup) {
+      $px = [int]$pickupX
+      $py = [int]$pickupY
+      if ($px -lt ($r.left + $pad) -or $px -gt ($r.left + $r.width - $pad) -or $py -lt ($r.top + $pad) -or $py -gt ($r.top + $r.height - $pad)) {
+        Emit @{ ok = $false; error = "click-outside-client"; x = $px; y = $py; left = $r.left; top = $r.top; width = $r.width; height = $r.height; focused = $focused }
+        continue
+      }
+    }
+    if ($x -lt ($r.left + $pad) -or $x -gt ($r.left + $r.width - $pad) -or $y -lt ($r.top + $pad) -or $y -gt ($r.top + $r.height - $pad)) {
+      Emit @{ ok = $false; error = "click-outside-client"; x = $x; y = $y; left = $r.left; top = $r.top; width = $r.width; height = $r.height; focused = $focused }
+      continue
+    }
+    # Hold Shift before any click so PoE keeps the currency on the cursor.
+    [AssistiveWin]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 20
+    if ($hasPickup) {
+      [void][AssistiveWin]::SetCursorPos([int]$pickupX, [int]$pickupY)
+      Start-Sleep -Milliseconds 20
+      [AssistiveWin]::mouse_event(0x0008, 0, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 8
+      [AssistiveWin]::mouse_event(0x0010, 0, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 80
+    }
+    [void][AssistiveWin]::SetCursorPos($x, $y)
+    Start-Sleep -Milliseconds 20
+    $emitted = 0
+    for ($i = 0; $i -lt $count; $i++) {
+      [AssistiveWin]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 10
+      [AssistiveWin]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+      $emitted += 1
+      Start-Sleep -Milliseconds $gap
+    }
+    [AssistiveWin]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero)
+    Emit @{ ok = $true; focused = $focused; x = $x; y = $y; count = $emitted }
+    continue
+  }
+  if ($op -eq "orbbatch") {
+    # One right-click starts use-mode. Shift stays down so later bag stacks
+    # feed — do NOT restock mid-batch (that puts the orb away, and the next
+    # well click picks up the waystone). After every slam, Ctrl+C that well.
+    # If the well is empty, Ctrl+C an empty bag cell: a waystone there means
+    # we picked the map up and must stop before touching another pile.
+    $points = @($cmd.points)
+    $gap = [int]$cmd.gapMs
+    if ($gap -le 0) { $gap = 65 }
+    if ($gap -lt 50) { $gap = 50 }
+    $pickupMs = [int]$cmd.pickupMs
+    if ($pickupMs -le 0) { $pickupMs = 120 }
+    $useShift = $true
+    if ($null -ne $cmd.shift) { $useShift = [bool]$cmd.shift }
+    $expect = [string]$cmd.expect
+    $probeX = 0
+    $probeY = 0
+    if ($null -ne $cmd.probeX) { $probeX = [int]$cmd.probeX }
+    if ($null -ne $cmd.probeY) { $probeY = [int]$cmd.probeY }
+    $hasProbe = ($probeX -gt 0 -and $probeY -gt 0)
+    $pad = 8
+    if ($points.Count -lt 1) {
+      Emit @{ ok = $true; focused = $focused; count = 0; emptyCursor = $false; heldWaystone = $false; verified = 0 }
+      continue
+    }
+    $pickups = New-Object System.Collections.Generic.List[object]
+    if ($null -ne $cmd.pickups) {
+      foreach ($u in @($cmd.pickups)) {
+        $pickups.Add(@{ x = [int]$u.x; y = [int]$u.y; count = [int]$u.count })
+      }
+    } elseif ($null -ne $cmd.pickupX -and $null -ne $cmd.pickupY) {
+      $pickups.Add(@{ x = [int]$cmd.pickupX; y = [int]$cmd.pickupY; count = [int]$points.Count })
+    } else {
+      Emit @{ ok = $false; error = "orbbatch-pickup-required" }
+      continue
+    }
+    $blocked = $false
+    foreach ($u in $pickups) {
+      if ($u.x -lt ($r.left + $pad) -or $u.x -gt ($r.left + $r.width - $pad) -or $u.y -lt ($r.top + $pad) -or $u.y -gt ($r.top + $r.height - $pad)) {
+        Emit @{ ok = $false; error = "click-outside-client"; x = $u.x; y = $u.y; left = $r.left; top = $r.top; width = $r.width; height = $r.height; focused = $focused }
+        $blocked = $true
+        break
+      }
+    }
+    if ($blocked) { continue }
+    $valid = New-Object System.Collections.Generic.List[object]
+    foreach ($p in $points) {
+      $x = [int]$p.x
+      $y = [int]$p.y
+      if ($x -lt ($r.left + $pad) -or $x -gt ($r.left + $r.width - $pad) -or $y -lt ($r.top + $pad) -or $y -gt ($r.top + $r.height - $pad)) {
+        Emit @{ ok = $false; error = "click-outside-client"; x = $x; y = $y; left = $r.left; top = $r.top; width = $r.width; height = $r.height; focused = $focused }
+        $blocked = $true
+        break
+      }
+      $valid.Add(@{ x = $x; y = $y })
+    }
+    if ($blocked) { continue }
+    if ($hasProbe) {
+      if ($probeX -lt ($r.left + $pad) -or $probeX -gt ($r.left + $r.width - $pad) -or $probeY -lt ($r.top + $pad) -or $probeY -gt ($r.top + $r.height - $pad)) {
+        Emit @{ ok = $false; error = "click-outside-client"; x = $probeX; y = $probeY; left = $r.left; top = $r.top; width = $r.width; height = $r.height; focused = $focused }
+        continue
+      }
+    }
+    if ($useShift) {
+      [AssistiveWin]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 12
+    }
+    $emitted = 0
+    $heldWaystone = $false
+    $emptyCursor = $false
+    $verified = 0
+    $sentinel = "poe2-orbbatch-well"
+    $u = $pickups[0]
+    [void][AssistiveWin]::SetCursorPos([int]$u.x, [int]$u.y)
+    Start-Sleep -Milliseconds 24
+    [AssistiveWin]::mouse_event(0x0008, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 12
+    [AssistiveWin]::mouse_event(0x0010, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds $pickupMs
+    $lastPickup = $u
+    foreach ($pair in $valid) {
+      [void][AssistiveWin]::SetCursorPos([int]$pair.x, [int]$pair.y)
+      Start-Sleep -Milliseconds 20
+      [AssistiveWin]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 10
+      [AssistiveWin]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds $gap
+      $copied = Copy-HoveredItemText ([int]$pair.x) ([int]$pair.y) 40 180 $sentinel $false
+      if (Test-HeldWaystone $copied) {
+        $emitted += 1
+        $verified += 1
+        continue
+      }
+      if ($hasProbe) {
+        $held = Copy-HoveredItemText $probeX $probeY 40 180 "poe2-orbbatch-probe" $false
+        if (Test-HeldWaystone $held) {
+          $heldWaystone = $true
+          break
+        }
+      }
+      $emitted += 1
+    }
+    $putBackDone = $false
+    if ([bool]$cmd.putBack -and $null -ne $lastPickup -and -not $heldWaystone) {
+      [void][AssistiveWin]::SetCursorPos([int]$lastPickup.x, [int]$lastPickup.y)
+      Start-Sleep -Milliseconds 20
+      [AssistiveWin]::mouse_event(0x0008, 0, 0, 0, [UIntPtr]::Zero)
+      Start-Sleep -Milliseconds 10
+      [AssistiveWin]::mouse_event(0x0010, 0, 0, 0, [UIntPtr]::Zero)
+      $putBackDone = $true
+    }
+    if ($useShift) {
+      [AssistiveWin]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero)
+    }
+    Emit @{ ok = $true; focused = $focused; count = $emitted; emptyCursor = $emptyCursor; heldWaystone = $heldWaystone; verified = $verified; putBack = $putBackDone }
+    continue
+  }
+  if ($op -eq "vaalburst") {
+    # One Vaal pickup, Shift held for the whole burst. After each click, wait
+    # for a complete Ctrl+C. Corrupted T15 = stay. Complete uncorrupted T15 =
+    # the click missed — retry that well. Empty / not-T15 = ejected onto the
+    # cursor. Do not restock mid-burst (that puts the Vaal away).
+    $points = @($cmd.points)
+    $pickups = New-Object System.Collections.Generic.List[object]
+    if ($null -ne $cmd.pickups) {
+      foreach ($u in @($cmd.pickups)) {
+        $pickups.Add(@{ x = [int]$u.x; y = [int]$u.y; count = [int]$u.count })
+      }
+    }
+    $gap = [int]$cmd.gapMs
+    if ($gap -le 0) { $gap = 70 }
+    $hover = [int]$cmd.hoverMs
+    if ($hover -le 0) { $hover = 70 }
+    $waitMs = [int]$cmd.copyWaitMs
+    if ($waitMs -le 0) { $waitMs = 280 }
+    $pickupMs = [int]$cmd.pickupMs
+    if ($pickupMs -le 0) { $pickupMs = 120 }
+    $retries = [int]$cmd.retries
+    if ($retries -le 0) { $retries = 3 }
+    $probeX = 0
+    $probeY = 0
+    if ($null -ne $cmd.probeX) { $probeX = [int]$cmd.probeX }
+    if ($null -ne $cmd.probeY) { $probeY = [int]$cmd.probeY }
+    $hasProbe = ($probeX -gt 0 -and $probeY -gt 0)
+    $pad = 8
+    if ($points.Count -lt 1 -or $pickups.Count -lt 1) {
+      Emit @{ ok = $true; focused = $focused; applied = 0; ejected = $false; failed = $false; stillClean = $false; pickupIndex = 0; stackLeft = 0 }
+      continue
+    }
+    $valid = New-Object System.Collections.Generic.List[object]
+    $blocked = $false
+    foreach ($p in $points) {
+      $x = [int]$p.x
+      $y = [int]$p.y
+      if ($x -lt ($r.left + $pad) -or $x -gt ($r.left + $r.width - $pad) -or $y -lt ($r.top + $pad) -or $y -gt ($r.top + $r.height - $pad)) {
+        Emit @{ ok = $false; error = "click-outside-client"; x = $x; y = $y; left = $r.left; top = $r.top; width = $r.width; height = $r.height; focused = $focused }
+        $blocked = $true
+        break
+      }
+      $valid.Add(@{ x = $x; y = $y })
+    }
+    if ($blocked) { continue }
+    foreach ($u in $pickups) {
+      if ($u.x -lt ($r.left + $pad) -or $u.x -gt ($r.left + $r.width - $pad) -or $u.y -lt ($r.top + $pad) -or $u.y -gt ($r.top + $r.height - $pad)) {
+        Emit @{ ok = $false; error = "click-outside-client"; x = $u.x; y = $u.y; left = $r.left; top = $r.top; width = $r.width; height = $r.height; focused = $focused }
+        $blocked = $true
+        break
+      }
+    }
+    if ($blocked) { continue }
+    if ($hasProbe) {
+      if ($probeX -lt ($r.left + $pad) -or $probeX -gt ($r.left + $r.width - $pad) -or $probeY -lt ($r.top + $pad) -or $probeY -gt ($r.top + $r.height - $pad)) {
+        Emit @{ ok = $false; error = "click-outside-client"; x = $probeX; y = $probeY; left = $r.left; top = $r.top; width = $r.width; height = $r.height; focused = $focused }
+        continue
+      }
+    }
+    $applied = 0
+    $ejected = $false
+    $stillClean = $false
+    $pIdx = 0
+    $u = $pickups[0]
+    $stackLeft = [int]$u.count
+    $shiftDown = $false
+    $sentinel = "poe2-vaalburst"
+    [AssistiveWin]::keybd_event(0x10, 0, 0, [UIntPtr]::Zero)
+    $shiftDown = $true
+    Start-Sleep -Milliseconds 12
+    [void][AssistiveWin]::SetCursorPos([int]$u.x, [int]$u.y)
+    Start-Sleep -Milliseconds 24
+    [AssistiveWin]::mouse_event(0x0008, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds 12
+    [AssistiveWin]::mouse_event(0x0010, 0, 0, 0, [UIntPtr]::Zero)
+    Start-Sleep -Milliseconds $pickupMs
+    :wells foreach ($well in $valid) {
+      $ok = $false
+      for ($try = 0; $try -lt $retries; $try++) {
+        [void][AssistiveWin]::SetCursorPos([int]$well.x, [int]$well.y)
+        Start-Sleep -Milliseconds 20
+        [AssistiveWin]::mouse_event(0x0002, 0, 0, 0, [UIntPtr]::Zero)
+        Start-Sleep -Milliseconds 10
+        [AssistiveWin]::mouse_event(0x0004, 0, 0, 0, [UIntPtr]::Zero)
+        $stackLeft -= 1
+        Start-Sleep -Milliseconds $gap
+        $copied = Copy-HoveredItemText ([int]$well.x) ([int]$well.y) $hover $waitMs $sentinel $false
+        if ((Test-WaystoneTier15 $copied) -and (Test-ItemTextCorrupted $copied)) {
+          $ok = $true
+          break
+        }
+        if ((Test-WaystoneTier15 $copied) -and (Test-WaystoneCopyComplete $copied)) {
+          continue
+        }
+        if (Test-WaystoneTier15 $copied) {
+          continue
+        }
+        $ejected = $true
+        $applied += 1
+        break wells
+      }
+      if ($ok) {
+        $applied += 1
+        continue
+      }
+      $stillClean = $true
+      break
+    }
+    if ($shiftDown) {
+      [AssistiveWin]::keybd_event(0x10, 0, 2, [UIntPtr]::Zero)
+    }
+    Emit @{ ok = $true; focused = $focused; applied = $applied; ejected = $ejected; failed = $stillClean; stillClean = $stillClean; pickupIndex = $pIdx; stackLeft = $stackLeft }
     continue
   }
   if ($op -eq "drag") {

@@ -1,6 +1,6 @@
 import { build } from "esbuild";
 
-for (const name of ["assistive-sort-tabs", "sort-gear", "craft-gear", "shop", "shop-buckets", "stash-tab-admin", "vendor-cycle"]) {
+for (const name of ["assistive-sort-tabs", "sort-gear", "craft-gear", "juice-maps", "shop", "shop-buckets", "stash-tab-admin", "vendor-cycle"]) {
   await build({ entryPoints: [`scripts/${name}.ts`], outfile: `dist-electron/${name}.mjs`, bundle: true, platform: "node", target: "node22", format: "esm",
     banner: { js: 'import { createRequire } from "node:module"; const require = createRequire(import.meta.url);' }, logLevel: "info" });
 }

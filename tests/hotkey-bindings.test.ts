@@ -17,6 +17,7 @@ describe("hotkey bindings", () => {
     expect(bindings["stash"]).toBe(1);
     expect(bindings["identify"]).toBe(6);
     expect(bindings["vendor-cycle"]).toBe(7);
+    expect(bindings["grids"]).toBeNull();
     expect(Object.keys(bindings)).toHaveLength(HOTKEY_ACTIONS.length);
   });
 

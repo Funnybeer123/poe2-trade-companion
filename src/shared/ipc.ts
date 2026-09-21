@@ -7,7 +7,8 @@ export type StashTabScriptKind =
   | "craft-gear" | "craft-gear-dry" | "shop-scan-dry" | "shop-scan"
   | "shop-apply" | "shop-apply-step" | "shop-list-dry" | "shop-list"
   | "shop-buckets-dry" | "shop-buckets"
-  | "shop-currency-sweep-dry" | "shop-currency-sweep";
+  | "shop-currency-sweep-dry" | "shop-currency-sweep"
+  | "juice-maps" | "juice-maps-dry";
 
 import type {
   BuildProfile,

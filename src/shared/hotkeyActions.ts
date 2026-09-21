@@ -66,6 +66,13 @@ export const HOTKEY_ACTIONS: readonly HotkeyActionInfo[] = [
     context: "hideout",
     defaultKey: 4,
   },
+  {
+    id: "grids",
+    label: "Toggle juice grids",
+    detail: "Show or hide the Maps 12×8 + bag calibration overlay. Desktop shortcut: Ctrl+Alt+G.",
+    context: "hideout",
+    defaultKey: null,
+  },
 ];
 
 /** In-run control keys — never bindable to actions. */

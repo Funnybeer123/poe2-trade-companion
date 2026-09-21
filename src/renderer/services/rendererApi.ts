@@ -853,6 +853,16 @@ export interface CalibrationApi {
   stamp: (
     payload: Record<string, unknown>,
   ) => Promise<{ profile: CalibrationProfile }>;
+  overlayGrids: () => Promise<{
+    ok: boolean;
+    preview: string;
+    screen: ScreenRect;
+    bmpPath: string;
+    target: PoeTarget;
+    grids: string[];
+    clickCount: number;
+  }>;
+  hideGrids: () => Promise<{ ok: boolean }>;
 }
 
 export type AssistiveRunKind = "fill" | "empty" | "two-cycle";

@@ -3,7 +3,13 @@ import { computed, onMounted, ref } from "vue";
 import {
   BAG_CELLS,
   activeStashGrid,
+  applyMapsStashPanel,
   applyStashPanel,
+  juiceCalibrationFocus,
+  mapsCalibrationHidesOthers,
+  mapsStashGrid,
+  nudgeGridMark,
+  showMapsCalibrationMark,
   emptyProfile,
   VENTOR_BAG_CELLS,
   profileReadyForDeposit,
@@ -11,7 +17,9 @@ import {
   toPlain,
   type CalibrationProfile,
   type ClientBox,
+  type GridMark,
 } from "@core/calibrationProfile";
+import { gridClickCenters } from "@core/gridLattice";
 import type { UiFacts } from "@core/uiPerception";
 import type { ScreenRect } from "@core/screenLayout";
 import type {
@@ -26,7 +34,9 @@ import {
 } from "./services/rendererApi";
 
 type Tool =
+  | "juice-grids"
   | "stash-grid"
+  | "maps-grid"
   | "bag-grid"
   | "ventor-bag-grid"
   | "stash-search"
@@ -36,11 +46,13 @@ const profile = ref<CalibrationProfile>(emptyProfile());
 const preview = ref("");
 const bmpPath = ref("");
 const screen = ref({ left: 0, top: 0, width: 3840, height: 2160 });
-const tool = ref<Tool>("stash-grid");
+const tool = ref<Tool>("juice-grids");
+const overlayUp = ref(false);
 const status = ref("Capture the Path of Exile window, then draw the stash and bag grids.");
 const facts = ref<UiFacts | null>(null);
 const elapsedMs = ref<number | null>(null);
 const drawing = ref(false);
+const mapsDragStarted = ref(false);
 const draft = ref<ClientBox | null>(null);
 const start = ref({ x: 0, y: 0 });
 const img = ref<HTMLImageElement | null>(null);
@@ -66,6 +78,27 @@ const sharedStashBox = computed(() => {
   if (!box) return null;
   return { x: box.x, y: box.y, w: box.w, h: box.h };
 });
+const mapsSolo = computed(() => mapsCalibrationHidesOthers(tool.value));
+const juiceFocus = computed(() => juiceCalibrationFocus(tool.value));
+const hideStashMarks = computed(() => mapsSolo.value || juiceFocus.value);
+const showBagMark = computed(() => Boolean(profile.value.bagGrid) && !mapsSolo.value);
+const mapsMark = computed(() => mapsStashGrid(profile.value));
+const showMapsMark = computed(() =>
+  showMapsCalibrationMark(tool.value, Boolean(mapsMark.value), drawing.value),
+);
+
+function selectTool(next: Tool) {
+  tool.value = next;
+  if (next === "maps-grid") {
+    mapsDragStarted.value = false;
+    drawing.value = false;
+    draft.value = null;
+    status.value = "Maps: other marks hidden. The pink lattice is see-through — drag a new 12×8 box around the wells.";
+  } else if (next === "juice-grids") {
+    status.value = "Juice lattices: pink Maps 12×8 wells and gold bag. Show on game, then redraw a box if a dot misses.";
+  }
+}
+
 const needsGridResnap = computed(
   () =>
     Boolean(stashPanelSaved.value && !profile.value.stashGrid?.patch && !profile.value.quadStashGrid?.patch) ||
@@ -90,6 +123,21 @@ function boxStyle(box: ClientBox) {
     top: `${(box.y / screen.value.height) * 100}%`,
     width: `${(box.w / screen.value.width) * 100}%`,
     height: `${(box.h / screen.value.height) * 100}%`,
+  };
+}
+
+function latticeBoxStyle(mark: GridMark) {
+  return {
+    ...boxStyle(mark),
+    "--cols": String(mark.cols),
+    "--rows": String(mark.rows),
+  };
+}
+
+function dotStyle(mark: GridMark, dot: { x: number; y: number }) {
+  return {
+    left: `${((dot.x - mark.x) / mark.w) * 100}%`,
+    top: `${((dot.y - mark.y) / mark.h) * 100}%`,
   };
 }
 
@@ -148,6 +196,9 @@ onMounted(async () => {
   }
   profile.value = await api.profile();
   await findTarget();
+  if (profile.value.mapsStashGrid || profile.value.bagGrid) {
+    await showOnGame();
+  }
 });
 
 async function findTarget() {
@@ -168,9 +219,52 @@ async function findTarget() {
   }
 }
 
+async function showOnGame() {
+  const api = runtime();
+  if (!api?.overlayGrids) {
+    status.value = "Show on game needs the Electron app.";
+    return;
+  }
+  status.value = "Drawing juice lattices over the game…";
+  try {
+    const shot = await api.overlayGrids();
+    preview.value = shot.preview;
+    bmpPath.value = shot.bmpPath;
+    screen.value = shot.screen;
+    target.value = shot.target;
+    overlayUp.value = true;
+    status.value = `On game: ${shot.grids.join(" · ")} · ${shot.clickCount} click centers. Pink Maps / gold bag. Redraw any cell whose dot misses the icon.`;
+  } catch (error) {
+    overlayUp.value = false;
+    status.value = error instanceof Error ? error.message : "Grid overlay failed";
+  }
+}
+
+async function nudgeMaps(dx: number, dy: number) {
+  const mark = mapsMark.value;
+  if (!mark) {
+    status.value = "Draw Maps first, then nudge.";
+    return;
+  }
+  const next = applyMapsStashPanel(nudgeGridMark(mark, dx, dy), mark.patch);
+  profile.value = { ...toPlain(profile.value), mapsStashGrid: next };
+  const api = runtime();
+  if (api) await api.save(toPlain(profile.value));
+  status.value = `Maps slid to ${next.x},${next.y}. Show on game to check the dots.`;
+}
+
+async function hideOnGame() {
+  const api = runtime();
+  if (!api?.hideGrids) return;
+  await api.hideGrids();
+  overlayUp.value = false;
+  status.value = "Game overlay hidden. Screenshot stays so you can redraw Maps or Bag.";
+}
+
 async function capture(after?: string) {
   const api = runtime();
   if (!api) return;
+  overlayUp.value = false;
   status.value = "Capturing…";
   try {
     const shot = await api.capture(toPlain(profile.value));
@@ -213,6 +307,7 @@ function onDown(event: MouseEvent) {
     return;
   }
   drawing.value = true;
+  if (tool.value === "maps-grid") mapsDragStarted.value = true;
   start.value = point;
   draft.value = { x: point.x, y: point.y, w: 1, h: 1 };
 }
@@ -241,6 +336,9 @@ async function onUp() {
   if (tool.value === "stash-grid") {
     await stamp({ stashPanel: box, ...applyStashPanel(box) });
     status.value = "Saved stash panel. Normal 12×12 and quad 24×24 use this same area; Look reports which tab is open.";
+  } else if (tool.value === "maps-grid") {
+    await stamp({ mapsStashGrid: applyMapsStashPanel(box) });
+    status.value = "Saved Maps 12×8 unique-tab grid (below the T1–T16 strip). Juice T15 uses this rectangle, not the regular stash panel.";
   } else if (tool.value === "bag-grid") {
     await stamp({ bagGrid: { ...box, ...BAG_CELLS } });
     status.value = "Saved player bag grid. Screenshot a vendor window and draw Vendor separately.";
@@ -265,6 +363,7 @@ async function resetCalibration() {
     corrections.value = [];
     diagnosticTrace.value = [];
     draft.value = null;
+    mapsDragStarted.value = false;
     status.value = "Calibration cleared. Capture the Path of Exile window and draw the HUD again.";
     return;
   }
@@ -278,6 +377,7 @@ async function resetCalibration() {
   corrections.value = [];
   diagnosticTrace.value = [];
   draft.value = null;
+  mapsDragStarted.value = false;
   status.value = "Calibration cleared. Capture the Path of Exile window and draw the HUD again.";
   await findTarget();
 }
@@ -378,7 +478,9 @@ function clearCorrections() {
       <h2>Calibration</h2>
       <p class="lede">
         Draw the stash panel once (same area for 12×12 and 24×24), then bag and search.
-        A closed stash is opened by clicking the live <strong>STASH</strong> nameplate.
+        Unique tabs (Maps, gems) sit lower — draw <strong>Maps</strong> around the 12×8 waystone wells only.
+        <strong>Juice</strong> shows every Maps and bag cell (dots = click centers) so a miss is visible before the next live run.
+        <kbd>Ctrl+Alt+G</kbd> toggles that overlay on the game.
       </p>
       <p class="status">{{ status }}</p>
       <p class="target">
@@ -390,6 +492,8 @@ function clearCorrections() {
         <div class="btn-row">
           <button type="button" @click="findTarget">Find</button>
           <button type="button" class="primary" @click="capture()">Screenshot</button>
+          <button type="button" class="primary" @click="showOnGame">Show on game</button>
+          <button type="button" :disabled="!overlayUp" @click="hideOnGame">Hide grids</button>
           <button type="button" class="primary" @click="look">Look</button>
           <button type="button" class="primary" @click="startTroubleshoot">Troubleshoot</button>
           <button type="button" class="danger" @click="resetCalibration">Reset</button>
@@ -398,10 +502,21 @@ function clearCorrections() {
       <div class="cal-group">
         <span class="cal-label">Draw</span>
         <div class="btn-row">
-          <button type="button" :class="{ active: tool === 'stash-grid', saved: stashPanelSaved }" @click="tool = 'stash-grid'">Stash</button>
-          <button type="button" :class="{ active: tool === 'bag-grid', saved: profile.bagGrid }" @click="tool = 'bag-grid'">Bag</button>
-          <button type="button" :class="{ active: tool === 'ventor-bag-grid', saved: profile.ventorBagGrid }" @click="tool = 'ventor-bag-grid'">Vendor</button>
-          <button type="button" :class="{ active: tool === 'stash-search', saved: profile.stashSearch }" @click="tool = 'stash-search'">Search</button>
+          <button type="button" :class="{ active: tool === 'juice-grids', saved: Boolean(profile.mapsStashGrid && profile.bagGrid) }" @click="selectTool('juice-grids')">Juice</button>
+          <button type="button" :class="{ active: tool === 'stash-grid', saved: stashPanelSaved }" @click="selectTool('stash-grid')">Stash</button>
+          <button type="button" :class="{ active: tool === 'maps-grid', saved: profile.mapsStashGrid }" @click="selectTool('maps-grid')">Maps</button>
+          <button type="button" :class="{ active: tool === 'bag-grid', saved: profile.bagGrid }" @click="selectTool('bag-grid')">Bag</button>
+          <button type="button" :class="{ active: tool === 'ventor-bag-grid', saved: profile.ventorBagGrid }" @click="selectTool('ventor-bag-grid')">Vendor</button>
+          <button type="button" :class="{ active: tool === 'stash-search', saved: profile.stashSearch }" @click="selectTool('stash-search')">Search</button>
+        </div>
+      </div>
+      <div class="cal-group">
+        <span class="cal-label">Nudge Maps 8px</span>
+        <div class="btn-row">
+          <button type="button" :disabled="!mapsMark" @click="nudgeMaps(-8, 0)">Left</button>
+          <button type="button" :disabled="!mapsMark" @click="nudgeMaps(8, 0)">Right</button>
+          <button type="button" :disabled="!mapsMark" @click="nudgeMaps(0, -8)">Up</button>
+          <button type="button" :disabled="!mapsMark" @click="nudgeMaps(0, 8)">Down</button>
         </div>
       </div>
       <div class="cal-group">
@@ -423,6 +538,7 @@ function clearCorrections() {
       </div>
       <ul class="marks">
         <li><span :class="stashPanelSaved ? 'ok' : 'no'">Stash</span></li>
+        <li><span :class="profile.mapsStashGrid ? 'ok' : 'no'">Maps</span></li>
         <li><span :class="profile.bagGrid ? 'ok' : 'no'">Bag</span></li>
         <li><span :class="profile.ventorBagGrid ? 'ok' : 'no'">Vendor</span></li>
         <li><span :class="profile.stashSearch ? 'ok' : 'no'">Search</span></li>
@@ -436,6 +552,8 @@ function clearCorrections() {
       </p>
       <p v-if="needsGridResnap" class="hint">Redraw a grid on a new screenshot if Look cannot tell it from the hideout.</p>
       <p v-if="!profile.stashSearch" class="hint">Class-filtered fills are blocked until Search is marked.</p>
+      <p v-if="!profile.mapsStashGrid" class="hint">Juice T15 needs a Maps 12×8 mark around the waystone wells, not the T1–T16 strip.</p>
+      <p class="hint">Lattices are outlines only so the screenshot shows through. Click Maps, then drag a new box around the 12×8 wells if the size is still off.</p>
       <p v-if="diagnostic" class="look">
         {{ diagnostic.footprints.length }} footprints · {{ disagreementCount }} disagreements ·
         {{ corrections.length }} operator labels
@@ -456,15 +574,36 @@ function clearCorrections() {
       >
         <img v-if="preview" ref="img" :src="preview" alt="Last Path of Exile capture" draggable="false" />
         <p v-else class="placeholder">Capture to mark stash and bag grids on the real screen.</p>
-        <div v-if="sharedStashBox" class="box grid" :style="boxStyle(sharedStashBox)">stash panel</div>
-        <template v-else>
-          <div v-if="profile.stashGrid" class="box grid" :style="boxStyle(profile.stashGrid)">stash 12×12</div>
-          <div v-if="profile.quadStashGrid" class="box grid" :style="boxStyle(profile.quadStashGrid)">quad 24×24</div>
+        <template v-if="!hideStashMarks">
+          <div v-if="sharedStashBox" class="box grid lattice" :style="latticeBoxStyle({ ...sharedStashBox, cols: 12, rows: 12 })">stash panel</div>
+          <template v-else>
+            <div v-if="profile.stashGrid" class="box grid lattice" :style="latticeBoxStyle(profile.stashGrid)">stash 12×12</div>
+            <div v-if="profile.quadStashGrid" class="box grid lattice" :style="latticeBoxStyle(profile.quadStashGrid)">quad 24×24</div>
+          </template>
+          <div v-if="profile.ventorBagGrid" class="box grid lattice" :style="latticeBoxStyle(profile.ventorBagGrid)">vendor</div>
+          <div v-if="profile.stashSearch" class="box search" :style="boxStyle(profile.stashSearch)">search</div>
         </template>
-        <div v-if="profile.bagGrid" class="box grid" :style="boxStyle(profile.bagGrid)">bag grid</div>
-        <div v-if="profile.ventorBagGrid" class="box grid" :style="boxStyle(profile.ventorBagGrid)">vendor</div>
-        <div v-if="profile.stashSearch" class="box search" :style="boxStyle(profile.stashSearch)">search</div>
-        <template v-if="diagnostic">
+        <div v-if="showBagMark && profile.bagGrid" class="box grid lattice bag" :style="latticeBoxStyle(profile.bagGrid)">
+          bag {{ profile.bagGrid.cols }}×{{ profile.bagGrid.rows }}
+          <span
+            v-for="dot in gridClickCenters(profile.bagGrid)"
+            :key="`bag-${dot.row}-${dot.col}`"
+            class="grid-dot bag"
+            :style="dotStyle(profile.bagGrid, dot)"
+            :title="`bag r${dot.row}c${dot.col}`"
+          />
+        </div>
+        <div v-if="showMapsMark && mapsMark" class="box grid lattice maps" :style="latticeBoxStyle(mapsMark)">
+          maps {{ mapsMark.cols }}×{{ mapsMark.rows }}
+          <span
+            v-for="dot in gridClickCenters(mapsMark)"
+            :key="`maps-${dot.row}-${dot.col}`"
+            class="grid-dot maps"
+            :style="dotStyle(mapsMark, dot)"
+            :title="`maps r${dot.row}c${dot.col}`"
+          />
+        </div>
+        <template v-if="diagnostic && !mapsSolo">
           <div
             v-for="cell in diagnostic.cells"
             :key="`${cell.grid}-${cell.row}-${cell.col}`"
