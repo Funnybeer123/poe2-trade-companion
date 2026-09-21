@@ -63,8 +63,14 @@ export function parseFlaskSettings(raw: { key?: unknown; below?: unknown; retryM
 
 /** Life as a percentage, or undefined when the column cannot be read (a panel over it, an effect, a death screen). */
 export function readLife(sample: number[], calibration: FlaskCalibration): number | undefined {
-  return estimateGlobe(sample, calibration.reference);
+  const life = estimateGlobe(sample, calibration.reference);
+  // No liquid at all is not "0 % life", it is no globe: a loading or teleport screen blacks the column out and
+  // estimateGlobe reports an empty globe with perfect confidence. Live, life read 97 % -> 0 % -> 97 % inside three
+  // seconds, three times in the first minute, and each one spent a flask charge. A character truly that low is
+  // beyond a flask anyway, so nothing is lost by refusing to believe it.
+  return life !== undefined && life < MIN_CREDIBLE_LIFE ? undefined : life;
 }
+const MIN_CREDIBLE_LIFE = 3;
 
 /**
  * When to drink. Two low readings in a row, so one odd frame never spends a charge; then at most one press per
