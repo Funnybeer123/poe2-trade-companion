@@ -2108,6 +2108,37 @@ describe("follow drive travel to the leader (SYNTHETIC party-frame pixels and ho
       await expect.poll(() => stats(rig).teleports, soon).toBe(1);
       return rig;
     }
+    // Live: 19 of one day's 31 confirmed teleports had Escape pressed into the loading screen. With nothing open that
+    // OPENS the game menu, and the first movement click came a median 14.0 s after the OK instead of 3.2 s.
+    it("does not press Escape into the loading screen after its own teleport, and takes it up again if the map never comes back", async () => {
+      const rig = await travelled(760_000);
+      rig.scene.confirm = DIALOG;
+      rig.clock! += 250;
+      await expect.poll(() => stats(rig).confirms, soon).toBe(1);
+      rig.scene.confirm = undefined;
+      rig.scene.own = null;                 // the new area is loading: no map, no marker, nothing to close
+      rig.scene.party = [];                 // and no party frame either, so nothing here is a second travel attempt
+      for (const step of [2500, 4000, 4000, 3500]) { rig.clock! += step; await cycles(rig, 2); }   // 14 s of loading, well past PANEL_STUCK_MS
+      expect(rig.escapes).toEqual([]);      // 14 s of load and not one press
+      rig.clock! += 2000;                   // past the grace: a map that never came back is a real problem again
+      await expect.poll(() => rig.escapes.length, soon).toBe(1);
+    });
+    it("hands Escape back the moment the map centre verifies, so a panel opened in the new area is still closed", async () => {
+      const rig = await travelled(790_000);
+      rig.scene.confirm = DIALOG;
+      rig.clock! += 250;
+      await expect.poll(() => stats(rig).confirms, soon).toBe(1);
+      rig.scene.confirm = undefined;
+      rig.scene.own = null;
+      rig.clock! += 3000; await cycles(rig, 3);
+      rig.scene.own = { dx: 0, dy: 0 };     // loaded: the centre verifies and the grace ends there
+      await expect.poll(() => rig.service.status().observation?.originVerified, soon).toBe(true);
+      rig.scene.own = { dx: 18, dy: 0 };    // and now a real panel covers it
+      rig.scene.party = [];
+      rig.clock! += 1600; await cycles(rig, 3);   // past the 1500 ms a hidden marker is still trusted for
+      rig.clock! += 2100;                         // then PANEL_STUCK_MS
+      await expect.poll(() => rig.escapes.length, soon).toBe(1);
+    });
     it("clicks OK on its own teleport confirmation, bound to the confirm-band scan that found it", async () => {
       const rig = await travelled(700_000);
       expect(confirmDialog(DIALOG, VIEW)).toEqual({ ok: OK });

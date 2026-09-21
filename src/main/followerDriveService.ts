@@ -84,6 +84,17 @@ const PANEL_STUCK_MS = 2000, PANEL_ESCAPE_COOLDOWN_MS = 3000, PANEL_ESCAPE_ATTEM
  */
 const ORIGIN_LOST_TRAVEL_MS = 15_000;
 /**
+ * A loading screen is not a panel. After our own teleport the new area loads for seconds with no map on screen,
+ * which the panel logic read as "something is open" and answered with Escape - and Escape with nothing open
+ * OPENS the game menu, which then hides the map for real until a second press 3 s later. Measured over 31
+ * confirmed teleports in one day: first movement click a median 3.2 s after the OK when no Escape was pressed
+ * (12), 14.0 s when one was (19); and 37 of that day's 94 Escapes were followed by another within 8 s. So after
+ * an OK that reached the game, Escape stands down until the map centre comes BACK - verifies after having been
+ * lost, because for a moment after the OK the old area's map is still on screen and verifies happily - or this
+ * long at most, beyond which something really is wrong and the presses resume. It only ever REMOVES input.
+ */
+const TELEPORT_LOAD_GRACE_MS = 15_000;
+/**
  * A refusal from the native worker (a hand on the mouse, a stale capture) means nothing reached the game, so it
  * cannot be charged as an attempt: two refused travel clicks cost a full 10 s cooldown each and put a measured
  * 23 s between the leader leaving and the teleport. All a refusal buys is this gap, which only has to outlast a
@@ -321,7 +332,7 @@ export class FollowerDriveService {
     // the short retry gap after one the worker refused.
     let lastLeaderAt = this.now(), travelReadyAt = -Infinity, lastTravelScanAt = -Infinity;
     // Open only by our own travel click, and closed again by the OK that answers it: one OK per travel attempt.
-    let confirmUntil = -Infinity, lastConfirmScanAt = -Infinity;
+    let confirmUntil = -Infinity, lastConfirmScanAt = -Infinity, loadGraceUntil = -Infinity, loadSeen = false;
     // Since when the map centre has been unverifiable, and what has been spent trying to Escape a panel off it:
     // when the next attempt is allowed, when the last press that landed was made, and how many have landed.
     let originLostSince: number | undefined, escapeReadyAt = -Infinity, escapePressedAt = -Infinity, escapeAttempts = 0;
@@ -426,10 +437,12 @@ export class FollowerDriveService {
           // Any sighting at all, even one too ambiguous to follow, means the leader is still in this area.
           if (observation.leaderFound) lastLeaderAt = started;
           // A verified centre is the all-clear: it forgets both how long it has been gone and what was spent on it.
-          if (observation.originVerified) { originLostSince = undefined; escapeAttempts = 0; }
+          if (observation.originVerified) { originLostSince = undefined; escapeAttempts = 0; if (loadSeen) loadGraceUntil = -Infinity; }
+          // The load after our own teleport has begun: the next verified centre is the new area's, and ends the grace.
+          if (!observation.originVerified && started < loadGraceUntil) loadSeen = true;
           // A panel the presses never closed must not silence the follower for the rest of the run, so the
           // attempts come back on the clock too, long enough after the last press to be a fresh try and not a spree.
-          else { originLostSince ??= started; if (started - escapePressedAt >= PANEL_ESCAPE_RESET_MS) escapeAttempts = 0; }
+          if (!observation.originVerified) { originLostSince ??= started; if (started - escapePressedAt >= PANEL_ESCAPE_RESET_MS) escapeAttempts = 0; }
           // Answering our own teleport confirmation. This sits ahead of every other click on purpose: the modal
           // covers the map centre, so `originVerified` is false and the steering below can only pause while it is
           // up — the loop would sit there with the dialog open and the teleport never made. Nothing else is
@@ -456,7 +469,7 @@ export class FollowerDriveService {
               // and answers it again is a short gap away, not 10 s.
               travelReadyAt = this.now() + (acted(outcome) ? TRAVEL_COOLDOWN_MS : REFUSED_RETRY_MS);
               if (acted(outcome)) {
-                this.counts.confirms++;
+                this.counts.confirms++; loadGraceUntil = this.now() + TELEPORT_LOAD_GRACE_MS; loadSeen = false;
                 if (outcome === "emitted") { this.counts.clicks++; this.reason = reason; } else this.counts.previewed++;
                 this.decision = { kind: "hold", reason: this.reason };
                 return;
@@ -477,7 +490,7 @@ export class FollowerDriveService {
           // never fire together, and the panel is the reason travel cannot run at all. Travel picks up again by
           // itself on the first verified centre, with its own cooldown untouched by any of this.
           if (originLostSince !== undefined && started - originLostSince >= PANEL_STUCK_MS
-            && started >= confirmUntil && escapeAttempts < PANEL_ESCAPE_ATTEMPTS && started >= escapeReadyAt
+            && started >= confirmUntil && started >= loadGraceUntil && escapeAttempts < PANEL_ESCAPE_ATTEMPTS && started >= escapeReadyAt
             // Fresh evidence, never merely an elapsed clock: the capture this press is decided from must be NEWER
             // than the last press that landed. A press that closed the panel cannot show up in anything captured
             // before it, and a second Escape at a panel already gone OPENS the game menu — the failure this whole
