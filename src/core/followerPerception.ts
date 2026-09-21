@@ -7,13 +7,16 @@ export interface PixelRect { x: number; y: number; width: number; height: number
  * outlines, which show how far the map (and so the player) has moved.
  * scripts/win-follower-host.ps1 implements the same formulas natively.
  */
-export type PlaneChannel = "white" | "green" | "orange" | "blue" | "outline" | "mini" | "terrain";
-export const PLANE_CHANNELS: readonly PlaneChannel[] = ["white", "green", "orange", "blue", "outline", "mini", "terrain"];
+export type PlaneChannel = "white" | "green" | "orange" | "blue" | "outline" | "mini" | "terrain" | "walls";
+export const PLANE_CHANNELS: readonly PlaneChannel[] = ["white", "green", "orange", "blue", "outline", "mini", "terrain", "walls"];
 export function channelValue(r: number, g: number, b: number, channel: PlaneChannel): number {
   if (channel === "white") return Math.min(r, g, b);
   if (channel === "green") return Math.max(0, g - Math.max(r, b));
   if (channel === "orange") return Math.max(0, Math.min(r - g, g - b));
   if (channel === "blue") return Math.max(0, b - r);
+  // Walls: only the map's lavender walkable-area outline (red and green equal, blue 10-30% above). The mirror of
+  // channel 7 in scripts/win-follower-host.ps1, which says why "terrain" was not good enough. Keep the two identical.
+  if (channel === "walls") return b >= 105 && b - r >= 12 && b - g >= 12 && !(Math.max(r, g) >= 140 && b - Math.max(r, g) < 22) && Math.abs(r - g) <= 14 && r * 100 >= b * 58 && g * 100 >= b * 58 ? 255 : 0;
   // The overlay map's building models are translucent white: bright and nearly neutral. The value is the brightness.
   const max = Math.max(r, g, b), mini = max - Math.min(r, g, b) <= 22 ? max : 0;
   if (channel === "mini") return mini;

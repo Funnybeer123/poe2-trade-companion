@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { TERRAIN_CELL_PX, TERRAIN_POINT_CAP, TerrainPlanner, terrainWindow } from "../src/core/followerTerrain.js";
 import type { KeyPoint } from "../src/core/followerMapMarker.js";
+import { channelValue } from "../src/core/followerPerception.js";
 
 // SIMULATED world. The map draws box outlines as wall pixels around a point character that stops dead at walls.
 // These tests prove the planning and bump-memory rules, not how well the real overlay map can be read.
@@ -88,6 +89,31 @@ describe("terrain planning round what the map shows (SIMULATED world)", () => {
   });
 });
 
+/**
+ * What counts as a wall. The map draws the edge of walkable ground as a lavender line - red and green equal, blue
+ * 10-30% above - and that line IS the wall. The older "terrain" plane also took anything blue-dominant (water, the
+ * bright arc at the edge of the explored map) and anything bright and neutral (the map's own walkable fill, NPC name
+ * labels, pale scenery). On a recorded town frame that made 19% of cells wall, tripped the planner's 30% guard and
+ * returned NO PATH without searching; on a cave frame it routed to a frontier instead of the leader. Fed the outline
+ * alone, the same planner reaches the leader on both. These are the cases scripts/test-follower-host.ps1 asserts natively.
+ */
+describe("the walls plane reads only the map's lavender outline", () => {
+  it.each([
+    [[128, 123, 157], 255, "the outline as measured"],
+    [[150, 150, 200], 255, "the outline over brighter ground"],
+    [[170, 170, 187], 0, "the pale lettering of a world NPC nameplate: bright, and only 17 above red"],
+    [[120, 120, 138], 255, "a faint stretch of outline: only 18 above red, but dark - refusing it opened a gap in a cave pillar"],
+    [[62, 127, 165], 0, "water and the explored-map arc: green well above red"],
+    [[148, 140, 138], 0, "bright and neutral: map fill, name labels, pale scenery"],
+    [[180, 120, 200], 0, "a purple spell effect: red above green"],
+    [[90, 90, 100], 0, "too dark to be the map"],
+    [[240, 240, 250], 0, "white text"],
+    [[238, 180, 97], 0, "an orange loot label"],
+  ] as const)("%j -> %i (%s)", (rgb, expected, what) => {
+    expect(channelValue(rgb[0], rgb[1], rgb[2], "walls"), what).toBe(expected);
+  });
+});
+
 describe("terrain planner guards", () => {
   it("makes no plan from a scene that is mostly 'wall': a grey floor or bright scene is being misread", () => {
     // Thinned to what the capture can deliver: the point cap is a transport limit, the guard must trip below it.
@@ -109,12 +135,23 @@ describe("terrain planner guards", () => {
   it("when the leader is sealed off on the map, walks to the reachable spot nearest to them, then makes no plan so the caller can fall back", () => {
     const ring = (me: KeyPoint): KeyPoint[] => { const points: KeyPoint[] = []; for (let a = 0; a < 6.3; a += .005) points.push({ x: Math.round(ORIGIN.x + Math.cos(a) * 60 - me.x), y: Math.round(ORIGIN.y + Math.sin(a) * 60 - me.y) }); return points; };
     const planner = new TerrainPlanner(), first = planner.plan(ring({ x: 0, y: 0 }), WINDOW, ORIGIN, { dx: 0, dy: -200 }, { x: 0, y: 0 }, 1, 0);
-    expect(first.blockedAhead).toBe(true);
+    // The ring is 60 px out: a wall on the line to the leader, though just beyond the 56 px the lookahead covers now
+    // that walls are no longer grown a cell thicker than they are drawn.
+    expect(first.wallBetween).toBe(true);
     expect(first.aim!.dy).toBeLessThan(-20); expect(Math.abs(first.aim!.dx)).toBeLessThan(20);
     expect(first.path.every(p => Math.hypot(p.x - ORIGIN.x, p.y - ORIGIN.y) < 60)).toBe(true);
     // Standing at that spot, nothing reachable is nearer: no plan.
-    const there = { x: 0, y: -48 };
-    expect(planner.plan(ring(there), WINDOW, ORIGIN, { dx: 0, dy: -152 }, there, 1, 1000).aim).toBeUndefined();
+    // Walk to where each plan ends until there is nowhere nearer to go. Asserted as behaviour, not as a coordinate: the
+    // spot depends on how thick the ring reads, and it used to be pinned at 48 px by walls grown a cell too fat.
+    let me = { x: 0, y: 0 }, plan = first, steps = 0;
+    while (plan.aim && steps++ < 8) {
+      const end = plan.path[plan.path.length - 1];
+      me = { x: me.x + end.x - ORIGIN.x, y: me.y + end.y - ORIGIN.y };
+      plan = planner.plan(ring(me), WINDOW, ORIGIN, { dx: -me.x, dy: -200 - me.y }, me, 1, 1000 * steps);
+    }
+    expect(plan.aim).toBeUndefined();
+    expect(Math.hypot(me.x, me.y)).toBeLessThan(60);      // still inside the ring: it never leaked through
+    expect(me.y).toBeLessThan(-40);                        // and hard against its north side, nearest the leader
   });
   it("heads for where walkable ground runs off the edge of the view when the straight line is walled off", () => {
     // A long wall to the north with open ground to the west: the leader is north, beyond the view.
@@ -239,5 +276,30 @@ describe("one terrain point per planner cell", () => {
     // The point of the change: the same walls, comfortably inside the cap that used to bind.
     expect(cells.length).toBeLessThan(raw.length / 3);
     expect(cells.length).toBeLessThan(TERRAIN_POINT_CAP);
+  });
+});
+
+/**
+ * "Is there a wall between us, and does the route really get to them?" - the two facts steering needs in order to
+ * walk a route read off the map instead of guessing. With both true the plan outranks the trail and the straight line.
+ */
+describe("what the plan says about the straight line and about itself", () => {
+  const at = { x: 0, y: 0 };
+  it("sees a wall anywhere on the line to the leader, not just inside the lookahead", () => {
+    const far = [{ x0: 200, y0: -120, x1: 230, y1: 120 }];   // 200 px away: well beyond the 56 px lookahead
+    const plan = new TerrainPlanner().plan(drawn(far, at), WINDOW, ORIGIN, { dx: 420, dy: 0 }, at, 1, 1000);
+    expect(plan.blockedAhead).toBe(false);
+    expect(plan).toMatchObject({ wallBetween: true, reachesLeader: true });
+    expect(plan.aim).toBeDefined();
+  });
+  it("reports a clear line as clear", () => {
+    const aside = [{ x0: 100, y0: 200, x1: 300, y1: 260 }];
+    expect(new TerrainPlanner().plan(drawn(aside, at), WINDOW, ORIGIN, { dx: 420, dy: 0 }, at, 1, 1000)).toMatchObject({ wallBetween: false, reachesLeader: true });
+  });
+  it("does not claim to reach a leader it can only approach: a sealed room routes to the nearest reachable spot", () => {
+    const room = [{ x0: 300, y0: -60, x1: 420, y1: 60 }];    // the leader stands inside a closed box
+    const plan = new TerrainPlanner().plan(drawn(room, at), WINDOW, ORIGIN, { dx: 360, dy: 0 }, at, 1, 1000);
+    expect(plan.wallBetween).toBe(true);
+    expect(plan.reachesLeader).toBe(false);
   });
 });

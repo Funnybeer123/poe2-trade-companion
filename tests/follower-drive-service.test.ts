@@ -1707,6 +1707,30 @@ describe("follow drive sprint (synthetic input host: 'sprint' requests are array
     // Nothing ever asked the worker to let go in all this.
     expect(sprintOps(rig).some(entry => entry.hold !== true)).toBe(false);
   });
+  // Live, 61 minutes: 1,021 sprint starts, 860 of them within 2.5 s of a stale refusal, a median 0.8 s apart. The follower
+  // never held a sprint, and every fresh press of that key begins with a dodge roll.
+  it("keeps the sprint key held through a click refused as stale: renewals carry their own freshness, a stale click says nothing about the key", async () => {
+    const rig = await sprintRig(430_000);
+    await rig.service.start();
+    await expect.poll(() => stats(rig).sprints, soon).toBe(1);
+    rig.refusals.push("Stale capture");
+    rig.clock! += 100;
+    await expect.poll(() => stats(rig).refused, soon).toBe(1);
+    await cycles(rig, 4);
+    expect(rig.service.status().sprinting).toBe(true);
+    expect(sprintOps(rig).some(entry => entry.hold !== true)).toBe(false);   // nobody asked the worker to let go
+    expect(stats(rig).sprints).toBe(1);                                       // and so nothing had to start it again
+  });
+  it("still lets go when the refusal says the game is no longer in front", async () => {
+    const rig = await sprintRig(460_000);
+    await rig.service.start();
+    await expect.poll(() => stats(rig).sprints, soon).toBe(1);
+    rig.refusals.push("Focus Path of Exile 2 to continue");
+    rig.clock! += 100;
+    await expect.poll(() => stats(rig).refused, soon).toBe(1);
+    await expect.poll(() => rig.service.status().sprinting, soon).toBe(false);
+    expect(sprintOps(rig).at(-1)).toMatchObject({ op: "sprint", hold: false });
+  });
   it("does not sprint under 70 map px or with the setting off, keeps sprinting down to 40 map px once started, and lets go below that", async () => {
     const off = await calibrated({ clock: 405_000 });
     goLive(off);
@@ -1757,7 +1781,8 @@ describe("follow drive sprint (synthetic input host: 'sprint' requests are array
     await cycles(rig);
     expect(rig.input.slice(at + 1).filter(entry => entry.op === "sprint")).toEqual([]);
   });
-  it.each([["Stale capture", "refused"], ["Manual mouse movement", "manualTakeovers"]] as const)("lets go of the sprint key after a moveclick refused with '%s' while sprinting", async (refusal, counter) => {
+  // A hand on the mouse lets go at once. A merely stale click no longer does: see "keeps the sprint key held through a click refused as stale".
+  it.each([["Manual mouse movement", "manualTakeovers"]] as const)("lets go of the sprint key after a moveclick refused with '%s' while sprinting", async (refusal, counter) => {
     const rig = await sprintRig(420_000);
     await rig.service.start();
     await expect.poll(() => rig.service.status().sprinting, soon).toBe(true);
@@ -1829,13 +1854,36 @@ describe("follow drive aim source (SYNTHETIC blue outline pixels for odometry an
     // Open ground on the map scan: a plan exists. One trail point is no trail, so the plan is what is walked.
     await expect.poll(() => rig.service.status().terrain?.planned, soon).toBe(true);
     await expect.poll(() => rig.service.status().odometry, soon).toMatchObject({ tracked: true, quality: 1, trailPoints: 1, via: "plan" });
-    expect(rig.map[0]).toMatchObject({ op: "terrain", x: 64, y: 18, width: 448, height: 270, full: false, channel: "terrain", grid: 4 });   // grid: one point per planner cell, so a busy scene cannot overflow the cap and lose the plan
+    expect(rig.map[0]).toMatchObject({ op: "terrain", x: 64, y: 18, width: 448, height: 270, full: false, channel: "walls", grid: 4 });   // grid: one point per planner cell, so a busy scene cannot overflow the cap and lose the plan
     expect(rig.service.status().terrain).toMatchObject({ planned: true, walls: 0, bumps: 0, blockedAhead: false });
     // The leader walks off to the right in 10 px steps while we stand still (the outline pixels do not slide): 7 trail points, 60 px of trail.
     for (let dx = 50; dx <= 100; dx += 10) { rig.scene.leader = { dx, dy: 0 }; await expect.poll(() => rig.service.status().observation?.offset?.dx, soon).toBe(dx); }
     await expect.poll(() => rig.service.status().odometry?.via, soon).toBe("trail");
     // The plan is still there and still has an aim: the trail won, it did not merely fill a gap.
     expect(rig.service.status()).toMatchObject({ odometry: { tracked: true, trailPoints: 7, via: "trail" }, terrain: { planned: true, bumps: 0 } });
+    rig.service.stop();
+    await expect.poll(() => ops(rig.map).at(-1), soon).toBe("closed");
+  });
+  // Live: the follower stood against rock at 0 px/s, steering "direct" into it. A wall on the straight line plus a route
+  // read all the way to the leader is not a guess, so it outranks the leader's trail as well as the straight line.
+  it("walks the route read off the map when a wall stands on the straight line, even once the leader has left a trail", async () => {
+    const rig = await calibrated({ clock: 530_000, mapHost: true });
+    goLive(rig);
+    rig.scene.blue = outlines();
+    rig.scene.leader = { dx: 40, dy: 0 };
+    // A wall across the straight line, 70 px to our right, open at its ends: there is a way round, and the map shows it.
+    rig.scene.walls = []; for (let y = ORIGIN.y - 60; y <= ORIGIN.y + 60; y++) for (let x = ORIGIN.x + 68; x <= ORIGIN.x + 72; x++) rig.scene.walls.push({ x, y });
+    await rig.service.start();
+    await expect.poll(() => rig.service.status().terrain?.planned, soon).toBe(true);
+    // The leader walks off to the right, THROUGH where the wall is drawn, leaving a trail as it goes.
+    for (let dx = 50; dx <= 120; dx += 10) { rig.scene.leader = { dx, dy: 0 }; await expect.poll(() => rig.service.status().observation?.offset?.dx, soon).toBe(dx); }
+    // The plan in hand is still the one made when they stood 40 px away with nothing in between, so for now the trail
+    // they have left is what steering walks - exactly the old rule.
+    await expect.poll(() => rig.service.status().odometry?.via, soon).toBe("trail");
+    rig.clock! += 300;   // plans are made every 250 ms of service time, and this clock only moves by hand
+    await expect.poll(() => rig.service.status().terrain, soon).toMatchObject({ planned: true, wallBetween: true, reachesLeader: true });
+    // The fresh plan sees the wall and a way round it to the leader: the map outranks the trail now.
+    await expect.poll(() => rig.service.status().odometry?.via, soon).toBe("plan");
     rig.service.stop();
     await expect.poll(() => ops(rig.map).at(-1), soon).toBe("closed");
   });
@@ -2108,6 +2156,37 @@ describe("follow drive travel to the leader (SYNTHETIC party-frame pixels and ho
       await expect.poll(() => stats(rig).teleports, soon).toBe(1);
       return rig;
     }
+    // Live: 19 of one day's 31 confirmed teleports had Escape pressed into the loading screen. With nothing open that
+    // OPENS the game menu, and the first movement click came a median 14.0 s after the OK instead of 3.2 s.
+    it("does not press Escape into the loading screen after its own teleport, and takes it up again if the map never comes back", async () => {
+      const rig = await travelled(760_000);
+      rig.scene.confirm = DIALOG;
+      rig.clock! += 250;
+      await expect.poll(() => stats(rig).confirms, soon).toBe(1);
+      rig.scene.confirm = undefined;
+      rig.scene.own = null;                 // the new area is loading: no map, no marker, nothing to close
+      rig.scene.party = [];                 // and no party frame either, so nothing here is a second travel attempt
+      for (const step of [2500, 4000, 4000, 3500]) { rig.clock! += step; await cycles(rig, 2); }   // 14 s of loading, well past PANEL_STUCK_MS
+      expect(rig.escapes).toEqual([]);      // 14 s of load and not one press
+      rig.clock! += 2000;                   // past the grace: a map that never came back is a real problem again
+      await expect.poll(() => rig.escapes.length, soon).toBe(1);
+    });
+    it("hands Escape back the moment the map centre verifies, so a panel opened in the new area is still closed", async () => {
+      const rig = await travelled(790_000);
+      rig.scene.confirm = DIALOG;
+      rig.clock! += 250;
+      await expect.poll(() => stats(rig).confirms, soon).toBe(1);
+      rig.scene.confirm = undefined;
+      rig.scene.own = null;
+      rig.clock! += 3000; await cycles(rig, 3);
+      rig.scene.own = { dx: 0, dy: 0 };     // loaded: the centre verifies and the grace ends there
+      await expect.poll(() => rig.service.status().observation?.originVerified, soon).toBe(true);
+      rig.scene.own = { dx: 18, dy: 0 };    // and now a real panel covers it
+      rig.scene.party = [];
+      rig.clock! += 1600; await cycles(rig, 3);   // past the 1500 ms a hidden marker is still trusted for
+      rig.clock! += 2100;                         // then PANEL_STUCK_MS
+      await expect.poll(() => rig.escapes.length, soon).toBe(1);
+    });
     it("clicks OK on its own teleport confirmation, bound to the confirm-band scan that found it", async () => {
       const rig = await travelled(700_000);
       expect(confirmDialog(DIALOG, VIEW)).toEqual({ ok: OK });

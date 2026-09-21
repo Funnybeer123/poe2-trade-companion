@@ -21,6 +21,12 @@ describe("life globe reading", () => {
   it("reads the surface against a full reference", () => {
     for (const p of [100, 80, 53, 30, 10]) expect(readLife(globe(p), calibration())).toBe(p);
   });
+  // Live: a black loading/teleport screen read as 0 % three times in a minute and spent three flask charges.
+  it("does not believe an empty column: no liquid at all is a covered globe, not zero life", () => {
+    expect(readLife(globe(0), calibration())).toBeUndefined();
+    expect(readLife(new Array(1500).fill(0), calibration())).toBeUndefined();
+    expect(readLife(globe(5), calibration())).toBe(5);
+  });
   it("accepts only a full red globe as the reference: one taken at half life would read half life as full and never drink", () => {
     expect(flaskReferenceIssue(globe(100))).toBeUndefined();
     expect(flaskReferenceIssue(globe(53))).toMatch(/does not look full/);
