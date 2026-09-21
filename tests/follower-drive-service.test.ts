@@ -2011,6 +2011,43 @@ describe("follow drive travel to the leader (SYNTHETIC party-frame pixels and ho
     await expect.poll(() => stats(rig).teleports, soon).toBe(1);
     expect(rig.escapes).toHaveLength(1);
   });
+  // Live: the follower died, resurrected in town standing on a portal, and the portal's map icon covered two thirds
+  // of its own marker. Nothing was open, so Escape could not help, travel stayed gated on a verified centre, and the
+  // follower never left town. Once Escape has had its even number of turns, the button being found is the evidence.
+  it("travels with the map centre still unverifiable once Escape has had its turns, on the evidence of the button itself", async () => {
+    const rig = await travelRig(690_000);
+    await rig.service.start();
+    await expect.poll(() => stats(rig).clicks, soon).toBe(1);
+    rig.scene.own = { dx: 18, dy: 0 };   // our marker is covered and stays covered: no panel to close
+    await leaderLeaves(rig);
+    rig.clock! += 3000;
+    await expect.poll(() => rig.escapes.length, soon).toBe(1);
+    expect(stats(rig).teleports).toBe(0);            // one press in: a menu we opened may still be up
+    rig.clock! += 3000;                              // PANEL_ESCAPE_COOLDOWN_MS
+    await expect.poll(() => rig.escapes.length, soon).toBe(2);
+    rig.clock! += 250;
+    await expect.poll(() => stats(rig).teleports, soon).toBe(1);
+    expect(clicksIn(rig, "party")).toHaveLength(1);
+    expect(rig.escapes).toHaveLength(2);
+    expect(JSON.parse(String(rig.traces.find(t => t.decisionRule === "travel-to-leader")!.evidenceHash))).toMatchObject({ centreVerified: false });
+  });
+  it("still refuses to travel on an unverified centre when the button is not there: a panel over the corner hides it", async () => {
+    const rig = await travelRig(720_000);
+    rig.scene.party = [];
+    await rig.service.start();
+    await expect.poll(() => stats(rig).clicks, soon).toBe(1);
+    rig.scene.own = { dx: 18, dy: 0 };
+    await leaderLeaves(rig);
+    rig.clock! += 3000;
+    await expect.poll(() => rig.escapes.length, soon).toBe(1);
+    rig.clock! += 3000;
+    await expect.poll(() => rig.escapes.length, soon).toBe(2);
+    rig.clock! += 250;
+    await expect.poll(() => partyScans(rig).length, soon).toBeGreaterThanOrEqual(1);
+    await cycles(rig, 5);
+    expect(clicksIn(rig, "party")).toEqual([]);
+    expect(stats(rig).teleports).toBe(0);
+  });
   it("sends nothing while the button is not in the band, and keeps looking at the scan pace until it is", async () => {
     const rig = await travelRig(630_000), band = PARTY_BAND(VIEW);
     // A panel over the corner: a few stray blue pixels, not the button.

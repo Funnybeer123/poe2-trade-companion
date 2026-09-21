@@ -73,6 +73,17 @@ const CONFIRM_WINDOW_MS = 4000, CONFIRM_SCAN_MS = 250;
  */
 const PANEL_STUCK_MS = 2000, PANEL_ESCAPE_COOLDOWN_MS = 3000, PANEL_ESCAPE_ATTEMPTS = 2, PANEL_ESCAPE_RESET_MS = 30_000;
 /**
+ * Travel normally demands a verified map centre, as evidence that no panel covers the screen. But the centre can
+ * be unverifiable with nothing open at all: live, the follower died, resurrected in town standing on a portal, and
+ * the portal's map icon covered two thirds of its own marker (31 px of an 11 x 10 template, scoring 0.6-0.7 and
+ * rejected). Travel was then gated off for good and it stayed in town; the 30 s stalls of earlier runs have the same
+ * shape. Escape cannot fix that because nothing is open. So once Escape has had its turn - the EVEN cap of presses
+ * is spent, which also means any menu we opened ourselves is closed again - or the centre has been lost this long,
+ * the travel button being FOUND is accepted as the evidence instead: the party scan only matches a swirl of the
+ * right size and fill in the top-left strip, and a panel over that corner hides it.
+ */
+const ORIGIN_LOST_TRAVEL_MS = 15_000;
+/**
  * A refusal from the native worker (a hand on the mouse, a stale capture) means nothing reached the game, so it
  * cannot be charged as an attempt: two refused travel clicks cost a full 10 s cooldown each and put a measured
  * 23 s between the leader leaving and the teleport. All a refusal buys is this gap, which only has to outlast a
@@ -500,7 +511,8 @@ export class FollowerDriveService {
           // absence of the marker says they have left. Clicking that button teleports us to them, and the tracker
           // picks them up again by itself. A verified map centre (no panel over the corner) and nobody at the
           // mouse are required, as for every other click.
-          if (!observation.leaderFound && started - lastLeaderAt >= LEADER_GONE_MS && !manual && observation.originVerified && mapScanner
+          const centreGivenUp = originLostSince !== undefined && (escapeAttempts >= PANEL_ESCAPE_ATTEMPTS || started - originLostSince >= ORIGIN_LOST_TRAVEL_MS);
+          if (!observation.leaderFound && started - lastLeaderAt >= LEADER_GONE_MS && !manual && (observation.originVerified || centreGivenUp) && mapScanner
             && started >= travelReadyAt && started - lastTravelScanAt >= TRAVEL_SCAN_MS) {
             lastTravelScanAt = started;
             // On the map worker: the marker capture is bound to a 120 ms freshness limit and must not carry this.
@@ -515,7 +527,7 @@ export class FollowerDriveService {
               // The click is bound to the party-band scan that found the button, not to the earlier marker capture.
               this.frame = { hwnd: String(scan.hwnd ?? ""), viewWidth: view.width, viewHeight: view.height, capturedAtQpcMs: Number(scan.capturedAtQpcMs), at: scanAt };
               const outcome = await execute("navigation", "travel-to-leader", reason, button.centre.x, button.centre.y, 1, process, allowed,
-                JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, button: button.centre, buttonPixels: button.pixels, leaderMissingMs: missing }), lootOn, current.confidence, undefined, PARTY_CLICK);
+                JSON.stringify({ capturedAtQpcMs: this.frame.capturedAtQpcMs, hwnd: this.frame.hwnd, button: button.centre, buttonPixels: button.pixels, leaderMissingMs: missing, centreVerified: observation.originVerified }), lootOn, current.confidence, undefined, PARTY_CLICK);
               if (outcome === "stopped") return;
               // Only a click that reached the game costs the cooldown that covers an area load. A refusal sent
               // nothing, and charging it the full 10 s twice over was measured putting 23 s between the leader
