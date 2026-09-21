@@ -13,7 +13,7 @@ import type { PixelRect } from "./followerPerception.js";
  * therefore remembered as a wall too ("bumps", kept in the odometry frame), which means the same
  * spot is not tried twice. Pure functions over captured pixels; nothing here emits OS input.
  */
-export const TERRAIN_CHANNEL = "terrain" as const, TERRAIN_THRESHOLD = 128, TERRAIN_POINT_CAP = 50000;
+export const TERRAIN_CHANNEL = "walls" as const, TERRAIN_THRESHOLD = 128, TERRAIN_POINT_CAP = 50000;
 /** More blocked cells than this is not a map: a grey stone floor, speckle or a bright scene is being misread, so no plan is made. */
 const MAX_WALL_FRACTION = .3;
 /** How much farther from the leader (in cells) a map-edge exit may be than where we stand and still be worth walking to. */
@@ -37,6 +37,10 @@ export interface TerrainPlan {
   aim?: { dx: number; dy: number };
   /** True when the straight line toward the leader is blocked close ahead. */
   blockedAhead: boolean;
+  /** True when a wall stands anywhere on the straight line to the leader (or to where that line leaves the view). */
+  wallBetween: boolean;
+  /** True when the path ends on the leader, not at a frontier on the way: the map was read all the way there. */
+  reachesLeader: boolean;
   pathPx: number;
   /** The planned path in game-client pixels, for display and tests. */
   path: KeyPoint[];
@@ -90,7 +94,7 @@ export class TerrainPlanner {
   plan(walls: KeyPoint[], window: PixelRect, origin: KeyPoint, leader: { dx: number; dy: number }, position: KeyPoint, epoch: number, now: number, clock: () => number = () => performance.now()): TerrainPlan {
     const began = clock(), cols = Math.ceil(window.width / CELL), rows = Math.ceil(window.height / CELL), size = cols * rows;
     this.bumps = this.bumps.filter(b => b.epoch === epoch && now - b.at <= BUMP_TTL_MS);
-    const empty: TerrainPlan = { blockedAhead: false, pathPx: 0, path: [], walls: walls.length, bumps: this.bumps.length, planMs: 0, searched: 0 };
+    const empty: TerrainPlan = { blockedAhead: false, wallBetween: false, reachesLeader: false, pathPx: 0, path: [], walls: walls.length, bumps: this.bumps.length, planMs: 0, searched: 0 };
     const cell = (x: number, y: number) => ({ cx: Math.floor((x - window.x) / CELL), cy: Math.floor((y - window.y) / CELL) });
     const start = cell(origin.x, origin.y);
     if (start.cx < 1 || start.cy < 1 || start.cx >= cols - 1 || start.cy >= rows - 1) return empty;
@@ -119,6 +123,9 @@ export class TerrainPlanner {
     for (let y = goal.cy - 1; y <= goal.cy + 1; y++) for (let x = goal.cx - 1; x <= goal.cx + 1; x++) if (x >= 0 && y >= 0 && x < cols && y < rows && grid[y * cols + x] === 2) grid[y * cols + x] = 1;
     let blockedAhead = false;
     for (let s = CELL; s <= Math.min(reach, LOOKAHEAD_PX); s += CELL) { const c = cell(origin.x + ux * s, origin.y + uy * s); if (grid[c.cy * cols + c.cx] === 2) { blockedAhead = true; break; } }
+    // The whole straight line, not just the lookahead: this is what decides whether walking straight at them can work.
+    let wallBetween = false;
+    { const n = Math.max(Math.abs(goal.cx - start.cx), Math.abs(goal.cy - start.cy)) * 2; for (let i = 1; i < n && !wallBetween; i++) { const x = Math.round(start.cx + (goal.cx - start.cx) * i / n), y = Math.round(start.cy + (goal.cy - start.cy) * i / n); if (grid[y * cols + x] === 2) wallBetween = true; } }
     // A* over 8 neighbours, no corner cutting, with a penalty for hugging walls.
     // Costs are kept as doubles: stored in a Float32Array they round UP, so the identical relaxation stays
     // cheaper than the value it just wrote, fires again every time the cell is expanded, and grows `open` without end.
@@ -174,7 +181,7 @@ export class TerrainPlanner {
       const startToLeader = Math.hypot(start.cx - lx, start.cy - ly);
       // An edge exit is only worth taking if it does not lead away from the leader; a nearest spot only if it is nearer than here.
       endIndex = bestEdge !== -1 && Math.hypot(bestEdge % cols - lx, Math.floor(bestEdge / cols) - ly) < startToLeader + EDGE_DETOUR_CELLS ? bestEdge : bestAny !== -1 && bestAnyScore < startToLeader - 2 ? bestAny : -1;
-      if (endIndex === -1) return { ...empty, blockedAhead, searched, planMs: Math.round((clock() - began) * 10) / 10 };
+      if (endIndex === -1) return { ...empty, blockedAhead, wallBetween, searched, planMs: Math.round((clock() - began) * 10) / 10 };
       this.committed = { x: position.x + (endIndex % cols - start.cx) * CELL, y: position.y + (Math.floor(endIndex / cols) - start.cy) * CELL, epoch, until: now + COMMIT_MS };
       }
     }
@@ -188,6 +195,6 @@ export class TerrainPlanner {
       const stepPx = Math.hypot(path[i].cx - path[i - 1].cx, path[i].cy - path[i - 1].cy) * CELL; pathPx += stepPx;
       if (along + stepPx <= LOOKAHEAD_PX) { along += stepPx; if (clear(path[0], path[i]) || along < MIN_AIM_PX) target = path[i]; }
     }
-    return { aim: { dx: (target.cx - start.cx) * CELL, dy: (target.cy - start.cy) * CELL }, blockedAhead, pathPx: Math.round(pathPx), path: path.map(p => ({ x: window.x + p.cx * CELL + CELL / 2, y: window.y + p.cy * CELL + CELL / 2 })), walls: walls.length, bumps: this.bumps.length, searched, planMs: Math.round((clock() - began) * 10) / 10 };
+    return { aim: { dx: (target.cx - start.cx) * CELL, dy: (target.cy - start.cy) * CELL }, blockedAhead, wallBetween, reachesLeader: found && reach >= distance - CELL, pathPx: Math.round(pathPx), path: path.map(p => ({ x: window.x + p.cx * CELL + CELL / 2, y: window.y + p.cy * CELL + CELL / 2 })), walls: walls.length, bumps: this.bumps.length, searched, planMs: Math.round((clock() - began) * 10) / 10 };
   }
 }

@@ -99,25 +99,43 @@ export function findTemplateSparse(points: KeyPoint[], template: NameplateTempla
   template.mask.forEach((row, y) => { for (let x = 0; x < row.length; x++) if (row[x] === "#") offsets.push({ x, y }); });
   const total = offsets.length;
   if (!total || !points.length) return { runnerUp: 0, candidates: 0 };
-  const key = (x: number, y: number) => (y + 1024) * 131072 + x + 1024, present = new Set<number>();
-  for (const p of points) present.add(key(p.x, p.y));
-  const floor = minScore * .75, step = Math.max(1, Math.floor(total / 32)), probes = offsets.filter((_, i) => i % step === 0);
+  // Where the points are, as a flat bitmap over their bounding box padded by one template: every lookup below is an
+  // array read. It was a Set of numeric keys, which is fine for a 300-pixel label and ruinous for a big one: at a high
+  // Map Zoom the label template is 206 x 30 with 1,890 pixels, 7,567 positions out-voted the 4-of-33 probe filter, each
+  // paid 1,890 hash lookups, and one match took ~200 ms - against a 120 ms freshness limit, so EVERY click was refused.
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const q of points) { if (q.x < minX) minX = q.x; if (q.x > maxX) maxX = q.x; if (q.y < minY) minY = q.y; if (q.y > maxY) maxY = q.y; }
+  const gx = minX - template.width - flank, gy = minY - template.height, gw = maxX - minX + 1 + 2 * (template.width + flank), gh = maxY - minY + 1 + 2 * template.height;
+  const grid = new Uint8Array(gw * gh);
+  for (const q of points) grid[(q.y - gy) * gw + q.x - gx] = 1;
+  // Every top-left a point can vote for keeps the whole template, and its flank, inside this padded bitmap, so the
+  // inner loops below index it directly: a template pixel is one precomputed offset from the position's base index.
+  const deltas = new Int32Array(total); for (let i = 0; i < total; i++) deltas[i] = offsets[i].y * gw + offsets[i].x;
+  // Points left of x on each row, so "how many in this window / this flank" is two reads, not a scan.
+  const pw = gw + 1, prefix = new Int32Array(pw * gh);
+  for (let y = 0; y < gh; y++) { let n = 0; const g = y * gw, r = y * pw; for (let x = 0; x < gw; x++) { n += grid[g + x]; prefix[r + x + 1] = n; } }
+  /** Points on bitmap row `row` with x0 <= x < x1, in bitmap columns. */
+  const span = (row: number, x0: number, x1: number) => prefix[row * pw + x1] - prefix[row * pw + x0];
+  // A big template votes with four times the probes. With 32, a 1,890-pixel label let 7,567 positions through a 4-vote
+  // bar, and verifying those was the whole cost; with 128 the bar is 19 votes and a handful get through. Small templates
+  // keep 32 probes and the same bar, so their candidates - and results - are exactly what they were.
+  const floor = minScore * .75, step = Math.max(1, Math.floor(total / (total > 320 ? 128 : 32))), probes = offsets.filter((_, i) => i % step === 0);
   // Dice >= floor needs matched >= total * floor / (2 - floor); probes sample that fraction, halved for slack.
-  const need = Math.max(1, Math.floor(probes.length * floor / (2 - floor) * .5)), votes = new Map<number, number>();
-  for (const p of points) for (const o of probes) { const k = key(p.x - o.x, p.y - o.y); votes.set(k, (votes.get(k) ?? 0) + 1); }
+  const need = Math.max(1, Math.floor(probes.length * floor / (2 - floor) * .5)), minMatched = total * floor / (2 - floor);
+  // One counter per possible top-left, flat: a Map keyed by position was most of what remained after the bitmap.
+  const vx = minX - template.width + 1, vy = minY - template.height + 1, vw = maxX - vx + 1, vh = maxY - vy + 1, votes = new Uint16Array(vw * vh);
+  for (const q of points) for (const o of probes) votes[(q.y - o.y - vy) * vw + q.x - o.x - vx]++;
   const found: NameplateMatch[] = [];
-  for (const [k, count] of votes) {
-    if (count < need) continue;
-    const x = k % 131072 - 1024, y = Math.floor(k / 131072) - 1024;
+  for (let i = 0; i < votes.length; i++) {
+    if (votes[i] < need) continue;
+    const x = vx + i % vw, y = vy + Math.floor(i / vw);
     if (bounds && (x < bounds.x || y < bounds.y || x + template.width > bounds.x + bounds.width || y + template.height > bounds.y + bounds.height)) continue;
-    let matched = 0, windowOn = 0;
-    for (const o of offsets) if (present.has(key(x + o.x, y + o.y))) matched++;
+    const base = (y - gy) * gw + x - gx; let matched = 0;
+    // Stop as soon as the floor is out of reach: what is left to check cannot bring this position back.
+    for (let k = 0; k < total; k++) { if (grid[base + deltas[k]]) matched++; else if (matched + total - k - 1 < minMatched) break; }
     if (2 * matched / (total + matched) < floor) continue;
-    let beside = 0;
-    for (const p of points) if (p.y >= y && p.y < y + template.height) {
-      if (p.x >= x && p.x < x + template.width) windowOn++;
-      else if (p.x >= x - flank && p.x < x + template.width + flank) beside++;
-    }
+    let beside = 0, windowOn = 0; const bx = x - gx;
+    for (let row = y - gy; row < y - gy + template.height; row++) { windowOn += span(row, bx, bx + template.width); if (flank) beside += span(row, bx - flank, bx) + span(row, bx + template.width, bx + template.width + flank); }
     if (beside >= 3) continue;
     const score = 2 * matched / (total + windowOn);
     if (score >= floor) found.push({ x, y, score, matchedPixels: matched });
@@ -132,11 +150,11 @@ export function findTemplateSparse(points: KeyPoint[], template: NameplateTempla
 
 interface Cluster { left: number; top: number; right: number; bottom: number; count: number; sumX: number; sumY: number }
 /** Groups marker pixels that sit within one glyph gap of each other: a label is one cluster, its marker another. */
-function clusters(points: KeyPoint[]): Cluster[] {
-  if (points.length > 3000) throw new Error("Too much saturated green on screen to find the map label. Calibrate away from green effects, or pass the rectangle around the label.");
+function clusters(points: KeyPoint[], gapX = 5, gapY = 2): Cluster[] {
+  if (points.length > 3500) throw new Error("Too much saturated green on screen to find the map label. Calibrate away from green effects, or pass the rectangle around the label.");
   const parent = points.map((_, i) => i), find = (i: number): number => { while (parent[i] !== i) { parent[i] = parent[parent[i]]; i = parent[i]; } return i; };
   for (let i = 0; i < points.length; i++) for (let j = i + 1; j < points.length; j++) {
-    if (Math.abs(points[i].x - points[j].x) <= 5 && Math.abs(points[i].y - points[j].y) <= 2) parent[find(i)] = find(j);
+    if (Math.abs(points[i].x - points[j].x) <= gapX && Math.abs(points[i].y - points[j].y) <= gapY) parent[find(i)] = find(j);
   }
   const byRoot = new Map<number, Cluster>();
   points.forEach((p, i) => {
@@ -147,19 +165,33 @@ function clusters(points: KeyPoint[]): Cluster[] {
   return [...byRoot.values()];
 }
 /** Every party label on the overlay map that has its marker directly beneath it. */
-export function findMapLabels(green: WhiteFrame, threshold = 80, near?: PixelRect): Array<{ label: PixelRect; marker: KeyPoint }> {
+export function findMapLabels(green: WhiteFrame, threshold = 80, near?: PixelRect): Array<{ label: PixelRect; marker: KeyPoint; markerRect: PixelRect }> {
   // A selection only has to touch the label, so look a whole label's width around it, and no further:
   // green scenery elsewhere must not defeat a manual selection.
   const x = near ? Math.max(0, near.x - 400) : 0, y = near ? Math.max(0, near.y - 24) : 0;
   const area = near ? { x, y, width: Math.min(green.width, near.x + near.width + 400) - x, height: Math.min(green.height, near.y + near.height + 40) - y } : undefined;
-  const all = clusters(keyPointsOf(green, threshold, area)), pairs: Array<{ label: PixelRect; marker: KeyPoint }> = [];
+  const points = keyPointsOf(green, threshold, area), pairs: Array<{ label: PixelRect; marker: KeyPoint; markerRect: PixelRect }> = [];
+  // The gap between letters grows with the game's Map Zoom, and at the default join distance a zoomed name falls apart
+  // into pieces: live, "HarrisonBot" calibrated as "arrison", which the tracker then refused every time because the
+  // rest of the name sat in the flank it checks for stray ink. So the tallest text-sized piece sets the scale, and the
+  // points are joined again at that scale. At the default zoom the scale is 1 and nothing changes.
+  const first = clusters(points), tallest = Math.max(0, ...first.filter(c => c.right - c.left + 1 >= 12 && c.bottom - c.top + 1 <= 44 && c.count >= 20).map(c => c.bottom - c.top + 1));
+  const scale = Math.max(1, tallest / 12), all = scale > 1.25 ? clusters(points, Math.round(5 * scale), 2) : first;
   for (const label of all) {
     const width = label.right - label.left + 1, height = label.bottom - label.top + 1;
-    if (width < 24 || width > 400 || height < 6 || height > 24 || label.count < 40) continue;
+    // Sizes grow with the game's Map Zoom setting. Measured at 2560 x 1440: the label 204 x 28 with a 23 px marker 11 px
+    // beneath it at a high zoom, against roughly 14 and 10 px at the default - and the old limits (24 / 16) refused to
+    // calibrate at all on the higher zoom, which is the zoom that makes the map's walls easiest to read.
+    if (width < 24 || width > 560 || height < 6 || height > 44 || label.count < 40) continue;
     const centre = (label.left + label.right) / 2;
-    const marker = all.find(m => m !== label && m.right - m.left + 1 >= 5 && m.right - m.left + 1 <= 18 && m.bottom - m.top + 1 >= 5 && m.bottom - m.top + 1 <= 16 && m.count >= 10
-      && Math.abs((m.left + m.right) / 2 - centre) <= 12 && m.top - label.bottom >= 1 && m.top - label.bottom <= 12);
-    if (marker) pairs.push({ label: { x: label.left, y: label.top, width, height }, marker: { x: Math.round(marker.sumX / marker.count), y: Math.round(marker.sumY / marker.count) } });
+    // The marker's size and its gap beneath the label grow with the label, so the limits are the default zoom's (18 x 16,
+    // 12 px beneath, 12 px off-centre) scaled by how much taller than a default 10-12 px label this one is - as strict as
+    // ever at the default zoom, and wide enough for the measured 23 px marker 11 px under a 28 px label.
+    const zoom = Math.max(1, height / 12);
+    const marker = all.find(m => m !== label && m.right - m.left + 1 >= 5 && m.right - m.left + 1 <= 18 * zoom && m.bottom - m.top + 1 >= 5 && m.bottom - m.top + 1 <= 16 * zoom && m.count >= 10
+      && Math.abs((m.left + m.right) / 2 - centre) <= 12 * zoom && m.top - label.bottom >= 1 && m.top - label.bottom <= 12 * zoom);
+    if (marker) pairs.push({ label: { x: label.left, y: label.top, width, height }, marker: { x: Math.round(marker.sumX / marker.count), y: Math.round(marker.sumY / marker.count) },
+      markerRect: { x: marker.left, y: marker.top, width: marker.right - marker.left + 1, height: marker.bottom - marker.top + 1 } });
   }
   return pairs;
 }
@@ -181,7 +213,9 @@ export function buildMapCalibration(green: WhiteFrame, orange: WhiteFrame, targe
   const pad = (r: PixelRect, by: number): PixelRect => { const x = Math.max(0, r.x - by), y = Math.max(0, r.y - by); return { x, y, width: Math.min(green.width, r.x + r.width + by) - x, height: Math.min(green.height, r.y + r.height + by) - y }; };
   const { template: label, nameplate } = buildNameplateTemplate(green, pad(chosen.label, 2), LABEL_LIMITS);
   // The player's marker is the same sprite in orange: look for the leader marker's shape near the view centre.
-  const markerBox = pad({ x: chosen.marker.x - 5, y: chosen.marker.y - 4, width: 11, height: 9 }, 2);
+  // The marker's own bounds, not a fixed 11 x 9: the sprite grows with the game's Map Zoom (23 px at a high zoom),
+  // and a fixed crop then lands inside solid green and is refused as "mostly bright background".
+  const markerBox = pad(chosen.markerRect, 2);
   const { template: shape, nameplate: shapeRect } = buildNameplateTemplate(green, markerBox, { ...ORIGIN_LIMITS, minThreshold: 60 });
   // The overlay map is centred on the player: horizontally mid-view, a little above mid-height
   // (measured at 0.4998 w, 0.4858 h). Anything orange elsewhere is scenery or the corner minimap.

@@ -425,10 +425,15 @@ export class FollowerDriveService {
           if (plan && (started - plan.at > PLAN_KEEP_MS || !planWanted)) plan = undefined;
           // A path the leader actually walked beats a route read off pixels, until following it has bumped into something. Close in, go straight.
           const trailKnows = trailAim?.via === "trail" && !plan?.bumps;
-          const planned = trusted && plan?.aim && !trailKnows && observation.offset!.distance > PLAN_NOT_WITHIN_PX ? plan.aim : undefined;
+          // Except when the map itself answers the question. A wall on the straight line and a route read all the way to
+          // the leader is not a guess: walk it, whatever the trail says. The trail needs odometry, and live the follower
+          // stood against rock with odometry lost (odo=no:0), no usable trail, and a plan that could not help because its
+          // wall reader had painted a fifth of the map as wall - so steering fell back to "direct", into the wall, at 0 px/s.
+          const routed = !!plan?.aim && plan.wallBetween && plan.reachesLeader;
+          const planned = trusted && plan?.aim && (routed || !trailKnows) && observation.offset!.distance > PLAN_NOT_WITHIN_PX ? plan.aim : undefined;
           const aim = planned ? { ...planned, via: "plan" as const } : trailAim;
           this.odometry = { tracked: moved.tracked, quality: moved.quality, trailPoints: trail.length, via: aim?.via ?? "direct", movedPxPerSec, movedTracked };
-          this.terrain = plan && { planned: !!plan.aim, pathPx: plan.pathPx, walls: plan.walls, bumps: plan.bumps, blockedAhead: plan.blockedAhead, planMs: plan.planMs, searched: plan.searched };
+          this.terrain = plan && { planned: !!plan.aim, pathPx: plan.pathPx, walls: plan.walls, bumps: plan.bumps, blockedAhead: plan.blockedAhead, planMs: plan.planMs, searched: plan.searched, wallBetween: plan.wallBetween, reachesLeader: plan.reachesLeader };
           let decision: SteeringDecision = manual ? { kind: "pause", reason: this.manualHold ? MANUAL_HOLD_REASON : pauseReason } : steering.decide(observation, this.now(), aim && aim.via !== "direct" ? aim : undefined, moved);
           if (decision.kind === "near") wasNear = true;
           this.counts.cycles++; this.cycles.push(this.now() - started); if (this.cycles.length > 600) this.cycles.shift();

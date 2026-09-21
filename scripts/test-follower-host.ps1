@@ -25,6 +25,8 @@ try {
 # Channel formulas must match channelValue() in src/core/followerPerception.ts.
 if ([FollowWin]::ChannelValue(60, 210, 80, 'green') -ne 130 -or [FollowWin]::ChannelValue(250, 250, 250, 'green') -ne 0 -or [FollowWin]::ChannelValue(200, 90, 20, 'green') -ne 0) { throw 'Green channel mismatch' }
 foreach ($case in @(@(128,123,157,255), @(62,127,165,255), @(148,140,138,255), @(124,115,112,0), @(150,110,80,0), @(60,50,45,0), @(238,180,97,0))) { if ([FollowWin]::ChannelValue($case[0], $case[1], $case[2], 'terrain') -ne $case[3]) { throw "Terrain channel mismatch for $($case[0..2] -join ',')" } }
+# Walls: only the lavender outline. The same cases are asserted against the TypeScript mirror in tests/follower-terrain.test.ts.
+foreach ($case in @(@(128,123,157,255), @(150,150,200,255), @(62,127,165,0), @(148,140,138,0), @(180,120,200,0), @(90,90,100,0), @(240,240,250,0), @(238,180,97,0))) { if ([FollowWin]::ChannelValue($case[0], $case[1], $case[2], 'walls') -ne $case[3]) { throw "Walls channel mismatch for $($case[0..2] -join ',')" } }
 if ([FollowWin]::ChannelValue(148, 140, 138, 'mini') -ne 148 -or [FollowWin]::ChannelValue(150, 110, 80, 'mini') -ne 0) { throw 'Mini channel mismatch' }
 if ([FollowWin]::ChannelValue(128, 123, 157, 'outline') -ne 29 -or [FollowWin]::ChannelValue(62, 127, 165, 'outline') -ne 38 -or [FollowWin]::ChannelValue(150, 110, 80, 'outline') -ne 0 -or [FollowWin]::ChannelValue(40, 38, 80, 'outline') -ne 0 -or [FollowWin]::ChannelValue(180, 175, 172, 'outline') -ne 0) { throw 'Outline channel mismatch' }
 if ([FollowWin]::ChannelValue(62, 127, 165, 'blue') -ne 103 -or [FollowWin]::ChannelValue(200, 150, 100, 'blue') -ne 0) { throw 'Blue channel mismatch' }

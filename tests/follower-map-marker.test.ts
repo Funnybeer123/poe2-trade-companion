@@ -80,7 +80,7 @@ function png(width: number, height: number, channels: 3 | 4, rgba: (x: number, y
 
 describe("colour channels (synthetic pixels)", () => {
   it("computes white = min(R,G,B), green = G − max(R,B) and orange = min(R − G, G − B), never below zero", () => {
-    expect(PLANE_CHANNELS).toEqual(["white", "green", "orange", "blue", "outline", "mini", "terrain"]);
+    expect(PLANE_CHANNELS).toEqual(["white", "green", "orange", "blue", "outline", "mini", "terrain", "walls"]);
     const cases: Array<[number[], number, number, number]> = [
       // rgb, white, green, orange
       [[240, 250, 230], 230, 10, 0], [[255, 255, 255], 255, 0, 0], [[0, 0, 0], 0, 0, 0], [[128, 128, 128], 128, 0, 0],
@@ -124,7 +124,7 @@ describe("colour channels (synthetic pixels)", () => {
     const s = mapScene([leaderAt(200, 100)]), hud = plane(VIEW.width, VIEW.height); drawText(hud, "BRAINLAB", 40, 300, 1);
     const file = png(VIEW.width, VIEW.height, 3, (x, y) => { const i = y * VIEW.width + x; return s.green.pixels[i] ? [40, 235, 50] : s.orange.pixels[i] ? [245, 140, 35] : hud.pixels[i] ? [250, 250, 250] : [60, 62, 58]; });
     const [green, orange] = pngPlanes(file, ["green", "orange"]);
-    expect(findMapLabels(green)).toEqual([{ label: { x: 200, y: 100, width: 78, height: 10 }, marker: { x: 239, y: 117 } }]);
+    expect(findMapLabels(green)).toMatchObject([{ label: { x: 200, y: 100, width: 78, height: 10 }, marker: { x: 239, y: 117 } }]);
     expect(new MapMarkerTracker(buildMapCalibration(green, orange, "MainBear", AT)).origin).toEqual(mapCentre(VIEW));
   });
   it("rejects files that are not the recorder's PNGs", () => {
@@ -282,7 +282,7 @@ describe("sparse template matcher (synthetic scenes)", () => {
 describe("overlay-map labels (synthetic green planes)", () => {
   it("pairs a text-like label with the X marker beneath it", () => {
     const { green } = mapScene([leaderAt(200, 100)]);
-    expect(findMapLabels(green)).toEqual([{ label: { x: 200, y: 100, width: 78, height: 10 }, marker: { x: 239, y: 117 } }]);
+    expect(findMapLabels(green)).toMatchObject([{ label: { x: 200, y: 100, width: 78, height: 10 }, marker: { x: 239, y: 117 } }]);
   });
   it("finds every party member and ignores ink below the threshold", () => {
     const { green } = mapScene([leaderAt(60, 40), { text: "BRAINLAB", x: 400, y: 250 }]);

@@ -1829,13 +1829,36 @@ describe("follow drive aim source (SYNTHETIC blue outline pixels for odometry an
     // Open ground on the map scan: a plan exists. One trail point is no trail, so the plan is what is walked.
     await expect.poll(() => rig.service.status().terrain?.planned, soon).toBe(true);
     await expect.poll(() => rig.service.status().odometry, soon).toMatchObject({ tracked: true, quality: 1, trailPoints: 1, via: "plan" });
-    expect(rig.map[0]).toMatchObject({ op: "terrain", x: 64, y: 18, width: 448, height: 270, full: false, channel: "terrain", grid: 4 });   // grid: one point per planner cell, so a busy scene cannot overflow the cap and lose the plan
+    expect(rig.map[0]).toMatchObject({ op: "terrain", x: 64, y: 18, width: 448, height: 270, full: false, channel: "walls", grid: 4 });   // grid: one point per planner cell, so a busy scene cannot overflow the cap and lose the plan
     expect(rig.service.status().terrain).toMatchObject({ planned: true, walls: 0, bumps: 0, blockedAhead: false });
     // The leader walks off to the right in 10 px steps while we stand still (the outline pixels do not slide): 7 trail points, 60 px of trail.
     for (let dx = 50; dx <= 100; dx += 10) { rig.scene.leader = { dx, dy: 0 }; await expect.poll(() => rig.service.status().observation?.offset?.dx, soon).toBe(dx); }
     await expect.poll(() => rig.service.status().odometry?.via, soon).toBe("trail");
     // The plan is still there and still has an aim: the trail won, it did not merely fill a gap.
     expect(rig.service.status()).toMatchObject({ odometry: { tracked: true, trailPoints: 7, via: "trail" }, terrain: { planned: true, bumps: 0 } });
+    rig.service.stop();
+    await expect.poll(() => ops(rig.map).at(-1), soon).toBe("closed");
+  });
+  // Live: the follower stood against rock at 0 px/s, steering "direct" into it. A wall on the straight line plus a route
+  // read all the way to the leader is not a guess, so it outranks the leader's trail as well as the straight line.
+  it("walks the route read off the map when a wall stands on the straight line, even once the leader has left a trail", async () => {
+    const rig = await calibrated({ clock: 530_000, mapHost: true });
+    goLive(rig);
+    rig.scene.blue = outlines();
+    rig.scene.leader = { dx: 40, dy: 0 };
+    // A wall across the straight line, 70 px to our right, open at its ends: there is a way round, and the map shows it.
+    rig.scene.walls = []; for (let y = ORIGIN.y - 60; y <= ORIGIN.y + 60; y++) for (let x = ORIGIN.x + 68; x <= ORIGIN.x + 72; x++) rig.scene.walls.push({ x, y });
+    await rig.service.start();
+    await expect.poll(() => rig.service.status().terrain?.planned, soon).toBe(true);
+    // The leader walks off to the right, THROUGH where the wall is drawn, leaving a trail as it goes.
+    for (let dx = 50; dx <= 120; dx += 10) { rig.scene.leader = { dx, dy: 0 }; await expect.poll(() => rig.service.status().observation?.offset?.dx, soon).toBe(dx); }
+    // The plan in hand is still the one made when they stood 40 px away with nothing in between, so for now the trail
+    // they have left is what steering walks - exactly the old rule.
+    await expect.poll(() => rig.service.status().odometry?.via, soon).toBe("trail");
+    rig.clock! += 300;   // plans are made every 250 ms of service time, and this clock only moves by hand
+    await expect.poll(() => rig.service.status().terrain, soon).toMatchObject({ planned: true, wallBetween: true, reachesLeader: true });
+    // The fresh plan sees the wall and a way round it to the leader: the map outranks the trail now.
+    await expect.poll(() => rig.service.status().odometry?.via, soon).toBe("plan");
     rig.service.stop();
     await expect.poll(() => ops(rig.map).at(-1), soon).toBe("closed");
   });
