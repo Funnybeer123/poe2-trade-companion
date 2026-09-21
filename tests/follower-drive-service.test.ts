@@ -1707,6 +1707,30 @@ describe("follow drive sprint (synthetic input host: 'sprint' requests are array
     // Nothing ever asked the worker to let go in all this.
     expect(sprintOps(rig).some(entry => entry.hold !== true)).toBe(false);
   });
+  // Live, 61 minutes: 1,021 sprint starts, 860 of them within 2.5 s of a stale refusal, a median 0.8 s apart. The follower
+  // never held a sprint, and every fresh press of that key begins with a dodge roll.
+  it("keeps the sprint key held through a click refused as stale: renewals carry their own freshness, a stale click says nothing about the key", async () => {
+    const rig = await sprintRig(430_000);
+    await rig.service.start();
+    await expect.poll(() => stats(rig).sprints, soon).toBe(1);
+    rig.refusals.push("Stale capture");
+    rig.clock! += 100;
+    await expect.poll(() => stats(rig).refused, soon).toBe(1);
+    await cycles(rig, 4);
+    expect(rig.service.status().sprinting).toBe(true);
+    expect(sprintOps(rig).some(entry => entry.hold !== true)).toBe(false);   // nobody asked the worker to let go
+    expect(stats(rig).sprints).toBe(1);                                       // and so nothing had to start it again
+  });
+  it("still lets go when the refusal says the game is no longer in front", async () => {
+    const rig = await sprintRig(460_000);
+    await rig.service.start();
+    await expect.poll(() => stats(rig).sprints, soon).toBe(1);
+    rig.refusals.push("Focus Path of Exile 2 to continue");
+    rig.clock! += 100;
+    await expect.poll(() => stats(rig).refused, soon).toBe(1);
+    await expect.poll(() => rig.service.status().sprinting, soon).toBe(false);
+    expect(sprintOps(rig).at(-1)).toMatchObject({ op: "sprint", hold: false });
+  });
   it("does not sprint under 70 map px or with the setting off, keeps sprinting down to 40 map px once started, and lets go below that", async () => {
     const off = await calibrated({ clock: 405_000 });
     goLive(off);
@@ -1757,7 +1781,8 @@ describe("follow drive sprint (synthetic input host: 'sprint' requests are array
     await cycles(rig);
     expect(rig.input.slice(at + 1).filter(entry => entry.op === "sprint")).toEqual([]);
   });
-  it.each([["Stale capture", "refused"], ["Manual mouse movement", "manualTakeovers"]] as const)("lets go of the sprint key after a moveclick refused with '%s' while sprinting", async (refusal, counter) => {
+  // A hand on the mouse lets go at once. A merely stale click no longer does: see "keeps the sprint key held through a click refused as stale".
+  it.each([["Manual mouse movement", "manualTakeovers"]] as const)("lets go of the sprint key after a moveclick refused with '%s' while sprinting", async (refusal, counter) => {
     const rig = await sprintRig(420_000);
     await rig.service.start();
     await expect.poll(() => rig.service.status().sprinting, soon).toBe(true);

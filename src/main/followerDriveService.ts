@@ -10,7 +10,7 @@ import {
 import { CONFIRM_BAND, CONFIRM_CHANNEL, CONFIRM_POINT_CAP, CONFIRM_THRESHOLD, confirmDialog } from "../core/followerConfirm.js";
 import { decodeFlatRuns, decodeHueRuns, findLootLabels, LOOT_MIN_BRIGHTNESS, LOOT_MIN_CONFIDENCE, LOOT_MIN_RUN, lootArea, LootPlanner } from "../core/followerLoot.js";
 import { findTravelButton, PARTY_BAND, PARTY_CHANNEL, PARTY_POINT_CAP, PARTY_THRESHOLD } from "../core/followerParty.js";
-import { TERRAIN_CELL_PX, TERRAIN_CHANNEL, TERRAIN_POINT_CAP, TERRAIN_THRESHOLD, TerrainPlanner, terrainWindow, type TerrainPlan } from "../core/followerTerrain.js";
+import { MAX_OPEN_SHARE, TERRAIN_CELL_PX, TERRAIN_CHANNEL, TERRAIN_POINT_CAP, TERRAIN_THRESHOLD, TerrainPlanner, terrainWindow, type TerrainPlan } from "../core/followerTerrain.js";
 import { LeaderTrail, MapOdometry, ODOMETRY_CHANNEL, ODOMETRY_THRESHOLD, odometryWindow } from "../core/followerTrail.js";
 import { templatePixelCount, type PixelRect } from "../core/followerPerception.js";
 import { GameInputController } from "../core/gameInputController.js";
@@ -122,6 +122,17 @@ const FOCUS = /Focus Path of Exile 2/, COVERED = /covered at the click point/;
 /** A worker that died or stopped answering, as the transport reports it: rebuildable, unlike a refusal. */
 const WORKER_LOST = /host-timeout|host-exited|host-output-closed|host-closed/, MAX_WORKER_RESTARTS = 5;
 const MANUAL = /Manual mouse movement|Mouse button held|Modifier key held|Space held/, RETRY = /Stale capture|capture stale|Focus Path of Exile|focus or view changed/i;
+/**
+ * A refusal that means the game is not in front of us, as against one that only means a capture had aged. The
+ * difference decides whether sprint is let go. A stale CLICK says nothing about the held key: renewals are bound to
+ * a fresh capture of their own and the worker's 350 ms dead-man's switch drops Space if they stop, so letting go here
+ * bought no safety and cost the sprint. Measured over a 61-minute run: 1,021 sprint starts, 860 of them within 2.5 s
+ * of a stale refusal, a median 0.8 s apart - the follower never held a sprint, and in Path of Exile 2 each fresh press
+ * of that key begins with a dodge roll.
+ */
+const FOCUS_LOST = /Focus Path of Exile|focus or view changed/i;
+/** How long sprint rides out frames that are merely unsure (a washed label, a confidence dip) before letting go. */
+const SPRINT_BLIP_MS = 400;
 /** What became of one executed decision. */
 type Outcome = "emitted" | "previewed" | "paused" | "retry" | "stopped";
 /** Whether it counted: it reached the game, or a dry run showed it, which is paced the same. A refusal reached nothing and may cost nothing. */
@@ -340,7 +351,7 @@ export class FollowerDriveService {
     const odometry = new MapOdometry(), trail = new LeaderTrail(), watch = { ...odometryWindow(tracker.origin, calibration.view), channel: ODOMETRY_CHANNEL, threshold: ODOMETRY_THRESHOLD };
     const moves: Array<{ at: number; x: number; y: number; epoch: number; tracked: boolean }> = [];
     const terrain = new TerrainPlanner(), terrainArea = terrainWindow(tracker.origin, calibration.view);
-    let plan: (TerrainPlan & { at: number }) | undefined, lastPlanAt = -Infinity, sprinting = false, planning = false;
+    let plan: (TerrainPlan & { at: number }) | undefined, lastPlanAt = -Infinity, sprinting = false, planning = false, sprintWantedAt = -Infinity;
     let planWanted: { origin: { x: number; y: number }; offset: { dx: number; dy: number; distance: number }; view: { width: number; height: number } } | undefined;
     const mapScanner = this.mapHost = this.createMapHost();
     const letGo = async () => { if (sprinting) { sprinting = false; this.sprinting = false; await sink.releaseSprint(); } };
@@ -362,7 +373,7 @@ export class FollowerDriveService {
       if (trace?.reason.includes("safety=rate-limited")) { this.stop(`Action limit reached (${ACTIONS_PER_MINUTE}/minute).`); return "stopped"; }
       if (trace?.result === "failed" && COVERED.test(trace.reason)) { this.counts.refused++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Another window covers the game at the click point — pausing."; await letGo(); return "paused"; }
       if (trace?.result === "failed" && MANUAL.test(trace.reason)) { this.counts.manualTakeovers++; manualUntil = this.now() + MANUAL_PAUSE_MS; this.reason = pauseReason = "Manual control detected — following resumes shortly."; await letGo(); return "paused"; }
-      if (trace?.result === "failed" && RETRY.test(trace.reason)) { this.counts.refused++; this.reason = "A click was refused as stale or unfocused; retrying on a fresh capture."; await letGo(); return "retry"; }
+      if (trace?.result === "failed" && RETRY.test(trace.reason)) { this.counts.refused++; this.reason = "A click was refused as stale or unfocused; retrying on a fresh capture."; if (FOCUS_LOST.test(trace.reason)) await letGo(); return "retry"; }
       this.stop(trace ? `Movement input stopped: ${trace.reason}` : "Movement input produced no trace."); return "stopped";
     };
     const tick = async () => {
@@ -429,11 +440,12 @@ export class FollowerDriveService {
           // the leader is not a guess: walk it, whatever the trail says. The trail needs odometry, and live the follower
           // stood against rock with odometry lost (odo=no:0), no usable trail, and a plan that could not help because its
           // wall reader had painted a fifth of the map as wall - so steering fell back to "direct", into the wall, at 0 px/s.
-          const routed = !!plan?.aim && plan.wallBetween && plan.reachesLeader;
+          // ...unless that route runs across blank expanse: then it found a way through unmapped void, not through the map.
+          const routed = !!plan?.aim && plan.wallBetween && plan.reachesLeader && plan.openShare <= MAX_OPEN_SHARE;
           const planned = trusted && plan?.aim && (routed || !trailKnows) && observation.offset!.distance > PLAN_NOT_WITHIN_PX ? plan.aim : undefined;
           const aim = planned ? { ...planned, via: "plan" as const } : trailAim;
           this.odometry = { tracked: moved.tracked, quality: moved.quality, trailPoints: trail.length, via: aim?.via ?? "direct", movedPxPerSec, movedTracked };
-          this.terrain = plan && { planned: !!plan.aim, pathPx: plan.pathPx, walls: plan.walls, bumps: plan.bumps, blockedAhead: plan.blockedAhead, planMs: plan.planMs, searched: plan.searched, wallBetween: plan.wallBetween, reachesLeader: plan.reachesLeader };
+          this.terrain = plan && { planned: !!plan.aim, pathPx: plan.pathPx, walls: plan.walls, bumps: plan.bumps, blockedAhead: plan.blockedAhead, planMs: plan.planMs, searched: plan.searched, wallBetween: plan.wallBetween, reachesLeader: plan.reachesLeader, openShare: plan.openShare };
           let decision: SteeringDecision = manual ? { kind: "pause", reason: this.manualHold ? MANUAL_HOLD_REASON : pauseReason } : steering.decide(observation, this.now(), aim && aim.via !== "direct" ? aim : undefined, moved);
           if (decision.kind === "near") wasNear = true;
           this.counts.cycles++; this.cycles.push(this.now() - started); if (this.cycles.length > 600) this.cycles.shift();
@@ -613,7 +625,14 @@ export class FollowerDriveService {
           // Sprint while far behind and actually heading somewhere; let go for loot, manual control, arrival, or anything unsure.
           const heading = decision.kind === "move" || (decision.kind === "hold" && decision.reason === "Pacing movement clicks.");
           const wantSprint = this.settings.sprint === true && heading && !manual && trusted && distance >= (sprinting ? SPRINT_STOP_PX : SPRINT_START_PX) && !loot.busy(this.now());
-          if (!wantSprint) await letGo();
+          // One unsure frame is not a reason to stop running: a leader label washed out for a capture or two dropped
+          // the sprint and the next sure frame began it again, roll and all. Anything that is a decision - the human,
+          // loot, having arrived, the setting - still lets go at once; only "not sure this frame" is ridden out, briefly,
+          // and only while renewals (each bound to a fresh capture of its own) keep succeeding.
+          if (wantSprint) sprintWantedAt = started;
+          const arrived = trusted && distance < SPRINT_STOP_PX;
+          const blip = sprinting && !wantSprint && this.settings.sprint === true && !manual && !arrived && !loot.busy(this.now()) && (decision.kind === "move" || decision.kind === "hold") && started - sprintWantedAt <= SPRINT_BLIP_MS;
+          if (!wantSprint && !blip) await letGo();
           else if (sprinting) { try { await sink.renewSprint(); } catch { sprinting = false; this.sprinting = false; } }
           if (decision.kind === "move") {
             const evidence = JSON.stringify({ capturedAtQpcMs: this.frame!.capturedAtQpcMs, hwnd: this.frame!.hwnd, leader: observation.leader, origin: observation.origin, offset: observation.offset, evidence: observation.evidence });

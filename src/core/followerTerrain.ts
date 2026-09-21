@@ -20,6 +20,9 @@ const MAX_WALL_FRACTION = .3;
 const EDGE_DETOUR_CELLS = 40, COMMIT_MS = 12_000, COMMIT_ARRIVED_CELLS = 6;
 /** The planner grid. The terrain scan is asked for one point per cell of exactly this size, which makes that request lossless: a point lands in the cell its pixels did. */
 export const TERRAIN_CELL_PX = 4;
+/** A path cell farther than this from every wall is in blank expanse; a route with more than MAX_OPEN_SHARE of those is not believed. */
+const OPEN_PX = 48;
+export const MAX_OPEN_SHARE = .25;
 const CELL = TERRAIN_CELL_PX, LOOKAHEAD_PX = 56, MIN_AIM_PX = 20, CLEAR_START_CELLS = 1, NEAR_WALL_COST = 3;
 /** A plan runs on the tick loop, so the search is capped by the clock: the best route found by then is used and following keeps its pace. */
 const PLAN_BUDGET_MS = 120, BUDGET_EVERY = 1024;
@@ -41,6 +44,8 @@ export interface TerrainPlan {
   wallBetween: boolean;
   /** True when the path ends on the leader, not at a frontier on the way: the map was read all the way there. */
   reachesLeader: boolean;
+  /** Share of the path that runs far from any wall. High means it crosses blank expanse - open water, unmapped void. */
+  openShare: number;
   pathPx: number;
   /** The planned path in game-client pixels, for display and tests. */
   path: KeyPoint[];
@@ -94,16 +99,36 @@ export class TerrainPlanner {
   plan(walls: KeyPoint[], window: PixelRect, origin: KeyPoint, leader: { dx: number; dy: number }, position: KeyPoint, epoch: number, now: number, clock: () => number = () => performance.now()): TerrainPlan {
     const began = clock(), cols = Math.ceil(window.width / CELL), rows = Math.ceil(window.height / CELL), size = cols * rows;
     this.bumps = this.bumps.filter(b => b.epoch === epoch && now - b.at <= BUMP_TTL_MS);
-    const empty: TerrainPlan = { blockedAhead: false, wallBetween: false, reachesLeader: false, pathPx: 0, path: [], walls: walls.length, bumps: this.bumps.length, planMs: 0, searched: 0 };
+    const empty: TerrainPlan = { blockedAhead: false, wallBetween: false, reachesLeader: false, openShare: 0, pathPx: 0, path: [], walls: walls.length, bumps: this.bumps.length, planMs: 0, searched: 0 };
     const cell = (x: number, y: number) => ({ cx: Math.floor((x - window.x) / CELL), cy: Math.floor((y - window.y) / CELL) });
     const start = cell(origin.x, origin.y);
     if (start.cx < 1 || start.cy < 1 || start.cx >= cols - 1 || start.cy >= rows - 1) return empty;
-    // 2 = wall (dilated by one cell so dotted outlines and diagonal lines do not leak), 1 = next to a wall.
+    // 2 = wall, 1 = next to a wall. The outline is a dotted 1 px line, so its gaps have to be closed or every path
+    // leaks through them - but it must not be left FAT. Growing each wall cell by one and stopping there made every
+    // 1 px line a 12 px slab, and in a town whose gangways are 8-12 px wide that sealed the follower into a pocket of
+    // 89 cells: two captures a second apart gave a 1,601 px route and then NO PATH, and it stood still flickering
+    // between them. So the walls are CLOSED instead - grown by one cell, then shrunk by one - which joins the dots
+    // (gaps up to ~8 px) and gives the corridor back. Measured on four frames with known answers this is the only
+    // setting of eight that gets all four right (town 1,566 and 1,583 px against a true ~1,600, cave 219 against ~240,
+    // town 209), in 1-12 ms; a 2 px grid leaked through the gaps (636-1,016 px) and grow/shrink 2 sealed the cave.
+    const raw = new Uint8Array(size);
+    for (const p of walls) { const c = cell(p.x, p.y); if (c.cx >= 0 && c.cy >= 0 && c.cx < cols && c.cy < rows) raw[c.cy * cols + c.cx] = 1; }
+    // Separable 3-wide max then min: the same result as a 3 x 3 grow and shrink at a third of the reads.
+    const pass = (src: Uint8Array, grow: boolean, horizontal: boolean) => {
+      const out = new Uint8Array(size), edge = grow ? 0 : 1;
+      for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+        const i = y * cols + x, a = horizontal ? (x > 0 ? src[i - 1] : edge) : (y > 0 ? src[i - cols] : edge), b = horizontal ? (x < cols - 1 ? src[i + 1] : edge) : (y < rows - 1 ? src[i + cols] : edge);
+        out[i] = grow ? src[i] | a | b : src[i] & a & b;
+      }
+      return out;
+    };
+    const grown = pass(pass(raw, true, true), true, false), closed = pass(pass(grown, false, true), false, false);
     const grid = new Uint8Array(size);
+    for (let i = 0; i < size; i++) if (closed[i]) grid[i] = 2;
     const block = (cx: number, cy: number, radius: number) => { for (let y = Math.max(0, cy - radius); y <= Math.min(rows - 1, cy + radius); y++) for (let x = Math.max(0, cx - radius); x <= Math.min(cols - 1, cx + radius); x++) grid[y * cols + x] = 2; };
-    for (const p of walls) { const c = cell(p.x, p.y); if (c.cx >= 0 && c.cy >= 0 && c.cx < cols && c.cy < rows) block(c.cx, c.cy, 1); }
-    // Counted in cells after dilation, so the guard is the same at any resolution and catches scattered speckle too.
-    let blocked = 0; for (let i = 0; i < size; i++) if (grid[i] === 2) blocked++;
+    // Counted on the GROWN cells, before they are shrunk back, so the guard is what it always was: the same at any
+    // resolution, and scattered speckle - which shrinks back to almost nothing - still reads as the noise it is.
+    let blocked = 0; for (let i = 0; i < size; i++) if (grown[i]) blocked++;
     if (blocked > size * MAX_WALL_FRACTION) return empty;
     for (const b of this.bumps) { const c = cell(origin.x + b.x - position.x, origin.y + b.y - position.y); if (c.cx >= 0 && c.cy >= 0 && c.cx < cols && c.cy < rows) block(c.cx, c.cy, BUMP_RADIUS_CELLS); }
     // We are standing where we are standing: never inside a wall, whatever the outline says. Bumps stay: they are ahead of us, not under us.
@@ -189,12 +214,25 @@ export class TerrainPlanner {
     for (let i = endIndex; i !== -1; i = from[i]) path.push({ cx: i % cols, cy: Math.floor(i / cols) });
     path.reverse();
     const clear = (a: { cx: number; cy: number }, b: { cx: number; cy: number }) => { const n = Math.max(Math.abs(b.cx - a.cx), Math.abs(b.cy - a.cy)) * 2; for (let i = 1; i < n; i++) { const x = Math.round(a.cx + (b.cx - a.cx) * i / n), y = Math.round(a.cy + (b.cy - a.cy) * i / n); if (grid[y * cols + x]) return false; } return true; };
+    // How much of this path crosses blank expanse. The planner knows wall from not-wall and nothing else, so open water
+    // and unmapped void look as walkable as a deck - and the outline does not seal them off: measured on recorded frames,
+    // the region reachable from the follower without crossing a wall is 92-97% of the view at every colour threshold
+    // and every gap-closing radius up to 24 px, because labels, icons, our own marker and the edge of the explored map
+    // all open it. Live that produced a "route" straight across the harbour. Real routes hug map structure; so the
+    // share of the path lying more than OPEN_PX from any wall says whether this one can be believed.
+    let blank = 0;
+    if (path.length) {
+      const reach = Math.ceil(OPEN_PX / CELL), far = new Uint8Array(size).fill(1);
+      for (let i = 0; i < size; i++) if (grid[i] === 2) { const wx = i % cols, wy = Math.floor(i / cols); for (let y = Math.max(0, wy - reach); y <= Math.min(rows - 1, wy + reach); y++) far.fill(0, y * cols + Math.max(0, wx - reach), y * cols + Math.min(cols - 1, wx + reach) + 1); }
+      for (const p of path) if (far[p.cy * cols + p.cx]) blank++;
+    }
+    const openShare = path.length ? Math.round(blank / path.length * 100) / 100 : 0;
     // Aim at the farthest point within the lookahead that can be walked to in a straight line, so steering does not zigzag along grid steps.
     let along = 0, pathPx = 0, target = path[Math.min(path.length - 1, 1)];
     for (let i = 1; i < path.length; i++) {
       const stepPx = Math.hypot(path[i].cx - path[i - 1].cx, path[i].cy - path[i - 1].cy) * CELL; pathPx += stepPx;
       if (along + stepPx <= LOOKAHEAD_PX) { along += stepPx; if (clear(path[0], path[i]) || along < MIN_AIM_PX) target = path[i]; }
     }
-    return { aim: { dx: (target.cx - start.cx) * CELL, dy: (target.cy - start.cy) * CELL }, blockedAhead, wallBetween, reachesLeader: found && reach >= distance - CELL, pathPx: Math.round(pathPx), path: path.map(p => ({ x: window.x + p.cx * CELL + CELL / 2, y: window.y + p.cy * CELL + CELL / 2 })), walls: walls.length, bumps: this.bumps.length, searched, planMs: Math.round((clock() - began) * 10) / 10 };
+    return { aim: { dx: (target.cx - start.cx) * CELL, dy: (target.cy - start.cy) * CELL }, blockedAhead, wallBetween, reachesLeader: found && reach >= distance - CELL, openShare, pathPx: Math.round(pathPx), path: path.map(p => ({ x: window.x + p.cx * CELL + CELL / 2, y: window.y + p.cy * CELL + CELL / 2 })), walls: walls.length, bumps: this.bumps.length, searched, planMs: Math.round((clock() - began) * 10) / 10 };
   }
 }

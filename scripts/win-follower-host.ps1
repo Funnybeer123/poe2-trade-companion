@@ -117,7 +117,11 @@ public static class FollowWin {
     // (red above green), and the "bright neutral" term that painted the map's own walkable fill, every NPC name
     // label and pale scenery as wall. Measured on a town frame that term made 19% of all cells wall, tripped the
     // planner's 30% sanity guard and returned NO PATH without searching; this plane routes to the leader there.
-    if (channel == 7) return (b >= 105 && b - r >= 12 && b - g >= 12 && Math.Abs(r - g) <= 14 && r * 100 >= b * 58 && g * 100 >= b * 58) ? 255 : 0;
+    // The pale lettering of the world's NPC nameplates (KAIMANA, MATIKI) is lavender-grey too and was being read as
+    // wall. It is BRIGHT and barely blue: measured over four frames no lettering pixel has blue 22 above red, while it
+    // sits at red ~165-178. Demanding 22 everywhere also thinned the fainter outline of a cave enough to open a gap in
+    // a rock pillar (route 155 px where ~225 is right), so only pixels that are both bright and pale are refused.
+    if (channel == 7) return (b >= 105 && b - r >= 12 && b - g >= 12 && !(Math.Max(r, g) >= 140 && b - Math.Max(r, g) < 22) && Math.Abs(r - g) <= 14 && r * 100 >= b * 58 && g * 100 >= b * 58) ? 255 : 0;
     // The overlay map's walkable-area outline is lavender and its water edges bright blue: blue above both other channels.
     int outline = b >= 90 ? Math.Max(0, b - Math.Max(r, g)) : 0;
     if (channel == 4) return outline;

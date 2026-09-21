@@ -101,6 +101,8 @@ describe("the walls plane reads only the map's lavender outline", () => {
   it.each([
     [[128, 123, 157], 255, "the outline as measured"],
     [[150, 150, 200], 255, "the outline over brighter ground"],
+    [[170, 170, 187], 0, "the pale lettering of a world NPC nameplate: bright, and only 17 above red"],
+    [[120, 120, 138], 255, "a faint stretch of outline: only 18 above red, but dark - refusing it opened a gap in a cave pillar"],
     [[62, 127, 165], 0, "water and the explored-map arc: green well above red"],
     [[148, 140, 138], 0, "bright and neutral: map fill, name labels, pale scenery"],
     [[180, 120, 200], 0, "a purple spell effect: red above green"],
@@ -133,12 +135,23 @@ describe("terrain planner guards", () => {
   it("when the leader is sealed off on the map, walks to the reachable spot nearest to them, then makes no plan so the caller can fall back", () => {
     const ring = (me: KeyPoint): KeyPoint[] => { const points: KeyPoint[] = []; for (let a = 0; a < 6.3; a += .005) points.push({ x: Math.round(ORIGIN.x + Math.cos(a) * 60 - me.x), y: Math.round(ORIGIN.y + Math.sin(a) * 60 - me.y) }); return points; };
     const planner = new TerrainPlanner(), first = planner.plan(ring({ x: 0, y: 0 }), WINDOW, ORIGIN, { dx: 0, dy: -200 }, { x: 0, y: 0 }, 1, 0);
-    expect(first.blockedAhead).toBe(true);
+    // The ring is 60 px out: a wall on the line to the leader, though just beyond the 56 px the lookahead covers now
+    // that walls are no longer grown a cell thicker than they are drawn.
+    expect(first.wallBetween).toBe(true);
     expect(first.aim!.dy).toBeLessThan(-20); expect(Math.abs(first.aim!.dx)).toBeLessThan(20);
     expect(first.path.every(p => Math.hypot(p.x - ORIGIN.x, p.y - ORIGIN.y) < 60)).toBe(true);
     // Standing at that spot, nothing reachable is nearer: no plan.
-    const there = { x: 0, y: -48 };
-    expect(planner.plan(ring(there), WINDOW, ORIGIN, { dx: 0, dy: -152 }, there, 1, 1000).aim).toBeUndefined();
+    // Walk to where each plan ends until there is nowhere nearer to go. Asserted as behaviour, not as a coordinate: the
+    // spot depends on how thick the ring reads, and it used to be pinned at 48 px by walls grown a cell too fat.
+    let me = { x: 0, y: 0 }, plan = first, steps = 0;
+    while (plan.aim && steps++ < 8) {
+      const end = plan.path[plan.path.length - 1];
+      me = { x: me.x + end.x - ORIGIN.x, y: me.y + end.y - ORIGIN.y };
+      plan = planner.plan(ring(me), WINDOW, ORIGIN, { dx: -me.x, dy: -200 - me.y }, me, 1, 1000 * steps);
+    }
+    expect(plan.aim).toBeUndefined();
+    expect(Math.hypot(me.x, me.y)).toBeLessThan(60);      // still inside the ring: it never leaked through
+    expect(me.y).toBeLessThan(-40);                        // and hard against its north side, nearest the leader
   });
   it("heads for where walkable ground runs off the edge of the view when the straight line is walled off", () => {
     // A long wall to the north with open ground to the west: the leader is north, beyond the view.
