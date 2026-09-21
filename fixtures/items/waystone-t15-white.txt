@@ -1,0 +1,5 @@
+Item Class: Waystones
+Rarity: Normal
+Waystone (Tier 15)
+--------
+Waystone Tier: 15

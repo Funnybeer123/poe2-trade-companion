@@ -52,5 +52,6 @@ export * from "./cursorHandoff.js";
 export * from "./stashSort.js";
 export * from "./stashSortExecutor.js";
 export * from "./crafting.js";
+export * from "./waystoneJuice.js";
 export * from "./tabFolders.js";
 export * from "./stashTabAdmin.js";

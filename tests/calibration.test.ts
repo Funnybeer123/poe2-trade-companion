@@ -1,8 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   activeStashGrid,
+  applyMapsStashPanel,
   applyStashPanel,
   emptyProfile,
+  juiceCalibrationFocus,
+  mapsCalibrationHidesOthers,
+  mapsStashGrid,
+  nudgeGridMark,
+  showMapsCalibrationMark,
   packNpcPatch,
   packPatch,
   profileReadyForDeposit,
@@ -11,6 +17,7 @@ import {
   stashAreasDiverge,
   stashGridForKind,
   stashSearchBox,
+  stampMapsStashPanel,
   stampStashPanel,
   toPlain,
 } from "../src/core/calibrationProfile.js";
@@ -240,6 +247,41 @@ describe("in-app calibration profile", () => {
     const facts = perceiveUi(frame, TEST_CLIENT, {}, profile);
     expect(facts.stashRegion).toEqual(box);
     expect(facts.stashGridSize).toEqual({ cols: 24, rows: 24 });
+  });
+
+  it("stores a Maps unique-tab grid separately from the regular stash panel", () => {
+    const regular = { x: 28, y: 250, w: 1272, h: 1265 };
+    const maps = { x: 92, y: 596, w: 1152, h: 768 };
+    const profile = stampMapsStashPanel(stampStashPanel(emptyProfile(3840, 2160), regular), maps);
+    expect(profile.stashGrid).toMatchObject({ ...regular, cols: 12, rows: 12 });
+    expect(profile.mapsStashGrid).toMatchObject({ ...maps, cols: 12, rows: 8 });
+    expect(applyMapsStashPanel({ x: 92, y: 596, w: 1152, h: 900 })).toMatchObject({ cols: 12, rows: 8 });
+    expect(mapsStashGrid(profile)).toMatchObject({ ...maps, cols: 12, rows: 8 });
+    expect(mapsStashGrid(stampStashPanel(emptyProfile(3840, 2160), regular))).toBeUndefined();
+    expect(
+      mapsStashGrid({
+        ...emptyProfile(3840, 2160),
+        mapsStashGrid: { x: 63, y: 735, w: 1227, h: 814, cols: 8, rows: 12 },
+      }),
+    ).toMatchObject({ x: 63, y: 735, w: 1227, h: 814, cols: 12, rows: 8 });
+    expect(nudgeGridMark({ x: 63, y: 735, w: 1227, h: 814, cols: 12, rows: 8 }, -8, 0)).toMatchObject({
+      x: 55,
+      y: 735,
+      cols: 12,
+      rows: 8,
+    });
+  });
+
+  it("hides other calibration overlays on Maps and keeps the saved Maps lattice visible until a new drag", () => {
+    expect(mapsCalibrationHidesOthers("maps-grid")).toBe(true);
+    expect(mapsCalibrationHidesOthers("stash-grid")).toBe(false);
+    expect(juiceCalibrationFocus("juice-grids")).toBe(true);
+    expect(juiceCalibrationFocus("maps-grid")).toBe(false);
+    expect(showMapsCalibrationMark("maps-grid", true, false)).toBe(true);
+    expect(showMapsCalibrationMark("maps-grid", true, true)).toBe(false);
+    expect(showMapsCalibrationMark("juice-grids", true, false)).toBe(true);
+    expect(showMapsCalibrationMark("stash-grid", true, false)).toBe(true);
+    expect(showMapsCalibrationMark("maps-grid", false, true)).toBe(false);
   });
 
   it("keeps a marked stash search box on the profile", () => {

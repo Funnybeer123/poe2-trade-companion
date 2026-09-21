@@ -6,11 +6,12 @@ import { getAssistiveApi, getShopApi, getStashSortApi, getStashTabAdminApi } fro
 import { useGameActions } from "./useGameActions";
 import { useRuntimeState } from "./useRuntimeState";
 
-export type DashboardScriptAction = "gear-sort" | "craft" | "shop-scan" | "shop-list";
+export type DashboardScriptAction = "gear-sort" | "craft" | "juice-maps" | "shop-scan" | "shop-list";
 
 const scriptKinds: Record<DashboardScriptAction, { live: StashTabScriptKind; preview: StashTabScriptKind }> = {
   "gear-sort": { live: "sort-gear", preview: "sort-gear-dry" },
   craft: { live: "craft-gear", preview: "craft-gear-dry" },
+  "juice-maps": { live: "juice-maps", preview: "juice-maps-dry" },
   "shop-scan": { live: "shop-scan", preview: "shop-scan-dry" },
   "shop-list": { live: "shop-buckets", preview: "shop-buckets-dry" },
 };

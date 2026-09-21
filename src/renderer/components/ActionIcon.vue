@@ -18,6 +18,7 @@ const paths: Record<string, string> = {
   scan: 'M8 3H3v5 M16 3h5v5 M3 16v5h5 M21 16v5h-5 M7 8h10 M7 12h10 M7 16h6',
   voice: 'M9 5a3 3 0 0 1 6 0v7a3 3 0 0 1-6 0z M5 10v2a7 7 0 0 0 14 0v-2 M12 19v3 M8 22h8',
   craft: 'M14 3l7 7-5 5-7-7z M11 10l-9 9 3 3 9-9 M15 2l7 7',
+  maps: 'M9 4l6 2 6-2v16l-6 2-6-2-6 2V6z M9 4v16 M15 6v16',
   arrow: 'M5 12h14 m-5-5 5 5-5 5',
   play: 'M7 4l14 8-14 8z',
   pause: 'M8 4v16 M16 4v16',

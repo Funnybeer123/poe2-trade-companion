@@ -53,6 +53,7 @@ export const DECK_ACTIONS = [
   ["feed.refresh", "Refresh market feed", "MARKET", "Refresh the app price feed."],
   ["script.renumber", "Renumber stash tabs", "NUMBER", "Existing tab renumber operation."],
   ["script.finish-gear", "Finish gear tabs", "GEAR TABS", "Existing gear-tab finishing operation."],
+  ["script.juice-maps", "Juice T15 maps", "JUICE T15", "Alch weak maps, exalt keepers, and Vaal every 6-mod T15 on the open stash tab."],
   ["overlay.hide", "Hide dry-run overlay", "HIDE", "Dismiss the current preview overlay."],
   ["workflow.stop", "Stop current workflow", "STOP", "Cancel app workflows without rearming anything."],
   ["safety.estop", "Emergency stop", "E STOP", "Latch the global input kill switch and cancel all app workflows."],

@@ -36,6 +36,7 @@ const modules = computed<{ id: CombatModule; title: string; subtitle: string }[]
 const workflows = [
   { id: "gear-sort", icon: "sort", title: "Sort gear", description: "Route items to their tabs using your value tiers.", to: "/sort", setup: "Tiers & routing" },
   { id: "craft", icon: "craft", title: "Craft gear", description: "Run your configured crafting workflow.", to: "/sort", setup: "Crafting setup" },
+  { id: "juice-maps", icon: "maps", title: "Juice T15 maps", description: "Alch weak maps, exalt keepers, and Vaal every 6-mod T15 on the open stash tab.", to: "/sort", setup: "Map juicing" },
   { id: "shop-scan", icon: "scan", title: "Scan shop", description: "Read listings and reconcile your sales ledger.", to: "/shop", setup: "Listings & repricing" },
   { id: "shop-list", icon: "shop", title: "List inventory", description: "Price bag items and move them to bucket tabs.", to: "/shop", setup: "Shop settings" },
 ] as const;

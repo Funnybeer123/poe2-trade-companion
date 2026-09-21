@@ -262,6 +262,8 @@ contextBridge.exposeInMainWorld("poe2", {
     diagnose: (payload: unknown) => ipcRenderer.invoke("cal:diagnose", payload),
     exportDiagnostic: (payload: unknown) => ipcRenderer.invoke("cal:export-diagnostic", payload),
     stamp: (payload: unknown) => ipcRenderer.invoke("cal:stamp", payload),
+    overlayGrids: () => ipcRenderer.invoke("cal:overlay-grids"),
+    hideGrids: () => ipcRenderer.invoke("cal:hide-grids"),
     walkNpc: (npc: unknown) => ipcRenderer.invoke("cal:walk-npc", npc),
   },
 });
