@@ -3,7 +3,7 @@
   "kind": "poe2-build-profile-catalog",
   "league": "Forbidden Rites",
   "patch": "0.5.5b",
-  "curatedAt": "2026-09-20",
+  "curatedAt": "2026-09-21",
   "tradeBaseUrl": "https://www.pathofexile.com/trade2/search/poe2/Forbidden%20Rites",
   "notes": [
     "Compatible with createBuildProfile / GearTarget in src/core/buildProfiles.ts.",
@@ -12,7 +12,8 @@
     "Aligned with poe2-loot-catalog rare_rules.json families + Maxroll/Mobalytics/NextTier/Odealo guides.",
     "Asking-price estimates only; not affiliated with Grinding Gear Games.",
     "Hard cap for light-radius profile: 150% increased Light Radius.",
-    "Paused profiles (Grim Pillars, AFK Witchhunter) are inactive; rising YT not treated as watched."
+    "Paused profiles (Grim Pillars, AFK Witchhunter) are inactive; rising YT not treated as watched.",
+    "Weekday refresh 2026-09-21: deepened thin 2-rule rares; added plant/minion, tactician crossbow, spear ele/phys, triple-res jewelry, spirit-stack, and expanded jewel recipes (public meta: Plant Oracle + Stormblast Tactician rising)."
   ],
   "avoidUniques": [
     {
@@ -45,7 +46,7 @@
     },
     {
       "name": "Grip of Kulemak",
-      "reason": "-20–30% light radius"
+      "reason": "-20\u201330% light radius"
     }
   ],
   "profiles": [
@@ -752,14 +753,42 @@
               "stat": "increased Light Radius",
               "operator": "gte",
               "required": true,
-              "weight": 3,
+              "weight": 5,
               "value": 15
             },
             {
-              "stat": "mana regeneration",
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 40
+            },
+            {
+              "stat": "Mana Regeneration",
               "operator": "exists",
               "required": false,
-              "weight": 1
+              "weight": 2
+            },
+            {
+              "stat": "all Elemental Resistances",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 10
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 20
+            },
+            {
+              "stat": "increased Rarity of Items found",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 15
             }
           ]
         },
@@ -793,14 +822,42 @@
               "stat": "increased Light Radius",
               "operator": "gte",
               "required": true,
-              "weight": 3,
+              "weight": 5,
               "value": 15
             },
             {
-              "stat": "accuracy",
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 70
+            },
+            {
+              "stat": "Accuracy",
               "operator": "exists",
               "required": false,
-              "weight": 1
+              "weight": 2
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 25
+            },
+            {
+              "stat": "increased Rarity of Items found",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 15
             }
           ]
         },
@@ -837,22 +894,35 @@
               "stat": "increased Light Radius",
               "operator": "gte",
               "required": true,
-              "weight": 4,
+              "weight": 5,
               "value": 15
             },
             {
               "stat": "maximum Life",
               "operator": "gte",
               "required": false,
-              "weight": 2,
-              "value": 40
+              "weight": 3,
+              "value": 60
             },
             {
               "stat": "Spirit",
               "operator": "gte",
               "required": false,
-              "weight": 1,
-              "value": 20
+              "weight": 3,
+              "value": 25
+            },
+            {
+              "stat": "all Elemental Resistances",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 10
+            },
+            {
+              "stat": "Mana Regeneration",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
             }
           ]
         },
@@ -889,14 +959,35 @@
               "stat": "increased Light Radius",
               "operator": "gte",
               "required": true,
-              "weight": 4,
+              "weight": 5,
               "value": 15
+            },
+            {
+              "stat": "increased Physical Damage",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 80
+            },
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 8
             },
             {
               "stat": "Accuracy",
               "operator": "exists",
               "required": false,
-              "weight": 1
+              "weight": 2
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 10
             }
           ]
         }
@@ -1185,11 +1276,25 @@
               "stat": "maximum Life",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 50
             },
             {
               "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 20
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 20
+            },
+            {
+              "stat": "Lightning Resistance",
               "operator": "gte",
               "required": false,
               "weight": 1,
@@ -1246,8 +1351,22 @@
               "stat": "maximum Life",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 60
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 25
             }
           ]
         },
@@ -1581,8 +1700,22 @@
               "stat": "Fire Resistance",
               "operator": "gte",
               "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": false,
               "weight": 1,
-              "value": 20
+              "value": 25
             }
           ]
         },
@@ -1627,15 +1760,29 @@
               "stat": "maximum Life",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 40
             },
             {
               "stat": "all Elemental Resistances",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 10
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 20
+            },
+            {
+              "stat": "Chaos Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 12
             }
           ]
         },
@@ -1878,15 +2025,28 @@
               "stat": "Spirit",
               "operator": "gte",
               "required": false,
-              "weight": 3,
+              "weight": 4,
               "value": 25
             },
             {
               "stat": "maximum Life",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 60
+            },
+            {
+              "stat": "Minions deal",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "all Elemental Resistances",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 10
             }
           ]
         },
@@ -1925,7 +2085,7 @@
               "stat": "Spirit",
               "operator": "gte",
               "required": true,
-              "weight": 5,
+              "weight": 6,
               "value": 40
             },
             {
@@ -1939,8 +2099,21 @@
               "stat": "all Elemental Resistances",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 12
+            },
+            {
+              "stat": "increased Rarity of Items found",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 15
+            },
+            {
+              "stat": "Mana Regeneration",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
             }
           ]
         },
@@ -1996,6 +2169,20 @@
               "required": false,
               "weight": 3,
               "value": 12
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "Chaos Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 12
             }
           ]
         },
@@ -2047,8 +2234,22 @@
               "stat": "maximum Life",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 60
+            },
+            {
+              "stat": "all Elemental Resistances",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 10
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 15
             }
           ]
         },
@@ -2174,8 +2375,22 @@
               "stat": "Fire Resistance",
               "operator": "gte",
               "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": false,
               "weight": 1,
-              "value": 25
+              "value": 30
             }
           ]
         },
@@ -2220,15 +2435,29 @@
               "stat": "maximum Life",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 60
             },
             {
               "stat": "Fire Resistance",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 25
+            },
+            {
+              "stat": "Chaos Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 15
             }
           ]
         },
@@ -2417,8 +2646,21 @@
               "stat": "maximum Life",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 50
+            },
+            {
+              "stat": "Physical Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 20
             }
           ]
         },
@@ -2527,7 +2769,7 @@
               "stat": "maximum Life",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 50
             },
             {
@@ -2536,6 +2778,20 @@
               "required": false,
               "weight": 2,
               "value": 8
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 25
             }
           ]
         },
@@ -2580,15 +2836,28 @@
               "stat": "maximum Life",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 80
             },
             {
               "stat": "Fire Resistance",
               "operator": "gte",
               "required": false,
-              "weight": 1,
+              "weight": 2,
               "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Minions have",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
             }
           ]
         },
@@ -2825,6 +3094,20 @@
             },
             {
               "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Lightning Resistance",
               "operator": "gte",
               "required": false,
               "weight": 2,
@@ -3263,6 +3546,20 @@
               "stat": "Fire Resistance",
               "operator": "gte",
               "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": false,
               "weight": 1,
               "value": 25
             }
@@ -3385,15 +3682,28 @@
               "stat": "Critical Hit Chance",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 10
             },
             {
               "stat": "Attack Speed",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 8
+            },
+            {
+              "stat": "Critical Damage Bonus",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 20
+            },
+            {
+              "stat": "Physical Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
             }
           ]
         },
@@ -3497,8 +3807,34 @@
               "stat": "increased Physical Damage",
               "operator": "gte",
               "required": false,
+              "weight": 4,
+              "value": 80
+            },
+            {
+              "stat": "Physical Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
               "weight": 2,
-              "value": 60
+              "value": 15
+            },
+            {
+              "stat": "Critical Damage Bonus",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 20
+            },
+            {
+              "stat": "Accuracy",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
             }
           ]
         },
@@ -3756,6 +4092,20 @@
               "required": true,
               "weight": 3,
               "value": 12
+            },
+            {
+              "stat": "Critical Hit Chance for Spells",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 15
+            },
+            {
+              "stat": "maximum Mana",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 40
             }
           ]
         },
@@ -3912,15 +4262,35 @@
               "stat": "Spirit",
               "operator": "gte",
               "required": true,
-              "weight": 5,
+              "weight": 6,
               "value": 50
             },
             {
               "stat": "increased Spirit",
               "operator": "gte",
               "required": false,
-              "weight": 3,
+              "weight": 4,
               "value": 40
+            },
+            {
+              "stat": "Allies in your Presence",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 40
+            },
+            {
+              "stat": "Level of all Minion Skills",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 1
             }
           ]
         },
@@ -3972,8 +4342,22 @@
               "stat": "Cast Speed",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 10
+            },
+            {
+              "stat": "Critical Hit Chance for Spells",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 12
+            },
+            {
+              "stat": "maximum Mana",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 60
             }
           ]
         },
@@ -4146,8 +4530,22 @@
               "stat": "Cast Speed",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 12
+            },
+            {
+              "stat": "increased Energy Shield",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 50
+            },
+            {
+              "stat": "Critical Hit Chance for Spells",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 10
             }
           ]
         },
@@ -4269,8 +4667,21 @@
               "stat": "Attack Speed",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 8
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 15
+            },
+            {
+              "stat": "Cold Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
             }
           ]
         },
@@ -4431,16 +4842,29 @@
             {
               "stat": "maximum Energy Shield",
               "operator": "gte",
-              "required": true,
+              "required": false,
               "weight": 3,
-              "value": 80
+              "value": 60
             },
             {
-              "stat": "maximum Life",
+              "stat": "Block chance",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            },
+            {
+              "stat": "Fire Resistance",
               "operator": "gte",
               "required": false,
               "weight": 2,
-              "value": 60
+              "value": 25
+            },
+            {
+              "stat": "Chaos Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 15
             }
           ]
         },
@@ -4692,17 +5116,30 @@
               "weight": 5
             },
             {
-              "stat": "Minions have",
-              "operator": "exists",
+              "stat": "Level of all Minion Skills",
+              "operator": "gte",
               "required": false,
-              "weight": 3
+              "weight": 3,
+              "value": 1
             },
             {
-              "stat": "Critical Damage Bonus",
+              "stat": "maximum Life",
               "operator": "gte",
               "required": false,
               "weight": 2,
-              "value": 10
+              "value": 20
+            },
+            {
+              "stat": "Minions have",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            },
+            {
+              "stat": "Spirit",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
             }
           ]
         },
@@ -4738,23 +5175,36 @@
           },
           "statRules": [
             {
-              "stat": "Mana",
-              "operator": "exists",
-              "required": true,
-              "weight": 3
-            },
-            {
               "stat": "on Kill",
               "operator": "exists",
               "required": true,
               "weight": 4
             },
             {
-              "stat": "maximum Energy Shield",
+              "stat": "Mana",
+              "operator": "exists",
+              "required": true,
+              "weight": 3
+            },
+            {
+              "stat": "maximum Mana",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 20
+            },
+            {
+              "stat": "Mana Regeneration",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            },
+            {
+              "stat": "Cast Speed",
               "operator": "gte",
               "required": false,
               "weight": 1,
-              "value": 5
+              "value": 4
             }
           ]
         },
@@ -4793,21 +5243,34 @@
               "operator": "gte",
               "required": true,
               "weight": 5,
-              "value": 8
+              "value": 10
             },
             {
               "stat": "Area of Effect",
-              "operator": "gte",
+              "operator": "exists",
               "required": false,
-              "weight": 2,
-              "value": 8
+              "weight": 3
             },
             {
-              "stat": "Critical Hit Chance",
+              "stat": "maximum Life",
               "operator": "gte",
               "required": false,
               "weight": 2,
-              "value": 8
+              "value": 20
+            },
+            {
+              "stat": "Cast Speed",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 4
+            },
+            {
+              "stat": "Spell Damage",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 10
             }
           ]
         },
@@ -4846,20 +5309,1367 @@
               "stat": "Energy Shield Recharge",
               "operator": "exists",
               "required": true,
-              "weight": 4
-            },
-            {
-              "stat": "maximum Energy Shield",
-              "operator": "gte",
-              "required": false,
-              "weight": 3,
-              "value": 8
+              "weight": 5
             },
             {
               "stat": "faster start",
               "operator": "exists",
               "required": false,
               "weight": 3
+            },
+            {
+              "stat": "increased Energy Shield",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 10
+            },
+            {
+              "stat": "maximum Energy Shield",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 15
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 15
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:weapon:spear-ele-as-crit",
+          "name": "Spear ele / AS / crit chase",
+          "slot": "weapon",
+          "itemClass": "Spears",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "spear",
+            "ele"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/weapon",
+            "raw": {
+              "note": "Whirling / Twister elemental spear path"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 12
+            },
+            {
+              "stat": "Fire Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "Cold Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "Lightning Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 15
+            },
+            {
+              "stat": "Critical Damage Bonus",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 20
+            },
+            {
+              "stat": "increased Physical Damage",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 40
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:weapon:spear-phys-as-crit-t1",
+          "name": "Spear phys / AS / crit T1 chase",
+          "slot": "weapon",
+          "itemClass": "Spears",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "spear"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/weapon",
+            "raw": {
+              "note": "High-end spear phys package"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Physical Damage",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 120
+            },
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 12
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 20
+            },
+            {
+              "stat": "Critical Damage Bonus",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 25
+            },
+            {
+              "stat": "Physical Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "Accuracy",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:weapon:crossbow-proj-as",
+          "name": "Crossbow projectile / AS (Tactician)",
+          "slot": "weapon",
+          "itemClass": "Crossbows",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "upgrade",
+            "projectile",
+            "tactician"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/weapon",
+            "raw": {
+              "note": "Stormblast / Galvanic Tactician rare crossbow"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 12
+            },
+            {
+              "stat": "Projectile Damage",
+              "operator": "gte",
+              "required": false,
+              "weight": 4,
+              "value": 40
+            },
+            {
+              "stat": "Level of all Projectile Skills",
+              "operator": "gte",
+              "required": false,
+              "weight": 4,
+              "value": 1
+            },
+            {
+              "stat": "increased Physical Damage",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 80
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 12
+            },
+            {
+              "stat": "Lightning Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:amulet:plant-minion-spirit",
+          "name": "Plant / minion life + levels + spirit",
+          "slot": "amulet",
+          "itemClass": "Amulets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "minion",
+            "plant",
+            "spirit"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/amulet",
+            "raw": {
+              "note": "Plant Oracle / minion league-start amulet"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Level of all Minion Skills",
+              "operator": "gte",
+              "required": true,
+              "weight": 6,
+              "value": 2
+            },
+            {
+              "stat": "Spirit",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 30
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 70
+            },
+            {
+              "stat": "Minions deal",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "all Elemental Resistances",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 10
+            },
+            {
+              "stat": "Skill Effect Duration",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 10
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:amulet:spirit-stack-t1",
+          "name": "Spirit stacking amulet (T1)",
+          "slot": "amulet",
+          "itemClass": "Amulets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "spirit"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/amulet",
+            "raw": {
+              "note": "Companion / Twister / plant spirit stack"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Spirit",
+              "operator": "gte",
+              "required": true,
+              "weight": 6,
+              "value": 45
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 70
+            },
+            {
+              "stat": "all Elemental Resistances",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 12
+            },
+            {
+              "stat": "Level of all Skills",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 1
+            },
+            {
+              "stat": "increased Rarity of Items found",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 15
+            },
+            {
+              "stat": "Mana Regeneration",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:weapon:sceptre-spirit-ally",
+          "name": "Spirit sceptre with ally aura mods",
+          "slot": "weapon",
+          "itemClass": "Sceptres",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "spirit"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/weapon",
+            "raw": {
+              "note": "Spirit Walker / companion presence sceptre"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Spirit",
+              "operator": "gte",
+              "required": true,
+              "weight": 6,
+              "value": 55
+            },
+            {
+              "stat": "increased Spirit",
+              "operator": "gte",
+              "required": false,
+              "weight": 4,
+              "value": 35
+            },
+            {
+              "stat": "Allies in your Presence",
+              "operator": "exists",
+              "required": true,
+              "weight": 4
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 40
+            },
+            {
+              "stat": "Level of all Minion Skills",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 1
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 20
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:ring:life-triple-res",
+          "name": "Life + triple elemental res ring",
+          "slot": "ring",
+          "itemClass": "Rings",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "life",
+            "res"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/ring",
+            "raw": {
+              "note": "Cap-res jewelry chase"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 70
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 30
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 30
+            },
+            {
+              "stat": "Chaos Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 14
+            },
+            {
+              "stat": "increased Rarity of Items found",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 12
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:amulet:life-triple-res",
+          "name": "Life + triple res amulet",
+          "slot": "amulet",
+          "itemClass": "Amulets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "life",
+            "res"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/amulet",
+            "raw": {
+              "note": "Life + res jewelry for any starter"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 80
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 30
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 30
+            },
+            {
+              "stat": "all Elemental Resistances",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 12
+            },
+            {
+              "stat": "Chaos Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 14
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:boots:ms35-life-chaos",
+          "name": "MS + life + chaos boots",
+          "slot": "boots",
+          "itemClass": "Boots",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "ms",
+            "chaos"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/boots",
+            "raw": {
+              "note": "MS life chaos variant"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Movement Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 6,
+              "value": 30
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 70
+            },
+            {
+              "stat": "Chaos Resistance",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 20
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 25
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:boots:ms30-life-dual-fire-cold",
+          "name": "MS + life + fire/cold dual-res boots",
+          "slot": "boots",
+          "itemClass": "Boots",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "upgrade",
+            "ms"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/boots",
+            "raw": {
+              "note": "Dual-res MS boots variant"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Movement Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 30
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 70
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 30
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 25
+            },
+            {
+              "stat": "Chaos Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 12
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:jewel:attack-as-flat-crit",
+          "name": "Attack jewel (AS + flat + crit)",
+          "slot": "jewel",
+          "itemClass": "Jewels",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "attack",
+            "jewel"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/jewel",
+            "raw": {
+              "note": "Expanded attack jewel preferred mods"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 4
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 10
+            },
+            {
+              "stat": "Critical Damage Bonus",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 12
+            },
+            {
+              "stat": "Attack Damage",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "Physical Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            },
+            {
+              "stat": "Fire Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:jewel:caster-spell-crit-cast",
+          "name": "Caster jewel (spell + crit + cast)",
+          "slot": "jewel",
+          "itemClass": "Jewels",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "caster",
+            "jewel"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/jewel",
+            "raw": {
+              "note": "Expanded caster jewel preferred mods"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Spell Damage",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 12
+            },
+            {
+              "stat": "Cast Speed",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 4
+            },
+            {
+              "stat": "Critical Hit Chance for Spells",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 10
+            },
+            {
+              "stat": "Critical Spell Damage Bonus",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "maximum Mana",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 15
+            },
+            {
+              "stat": "Area of Effect",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:jewel:bow-proj-crit",
+          "name": "Bow / projectile jewel (crit + proj)",
+          "slot": "jewel",
+          "itemClass": "Jewels",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "bow",
+            "projectile",
+            "jewel"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/jewel",
+            "raw": {
+              "note": "Ice Shot / Deadeye bow jewel"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Projectile Damage",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 10
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 10
+            },
+            {
+              "stat": "Critical Damage Bonus",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 12
+            },
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 4
+            },
+            {
+              "stat": "Cold Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            },
+            {
+              "stat": "Bow Attacks fire",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:helmet:plant-minion-life",
+          "name": "Plant / minion helmet (levels + life)",
+          "slot": "helmet",
+          "itemClass": "Helmets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "upgrade",
+            "minion",
+            "plant"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/helmet",
+            "raw": {
+              "note": "Plant Oracle helmet rare"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Level of all Minion Skills",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 1
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 80
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Minions have",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            },
+            {
+              "stat": "Spirit",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:gloves:tactician-proj-as",
+          "name": "Tactician projectile / AS gloves",
+          "slot": "gloves",
+          "itemClass": "Gloves",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "upgrade",
+            "projectile",
+            "tactician"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/gloves",
+            "raw": {
+              "note": "Stormblast Tactician gloves"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 8
+            },
+            {
+              "stat": "Level of all Projectile Skills",
+              "operator": "gte",
+              "required": false,
+              "weight": 4,
+              "value": 1
+            },
+            {
+              "stat": "Projectile Damage",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 20
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 50
+            },
+            {
+              "stat": "Lightning Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 20
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:body:plant-life-spirit",
+          "name": "Plant / minion body (life + spirit)",
+          "slot": "body",
+          "itemClass": "Body Armours",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "upgrade",
+            "minion",
+            "plant",
+            "spirit"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/body",
+            "raw": {
+              "note": "Plant Oracle body rare"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 120
+            },
+            {
+              "stat": "Spirit",
+              "operator": "gte",
+              "required": false,
+              "weight": 4,
+              "value": 30
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Chaos Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 20
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:quiver:phys-crit-as",
+          "name": "Quiver phys / crit / AS",
+          "slot": "quiver",
+          "itemClass": "Quivers",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "bow"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/quiver",
+            "raw": {
+              "note": "Phys bow quiver chase"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "increased Physical Damage",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 30
+            },
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 8
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 15
+            },
+            {
+              "stat": "Critical Damage Bonus",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 20
+            },
+            {
+              "stat": "Physical Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            },
+            {
+              "stat": "Additional Arrow",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:belt:life-triple-res",
+          "name": "Life + triple res belt",
+          "slot": "belt",
+          "itemClass": "Belts",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "universal",
+            "chase",
+            "life",
+            "res"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/belt",
+            "raw": {
+              "note": "Cap-res belt chase"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 100
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 30
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 30
+            },
+            {
+              "stat": "Chaos Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 18
+            },
+            {
+              "stat": "Strength",
+              "operator": "exists",
+              "required": false,
+              "weight": 1
             }
           ]
         }
@@ -5733,6 +7543,72 @@
               "value": 50
             }
           ]
+        },
+        {
+          "searchKey": "rare:weapon:hollow-spear-as-phys",
+          "name": "Hollow Form AS / phys spear",
+          "slot": "weapon",
+          "itemClass": "Spears",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "meta",
+            "chase",
+            "spear"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/weapon",
+            "raw": {
+              "note": "Whirling Assault spear package"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 15
+            },
+            {
+              "stat": "increased Physical Damage",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 80
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 15
+            },
+            {
+              "stat": "Critical Damage Bonus",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 20
+            },
+            {
+              "stat": "Physical Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            }
+          ]
         }
       ]
     },
@@ -6451,8 +8327,27 @@
               "stat": "increased Physical Damage",
               "operator": "gte",
               "required": false,
+              "weight": 4,
+              "value": 60
+            },
+            {
+              "stat": "Physical Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
               "weight": 2,
-              "value": 40
+              "value": 12
+            },
+            {
+              "stat": "Projectile Speed",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
             }
           ]
         },
@@ -6725,15 +8620,35 @@
               "stat": "Spirit",
               "operator": "gte",
               "required": true,
-              "weight": 5,
+              "weight": 6,
               "value": 40
             },
             {
               "stat": "increased Spirit",
               "operator": "gte",
               "required": false,
-              "weight": 3,
+              "weight": 4,
               "value": 30
+            },
+            {
+              "stat": "Allies in your Presence",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 40
+            },
+            {
+              "stat": "Level of all Minion Skills",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 1
             }
           ]
         },
@@ -6791,6 +8706,78 @@
               "required": true,
               "weight": 3,
               "value": 40
+            }
+          ]
+        },
+        {
+          "searchKey": "rare:weapon:twister-ele-spear",
+          "name": "Twister elemental spear chase",
+          "slot": "weapon",
+          "itemClass": "Spears",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "meta",
+            "chase",
+            "spear",
+            "ele"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/weapon",
+            "raw": {
+              "note": "Twister elemental spear path"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Attack Speed",
+              "operator": "gte",
+              "required": true,
+              "weight": 4,
+              "value": 12
+            },
+            {
+              "stat": "Cold Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "Lightning Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 3
+            },
+            {
+              "stat": "Fire Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 15
+            },
+            {
+              "stat": "increased Physical Damage",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 50
             }
           ]
         }
@@ -8612,6 +10599,72 @@
               "value": 20
             }
           ]
+        },
+        {
+          "searchKey": "rare:amulet:companion-spirit-life",
+          "name": "Companion spirit + life amulet",
+          "slot": "amulet",
+          "itemClass": "Amulets",
+          "league": "Forbidden Rites",
+          "tags": [
+            "rare",
+            "meta",
+            "upgrade",
+            "spirit"
+          ],
+          "importedQuery": {
+            "query": {
+              "status": {
+                "option": "online"
+              }
+            },
+            "sort": {
+              "price": "asc"
+            }
+          },
+          "provenance": {
+            "kind": "manual",
+            "sourceKey": "forbidden-rites/rare/amulet",
+            "raw": {
+              "note": "Companion / Spirit Walker amulet"
+            }
+          },
+          "statRules": [
+            {
+              "stat": "Spirit",
+              "operator": "gte",
+              "required": true,
+              "weight": 5,
+              "value": 35
+            },
+            {
+              "stat": "maximum Life",
+              "operator": "gte",
+              "required": true,
+              "weight": 3,
+              "value": 60
+            },
+            {
+              "stat": "all Elemental Resistances",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 10
+            },
+            {
+              "stat": "Level of all Minion Skills",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 1
+            },
+            {
+              "stat": "Minions deal",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
+            }
+          ]
         }
       ]
     },
@@ -9880,15 +11933,36 @@
               "stat": "Spirit",
               "operator": "gte",
               "required": true,
-              "weight": 5,
+              "weight": 6,
               "value": 50
             },
             {
               "stat": "increased Spirit",
               "operator": "gte",
               "required": false,
+              "weight": 4,
+              "value": 40
+            },
+            {
+              "stat": "Spell Damage",
+              "operator": "gte",
+              "required": false,
               "weight": 3,
               "value": 40
+            },
+            {
+              "stat": "Cast Speed",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 10
+            },
+            {
+              "stat": "maximum Mana",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 60
             }
           ]
         },
@@ -10437,15 +12511,43 @@
               "stat": "Movement Speed",
               "operator": "gte",
               "required": true,
-              "weight": 5,
+              "weight": 6,
               "value": 30
             },
             {
               "stat": "maximum Life",
               "operator": "gte",
               "required": false,
-              "weight": 3,
+              "weight": 4,
               "value": 80
+            },
+            {
+              "stat": "Fire Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Cold Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Lightning Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 30
+            },
+            {
+              "stat": "Chaos Resistance",
+              "operator": "gte",
+              "required": false,
+              "weight": 1,
+              "value": 15
             }
           ]
         },
@@ -10534,15 +12636,35 @@
               "stat": "increased Physical Damage",
               "operator": "gte",
               "required": true,
-              "weight": 4,
+              "weight": 5,
               "value": 100
             },
             {
               "stat": "Attack Speed",
               "operator": "gte",
               "required": false,
-              "weight": 2,
+              "weight": 3,
               "value": 10
+            },
+            {
+              "stat": "Critical Hit Chance",
+              "operator": "gte",
+              "required": false,
+              "weight": 3,
+              "value": 15
+            },
+            {
+              "stat": "Critical Damage Bonus",
+              "operator": "gte",
+              "required": false,
+              "weight": 2,
+              "value": 20
+            },
+            {
+              "stat": "Physical Damage to Attacks",
+              "operator": "exists",
+              "required": false,
+              "weight": 2
             }
           ]
         }
